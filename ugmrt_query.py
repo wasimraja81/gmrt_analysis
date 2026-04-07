@@ -5,8 +5,9 @@ Lightweight memory-mapped I/O functions for uGMRT UVFITS files.
 Designed for low-RAM environments (Raspberry Pi 4, 8 GB).
 """
 
+import json
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from astropy.io import fits
@@ -617,13 +618,840 @@ def load_vis_for_source(
         'uvdist_klambda': uvdist_klambda,
         'uvdist_per_chan': uvdist_per_chan,
         'freqs_hz': freqs_sel,
+        'vis_complex': re_ + 1j * im_,
         'amp': amp,
         'phase_deg': phase,
         'weight': wt_,
+        'flagged': flagged,
         'stokes_labels': stokes_sel,
         'chan_indices': chan_idx,
         'nrows': int(data.shape[0]),
     }
+
+
+# ---------------------------------------------------------------------------
+# Non-destructive bandpass calibration utilities
+# ---------------------------------------------------------------------------
+
+_PB2017_3C48_COEFFS = np.array([1.3253, -0.7553, -0.1914, 0.0498], dtype=np.float64)
+
+
+def flux_model_3c48_perley_butler_2017(freq_hz):
+    """Return the 3C48 flux density model in Jy for the given frequencies."""
+    freq_hz = np.asarray(freq_hz, dtype=np.float64)
+    if np.any(freq_hz <= 0):
+        raise ValueError('All frequencies must be positive.')
+
+    freq_ghz = freq_hz / 1e9
+    x = np.log10(freq_ghz)
+    coeffs = _PB2017_3C48_COEFFS
+    log_s = coeffs[0] + coeffs[1] * x + coeffs[2] * x**2 + coeffs[3] * x**3
+    return np.power(10.0, log_s)
+
+
+def _choose_reference_antenna(ant_numbers, weight_sums):
+    ant_numbers = np.asarray(ant_numbers, dtype=np.int32)
+    weight_sums = np.asarray(weight_sums, dtype=np.float64)
+    if ant_numbers.size == 0:
+        raise ValueError('No antennas available for reference selection.')
+    return int(ant_numbers[int(np.nanargmax(weight_sums))])
+
+
+def _build_channel_visibility_matrix(
+    ant1,
+    ant2,
+    values,
+    weights,
+    antenna_ids,
+    ignore_autos=True,
+):
+    nant = len(antenna_ids)
+    ant_to_idx = {int(ant): idx for idx, ant in enumerate(antenna_ids)}
+
+    ant1 = np.asarray(ant1, dtype=np.int32)
+    ant2 = np.asarray(ant2, dtype=np.int32)
+    values = np.asarray(values, dtype=np.complex128)
+    weights = np.asarray(weights, dtype=np.float64)
+
+    valid = np.isfinite(values.real) & np.isfinite(values.imag) & np.isfinite(weights) & (weights > 0)
+    if ignore_autos:
+        valid &= ant1 != ant2
+
+    if not np.any(valid):
+        return None, None, None, 0
+
+    ant1_idx = np.array([ant_to_idx.get(int(ant), -1) for ant in ant1[valid]], dtype=np.int32)
+    ant2_idx = np.array([ant_to_idx.get(int(ant), -1) for ant in ant2[valid]], dtype=np.int32)
+    keep = (ant1_idx >= 0) & (ant2_idx >= 0)
+    if not np.any(keep):
+        return None, None, None, 0
+
+    ant1_idx = ant1_idx[keep]
+    ant2_idx = ant2_idx[keep]
+    values = values[valid][keep]
+    weights = weights[valid][keep]
+
+    numer = np.zeros((nant, nant), dtype=np.complex128)
+    denom = np.zeros((nant, nant), dtype=np.float64)
+    np.add.at(numer, (ant1_idx, ant2_idx), weights * values)
+    np.add.at(denom, (ant1_idx, ant2_idx), weights)
+
+    numer = numer + numer.T.conj()
+    denom = denom + denom.T
+    np.fill_diagonal(denom, 0.0)
+
+    matrix = np.zeros((nant, nant), dtype=np.complex128)
+    have_data = denom > 0
+    matrix[have_data] = numer[have_data] / denom[have_data]
+    baseline_count = int(np.count_nonzero(np.triu(have_data, k=1)))
+    connectivity = denom.sum(axis=1)
+    return matrix, denom, connectivity, baseline_count
+
+
+def _stefcal_solve_channel(
+    matrix,
+    weights,
+    ref_ant_idx,
+    max_iter=100,
+    tol=1e-7,
+):
+    nant = matrix.shape[0]
+    gains = np.ones(nant, dtype=np.complex128)
+    valid_ant = weights.sum(axis=1) > 0
+    gains[~valid_ant] = np.nan + 1j * np.nan
+
+    for iteration in range(max_iter):
+        prev = gains.copy()
+        for ant_idx in range(nant):
+            row_w = weights[ant_idx]
+            row_m = matrix[ant_idx]
+            neighbour_mask = row_w > 0
+            if not np.any(neighbour_mask):
+                gains[ant_idx] = np.nan + 1j * np.nan
+                continue
+
+            g_neigh = gains[neighbour_mask]
+            finite = np.isfinite(g_neigh.real) & np.isfinite(g_neigh.imag)
+            if not np.any(finite):
+                gains[ant_idx] = np.nan + 1j * np.nan
+                continue
+
+            row_w = row_w[neighbour_mask][finite]
+            row_m = row_m[neighbour_mask][finite]
+            g_neigh = g_neigh[finite]
+
+            denom = np.sum(row_w * np.abs(g_neigh) ** 2)
+            if denom <= 0:
+                gains[ant_idx] = np.nan + 1j * np.nan
+                continue
+
+            numer = np.sum(row_w * row_m * g_neigh)
+            gains[ant_idx] = numer / denom
+
+        if np.isfinite(gains[ref_ant_idx].real) and np.isfinite(gains[ref_ant_idx].imag) and np.abs(gains[ref_ant_idx]) > 0:
+            gains /= gains[ref_ant_idx] / np.abs(gains[ref_ant_idx])
+
+        finite_now = np.isfinite(gains.real) & np.isfinite(gains.imag)
+        finite_prev = np.isfinite(prev.real) & np.isfinite(prev.imag)
+        common = finite_now & finite_prev
+        if np.any(common):
+            delta = np.nanmax(np.abs(gains[common] - prev[common]))
+            scale = np.nanmax(np.abs(prev[common]))
+            if delta <= tol * max(scale, 1.0):
+                return gains, iteration + 1
+
+    return gains, max_iter
+
+
+def _compute_channel_residual(matrix, weights, gains):
+    finite = np.isfinite(gains.real) & np.isfinite(gains.imag)
+    if np.count_nonzero(finite) < 2:
+        return np.nan
+
+    model = gains[:, np.newaxis] * gains[np.newaxis, :].conj()
+    use = (weights > 0) & np.isfinite(model.real) & np.isfinite(model.imag)
+    use = np.triu(use, k=1)
+    if not np.any(use):
+        return np.nan
+
+    resid = matrix[use] - model[use]
+    return float(np.sqrt(np.average(np.abs(resid) ** 2, weights=weights[use])))
+
+
+def _smooth_complex_bandpass(gains, valid, window):
+    if window is None or window <= 1:
+        return gains
+
+    window = int(window)
+    if window % 2 == 0:
+        window += 1
+
+    kernel = np.ones(window, dtype=np.float64)
+    smoothed = gains.copy()
+
+    for pol_idx in range(gains.shape[2]):
+        for ant_idx in range(gains.shape[1]):
+            good = valid[:, ant_idx, pol_idx]
+            if np.count_nonzero(good) < 2:
+                continue
+
+            amp = np.abs(gains[:, ant_idx, pol_idx])
+            phase = np.unwrap(np.angle(gains[:, ant_idx, pol_idx]))
+
+            amp_num = np.convolve(np.where(good, amp, 0.0), kernel, mode='same')
+            phase_num = np.convolve(np.where(good, phase, 0.0), kernel, mode='same')
+            den = np.convolve(good.astype(np.float64), kernel, mode='same')
+            ok = den > 0
+            amp_s = amp.copy()
+            phase_s = phase.copy()
+            amp_s[ok] = amp_num[ok] / den[ok]
+            phase_s[ok] = phase_num[ok] / den[ok]
+            smoothed[:, ant_idx, pol_idx] = amp_s * np.exp(1j * phase_s)
+
+    return smoothed
+
+
+def derive_point_source_bandpass(
+    index,
+    source='3C48',
+    ant_range=None,
+    ant_list=None,
+    chan_range=None,
+    stokes=('RR', 'LL'),
+    max_rows=150_000,
+    model_flux_jy=None,
+    reference_antenna=None,
+    smooth_window=5,
+    min_baselines=20,
+    ignore_autos=True,
+    max_iter=100,
+    tol=1e-7,
+):
+    """Derive per-antenna complex bandpass gains without modifying FITS data.
+
+    This function only reads visibilities from disk, derives gains in memory,
+    and returns a separate solution table that can be saved independently.
+    """
+    vis = load_vis_for_source(
+        index,
+        source=source,
+        ant_range=ant_range,
+        ant_list=ant_list,
+        chan_range=chan_range,
+        stokes=list(stokes),
+        max_rows=max_rows,
+    )
+
+    antenna_ids = np.array(sorted(set(vis['ant1']).union(set(vis['ant2']))), dtype=np.int32)
+    if antenna_ids.size < 2:
+        raise ValueError('Need at least two antennas to derive bandpass solutions.')
+
+    antenna_name_map = {
+        int(item['antenna_no']): (item.get('name') or f'Ant{int(item["antenna_no"])}')
+        for item in index.get('antennas', [])
+        if item.get('antenna_no') is not None
+    }
+    antenna_names = [antenna_name_map.get(int(ant), f'Ant{int(ant)}') for ant in antenna_ids]
+
+    stokes_labels = list(vis['stokes_labels'])
+    freqs_hz = np.asarray(vis['freqs_hz'], dtype=np.float64)
+    flux_jy = flux_model_3c48_perley_butler_2017(freqs_hz) if model_flux_jy is None else np.asarray(model_flux_jy, dtype=np.float64)
+    if flux_jy.shape != freqs_hz.shape:
+        raise ValueError('model_flux_jy must have one value per selected channel.')
+
+    vis_complex = np.asarray(vis['vis_complex'], dtype=np.complex128)
+    weights = np.asarray(vis['weight'], dtype=np.float64)
+    nant = antenna_ids.size
+    nchan = freqs_hz.size
+    npol = len(stokes_labels)
+
+    gains = np.full((nchan, nant, npol), np.nan + 1j * np.nan, dtype=np.complex128)
+    valid = np.zeros((nchan, nant, npol), dtype=bool)
+    residual_rms = np.full((nchan, npol), np.nan, dtype=np.float64)
+    baseline_counts = np.zeros((nchan, npol), dtype=np.int32)
+    iterations_used = np.zeros((nchan, npol), dtype=np.int32)
+    weight_sums = np.zeros((nant, npol), dtype=np.float64)
+    input_flagged_counts = np.count_nonzero(vis['flagged'], axis=0).astype(np.int32)
+    used_sample_counts = np.zeros((nchan, npol), dtype=np.int32)
+    skipped_channel_mask = np.ones((nchan, npol), dtype=bool)
+
+    if reference_antenna is not None and int(reference_antenna) not in set(int(a) for a in antenna_ids):
+        raise ValueError(f'Reference antenna {reference_antenna} is not present in the selected data.')
+
+    ref_indices = []
+    for pol_idx in range(npol):
+        for chan_idx in range(nchan):
+            norm_values = vis_complex[:, chan_idx, pol_idx] / flux_jy[chan_idx]
+            matrix, matrix_w, connectivity, nbase = _build_channel_visibility_matrix(
+                vis['ant1'],
+                vis['ant2'],
+                norm_values,
+                weights[:, chan_idx, pol_idx],
+                antenna_ids,
+                ignore_autos=ignore_autos,
+            )
+            baseline_counts[chan_idx, pol_idx] = nbase
+            if matrix is None or nbase < min_baselines:
+                continue
+
+            used_sample_counts[chan_idx, pol_idx] = int(np.count_nonzero(matrix_w[np.triu_indices_from(matrix_w, k=1)] > 0))
+            skipped_channel_mask[chan_idx, pol_idx] = False
+
+            weight_sums[:, pol_idx] += connectivity
+            if reference_antenna is None:
+                ref_ant = _choose_reference_antenna(antenna_ids, connectivity)
+            else:
+                ref_ant = int(reference_antenna)
+            ref_idx = int(np.where(antenna_ids == ref_ant)[0][0])
+
+            chan_gains, n_iter = _stefcal_solve_channel(
+                matrix,
+                matrix_w,
+                ref_ant_idx=ref_idx,
+                max_iter=max_iter,
+                tol=tol,
+            )
+            gains[chan_idx, :, pol_idx] = chan_gains
+            valid[chan_idx, :, pol_idx] = np.isfinite(chan_gains.real) & np.isfinite(chan_gains.imag)
+            residual_rms[chan_idx, pol_idx] = _compute_channel_residual(matrix, matrix_w, chan_gains)
+            iterations_used[chan_idx, pol_idx] = n_iter
+            ref_indices.append(ref_idx)
+
+    if reference_antenna is None:
+        chosen_ref = _choose_reference_antenna(antenna_ids, weight_sums.sum(axis=1))
+        chosen_ref_idx = int(np.where(antenna_ids == chosen_ref)[0][0])
+        finite = np.isfinite(gains.real) & np.isfinite(gains.imag)
+        for pol_idx in range(npol):
+            for chan_idx in range(nchan):
+                if not finite[chan_idx, chosen_ref_idx, pol_idx]:
+                    continue
+                phase_ref = gains[chan_idx, chosen_ref_idx, pol_idx] / np.abs(gains[chan_idx, chosen_ref_idx, pol_idx])
+                gains[chan_idx, :, pol_idx] /= phase_ref
+    else:
+        chosen_ref = int(reference_antenna)
+        chosen_ref_idx = int(np.where(antenna_ids == chosen_ref)[0][0])
+
+    gains = _smooth_complex_bandpass(gains, valid, smooth_window)
+
+    return {
+        'kind': 'point_source_bandpass',
+        'source_name': str(source),
+        'source_file': str(index['path']),
+        'freqs_hz': freqs_hz,
+        'chan_indices': np.asarray(vis['chan_indices'], dtype=np.int32),
+        'antenna_ids': antenna_ids,
+        'antenna_names': antenna_names,
+        'stokes_labels': stokes_labels,
+        'gains': gains,
+        'valid': valid,
+        'residual_rms': residual_rms,
+        'baseline_counts': baseline_counts,
+        'input_flagged_counts': input_flagged_counts,
+        'used_sample_counts': used_sample_counts,
+        'skipped_channel_mask': skipped_channel_mask,
+        'iterations': iterations_used,
+        'flux_model_jy': flux_jy,
+        'reference_antenna': chosen_ref,
+        'smooth_window': int(smooth_window) if smooth_window is not None else None,
+        'max_rows': int(max_rows),
+        'min_baselines': int(min_baselines),
+        'bad_data_policy': (
+            'Ignored non-finite samples, zero-or-negative FITS weights, optional autos, '
+            'and channels with insufficient surviving baselines. No flags were written to FITS.'
+        ),
+        'notes': 'Derived from visibilities in memory only. No FITS data were modified.',
+    }
+
+
+def save_bandpass_solution(solution, path: Union[str, Path]):
+    """Write bandpass solutions to a separate compressed file on disk."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    metadata = {
+        'kind': solution['kind'],
+        'source_name': solution['source_name'],
+        'source_file': solution['source_file'],
+        'reference_antenna': int(solution['reference_antenna']),
+        'smooth_window': solution['smooth_window'],
+        'max_rows': int(solution['max_rows']),
+        'min_baselines': int(solution['min_baselines']),
+        'bad_data_policy': solution['bad_data_policy'],
+        'notes': solution['notes'],
+    }
+
+    np.savez_compressed(
+        path,
+        freqs_hz=np.asarray(solution['freqs_hz'], dtype=np.float64),
+        chan_indices=np.asarray(solution['chan_indices'], dtype=np.int32),
+        antenna_ids=np.asarray(solution['antenna_ids'], dtype=np.int32),
+        antenna_names=np.asarray(solution['antenna_names'], dtype='U32'),
+        stokes_labels=np.asarray(solution['stokes_labels'], dtype='U16'),
+        gains=np.asarray(solution['gains'], dtype=np.complex128),
+        valid=np.asarray(solution['valid'], dtype=bool),
+        residual_rms=np.asarray(solution['residual_rms'], dtype=np.float64),
+        baseline_counts=np.asarray(solution['baseline_counts'], dtype=np.int32),
+        input_flagged_counts=np.asarray(solution['input_flagged_counts'], dtype=np.int32),
+        used_sample_counts=np.asarray(solution['used_sample_counts'], dtype=np.int32),
+        skipped_channel_mask=np.asarray(solution['skipped_channel_mask'], dtype=bool),
+        iterations=np.asarray(solution['iterations'], dtype=np.int32),
+        flux_model_jy=np.asarray(solution['flux_model_jy'], dtype=np.float64),
+        metadata_json=json.dumps(metadata),
+    )
+    return path
+
+
+def load_bandpass_solution(path: Union[str, Path]) -> dict:
+    """Read a saved bandpass solution file produced by save_bandpass_solution."""
+    path = Path(path)
+    with np.load(path, allow_pickle=False) as npz:
+        metadata = json.loads(str(npz['metadata_json']))
+        return {
+            'kind': metadata['kind'],
+            'source_name': metadata['source_name'],
+            'source_file': metadata['source_file'],
+            'reference_antenna': int(metadata['reference_antenna']),
+            'smooth_window': metadata['smooth_window'],
+            'max_rows': int(metadata['max_rows']),
+            'min_baselines': int(metadata['min_baselines']),
+            'bad_data_policy': metadata['bad_data_policy'],
+            'notes': metadata['notes'],
+            'freqs_hz': np.asarray(npz['freqs_hz'], dtype=np.float64),
+            'chan_indices': np.asarray(npz['chan_indices'], dtype=np.int32),
+            'antenna_ids': np.asarray(npz['antenna_ids'], dtype=np.int32),
+            'antenna_names': np.asarray(npz['antenna_names']).astype(str).tolist(),
+            'stokes_labels': np.asarray(npz['stokes_labels']).astype(str).tolist(),
+            'gains': np.asarray(npz['gains'], dtype=np.complex128),
+            'valid': np.asarray(npz['valid'], dtype=bool),
+            'residual_rms': np.asarray(npz['residual_rms'], dtype=np.float64),
+            'baseline_counts': np.asarray(npz['baseline_counts'], dtype=np.int32),
+            'input_flagged_counts': np.asarray(npz['input_flagged_counts'], dtype=np.int32),
+            'used_sample_counts': np.asarray(npz['used_sample_counts'], dtype=np.int32),
+            'skipped_channel_mask': np.asarray(npz['skipped_channel_mask'], dtype=bool),
+            'iterations': np.asarray(npz['iterations'], dtype=np.int32),
+            'flux_model_jy': np.asarray(npz['flux_model_jy'], dtype=np.float64),
+        }
+
+
+def apply_bandpass_solution(vis: dict, solution: dict) -> dict:
+    """Apply bandpass gains in memory and return corrected visibilities.
+
+    This function never writes back to FITS files or modifies the original
+    visibility data on disk.
+    """
+    if 'vis_complex' not in vis:
+        raise ValueError('vis must contain vis_complex. Re-load using load_vis_for_source().')
+
+    vis_freqs = np.asarray(vis['freqs_hz'], dtype=np.float64)
+    sol_freqs = np.asarray(solution['freqs_hz'], dtype=np.float64)
+
+    # Support applying full-band solutions to channel subsets by frequency matching.
+    if vis_freqs.shape == sol_freqs.shape and np.allclose(vis_freqs, sol_freqs, rtol=0.0, atol=1e-6):
+        sol_chan_idx = np.arange(sol_freqs.size, dtype=np.int32)
+    else:
+        sol_chan_idx = np.full(vis_freqs.size, -1, dtype=np.int32)
+        for i, vf in enumerate(vis_freqs):
+            match = np.where(np.isclose(sol_freqs, vf, rtol=0.0, atol=1e-3))[0]
+            if match.size == 1:
+                sol_chan_idx[i] = int(match[0])
+            elif match.size > 1:
+                raise ValueError(
+                    f'Ambiguous solution channel match for visibility frequency {vf:.6f} Hz.'
+                )
+
+        if np.any(sol_chan_idx < 0):
+            missing = vis_freqs[sol_chan_idx < 0]
+            raise ValueError(
+                'Visibility frequencies are not fully covered by the bandpass solution. '
+                f'First missing frequency: {missing[0]:.6f} Hz.'
+            )
+
+    vis_labels = list(vis['stokes_labels'])
+    sol_labels = list(solution['stokes_labels'])
+    common_labels = [label for label in vis_labels if label in sol_labels]
+    if not common_labels:
+        raise ValueError('No common Stokes labels between visibilities and bandpass solution.')
+
+    antenna_ids = np.asarray(solution['antenna_ids'], dtype=np.int32)
+    ant_to_idx = {int(ant): idx for idx, ant in enumerate(antenna_ids)}
+    ant1_idx = np.array([ant_to_idx.get(int(ant), -1) for ant in vis['ant1']], dtype=np.int32)
+    ant2_idx = np.array([ant_to_idx.get(int(ant), -1) for ant in vis['ant2']], dtype=np.int32)
+    if np.any(ant1_idx < 0) or np.any(ant2_idx < 0):
+        raise ValueError('Some visibility antennas are missing from the bandpass solution.')
+
+    corrected = np.array(vis['vis_complex'], dtype=np.complex128, copy=True)
+    corrected_flagged = np.array(vis.get('flagged', np.zeros_like(vis['weight'], dtype=bool)), copy=True)
+
+    sol_gains = np.asarray(solution['gains'], dtype=np.complex128)[sol_chan_idx, :, :]
+    sol_valid = np.asarray(solution['valid'], dtype=bool)[sol_chan_idx, :, :]
+
+    for vis_pol_idx, label in enumerate(vis_labels):
+        if label not in common_labels:
+            continue
+        sol_pol_idx = sol_labels.index(label)
+        g1 = sol_gains[:, ant1_idx, sol_pol_idx].T
+        g2 = sol_gains[:, ant2_idx, sol_pol_idx].T
+        valid = sol_valid[:, ant1_idx, sol_pol_idx].T & sol_valid[:, ant2_idx, sol_pol_idx].T
+        denom = g1 * np.conj(g2)
+        good = valid & np.isfinite(denom.real) & np.isfinite(denom.imag) & (np.abs(denom) > 0)
+        corrected[:, :, vis_pol_idx][good] = corrected[:, :, vis_pol_idx][good] / denom[good]
+        corrected[:, :, vis_pol_idx][~good] = np.nan + 1j * np.nan
+        corrected_flagged[:, :, vis_pol_idx] |= ~good
+
+    amp = np.abs(corrected)
+    phase = np.degrees(np.angle(corrected)).astype(np.float32)
+    amp[corrected_flagged] = np.nan
+    phase[corrected_flagged] = np.nan
+
+    out = dict(vis)
+    out['vis_complex_corrected'] = corrected
+    out['amp_corrected'] = amp
+    out['phase_deg_corrected'] = phase
+    out['flagged_corrected'] = corrected_flagged
+    out['applied_bandpass_reference_antenna'] = int(solution['reference_antenna'])
+    out['applied_bandpass_source'] = solution['source_name']
+    return out
+
+
+def _filter_vis_excluded_antennas(vis: dict, solution: dict, exclude_antennas=None) -> dict:
+    """Return a visibility dict with baselines touching excluded antennas removed."""
+    if not exclude_antennas:
+        return vis
+
+    ant_ids = np.asarray(solution.get('antenna_ids', []), dtype=np.int32)
+    ant_names = solution.get('antenna_names') or [f'Ant{int(a)}' for a in ant_ids]
+
+    def _norm_name(name):
+        # ANNAME values can carry a suffix like "C11:11"; match on base tag.
+        base = str(name).strip().upper().split(':', 1)[0]
+        return ''.join(ch for ch in base if ch.isalnum())
+
+    name_to_id = {str(name).strip().upper(): int(ant) for name, ant in zip(ant_names, ant_ids)}
+    norm_to_ids = {}
+    for name, ant in zip(ant_names, ant_ids):
+        norm = _norm_name(name)
+        norm_to_ids.setdefault(norm, []).append(int(ant))
+
+    excluded_ids = set()
+    ant_id_set = set(int(a) for a in ant_ids.tolist())
+
+    for item in exclude_antennas:
+        if isinstance(item, (int, np.integer)):
+            excluded_ids.add(int(item))
+            continue
+        key = str(item).strip().upper()
+        if key in name_to_id:
+            excluded_ids.add(name_to_id[key])
+            continue
+
+        norm_key = _norm_name(key)
+        norm_matches = norm_to_ids.get(norm_key, [])
+        if len(norm_matches) == 1:
+            excluded_ids.add(norm_matches[0])
+            continue
+        if len(norm_matches) > 1:
+            print(f'[plot] warning: excluded antenna "{item}" is ambiguous among IDs {norm_matches}; ignored')
+            continue
+
+        try:
+            ant_num = int(key)
+            if ant_num in ant_id_set:
+                excluded_ids.add(ant_num)
+            else:
+                print(f'[plot] warning: excluded antenna ID {ant_num} not present; ignored')
+        except ValueError:
+            print(f'[plot] warning: excluded antenna "{item}" not recognized; ignored')
+
+    if not excluded_ids:
+        return vis
+
+    nrows = int(vis.get('nrows', len(vis.get('ant1', []))))
+    row_mask = (~np.isin(vis['ant1'], list(excluded_ids))) & (~np.isin(vis['ant2'], list(excluded_ids)))
+    kept = int(np.count_nonzero(row_mask))
+    dropped = int(row_mask.size - kept)
+
+    if kept == 0:
+        raise ValueError('All rows were removed after applying excluded antennas filter.')
+
+    vis_use = {}
+    for key, value in vis.items():
+        if isinstance(value, np.ndarray) and value.shape[:1] == (nrows,):
+            vis_use[key] = value[row_mask]
+        else:
+            vis_use[key] = value
+    vis_use['nrows'] = kept
+    print(f'[plot] Excluded antennas {sorted(excluded_ids)}: dropped {dropped:,} rows, kept {kept:,}')
+    return vis_use
+
+
+def plot_bandpass_solution_grid(
+    solution: dict,
+    rows: int = 6,
+    cols: int = 5,
+    figsize=(28, 36),
+    phase_ylim=(-200.0, 200.0),
+    amp_ylim=None,
+    skip_edge_channels: Union[int, Tuple[int, int]] = (5, 5),
+    title: Optional[str] = None,
+    save_path: Optional[Union[str, Path]] = None,
+):
+    """Plot per-antenna bandpass on a rows x cols page using nested GridSpec.
+
+    Each antenna cell contains two independent stacked subplots:
+    - Top:    amplitude (0 to global 99th-percentile max)
+    - Bottom: phase     (-200 to 200 degrees)
+
+    Amplitude panel: channel numbers on top x-axis, no bottom tick labels.
+    Phase panel:     frequency in MHz on bottom x-axis.
+
+    skip_edge_channels controls exclusion from plotting and auto y-scaling:
+    - int k      -> skip first k and last k channels
+    - (a, b)     -> skip first a and last b channels
+    """
+    import matplotlib.gridspec as gridspec
+
+    freqs_mhz = np.asarray(solution['freqs_hz'], dtype=np.float64) / 1e6
+    chan_indices = np.asarray(solution['chan_indices'], dtype=np.int32)
+    antenna_ids = np.asarray(solution['antenna_ids'], dtype=np.int32)
+    antenna_names = solution.get('antenna_names') or [f'Ant{int(ant)}' for ant in antenna_ids]
+    gains = np.asarray(solution['gains'], dtype=np.complex128)
+    valid = np.asarray(solution['valid'], dtype=bool)
+    stokes_labels = list(solution['stokes_labels'])
+
+    # Skip edge channels in plotting and auto-scaling to avoid edge artifacts.
+    if isinstance(skip_edge_channels, tuple):
+        if len(skip_edge_channels) != 2:
+            raise ValueError('skip_edge_channels tuple must have exactly two values: (start, end).')
+        skip_start = int(skip_edge_channels[0])
+        skip_end = int(skip_edge_channels[1])
+    else:
+        skip_start = int(skip_edge_channels)
+        skip_end = int(skip_edge_channels)
+
+    if skip_start < 0 or skip_end < 0:
+        raise ValueError('skip_edge_channels values must be non-negative.')
+
+    plot_mask = np.ones(len(chan_indices), dtype=bool)
+    if plot_mask.size > 0 and skip_start > 0:
+        plot_mask[:min(skip_start, plot_mask.size)] = False
+    if plot_mask.size > 0 and skip_end > 0:
+        plot_mask[max(0, plot_mask.size - skip_end):] = False
+
+    # Global amplitude range
+    if amp_ylim is None:
+        valid_for_scale = valid.copy()
+        valid_for_scale[~plot_mask, :, :] = False
+        amp_vals = np.abs(gains[valid_for_scale])
+        if amp_vals.size == 0:
+            amp_vals = np.abs(gains[valid])
+        amp_hi = float(np.nanpercentile(amp_vals, 99)) if amp_vals.size else 2.0
+        amp_ylim = (0.0, max(1.2, amp_hi * 1.1))
+
+    # Channel tick marks (shared across all panels)
+    chan_tick_idx = np.linspace(0, len(chan_indices) - 1, min(5, len(chan_indices)), dtype=int)
+    chan_tick_positions = freqs_mhz[chan_tick_idx]
+    chan_tick_labels = [str(int(chan_indices[i])) for i in chan_tick_idx]
+
+    colors = ['C0', 'C1', 'C2', 'C3']
+
+    # Outer grid: rows x cols antenna cells
+    fig = plt.figure(figsize=figsize)
+    outer = gridspec.GridSpec(
+        rows, cols,
+        figure=fig,
+        hspace=0.55,   # vertical space between antenna rows
+        wspace=0.35,   # horizontal space between antenna columns
+        top=0.94, bottom=0.03, left=0.06, right=0.98,
+    )
+
+    legend_handles = []
+    legend_labels = []
+
+    for ant_idx, ant_id in enumerate(antenna_ids):
+        if ant_idx >= rows * cols:
+            break
+
+        ant_id = int(ant_id)
+        ant_name = antenna_names[ant_idx]
+        ant_row = ant_idx // cols
+        ant_col = ant_idx % cols
+
+        # Inner 2-row gridspec inside this antenna's cell
+        inner = gridspec.GridSpecFromSubplotSpec(
+            2, 1,
+            subplot_spec=outer[ant_row, ant_col],
+            hspace=0.08,
+            height_ratios=[1, 1],
+        )
+        ax_amp   = fig.add_subplot(inner[0])
+        ax_phase = fig.add_subplot(inner[1], sharex=ax_amp)
+
+        # --- Plot ---
+        for pol_idx, label in enumerate(stokes_labels):
+            col = colors[pol_idx % len(colors)]
+            good = valid[:, ant_idx, pol_idx]
+            amp = np.where(good, np.abs(gains[:, ant_idx, pol_idx]), np.nan)
+            pha = np.where(good, np.degrees(np.angle(gains[:, ant_idx, pol_idx])), np.nan)
+            amp = np.where(plot_mask, amp, np.nan)
+            pha = np.where(plot_mask, pha, np.nan)
+            ax_amp.plot(freqs_mhz, amp, color=col, lw=1.0, label=label)
+            ax_phase.plot(freqs_mhz, pha, color=col, lw=1.0)
+
+        # Amplitude panel
+        ax_amp.set_ylim(*amp_ylim)
+        ax_amp.set_ylabel('Amp', fontsize=8)
+        ax_amp.grid(True, alpha=0.25)
+        ax_amp.tick_params(axis='y', labelsize=7)
+        ax_amp.tick_params(axis='x', labelbottom=False)  # hide bottom ticks; shared with phase
+        ax_amp.set_title(f'{ant_name} | Ant {ant_id}', fontsize=9, pad=14)
+
+        # Channel numbers on top of amplitude panel
+        top_ax = ax_amp.secondary_xaxis('top')
+        top_ax.set_xticks(chan_tick_positions)
+        top_ax.set_xticklabels(chan_tick_labels, fontsize=6)
+        top_ax.set_xlabel('Channel', fontsize=7)
+
+        # Phase panel
+        ax_phase.set_ylim(*phase_ylim)
+        ax_phase.set_ylabel('Phase\n(deg)', fontsize=8)
+        ax_phase.set_xlabel('Freq (MHz)', fontsize=7)
+        ax_phase.grid(True, alpha=0.25)
+        ax_phase.tick_params(axis='both', labelsize=7)
+        ax_phase.yaxis.set_ticks([-180, -90, 0, 90, 180])
+
+        if not legend_handles:
+            legend_handles, legend_labels = ax_amp.get_legend_handles_labels()
+
+    fig.suptitle(
+        title or f'Bandpass solutions: {solution["source_name"]} | ref ant {solution["reference_antenna"]}',
+        fontsize=16,
+        y=0.975,
+    )
+    if legend_handles:
+        fig.legend(
+            legend_handles, legend_labels,
+            ncol=len(legend_handles),
+            loc='upper center',
+            bbox_to_anchor=(0.5, 0.965),
+            fontsize=10,
+        )
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=200, bbox_inches='tight')
+    plt.show()
+    return fig
+
+
+def plot_bandpass_corrected_vis_amp_vs_uvdist(
+    vis: dict,
+    solution: dict,
+    title: str = '',
+    amp_ylim=None,
+    exclude_antennas=None,
+    **kwargs,
+):
+    """Apply a saved bandpass in memory and plot corrected amplitudes/phases vs UV distance.
+
+    exclude_antennas can be a list/tuple of antenna names (e.g. 'C11') and/or
+    antenna numbers. Any baseline touching those antennas is dropped before
+    correction and plotting.
+    """
+    vis_use = _filter_vis_excluded_antennas(vis, solution, exclude_antennas=exclude_antennas)
+    corrected = apply_bandpass_solution(vis_use, solution)
+    plot_payload = dict(corrected)
+    plot_payload['amp'] = corrected['amp_corrected']
+    plot_payload['phase_deg'] = corrected['phase_deg_corrected']
+    return plot_vis_amp_vs_uvdist(plot_payload, title=title, amp_ylim=amp_ylim, **kwargs)
+
+
+def plot_corrected_vector_avg_spectrum(
+    vis: dict,
+    solution: dict,
+    title: str = '',
+    exclude_antennas=None,
+    skip_edge_channels: Union[int, Tuple[int, int]] = (10, 5),
+    save_path: Optional[Union[str, Path]] = None,
+):
+    """Plot corrected vector-averaged real spectrum vs Perley-Butler 3C48 model.
+
+    Top panel: per-pol vector-averaged real(vis) and PB2017 model.
+    Bottom panel: residual (data - model) per pol.
+    """
+    vis_use = _filter_vis_excluded_antennas(vis, solution, exclude_antennas=exclude_antennas)
+    corrected = apply_bandpass_solution(vis_use, solution)
+
+    freqs_hz = np.asarray(corrected['freqs_hz'], dtype=np.float64)
+    freqs_mhz = freqs_hz / 1e6
+    model = flux_model_3c48_perley_butler_2017(freqs_hz)
+
+    if isinstance(skip_edge_channels, tuple):
+        if len(skip_edge_channels) != 2:
+            raise ValueError('skip_edge_channels tuple must have exactly two values: (start, end).')
+        skip_start, skip_end = int(skip_edge_channels[0]), int(skip_edge_channels[1])
+    else:
+        skip_start = skip_end = int(skip_edge_channels)
+    if skip_start < 0 or skip_end < 0:
+        raise ValueError('skip_edge_channels must be non-negative.')
+
+    chan_mask = np.ones(freqs_hz.size, dtype=bool)
+    if skip_start > 0:
+        chan_mask[:min(skip_start, chan_mask.size)] = False
+    if skip_end > 0:
+        chan_mask[max(0, chan_mask.size - skip_end):] = False
+
+    vis_corr = np.asarray(corrected['vis_complex_corrected'], dtype=np.complex128)
+    weights = np.asarray(corrected['weight'], dtype=np.float64)
+    flagged = np.asarray(corrected.get('flagged_corrected', corrected.get('flagged')), dtype=bool)
+    stokes_labels = list(corrected['stokes_labels'])
+
+    fig, (ax_top, ax_bot) = plt.subplots(
+        2, 1, figsize=(12, 7), sharex=True,
+        gridspec_kw={'height_ratios': [3, 1], 'hspace': 0.06}
+    )
+
+    model_plot = np.where(chan_mask, model, np.nan)
+    ax_top.plot(freqs_mhz, model_plot, color='k', lw=2.0, label='Perley-Butler 2017 (3C48)')
+
+    for pol_idx, pol in enumerate(stokes_labels):
+        z = vis_corr[:, :, pol_idx]
+        w = weights[:, :, pol_idx]
+        good = (~flagged[:, :, pol_idx]) & np.isfinite(z.real) & np.isfinite(z.imag) & np.isfinite(w) & (w > 0)
+
+        num = np.nansum(np.where(good, w * z, 0.0), axis=0)
+        den = np.nansum(np.where(good, w, 0.0), axis=0)
+        vec = np.full(freqs_hz.size, np.nan + 1j * np.nan, dtype=np.complex128)
+        ok = den > 0
+        vec[ok] = num[ok] / den[ok]
+
+        real_spec = np.real(vec)
+        real_plot = np.where(chan_mask, real_spec, np.nan)
+        resid_plot = np.where(chan_mask, real_spec - model, np.nan)
+
+        ax_top.plot(freqs_mhz, real_plot, lw=1.4, label=f'{pol} vector-avg Re(V)')
+        ax_bot.plot(freqs_mhz, resid_plot, lw=1.2, label=f'{pol} residual')
+
+    ax_top.set_ylabel('Flux Density (Jy)')
+    ax_top.grid(True, alpha=0.3)
+    ax_top.legend(fontsize=9, loc='best')
+
+    ax_bot.axhline(0.0, color='k', lw=1.0, ls='--')
+    ax_bot.set_ylabel('Data - Model (Jy)')
+    ax_bot.set_xlabel('Frequency (MHz)')
+    ax_bot.grid(True, alpha=0.3)
+    ax_bot.legend(fontsize=8, loc='best')
+
+    fig.suptitle(title or '3C48 corrected vector-averaged spectrum vs PB2017 model', fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=180, bbox_inches='tight')
+        print(f'[plot] Saved spectrum+residual plot to: {save_path}')
+    plt.show()
+    return fig
 
 # ---------------------------------------------------------------------------
 # Plotting helpers
@@ -727,6 +1555,7 @@ def plot_vis_amp_vs_uvdist(
     vis,
     title='',
     figsize=(14, 5),
+    amp_ylim=None,
     show_phase=False,
     alpha=0.15,
     fit=None,
@@ -824,6 +1653,8 @@ def plot_vis_amp_vs_uvdist(
         ax_amp.scatter(uvd_broad, amp_flat, s=0.3, alpha=alpha,
                        rasterized=True, color=f'C{pi}')
         ax_amp.set_ylabel(f'{label}\nAmp')
+        if amp_ylim is not None:
+            ax_amp.set_ylim(*amp_ylim)
         ax_amp.grid(True, alpha=0.3)
 
         # --- envelope fit -------------------------------------------------
