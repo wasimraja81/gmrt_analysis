@@ -5,6 +5,7 @@ Lightweight memory-mapped I/O functions for uGMRT UVFITS files.
 Designed for low-RAM environments (Raspberry Pi 4, 8 GB).
 """
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -329,6 +330,216 @@ def build_row_index(path: Union[str, Path]) -> dict:
     return idx
 
 
+def compute_file_sha256(path: Union[str, Path], chunk_size: int = 8 * 1024 * 1024) -> str:
+    """Compute SHA256 of a file for cache validity checks."""
+    path = Path(path)
+    digest = hashlib.sha256()
+    with path.open('rb') as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def get_file_identity(path: Union[str, Path]) -> dict:
+    """Return cheap file identity metadata for cache validation."""
+    path = Path(path)
+    stat = path.stat()
+    return {
+        'size_bytes': int(stat.st_size),
+        'mtime_ns': int(stat.st_mtime_ns),
+    }
+
+
+def default_row_index_cache_path(path: Union[str, Path], cache_dir: Optional[Union[str, Path]] = None) -> Path:
+    """Return a deterministic cache path for a row-index sidecar."""
+    path = Path(path)
+    if cache_dir is None:
+        cache_dir = path.parent
+    cache_dir = Path(cache_dir)
+    return cache_dir / f'{path.name}.row_index_cache.npz'
+
+
+def save_row_index_cache(index: dict, cache_path: Union[str, Path], source_sha256: Optional[str] = None) -> Path:
+    """Persist a built row index to a sidecar NPZ cache file."""
+    cache_path = Path(cache_path)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    metadata = {
+        'path': str(index['path']),
+        'source_sha256': source_sha256,
+        'source_identity': index.get('source_identity'),
+        'source_ranges': index['source_ranges'],
+        'id_to_name': {str(k): v for k, v in index['id_to_name'].items()},
+        'antennas': index['antennas'],
+        'freq': index['freq'],
+        'stokes_labels': list(index['stokes_labels']),
+        'gcount': int(index['gcount']),
+        'pcount': int(index['pcount']),
+        'naxis2': int(index['naxis2']),
+        'naxis3': int(index['naxis3']),
+        'naxis4': int(index['naxis4']),
+        'naxis5': int(index['naxis5']),
+        'data_offset': int(index['data_offset']),
+        'group_size': int(index['group_size']),
+        'data_per_group': int(index['data_per_group']),
+        'parnames': list(index['parnames']),
+        'build_time_sec': float(index.get('build_time_sec', 0.0)),
+    }
+
+    np.savez_compressed(
+        cache_path,
+        source_id=np.asarray(index['source_id'], dtype=np.int32),
+        jd=np.asarray(index['jd'], dtype=np.float64),
+        ant1=np.asarray(index['ant1'], dtype=np.int16),
+        ant2=np.asarray(index['ant2'], dtype=np.int16),
+        uu_sec=np.asarray(index['uu_sec'], dtype=np.float32),
+        vv_sec=np.asarray(index['vv_sec'], dtype=np.float32),
+        chan_freqs_hz=np.asarray(index['chan_freqs_hz'], dtype=np.float64),
+        metadata_json=json.dumps(metadata),
+    )
+    return cache_path
+
+
+def load_row_index_cache(
+    cache_path: Union[str, Path],
+    source_path: Optional[Union[str, Path]] = None,
+    validation_mode: str = 'fast',
+) -> dict:
+    """Load a persisted row-index cache and optionally verify source identity.
+
+    validation_mode:
+    - 'fast': compare cached size + mtime_ns against current file
+    - 'fast+sha': fast check first, then SHA256 confirmation on mismatch
+    - 'sha256': compare cached SHA256 against current file
+    - 'none': trust cache without source-file validation
+    """
+    cache_path = Path(cache_path)
+    with np.load(cache_path, allow_pickle=False) as npz:
+        metadata = json.loads(str(npz['metadata_json']))
+
+        cached_sha = metadata.get('source_sha256')
+        cached_identity = metadata.get('source_identity') or None
+        if source_path is not None and validation_mode != 'none':
+            if validation_mode == 'fast':
+                current_identity = get_file_identity(source_path)
+                if cached_identity is None:
+                    raise ValueError(
+                        'Row-index cache has no stored file identity for fast validation; rebuild the cache.'
+                    )
+                if current_identity != cached_identity:
+                    raise ValueError(
+                        'Row-index cache fast validation mismatch (size/mtime). '
+                        'Source visdata appears to have changed; rebuild the cache.'
+                    )
+            elif validation_mode == 'fast+sha':
+                current_identity = get_file_identity(source_path)
+                if cached_identity is None:
+                    raise ValueError(
+                        'Row-index cache has no stored file identity for fast+sha validation; rebuild the cache.'
+                    )
+                if current_identity != cached_identity:
+                    if not cached_sha:
+                        raise ValueError(
+                            'Row-index cache fast validation mismatch and no cached SHA256 is available; '
+                            'rebuild the cache.'
+                        )
+                    current_sha = compute_file_sha256(source_path)
+                    if current_sha != cached_sha:
+                        raise ValueError(
+                            'Row-index cache fast validation mismatch and SHA256 mismatch. '
+                            'Source visdata appears to have changed; rebuild the cache.'
+                        )
+            elif validation_mode == 'sha256':
+                if not cached_sha:
+                    raise ValueError(
+                        'Row-index cache has no stored SHA256 for strict validation; rebuild the cache.'
+                    )
+                current_sha = compute_file_sha256(source_path)
+                if current_sha != cached_sha:
+                    raise ValueError(
+                        'Row-index cache SHA256 mismatch. Source visdata appears to have changed; '
+                        'rebuild the cache.'
+                    )
+            else:
+                raise ValueError("validation_mode must be one of: 'fast', 'fast+sha', 'sha256', 'none'.")
+
+        source_ranges = {
+            int(k): [(int(s), int(e)) for s, e in v]
+            for k, v in metadata['source_ranges'].items()
+        }
+        id_to_name = {int(k): str(v) for k, v in metadata['id_to_name'].items()}
+
+        return {
+            'source_id': np.asarray(npz['source_id'], dtype=np.int32),
+            'jd': np.asarray(npz['jd'], dtype=np.float64),
+            'ant1': np.asarray(npz['ant1'], dtype=np.int16),
+            'ant2': np.asarray(npz['ant2'], dtype=np.int16),
+            'uu_sec': np.asarray(npz['uu_sec'], dtype=np.float32),
+            'vv_sec': np.asarray(npz['vv_sec'], dtype=np.float32),
+            'source_ranges': source_ranges,
+            'id_to_name': id_to_name,
+            'antennas': metadata['antennas'],
+            'freq': metadata['freq'],
+            'chan_freqs_hz': np.asarray(npz['chan_freqs_hz'], dtype=np.float64),
+            'stokes_labels': list(metadata['stokes_labels']),
+            'path': str(metadata['path']),
+            'gcount': int(metadata['gcount']),
+            'pcount': int(metadata['pcount']),
+            'naxis2': int(metadata['naxis2']),
+            'naxis3': int(metadata['naxis3']),
+            'naxis4': int(metadata['naxis4']),
+            'naxis5': int(metadata['naxis5']),
+            'data_offset': int(metadata['data_offset']),
+            'group_size': int(metadata['group_size']),
+            'data_per_group': int(metadata['data_per_group']),
+            'parnames': list(metadata['parnames']),
+            'build_time_sec': float(metadata.get('build_time_sec', 0.0)),
+            'source_sha256': cached_sha,
+            'source_identity': cached_identity,
+            'index_cache_path': str(cache_path),
+        }
+
+
+def get_or_build_row_index(
+    path: Union[str, Path],
+    cache_path: Optional[Union[str, Path]] = None,
+    cache_dir: Optional[Union[str, Path]] = None,
+    force_rebuild: bool = False,
+    validation_mode: str = 'fast',
+    write_cache: bool = True,
+) -> dict:
+    """Load a persistent row index if valid, otherwise build and cache one."""
+    path = Path(path)
+    cache_path = Path(cache_path) if cache_path is not None else default_row_index_cache_path(path, cache_dir=cache_dir)
+
+    if cache_path.exists() and not force_rebuild:
+        try:
+            index = load_row_index_cache(cache_path, source_path=path, validation_mode=validation_mode)
+            print(f'Loaded row index cache: {cache_path}')
+            return index
+        except ValueError as exc:
+            print(f'[row-index-cache] warning: {exc}')
+            print('[row-index-cache] Rebuilding cache from source file.')
+
+    if validation_mode not in ('fast', 'fast+sha', 'sha256', 'none'):
+        raise ValueError("validation_mode must be one of: 'fast', 'fast+sha', 'sha256', 'none'.")
+
+    source_identity = get_file_identity(path)
+    # Always store SHA256 in cache so fast+sha fallback works in future runs.
+    source_sha256 = compute_file_sha256(path)
+    index = build_row_index(path)
+    index['source_sha256'] = source_sha256
+    index['source_identity'] = source_identity
+    index['index_cache_path'] = str(cache_path)
+    if write_cache:
+        save_row_index_cache(index, cache_path, source_sha256=source_sha256)
+        print(f'Saved row index cache: {cache_path}')
+    return index
+
+
 def get_source_observation_properties(
     index: dict,
     source: Union[str, int],
@@ -636,6 +847,355 @@ def load_vis_for_source(
 _PB2017_3C48_COEFFS = np.array([1.3253, -0.7553, -0.1914, 0.0498], dtype=np.float64)
 
 
+def _norm_antenna_name(name):
+    """Normalize antenna labels for tolerant matching.
+
+    Example: "C11:11" and "c11" both normalize to "C11".
+    """
+    base = str(name).strip().upper().split(':', 1)[0]
+    return ''.join(ch for ch in base if ch.isalnum())
+
+
+def create_flag_table(
+    bad_antennas: Optional[List[Union[str, int]]] = None,
+    bad_baselines: Optional[List[Union[Tuple[Union[str, int], Union[str, int]], List[Union[str, int]], Dict[str, Union[str, int]]]]] = None,
+    notes: str = '',
+) -> dict:
+    """Create a JSON-serializable flag table for calibration-time exclusions."""
+    return {
+        'kind': 'ugmrt_flag_table',
+        'version': 1,
+        'bad_antennas': list(bad_antennas or []),
+        'bad_baselines': list(bad_baselines or []),
+        'notes': str(notes),
+    }
+
+
+def save_flag_table(flag_table: dict, path: Union[str, Path]) -> Path:
+    """Save antenna/baseline exclusions to a standalone JSON file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('w', encoding='utf-8') as f:
+        json.dump(flag_table, f, indent=2, sort_keys=True)
+    return path
+
+
+def load_flag_table(path: Union[str, Path]) -> dict:
+    """Load a standalone JSON flag table used for calibration-time exclusions."""
+    path = Path(path)
+    with path.open('r', encoding='utf-8') as f:
+        table = json.load(f)
+
+    if not isinstance(table, dict):
+        raise ValueError('Flag table JSON must contain an object at top level.')
+    if table.get('kind', 'ugmrt_flag_table') != 'ugmrt_flag_table':
+        raise ValueError('Unsupported flag table kind. Expected "ugmrt_flag_table".')
+    if int(table.get('version', 1)) != 1:
+        raise ValueError('Unsupported flag table version. Expected version 1.')
+
+    table.setdefault('bad_antennas', [])
+    table.setdefault('bad_baselines', [])
+    table.setdefault('notes', '')
+    return table
+
+
+def _coerce_flag_tables(
+    flag_tables: Optional[Union[dict, List[dict], Tuple[dict, ...]]] = None,
+    flag_table_paths: Optional[Union[str, Path, List[Union[str, Path]], Tuple[Union[str, Path], ...]]] = None,
+):
+    """Return (tables, paths) while accepting singular or plural inputs."""
+    tables = []
+    paths = []
+
+    if flag_table_paths is not None:
+        if isinstance(flag_table_paths, (str, Path)):
+            flag_table_paths = [flag_table_paths]
+        for p in flag_table_paths:
+            table = load_flag_table(p)
+            tables.append(table)
+            paths.append(str(Path(p)))
+
+    if flag_tables is not None:
+        if isinstance(flag_tables, dict):
+            flag_tables = [flag_tables]
+        for table in flag_tables:
+            if not isinstance(table, dict):
+                raise ValueError('Each flag table must be a dict.')
+            tables.append(table)
+
+    return tables, paths
+
+
+def _resolve_antenna_selector_ids(
+    selectors,
+    antenna_name_map: Dict[int, str],
+    strict: bool = False,
+    context: str = 'flag-table',
+):
+    """Resolve antenna selectors (IDs or labels) to antenna IDs."""
+    ant_ids = sorted(int(a) for a in antenna_name_map.keys())
+    ant_id_set = set(ant_ids)
+
+    name_to_id = {
+        str(name).strip().upper(): int(ant)
+        for ant, name in antenna_name_map.items()
+    }
+    norm_to_ids = {}
+    for ant, name in antenna_name_map.items():
+        norm = _norm_antenna_name(name)
+        norm_to_ids.setdefault(norm, []).append(int(ant))
+
+    resolved = []
+    unresolved = []
+
+    for item in selectors or []:
+        if isinstance(item, (int, np.integer)):
+            ant_id = int(item)
+            if ant_id in ant_id_set:
+                resolved.append(ant_id)
+            else:
+                unresolved.append(item)
+            continue
+
+        key = str(item).strip().upper()
+        if key in name_to_id:
+            resolved.append(name_to_id[key])
+            continue
+
+        norm_key = _norm_antenna_name(key)
+        norm_matches = norm_to_ids.get(norm_key, [])
+        if len(norm_matches) == 1:
+            resolved.append(norm_matches[0])
+            continue
+        if len(norm_matches) > 1:
+            msg = f'[{context}] antenna selector "{item}" is ambiguous among IDs {norm_matches}.'
+            if strict:
+                raise ValueError(msg)
+            print(msg + ' Ignored.')
+            continue
+
+        try:
+            ant_id = int(key)
+            if ant_id in ant_id_set:
+                resolved.append(ant_id)
+            else:
+                unresolved.append(item)
+        except ValueError:
+            unresolved.append(item)
+
+    if unresolved:
+        msg = f'[{context}] Unrecognized antenna selectors: {unresolved}'
+        if strict:
+            raise ValueError(msg)
+        print(msg + ' (ignored)')
+
+    return sorted(set(resolved))
+
+
+def _resolve_baseline_selector_pairs(
+    selectors,
+    antenna_name_map: Dict[int, str],
+    strict: bool = False,
+    context: str = 'flag-table',
+):
+    """Resolve baseline selectors to canonical (min_ant, max_ant) ID pairs."""
+    pairs = set()
+    unresolved = []
+
+    for item in selectors or []:
+        a1 = a2 = None
+
+        if isinstance(item, dict):
+            a1 = item.get('ant1')
+            a2 = item.get('ant2')
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            a1, a2 = item[0], item[1]
+        elif isinstance(item, str) and '-' in item:
+            left, right = item.split('-', 1)
+            a1, a2 = left.strip(), right.strip()
+
+        if a1 is None or a2 is None:
+            unresolved.append(item)
+            continue
+
+        ant_ids = _resolve_antenna_selector_ids(
+            [a1, a2],
+            antenna_name_map=antenna_name_map,
+            strict=strict,
+            context=context,
+        )
+        if len(ant_ids) != 2:
+            unresolved.append(item)
+            continue
+
+        if ant_ids[0] == ant_ids[1]:
+            msg = f'[{context}] baseline selector "{item}" maps to identical antennas; ignored.'
+            if strict:
+                raise ValueError(msg)
+            print(msg)
+            continue
+
+        pairs.add(tuple(sorted((int(ant_ids[0]), int(ant_ids[1])))))
+
+    if unresolved:
+        msg = f'[{context}] Unrecognized baseline selectors: {unresolved}'
+        if strict:
+            raise ValueError(msg)
+        print(msg + ' (ignored)')
+
+    return sorted(pairs)
+
+
+def apply_flag_table_to_vis(
+    vis: dict,
+    antenna_name_map: Dict[int, str],
+    flag_table: dict,
+    strict: bool = False,
+    context: str = 'flag-table',
+):
+    """Filter rows excluded by a flag table and return (filtered_vis, stats)."""
+    excluded_ant_ids = _resolve_antenna_selector_ids(
+        flag_table.get('bad_antennas', []),
+        antenna_name_map=antenna_name_map,
+        strict=strict,
+        context=context,
+    )
+    excluded_base_pairs = _resolve_baseline_selector_pairs(
+        flag_table.get('bad_baselines', []),
+        antenna_name_map=antenna_name_map,
+        strict=strict,
+        context=context,
+    )
+
+    excluded_ant_ids_set = set(excluded_ant_ids)
+    excluded_base_pairs_set = set(excluded_base_pairs)
+
+    nrows = int(vis.get('nrows', len(vis.get('ant1', []))))
+    row_mask = np.ones(nrows, dtype=bool)
+
+    if excluded_ant_ids_set:
+        row_mask &= (~np.isin(vis['ant1'], excluded_ant_ids)) & (~np.isin(vis['ant2'], excluded_ant_ids))
+
+    if excluded_base_pairs_set:
+        b1 = np.minimum(np.asarray(vis['ant1'], dtype=np.int32), np.asarray(vis['ant2'], dtype=np.int32))
+        b2 = np.maximum(np.asarray(vis['ant1'], dtype=np.int32), np.asarray(vis['ant2'], dtype=np.int32))
+        baseline_bad = np.array([(int(a), int(b)) in excluded_base_pairs_set for a, b in zip(b1, b2)], dtype=bool)
+        row_mask &= ~baseline_bad
+
+    kept = int(np.count_nonzero(row_mask))
+    dropped = int(nrows - kept)
+    if kept == 0:
+        raise ValueError(f'[{context}] All rows were removed by the flag table filters.')
+
+    vis_use = {}
+    for key, value in vis.items():
+        if isinstance(value, np.ndarray) and value.shape[:1] == (nrows,):
+            vis_use[key] = value[row_mask]
+        else:
+            vis_use[key] = value
+    vis_use['nrows'] = kept
+
+    stats = {
+        'dropped_rows': dropped,
+        'kept_rows': kept,
+        'excluded_antenna_ids': excluded_ant_ids,
+        'excluded_baseline_pairs': excluded_base_pairs,
+        'flag_table_notes': str(flag_table.get('notes', '')),
+        'flag_table_count': 1,
+        'flag_table_paths': [],
+    }
+    return vis_use, stats
+
+
+def apply_flag_tables_to_vis(
+    vis: dict,
+    antenna_name_map: Dict[int, str],
+    flag_tables: Optional[Union[dict, List[dict], Tuple[dict, ...]]] = None,
+    flag_table_paths: Optional[Union[str, Path, List[Union[str, Path]], Tuple[Union[str, Path], ...]]] = None,
+    strict: bool = False,
+    context: str = 'flag-table',
+):
+    """Apply one or more flag tables to visibility rows in memory.
+
+    This function merges antenna/baseline exclusions on-the-fly and never
+    modifies visibility data on disk.
+    """
+    tables, paths = _coerce_flag_tables(flag_tables=flag_tables, flag_table_paths=flag_table_paths)
+    if not tables:
+        stats = {
+            'dropped_rows': 0,
+            'kept_rows': int(vis.get('nrows', len(vis.get('ant1', [])))),
+            'excluded_antenna_ids': [],
+            'excluded_baseline_pairs': [],
+            'flag_table_notes': '',
+            'flag_table_count': 0,
+            'flag_table_paths': [],
+        }
+        return vis, stats
+
+    excluded_ant_ids_set = set()
+    excluded_base_pairs_set = set()
+    notes = []
+
+    for idx, table in enumerate(tables, start=1):
+        table_ctx = f'{context}#{idx}'
+        ant_ids = _resolve_antenna_selector_ids(
+            table.get('bad_antennas', []),
+            antenna_name_map=antenna_name_map,
+            strict=strict,
+            context=table_ctx,
+        )
+        base_pairs = _resolve_baseline_selector_pairs(
+            table.get('bad_baselines', []),
+            antenna_name_map=antenna_name_map,
+            strict=strict,
+            context=table_ctx,
+        )
+        excluded_ant_ids_set.update(int(a) for a in ant_ids)
+        excluded_base_pairs_set.update(tuple(sorted((int(a), int(b)))) for a, b in base_pairs)
+        note = str(table.get('notes', '')).strip()
+        if note:
+            notes.append(note)
+
+    nrows = int(vis.get('nrows', len(vis.get('ant1', []))))
+    row_mask = np.ones(nrows, dtype=bool)
+
+    excluded_ant_ids = sorted(excluded_ant_ids_set)
+    if excluded_ant_ids:
+        row_mask &= (~np.isin(vis['ant1'], excluded_ant_ids)) & (~np.isin(vis['ant2'], excluded_ant_ids))
+
+    excluded_base_pairs = sorted(excluded_base_pairs_set)
+    if excluded_base_pairs:
+        b1 = np.minimum(np.asarray(vis['ant1'], dtype=np.int32), np.asarray(vis['ant2'], dtype=np.int32))
+        b2 = np.maximum(np.asarray(vis['ant1'], dtype=np.int32), np.asarray(vis['ant2'], dtype=np.int32))
+        baseline_bad = np.array([(int(a), int(b)) in excluded_base_pairs_set for a, b in zip(b1, b2)], dtype=bool)
+        row_mask &= ~baseline_bad
+
+    kept = int(np.count_nonzero(row_mask))
+    dropped = int(nrows - kept)
+    if kept == 0:
+        raise ValueError(f'[{context}] All rows were removed by merged flag-table filters.')
+
+    vis_use = {}
+    for key, value in vis.items():
+        if isinstance(value, np.ndarray) and value.shape[:1] == (nrows,):
+            vis_use[key] = value[row_mask]
+        else:
+            vis_use[key] = value
+    vis_use['nrows'] = kept
+
+    stats = {
+        'dropped_rows': dropped,
+        'kept_rows': kept,
+        'excluded_antenna_ids': excluded_ant_ids,
+        'excluded_baseline_pairs': excluded_base_pairs,
+        'flag_table_notes': ' | '.join(notes),
+        'flag_table_count': len(tables),
+        'flag_table_paths': paths,
+    }
+    return vis_use, stats
+
+
 def flux_model_3c48_perley_butler_2017(freq_hz):
     """Return the 3C48 flux density model in Jy for the given frequencies."""
     freq_hz = np.asarray(freq_hz, dtype=np.float64)
@@ -826,6 +1386,9 @@ def derive_point_source_bandpass(
     ignore_autos=True,
     max_iter=100,
     tol=1e-7,
+    flag_table: Optional[Union[dict, List[dict], Tuple[dict, ...]]] = None,
+    flag_table_path: Optional[Union[str, Path, List[Union[str, Path]], Tuple[Union[str, Path], ...]]] = None,
+    strict_flag_table: bool = False,
 ):
     """Derive per-antenna complex bandpass gains without modifying FITS data.
 
@@ -842,15 +1405,47 @@ def derive_point_source_bandpass(
         max_rows=max_rows,
     )
 
-    antenna_ids = np.array(sorted(set(vis['ant1']).union(set(vis['ant2']))), dtype=np.int32)
-    if antenna_ids.size < 2:
-        raise ValueError('Need at least two antennas to derive bandpass solutions.')
-
     antenna_name_map = {
         int(item['antenna_no']): (item.get('name') or f'Ant{int(item["antenna_no"])}')
         for item in index.get('antennas', [])
         if item.get('antenna_no') is not None
     }
+
+    flag_tables, flag_table_paths = _coerce_flag_tables(
+        flag_tables=flag_table,
+        flag_table_paths=flag_table_path,
+    )
+
+    flag_stats = {
+        'dropped_rows': 0,
+        'kept_rows': int(vis.get('nrows', len(vis.get('ant1', []))),),
+        'excluded_antenna_ids': [],
+        'excluded_baseline_pairs': [],
+        'flag_table_notes': '',
+        'flag_table_count': 0,
+        'flag_table_paths': [],
+    }
+    if flag_tables:
+        vis, flag_stats = apply_flag_tables_to_vis(
+            vis,
+            antenna_name_map=antenna_name_map,
+            flag_tables=flag_tables,
+            flag_table_paths=flag_table_paths,
+            strict=bool(strict_flag_table),
+            context='bandpass-solve',
+        )
+        print(
+            '[bandpass-solve] merged flag tables applied: '
+            f'dropped {flag_stats["dropped_rows"]:,} rows, kept {flag_stats["kept_rows"]:,} rows; '
+            f'excluded antennas={flag_stats["excluded_antenna_ids"]}, '
+            f'excluded baselines={len(flag_stats["excluded_baseline_pairs"])}; '
+            f'tables={flag_stats.get("flag_table_count", 0)}'
+        )
+
+    antenna_ids = np.array(sorted(set(vis['ant1']).union(set(vis['ant2']))), dtype=np.int32)
+    if antenna_ids.size < 2:
+        raise ValueError('Need at least two antennas to derive bandpass solutions.')
+
     antenna_names = [antenna_name_map.get(int(ant), f'Ant{int(ant)}') for ant in antenna_ids]
 
     stokes_labels = list(vis['stokes_labels'])
@@ -955,9 +1550,19 @@ def derive_point_source_bandpass(
         'smooth_window': int(smooth_window) if smooth_window is not None else None,
         'max_rows': int(max_rows),
         'min_baselines': int(min_baselines),
+        'flag_table_applied': bool(flag_stats.get('flag_table_count', 0) > 0),
+        'flag_table_path': flag_stats.get('flag_table_paths', [None])[0] if flag_stats.get('flag_table_paths') else None,
+        'flag_table_paths': list(flag_stats.get('flag_table_paths', [])),
+        'flag_table_count': int(flag_stats.get('flag_table_count', 0)),
+        'flag_table_notes': str(flag_stats.get('flag_table_notes', '')),
+        'excluded_antenna_ids': np.asarray(flag_stats.get('excluded_antenna_ids', []), dtype=np.int32),
+        'excluded_baseline_pairs': np.asarray(flag_stats.get('excluded_baseline_pairs', []), dtype=np.int32).reshape(-1, 2),
+        'solve_input_rows': int(flag_stats.get('kept_rows', vis.get('nrows', 0))),
+        'solve_dropped_rows_by_flag_table': int(flag_stats.get('dropped_rows', 0)),
         'bad_data_policy': (
             'Ignored non-finite samples, zero-or-negative FITS weights, optional autos, '
-            'and channels with insufficient surviving baselines. No flags were written to FITS.'
+            'and channels with insufficient surviving baselines. Optional flag-table exclusions '
+            'were applied at solve input. No flags were written to FITS.'
         ),
         'notes': 'Derived from visibilities in memory only. No FITS data were modified.',
     }
@@ -976,6 +1581,13 @@ def save_bandpass_solution(solution, path: Union[str, Path]):
         'smooth_window': solution['smooth_window'],
         'max_rows': int(solution['max_rows']),
         'min_baselines': int(solution['min_baselines']),
+        'flag_table_applied': bool(solution.get('flag_table_applied', False)),
+        'flag_table_path': solution.get('flag_table_path'),
+        'flag_table_paths': list(solution.get('flag_table_paths', [])),
+        'flag_table_count': int(solution.get('flag_table_count', 0)),
+        'flag_table_notes': solution.get('flag_table_notes', ''),
+        'solve_input_rows': int(solution.get('solve_input_rows', 0)),
+        'solve_dropped_rows_by_flag_table': int(solution.get('solve_dropped_rows_by_flag_table', 0)),
         'bad_data_policy': solution['bad_data_policy'],
         'notes': solution['notes'],
     }
@@ -996,6 +1608,8 @@ def save_bandpass_solution(solution, path: Union[str, Path]):
         skipped_channel_mask=np.asarray(solution['skipped_channel_mask'], dtype=bool),
         iterations=np.asarray(solution['iterations'], dtype=np.int32),
         flux_model_jy=np.asarray(solution['flux_model_jy'], dtype=np.float64),
+        excluded_antenna_ids=np.asarray(solution.get('excluded_antenna_ids', []), dtype=np.int32),
+        excluded_baseline_pairs=np.asarray(solution.get('excluded_baseline_pairs', []), dtype=np.int32).reshape(-1, 2),
         metadata_json=json.dumps(metadata),
     )
     return path
@@ -1014,6 +1628,13 @@ def load_bandpass_solution(path: Union[str, Path]) -> dict:
             'smooth_window': metadata['smooth_window'],
             'max_rows': int(metadata['max_rows']),
             'min_baselines': int(metadata['min_baselines']),
+            'flag_table_applied': bool(metadata.get('flag_table_applied', False)),
+            'flag_table_path': metadata.get('flag_table_path'),
+            'flag_table_paths': list(metadata.get('flag_table_paths', [])),
+            'flag_table_count': int(metadata.get('flag_table_count', 0)),
+            'flag_table_notes': metadata.get('flag_table_notes', ''),
+            'solve_input_rows': int(metadata.get('solve_input_rows', 0)),
+            'solve_dropped_rows_by_flag_table': int(metadata.get('solve_dropped_rows_by_flag_table', 0)),
             'bad_data_policy': metadata['bad_data_policy'],
             'notes': metadata['notes'],
             'freqs_hz': np.asarray(npz['freqs_hz'], dtype=np.float64),
@@ -1030,7 +1651,410 @@ def load_bandpass_solution(path: Union[str, Path]) -> dict:
             'skipped_channel_mask': np.asarray(npz['skipped_channel_mask'], dtype=bool),
             'iterations': np.asarray(npz['iterations'], dtype=np.int32),
             'flux_model_jy': np.asarray(npz['flux_model_jy'], dtype=np.float64),
+            'excluded_antenna_ids': (
+                np.asarray(npz['excluded_antenna_ids'], dtype=np.int32)
+                if 'excluded_antenna_ids' in npz.files
+                else np.asarray([], dtype=np.int32)
+            ),
+            'excluded_baseline_pairs': (
+                np.asarray(npz['excluded_baseline_pairs'], dtype=np.int32).reshape(-1, 2)
+                if 'excluded_baseline_pairs' in npz.files
+                else np.asarray([], dtype=np.int32).reshape(-1, 2)
+            ),
         }
+
+
+def tagged_output_path(path: Union[str, Path], tag: Optional[str] = None) -> Path:
+    """Return a path with an iteration tag inserted before the suffix."""
+    path = Path(path)
+    if not tag:
+        return path
+    suffix = ''.join(path.suffixes)
+    stem = path.name[:-len(suffix)] if suffix else path.name
+    return path.with_name(f'{stem}_{tag}{suffix}')
+
+
+def derive_bandpass_iteration(
+    fits_path: Union[str, Path],
+    bandpass_out: Optional[Union[str, Path]] = None,
+    *,
+    source: str = '3C48',
+    index: Optional[dict] = None,
+    index_cache_path: Optional[Union[str, Path]] = None,
+    index_cache_dir: Optional[Union[str, Path]] = None,
+    force_rebuild_index: bool = False,
+    verify_index_sha256: Optional[bool] = None,
+    index_validation_mode: str = 'fast',
+    write_index_cache: bool = True,
+    iteration_tag: Optional[str] = None,
+    dry_run: bool = False,
+    flag_table=None,
+    flag_table_path=None,
+    **solve_kwargs,
+) -> dict:
+    """High-level non-destructive bandpass derivation workflow."""
+    if verify_index_sha256 is not None:
+        index_validation_mode = 'sha256' if verify_index_sha256 else 'none'
+
+    if index is None:
+        index = get_or_build_row_index(
+            fits_path,
+            cache_path=index_cache_path,
+            cache_dir=index_cache_dir,
+            force_rebuild=force_rebuild_index,
+            validation_mode=index_validation_mode,
+            write_cache=write_index_cache,
+        )
+
+    solution = derive_point_source_bandpass(
+        index,
+        source=source,
+        flag_table=flag_table,
+        flag_table_path=flag_table_path,
+        **solve_kwargs,
+    )
+
+    out_path = tagged_output_path(bandpass_out, iteration_tag) if bandpass_out is not None else None
+    if out_path is not None and not dry_run:
+        save_bandpass_solution(solution, out_path)
+
+    return {
+        'index': index,
+        'solution': solution,
+        'bandpass_out': str(out_path) if out_path is not None else None,
+        'iteration_tag': iteration_tag,
+        'dry_run': bool(dry_run),
+    }
+
+
+def run_bandpass_diagnostics(
+    index: dict,
+    solution: dict,
+    *,
+    source: str = '3C48',
+    chan_range=None,
+    stokes=('RR', 'LL'),
+    max_rows: int = 60_000,
+    exclude_antennas=None,
+    skip_edge_channels: Union[int, Tuple[int, int]] = (10, 5),
+    top_n: int = 12,
+    title: str = '',
+    save_path: Optional[Union[str, Path]] = None,
+):
+    """Run RR/LL residual diagnostics and return structured results."""
+    vis = load_vis_for_source(
+        index,
+        source=source,
+        stokes=list(stokes),
+        max_rows=max_rows,
+        ant_range=None,
+        ant_list=None,
+        chan_range=chan_range,
+    )
+
+    vis_use = _filter_vis_excluded_antennas(vis, solution, exclude_antennas=exclude_antennas)
+    corrected = apply_bandpass_solution(vis_use, solution)
+
+    freqs_hz = np.asarray(corrected['freqs_hz'], dtype=np.float64)
+    freqs_mhz = freqs_hz / 1e6
+    model = flux_model_3c48_perley_butler_2017(freqs_hz)
+
+    if isinstance(skip_edge_channels, tuple):
+        if len(skip_edge_channels) != 2:
+            raise ValueError('skip_edge_channels tuple must have exactly two values: (start, end).')
+        skip_start, skip_end = int(skip_edge_channels[0]), int(skip_edge_channels[1])
+    else:
+        skip_start = skip_end = int(skip_edge_channels)
+
+    chan_mask = np.ones(freqs_hz.size, dtype=bool)
+    if skip_start > 0:
+        chan_mask[:min(skip_start, chan_mask.size)] = False
+    if skip_end > 0:
+        chan_mask[max(0, chan_mask.size - skip_end):] = False
+
+    vis_corr = np.asarray(corrected['vis_complex_corrected'], dtype=np.complex128)
+    weights = np.asarray(corrected['weight'], dtype=np.float64)
+    flagged = np.asarray(corrected.get('flagged_corrected', corrected.get('flagged')), dtype=bool)
+    stokes_labels = list(corrected['stokes_labels'])
+    ant1 = np.asarray(corrected['ant1'], dtype=np.int32)
+    ant2 = np.asarray(corrected['ant2'], dtype=np.int32)
+
+    ant_ids = np.asarray(solution['antenna_ids'], dtype=np.int32)
+    ant_names = list(solution.get('antenna_names') or [str(int(a)) for a in ant_ids])
+    ant_name_map = {int(ant): str(name) for ant, name in zip(ant_ids, ant_names)}
+
+    fig, axs = plt.subplots(2, 2, figsize=(15, 10), gridspec_kw={'hspace': 0.28, 'wspace': 0.22})
+    ax_spec, ax_resid = axs[0]
+    ax_ant, ax_base = axs[1]
+
+    model_plot = np.where(chan_mask, model, np.nan)
+    ax_spec.plot(freqs_mhz, model_plot, color='k', lw=2.0, label='Perley-Butler 2017')
+
+    pol_results = {}
+    unique_pairs, inv = np.unique(np.column_stack([ant1, ant2]), axis=0, return_inverse=True)
+
+    for pol_idx, pol in enumerate(stokes_labels):
+        z = vis_corr[:, :, pol_idx]
+        w = weights[:, :, pol_idx]
+        good = (
+            (~flagged[:, :, pol_idx])
+            & np.isfinite(z.real)
+            & np.isfinite(z.imag)
+            & np.isfinite(w)
+            & (w > 0)
+            & chan_mask[None, :]
+        )
+
+        num = np.nansum(np.where(good, w * z, 0.0), axis=0)
+        den = np.nansum(np.where(good, w, 0.0), axis=0)
+        vec = np.full(freqs_hz.size, np.nan + 1j * np.nan, dtype=np.complex128)
+        ok = den > 0
+        vec[ok] = num[ok] / den[ok]
+        real_spec = np.real(vec)
+        resid_spec = real_spec - model
+
+        ax_spec.plot(freqs_mhz, np.where(chan_mask, real_spec, np.nan), lw=1.4, label=f'{pol} vector-avg Re(V)')
+        ax_resid.plot(freqs_mhz, np.where(chan_mask, resid_spec, np.nan), lw=1.4, label=f'{pol} residual')
+
+        baseline_records = []
+        for base_idx, (a1, a2) in enumerate(unique_pairs):
+            row_sel = inv == base_idx
+            if not np.any(row_sel):
+                continue
+            base_good = good[row_sel]
+            base_w = w[row_sel]
+            base_resid = np.real(z[row_sel]) - model[None, :]
+            den_base = np.nansum(np.where(base_good, base_w, 0.0))
+            if den_base <= 0:
+                continue
+            mean_resid = np.nansum(np.where(base_good, base_w * base_resid, 0.0)) / den_base
+            mean_abs_resid = np.nansum(np.where(base_good, base_w * np.abs(base_resid), 0.0)) / den_base
+            baseline_records.append({
+                'pair': (int(a1), int(a2)),
+                'label': f'{ant_name_map.get(int(a1), a1)}-{ant_name_map.get(int(a2), a2)}',
+                'mean_resid': float(mean_resid),
+                'mean_abs_resid': float(mean_abs_resid),
+            })
+
+        antenna_records = []
+        for ant in np.unique(np.concatenate([ant1, ant2])):
+            row_sel = (ant1 == ant) | (ant2 == ant)
+            if not np.any(row_sel):
+                continue
+            ant_good = good[row_sel]
+            ant_w = w[row_sel]
+            ant_resid = np.real(z[row_sel]) - model[None, :]
+            den_ant = np.nansum(np.where(ant_good, ant_w, 0.0))
+            if den_ant <= 0:
+                continue
+            mean_resid = np.nansum(np.where(ant_good, ant_w * ant_resid, 0.0)) / den_ant
+            mean_abs_resid = np.nansum(np.where(ant_good, ant_w * np.abs(ant_resid), 0.0)) / den_ant
+            antenna_records.append({
+                'ant': int(ant),
+                'label': ant_name_map.get(int(ant), str(int(ant))),
+                'mean_resid': float(mean_resid),
+                'mean_abs_resid': float(mean_abs_resid),
+            })
+
+        baseline_records.sort(key=lambda item: item['mean_abs_resid'], reverse=True)
+        antenna_records.sort(key=lambda item: item['mean_abs_resid'], reverse=True)
+        pol_results[pol] = {
+            'baseline_records': baseline_records,
+            'antenna_records': antenna_records,
+            'residual_spectrum_jy': resid_spec,
+            'real_spectrum_jy': real_spec,
+        }
+
+    ax_spec.set_title('Corrected vector-averaged spectrum')
+    ax_spec.set_ylabel('Flux Density (Jy)')
+    ax_spec.grid(True, alpha=0.3)
+    ax_spec.legend(fontsize=9, loc='best')
+
+    ax_resid.axhline(0.0, color='k', lw=1.0, ls='--')
+    ax_resid.set_title('Residual spectrum relative to PB2017')
+    ax_resid.set_ylabel('Data - Model (Jy)')
+    ax_resid.grid(True, alpha=0.3)
+    ax_resid.legend(fontsize=9, loc='best')
+
+    rr_ant = {item['label']: item['mean_abs_resid'] for item in pol_results.get('RR', {}).get('antenna_records', [])}
+    ll_ant_top = pol_results.get('LL', {}).get('antenna_records', [])[:top_n]
+    labels_ant = [item['label'] for item in ll_ant_top]
+    rr_vals = [rr_ant.get(label, np.nan) for label in labels_ant]
+    ll_vals = [item['mean_abs_resid'] for item in ll_ant_top]
+    ypos = np.arange(len(labels_ant))
+    height = 0.38
+    ax_ant.barh(ypos - height / 2.0, rr_vals, height=height, label='RR |mean residual|')
+    ax_ant.barh(ypos + height / 2.0, ll_vals, height=height, label='LL |mean residual|')
+    ax_ant.set_yticks(ypos)
+    ax_ant.set_yticklabels(labels_ant)
+    ax_ant.invert_yaxis()
+    ax_ant.set_xlabel('Jy')
+    ax_ant.set_title('Top antennas by LL mean absolute residual')
+    ax_ant.grid(True, axis='x', alpha=0.3)
+    ax_ant.legend(fontsize=8, loc='best')
+
+    ll_base_top = pol_results.get('LL', {}).get('baseline_records', [])[:top_n]
+    labels_base = [item['label'] for item in ll_base_top]
+    vals_base = [item['mean_abs_resid'] for item in ll_base_top]
+    ypos_base = np.arange(len(labels_base))
+    ax_base.barh(ypos_base, vals_base, color='tab:orange')
+    ax_base.set_yticks(ypos_base)
+    ax_base.set_yticklabels(labels_base)
+    ax_base.invert_yaxis()
+    ax_base.set_xlabel('Jy')
+    ax_base.set_title('Top baselines by LL mean absolute residual')
+    ax_base.grid(True, axis='x', alpha=0.3)
+
+    plotted_freqs = freqs_mhz[chan_mask]
+    if plotted_freqs.size:
+        plot_freq_min = float(plotted_freqs[0])
+        plot_freq_max = float(plotted_freqs[-1])
+        for ax in (ax_spec, ax_resid):
+            ax.set_xlim(plot_freq_min, plot_freq_max)
+    else:
+        plot_freq_min = np.nan
+        plot_freq_max = np.nan
+    ax_resid.set_xlabel('Frequency (MHz)')
+
+    fig.suptitle(title or 'Bandpass diagnostics', fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=180, bbox_inches='tight')
+    plt.show()
+
+    return {
+        'vis': vis,
+        'vis_used': vis_use,
+        'corrected': corrected,
+        'pol_results': pol_results,
+        'freqs_hz': freqs_hz,
+        'plot_freq_min_mhz': plot_freq_min,
+        'plot_freq_max_mhz': plot_freq_max,
+        'chan_mask': chan_mask,
+        'figure': fig,
+        'save_path': str(save_path) if save_path is not None else None,
+    }
+
+
+def propose_flag_updates_from_diagnostics(
+    diagnostics: dict,
+    *,
+    pol: str = 'LL',
+    mode: str = 'both',
+    antenna_threshold_jy: float = 180.0,
+    baseline_threshold_jy: float = 800.0,
+    max_add_antennas: int = 4,
+    max_add_baselines: int = 6,
+) -> dict:
+    """Convert diagnostic outliers into candidate flag-table updates."""
+    if mode not in ('antennas', 'baselines', 'both'):
+        raise ValueError("mode must be 'antennas', 'baselines', or 'both'.")
+    if 'pol_results' not in diagnostics or pol not in diagnostics['pol_results']:
+        raise ValueError(f'Diagnostics do not contain polarization {pol}.')
+
+    pol_results = diagnostics['pol_results'][pol]
+    ant_records = pol_results['antenna_records']
+    base_records = pol_results['baseline_records']
+
+    bad_antennas = []
+    if mode in ('antennas', 'both'):
+        bad_antennas = [
+            rec['label']
+            for rec in ant_records
+            if rec['mean_abs_resid'] >= float(antenna_threshold_jy)
+        ][:int(max_add_antennas)]
+
+    bad_baselines = []
+    if mode in ('baselines', 'both'):
+        for rec in base_records:
+            if rec['mean_abs_resid'] < float(baseline_threshold_jy):
+                continue
+            left, right = rec['label'].split('-', 1)
+            bad_baselines.append([left, right])
+            if len(bad_baselines) >= int(max_add_baselines):
+                break
+
+    proposal = create_flag_table(
+        bad_antennas=bad_antennas,
+        bad_baselines=bad_baselines,
+        notes=(
+            f'Proposed from {pol} diagnostics: '
+            f'antenna_threshold_jy={antenna_threshold_jy}, '
+            f'baseline_threshold_jy={baseline_threshold_jy}, mode={mode}'
+        ),
+    )
+    return {
+        'proposal': proposal,
+        'candidate_antennas': bad_antennas,
+        'candidate_baselines': bad_baselines,
+        'mode': mode,
+        'pol': pol,
+    }
+
+
+def update_flag_table(
+    output_path: Union[str, Path],
+    *,
+    add_antennas: Optional[List[Union[str, int]]] = None,
+    add_baselines: Optional[List[Union[List[Union[str, int]], Tuple[Union[str, int], Union[str, int]], Dict[str, Union[str, int]]]]] = None,
+    base_flag_tables=None,
+    base_flag_table_paths=None,
+    notes: str = '',
+    dry_run: bool = True,
+) -> dict:
+    """Merge new exclusions into a flag table, optionally writing to disk."""
+    output_path = Path(output_path)
+    tables, _ = _coerce_flag_tables(flag_tables=base_flag_tables, flag_table_paths=base_flag_table_paths)
+    if output_path.exists():
+        tables.insert(0, load_flag_table(output_path))
+
+    merged_antennas = []
+    merged_baselines = []
+    seen_antennas = set()
+    seen_baselines = set()
+    merged_notes = []
+
+    for table in tables + [create_flag_table(bad_antennas=add_antennas, bad_baselines=add_baselines, notes=notes)]:
+        for ant in table.get('bad_antennas', []):
+            key = str(ant)
+            if key in seen_antennas:
+                continue
+            seen_antennas.add(key)
+            merged_antennas.append(ant)
+        for baseline in table.get('bad_baselines', []):
+            if isinstance(baseline, dict):
+                key = f"{baseline.get('ant1')}-{baseline.get('ant2')}"
+            elif isinstance(baseline, (list, tuple)) and len(baseline) == 2:
+                key = f'{baseline[0]}-{baseline[1]}'
+            else:
+                key = str(baseline)
+            if key in seen_baselines:
+                continue
+            seen_baselines.add(key)
+            merged_baselines.append(baseline)
+        note = str(table.get('notes', '')).strip()
+        if note:
+            merged_notes.append(note)
+
+    merged = create_flag_table(
+        bad_antennas=merged_antennas,
+        bad_baselines=merged_baselines,
+        notes=' | '.join(merged_notes),
+    )
+
+    if not dry_run:
+        save_flag_table(merged, output_path)
+
+    return {
+        'flag_table': merged,
+        'output_path': str(output_path),
+        'dry_run': bool(dry_run),
+        'written': bool(not dry_run),
+        'added_antennas': list(add_antennas or []),
+        'added_baselines': list(add_baselines or []),
+    }
 
 
 def apply_bandpass_solution(vis: dict, solution: dict) -> dict:
