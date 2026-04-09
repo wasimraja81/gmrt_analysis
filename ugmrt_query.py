@@ -8,7 +8,7 @@ Designed for low-RAM environments (Raspberry Pi 4, 8 GB).
 import hashlib
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from astropy.io import fits
@@ -691,6 +691,7 @@ def load_vis_for_source(
     chan_range=None,
     stokes=None,
     max_rows=150_000,
+    couple_stokes_flags: bool = False,
 ):
     """Load visibility data using the pre-built row index."""
     import time as _time
@@ -805,6 +806,12 @@ def load_vis_for_source(
     amp   = np.sqrt(re_**2 + im_**2)
     phase = np.degrees(np.arctan2(im_, re_)).astype(np.float32)
     flagged = wt_ <= 0
+    if couple_stokes_flags and flagged.ndim == 3 and flagged.shape[2] > 1:
+        # If any selected Stokes is flagged at (row, chan), force all selected
+        # Stokes to be flagged so RR/LL handling is symmetric.
+        shared_flagged = np.any(flagged, axis=2, keepdims=True)
+        flagged = np.broadcast_to(shared_flagged, flagged.shape).copy()
+        wt_[flagged] = 0.0
     amp[flagged]   = np.nan
     phase[flagged] = np.nan
 
@@ -1389,6 +1396,7 @@ def derive_point_source_bandpass(
     flag_table: Optional[Union[dict, List[dict], Tuple[dict, ...]]] = None,
     flag_table_path: Optional[Union[str, Path, List[Union[str, Path]], Tuple[Union[str, Path], ...]]] = None,
     strict_flag_table: bool = False,
+    couple_stokes_flags: bool = False,
 ):
     """Derive per-antenna complex bandpass gains without modifying FITS data.
 
@@ -1403,6 +1411,7 @@ def derive_point_source_bandpass(
         chan_range=chan_range,
         stokes=list(stokes),
         max_rows=max_rows,
+        couple_stokes_flags=couple_stokes_flags,
     )
 
     antenna_name_map = {
@@ -1736,6 +1745,11 @@ def run_bandpass_diagnostics(
     stokes=('RR', 'LL'),
     max_rows: int = 60_000,
     exclude_antennas=None,
+    apply_flag_tables: bool = False,
+    flag_table=None,
+    flag_table_path=None,
+    strict_flag_table: bool = False,
+    couple_stokes_flags: bool = False,
     skip_edge_channels: Union[int, Tuple[int, int]] = (10, 5),
     top_n: int = 12,
     title: str = '',
@@ -1750,9 +1764,42 @@ def run_bandpass_diagnostics(
         ant_range=None,
         ant_list=None,
         chan_range=chan_range,
+        couple_stokes_flags=couple_stokes_flags,
     )
 
-    vis_use = _filter_vis_excluded_antennas(vis, solution, exclude_antennas=exclude_antennas)
+    diagnostics_flag_stats = {
+        'dropped_rows': 0,
+        'kept_rows': int(vis.get('nrows', len(vis.get('ant1', [])))),
+        'excluded_antenna_ids': [],
+        'excluded_baseline_pairs': [],
+        'flag_table_notes': '',
+        'flag_table_count': 0,
+        'flag_table_paths': [],
+    }
+    vis_for_diag = vis
+    if apply_flag_tables:
+        antenna_name_map = {
+            int(item['antenna_no']): (item.get('name') or f'Ant{int(item["antenna_no"])}')
+            for item in index.get('antennas', [])
+            if item.get('antenna_no') is not None
+        }
+        vis_for_diag, diagnostics_flag_stats = apply_flag_tables_to_vis(
+            vis,
+            antenna_name_map=antenna_name_map,
+            flag_tables=flag_table,
+            flag_table_paths=flag_table_path,
+            strict=bool(strict_flag_table),
+            context='bandpass-diagnostics',
+        )
+        print(
+            '[bandpass-diagnostics] merged flag tables applied: '
+            f'dropped {diagnostics_flag_stats["dropped_rows"]:,} rows, kept {diagnostics_flag_stats["kept_rows"]:,} rows; '
+            f'excluded antennas={diagnostics_flag_stats["excluded_antenna_ids"]}, '
+            f'excluded baselines={len(diagnostics_flag_stats["excluded_baseline_pairs"])}; '
+            f'tables={diagnostics_flag_stats.get("flag_table_count", 0)}'
+        )
+
+    vis_use = _filter_vis_excluded_antennas(vis_for_diag, solution, exclude_antennas=exclude_antennas)
     corrected = apply_bandpass_solution(vis_use, solution)
 
     freqs_hz = np.asarray(corrected['freqs_hz'], dtype=np.float64)
@@ -1926,6 +1973,7 @@ def run_bandpass_diagnostics(
 
     return {
         'vis': vis,
+        'vis_after_flag_tables': vis_for_diag,
         'vis_used': vis_use,
         'corrected': corrected,
         'pol_results': pol_results,
@@ -1935,6 +1983,10 @@ def run_bandpass_diagnostics(
         'chan_mask': chan_mask,
         'figure': fig,
         'save_path': str(save_path) if save_path is not None else None,
+        'diagnostics_flag_table_applied': bool(diagnostics_flag_stats.get('flag_table_count', 0) > 0),
+        'diagnostics_flag_table_count': int(diagnostics_flag_stats.get('flag_table_count', 0)),
+        'diagnostics_flag_table_paths': list(diagnostics_flag_stats.get('flag_table_paths', [])),
+        'diagnostics_dropped_rows_by_flag_table': int(diagnostics_flag_stats.get('dropped_rows', 0)),
     }
 
 
@@ -1943,10 +1995,10 @@ def propose_flag_updates_from_diagnostics(
     *,
     pol: str = 'LL',
     mode: str = 'both',
-    antenna_threshold_jy: float = 180.0,
-    baseline_threshold_jy: float = 800.0,
-    max_add_antennas: int = 4,
-    max_add_baselines: int = 6,
+    antenna_flag_threshold_jy: float = 180.0,
+    baseline_flag_threshold_jy: float = 800.0,
+    max_antennas_to_flag: int = 4,
+    max_baselines_to_flag: int = 6,
 ) -> dict:
     """Convert diagnostic outliers into candidate flag-table updates."""
     if mode not in ('antennas', 'baselines', 'both'):
@@ -1963,17 +2015,17 @@ def propose_flag_updates_from_diagnostics(
         bad_antennas = [
             rec['label']
             for rec in ant_records
-            if rec['mean_abs_resid'] >= float(antenna_threshold_jy)
-        ][:int(max_add_antennas)]
+            if rec['mean_abs_resid'] >= float(antenna_flag_threshold_jy)
+        ][:int(max_antennas_to_flag)]
 
     bad_baselines = []
     if mode in ('baselines', 'both'):
         for rec in base_records:
-            if rec['mean_abs_resid'] < float(baseline_threshold_jy):
+            if rec['mean_abs_resid'] < float(baseline_flag_threshold_jy):
                 continue
             left, right = rec['label'].split('-', 1)
             bad_baselines.append([left, right])
-            if len(bad_baselines) >= int(max_add_baselines):
+            if len(bad_baselines) >= int(max_baselines_to_flag):
                 break
 
     proposal = create_flag_table(
@@ -1981,8 +2033,8 @@ def propose_flag_updates_from_diagnostics(
         bad_baselines=bad_baselines,
         notes=(
             f'Proposed from {pol} diagnostics: '
-            f'antenna_threshold_jy={antenna_threshold_jy}, '
-            f'baseline_threshold_jy={baseline_threshold_jy}, mode={mode}'
+            f'antenna_flag_threshold_jy={antenna_flag_threshold_jy}, '
+            f'baseline_flag_threshold_jy={baseline_flag_threshold_jy}, mode={mode}'
         ),
     )
     return {
@@ -2054,6 +2106,213 @@ def update_flag_table(
         'written': bool(not dry_run),
         'added_antennas': list(add_antennas or []),
         'added_baselines': list(add_baselines or []),
+    }
+
+
+def run_iterative_bandpass_workflow(
+    fits_path: Union[str, Path],
+    *,
+    index: Optional[dict] = None,
+    index_cache_path: Optional[Union[str, Path]] = None,
+    index_cache_dir: Optional[Union[str, Path]] = None,
+    force_rebuild_index: bool = False,
+    index_validation_mode: str = 'fast',
+    write_index_cache: bool = True,
+    bandpass_out_base: Optional[Union[str, Path]] = None,
+    diag_plot_base: Optional[Union[str, Path]] = None,
+    diag_plot_unflagged_base: Optional[Union[str, Path]] = None,
+    flag_table_session_path: Optional[Union[str, Path]] = None,
+    base_flag_table_paths: Optional[List[Union[str, Path]]] = None,
+    pending_flag_tables: Optional[List[dict]] = None,
+    use_pending_flag_tables: bool = True,
+    start_iteration: int = 1,
+    n_iterations: int = 1,
+    iter_prefix: str = 'iter',
+    iter_width: int = 2,
+    dry_run_bandpass: bool = True,
+    dry_run_flag_write: bool = True,
+    source: str = '3C48',
+    stokes: Tuple[str, ...] = ('RR', 'LL'),
+    chan_range: Optional[Tuple[int, int]] = None,
+    max_rows_solve: int = 150_000,
+    smooth_window: int = 5,
+    min_baselines: int = 20,
+    ignore_autos: bool = True,
+    max_rows_diag: int = 60_000,
+    exclude_for_plots: Optional[List[Union[str, int]]] = None,
+    diag_apply_flag_tables: bool = True,
+    diag_save_unflagged_comparison: bool = False,
+    couple_stokes_flags: bool = False,
+    skip_edge_channels: Union[int, Tuple[int, int]] = (0, 0),
+    top_n: int = 12,
+    proposal_pol: str = 'LL',
+    proposal_mode: str = 'baselines',
+    antenna_flag_threshold_jy: float = 180.0,
+    baseline_flag_threshold_jy: float = 800.0,
+    max_antennas_to_flag: int = 4,
+    max_baselines_to_flag: int = 6,
+    strict_flag_table: bool = False,
+) -> Dict[str, Any]:
+    """Run iterative bandpass -> diagnostics -> flag-update workflow.
+
+    Returns a history list with per-iteration summaries and the final pending
+    in-memory flag table state for subsequent runs.
+    """
+    if n_iterations < 1:
+        raise ValueError('n_iterations must be >= 1.')
+    if start_iteration < 1:
+        raise ValueError('start_iteration must be >= 1.')
+
+    if index is None:
+        index = get_or_build_row_index(
+            fits_path,
+            cache_path=index_cache_path,
+            cache_dir=index_cache_dir,
+            force_rebuild=force_rebuild_index,
+            validation_mode=index_validation_mode,
+            write_cache=write_index_cache,
+        )
+
+    session_path = Path(flag_table_session_path) if flag_table_session_path is not None else None
+    base_paths = [Path(p) for p in (base_flag_table_paths or [])]
+    pending_tables = list(pending_flag_tables or [])
+    history = []
+    last_bandpass_run = None
+    last_diag = None
+    last_flag_update = None
+
+    for iteration_num in range(start_iteration, start_iteration + n_iterations):
+        iter_tag = f'{iter_prefix}{iteration_num:0{int(iter_width)}d}'
+
+        active_disk_flag_paths = list(base_paths)
+        if session_path is not None and session_path.exists() and session_path not in active_disk_flag_paths:
+            active_disk_flag_paths.append(session_path)
+
+        active_pending = pending_tables if use_pending_flag_tables else []
+
+        bandpass_run = derive_bandpass_iteration(
+            fits_path=fits_path,
+            index=index,
+            bandpass_out=bandpass_out_base,
+            source=source,
+            stokes=stokes,
+            chan_range=chan_range,
+            max_rows=max_rows_solve,
+            smooth_window=smooth_window,
+            min_baselines=min_baselines,
+            ignore_autos=ignore_autos,
+            flag_table_path=active_disk_flag_paths if active_disk_flag_paths else None,
+            flag_table=active_pending if active_pending else None,
+            couple_stokes_flags=couple_stokes_flags,
+            iteration_tag=iter_tag,
+            dry_run=dry_run_bandpass,
+        )
+        bandpass_sol = bandpass_run['solution']
+
+        diag_plot_path = tagged_output_path(diag_plot_base, iter_tag) if diag_plot_base is not None else None
+        diag = run_bandpass_diagnostics(
+            index,
+            bandpass_sol,
+            source=source,
+            chan_range=chan_range,
+            stokes=stokes,
+            max_rows=max_rows_diag,
+            exclude_antennas=exclude_for_plots or [],
+            apply_flag_tables=diag_apply_flag_tables,
+            flag_table_path=active_disk_flag_paths if active_disk_flag_paths else None,
+            flag_table=active_pending if active_pending else None,
+            strict_flag_table=strict_flag_table,
+            couple_stokes_flags=couple_stokes_flags,
+            skip_edge_channels=skip_edge_channels,
+            top_n=top_n,
+            title=f'{source} diagnostics | {iter_tag}',
+            save_path=diag_plot_path,
+        )
+
+        unflagged_plot_path = None
+        if diag_save_unflagged_comparison and diag_apply_flag_tables:
+            unflagged_base = diag_plot_unflagged_base if diag_plot_unflagged_base is not None else diag_plot_base
+            if unflagged_base is not None:
+                unflagged_plot_path = tagged_output_path(unflagged_base, iter_tag)
+                run_bandpass_diagnostics(
+                    index,
+                    bandpass_sol,
+                    source=source,
+                    chan_range=chan_range,
+                    stokes=stokes,
+                    max_rows=max_rows_diag,
+                    exclude_antennas=exclude_for_plots or [],
+                    apply_flag_tables=False,
+                    couple_stokes_flags=couple_stokes_flags,
+                    skip_edge_channels=skip_edge_channels,
+                    top_n=top_n,
+                    title=f'{source} diagnostics (unflagged) | {iter_tag}',
+                    save_path=unflagged_plot_path,
+                )
+
+        proposal = propose_flag_updates_from_diagnostics(
+            diag,
+            pol=proposal_pol,
+            mode=proposal_mode,
+            antenna_flag_threshold_jy=antenna_flag_threshold_jy,
+            baseline_flag_threshold_jy=baseline_flag_threshold_jy,
+            max_antennas_to_flag=max_antennas_to_flag,
+            max_baselines_to_flag=max_baselines_to_flag,
+        )
+
+        if session_path is not None:
+            flag_update = update_flag_table(
+                output_path=session_path,
+                add_antennas=proposal['proposal']['bad_antennas'],
+                add_baselines=proposal['proposal']['bad_baselines'],
+                base_flag_tables=active_pending if active_pending else None,
+                base_flag_table_paths=active_disk_flag_paths if active_disk_flag_paths else None,
+                notes=f'Auto-proposed from diagnostics {iter_tag}',
+                dry_run=dry_run_flag_write,
+            )
+            pending_tables = [flag_update['flag_table']] if dry_run_flag_write else []
+        else:
+            flag_update = {
+                'flag_table': create_flag_table(
+                    bad_antennas=proposal['proposal']['bad_antennas'],
+                    bad_baselines=proposal['proposal']['bad_baselines'],
+                    notes=f'Auto-proposed from diagnostics {iter_tag}',
+                ),
+                'output_path': None,
+                'dry_run': True,
+                'written': False,
+                'added_antennas': list(proposal['proposal']['bad_antennas']),
+                'added_baselines': list(proposal['proposal']['bad_baselines']),
+            }
+            pending_tables = [flag_update['flag_table']]
+
+        cumulative_table = flag_update.get('flag_table', {})
+        history.append({
+            'iteration_tag': iter_tag,
+            'bandpass_output_path': bandpass_run.get('bandpass_out'),
+            'diagnostics_plot_path': str(diag_plot_path) if diag_plot_path is not None else None,
+            'diagnostics_unflagged_plot_path': str(unflagged_plot_path) if unflagged_plot_path is not None else None,
+            'diagnostics_flag_table_applied': bool(diag.get('diagnostics_flag_table_applied', False)),
+            'diagnostics_dropped_rows_by_flag_table': int(diag.get('diagnostics_dropped_rows_by_flag_table', 0)),
+            'candidate_antennas': list(proposal.get('candidate_antennas', [])),
+            'candidate_baselines': list(proposal.get('candidate_baselines', [])),
+            'added_antennas': list(flag_update.get('added_antennas', [])),
+            'added_baselines': list(flag_update.get('added_baselines', [])),
+            'cumulative_bad_antenna_count': len(cumulative_table.get('bad_antennas', [])),
+            'cumulative_bad_baseline_count': len(cumulative_table.get('bad_baselines', [])),
+        })
+
+        last_bandpass_run = bandpass_run
+        last_diag = diag
+        last_flag_update = flag_update
+
+    return {
+        'index': index,
+        'history': history,
+        'pending_flag_tables': pending_tables,
+        'last_bandpass_run': last_bandpass_run,
+        'last_diagnostics': last_diag,
+        'last_flag_update': last_flag_update,
     }
 
 
