@@ -691,7 +691,7 @@ def load_vis_for_source(
     chan_range=None,
     stokes=None,
     max_rows=150_000,
-    couple_stokes_flags: bool = False,
+    flag_all_corrs_if_any_rawvis_flagged: bool = False,
 ):
     """Load visibility data using the pre-built row index."""
     import time as _time
@@ -806,9 +806,11 @@ def load_vis_for_source(
     amp   = np.sqrt(re_**2 + im_**2)
     phase = np.degrees(np.arctan2(im_, re_)).astype(np.float32)
     flagged = wt_ <= 0
-    if couple_stokes_flags and flagged.ndim == 3 and flagged.shape[2] > 1:
-        # If any selected Stokes is flagged at (row, chan), force all selected
-        # Stokes to be flagged so RR/LL handling is symmetric.
+    if flag_all_corrs_if_any_rawvis_flagged and flagged.ndim == 3 and flagged.shape[2] > 1:
+        # At (row, channel), if any correlation is natively flagged (weight <= 0)
+        # in the raw FITS data, force all correlations to be flagged.  This keeps
+        # RR and LL symmetric: the solve and diagnostics see the same rows for
+        # both feed chains.  The raw FITS file is never modified.
         shared_flagged = np.any(flagged, axis=2, keepdims=True)
         flagged = np.broadcast_to(shared_flagged, flagged.shape).copy()
         wt_[flagged] = 0.0
@@ -1216,6 +1218,21 @@ def flux_model_3c48_perley_butler_2017(freq_hz):
     return np.power(10.0, log_s)
 
 
+# ── Flux model registry ────────────────────────────────────────────────────────
+# Maps uppercase source name → flux-model callable (freq_hz → flux Jy array).
+# Model-based outlier metrics ('RR', 'LL') can only be used when the calibrator
+# source is present here.  'V' (Stokes proxy) is always available regardless.
+#
+# To register a new calibrator, append an entry after its model function:
+#   _FLUX_MODEL_REGISTRY['3C286'] = flux_model_3c286_perley_butler_2017
+_FLUX_MODEL_REGISTRY: dict = {
+    '3C48': flux_model_3c48_perley_butler_2017,
+}
+# Metrics that require a flux-model entry from _FLUX_MODEL_REGISTRY.
+_MODEL_BASED_METRICS: frozenset = frozenset({'RR', 'LL'})
+# ──────────────────────────────────────────────────────────────────────────────
+
+
 def _choose_reference_antenna(ant_numbers, weight_sums):
     ant_numbers = np.asarray(ant_numbers, dtype=np.int32)
     weight_sums = np.asarray(weight_sums, dtype=np.float64)
@@ -1396,7 +1413,7 @@ def derive_point_source_bandpass(
     flag_table: Optional[Union[dict, List[dict], Tuple[dict, ...]]] = None,
     flag_table_path: Optional[Union[str, Path, List[Union[str, Path]], Tuple[Union[str, Path], ...]]] = None,
     strict_flag_table: bool = False,
-    couple_stokes_flags: bool = False,
+    flag_all_corrs_if_any_rawvis_flagged: bool = False,
 ):
     """Derive per-antenna complex bandpass gains without modifying FITS data.
 
@@ -1411,7 +1428,7 @@ def derive_point_source_bandpass(
         chan_range=chan_range,
         stokes=list(stokes),
         max_rows=max_rows,
-        couple_stokes_flags=couple_stokes_flags,
+        flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
     )
 
     antenna_name_map = {
@@ -1738,7 +1755,7 @@ def derive_bandpass_iteration(
 
 def run_bandpass_diagnostics(
     index: dict,
-    solution: dict,
+    solution: Optional[dict],
     *,
     source: str = '3C48',
     chan_range=None,
@@ -1749,13 +1766,26 @@ def run_bandpass_diagnostics(
     flag_table=None,
     flag_table_path=None,
     strict_flag_table: bool = False,
-    couple_stokes_flags: bool = False,
+    flag_all_corrs_if_any_rawvis_flagged: bool = False,
+    apply_correction: bool = True,
     skip_edge_channels: Union[int, Tuple[int, int]] = (10, 5),
     top_n: int = 12,
+    ranking_metric: Union[str, tuple, list, None] = None,
     title: str = '',
     save_path: Optional[Union[str, Path]] = None,
 ):
-    """Run RR/LL residual diagnostics and return structured results."""
+    """Run RR/LL residual diagnostics and return structured results.
+
+    solution        - bandpass solution dict, or None when apply_correction=False.
+    apply_correction - if True (default), apply bandpass solution before computing
+                       residuals.  If False, use raw visibilities with no correction;
+                       solution may be None in this case.  Useful for an iter-00
+                       baseline view showing the uncorrected data state.
+    ranking_metric  - metric(s) used for flagging in this run.  When provided,
+                      the corresponding per-metric bar-chart rows are annotated with
+                      'used for flagging' so it is clear which signals drove the flags.
+                      Accepts the same format as outlier_metric (string or tuple).
+    """
     vis = load_vis_for_source(
         index,
         source=source,
@@ -1764,7 +1794,7 @@ def run_bandpass_diagnostics(
         ant_range=None,
         ant_list=None,
         chan_range=chan_range,
-        couple_stokes_flags=couple_stokes_flags,
+        flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
     )
 
     diagnostics_flag_stats = {
@@ -1799,12 +1829,45 @@ def run_bandpass_diagnostics(
             f'tables={diagnostics_flag_stats.get("flag_table_count", 0)}'
         )
 
-    vis_use = _filter_vis_excluded_antennas(vis_for_diag, solution, exclude_antennas=exclude_antennas)
-    corrected = apply_bandpass_solution(vis_use, solution)
+    vis_use = vis_for_diag
+    if apply_correction and solution is not None:
+        vis_use = _filter_vis_excluded_antennas(vis_for_diag, solution, exclude_antennas=exclude_antennas)
+        corrected = apply_bandpass_solution(vis_use, solution)
+    else:
+        # Raw mode: no bandpass correction.  Re-package raw vis as the
+        # 'corrected' dict so the rest of the function is unchanged.
+        corrected = {
+            'freqs_hz':              vis_use['freqs_hz'],
+            'vis_complex_corrected': np.array(vis_use['vis_complex'], dtype=np.complex128),
+            'weight':                vis_use['weight'],
+            'flagged_corrected':     vis_use.get(
+                                         'flagged',
+                                         np.zeros(vis_use['weight'].shape, dtype=bool)
+                                     ),
+            'stokes_labels':         vis_use['stokes_labels'],
+            'ant1':                  vis_use['ant1'],
+            'ant2':                  vis_use['ant2'],
+        }
 
     freqs_hz = np.asarray(corrected['freqs_hz'], dtype=np.float64)
     freqs_mhz = freqs_hz / 1e6
-    model = flux_model_3c48_perley_butler_2017(freqs_hz)
+
+    # Look up the Perley-Butler flux model for this source.
+    # Model-based metrics (RR, LL) require the source to be in _FLUX_MODEL_REGISTRY.
+    # The Stokes-V proxy metric is always computed regardless.
+    _model_fn = _FLUX_MODEL_REGISTRY.get(source.upper()) if source else None
+    source_has_flux_model = _model_fn is not None
+    if source_has_flux_model:
+        model: Optional[np.ndarray] = _model_fn(freqs_hz)
+    else:
+        model = None
+        _supported = ', '.join(sorted(_FLUX_MODEL_REGISTRY))
+        print(
+            f'[bandpass-diagnostics] WARNING: source "{source}" has no flux model in the '
+            f'code registry (registered calibrators: {_supported}).  '
+            f'Model-based outlier metrics (RR, LL) will be skipped for this source.  '
+            f'Only the Stokes-V proxy metric is available.'
+        )
 
     if isinstance(skip_edge_channels, tuple):
         if len(skip_edge_channels) != 2:
@@ -1826,16 +1889,37 @@ def run_bandpass_diagnostics(
     ant1 = np.asarray(corrected['ant1'], dtype=np.int32)
     ant2 = np.asarray(corrected['ant2'], dtype=np.int32)
 
-    ant_ids = np.asarray(solution['antenna_ids'], dtype=np.int32)
-    ant_names = list(solution.get('antenna_names') or [str(int(a)) for a in ant_ids])
+    if solution is not None:
+        ant_ids = np.asarray(solution['antenna_ids'], dtype=np.int32)
+        ant_names = list(solution.get('antenna_names') or [str(int(a)) for a in ant_ids])
+    else:
+        # Derive antenna names from the row index when no solution is available.
+        _index_ants = [item for item in index.get('antennas', []) if item.get('antenna_no') is not None]
+        ant_ids = np.asarray([item['antenna_no'] for item in _index_ants], dtype=np.int32)
+        ant_names = [item.get('name', f'Ant{int(item["antenna_no"])}') for item in _index_ants]
     ant_name_map = {int(ant): str(name) for ant, name in zip(ant_ids, ant_names)}
 
-    fig, axs = plt.subplots(2, 2, figsize=(15, 10), gridspec_kw={'hspace': 0.28, 'wspace': 0.22})
-    ax_spec, ax_resid = axs[0]
-    ax_ant, ax_base = axs[1]
+    # Determine how many per-metric rows the figure needs so we can size it
+    # correctly before any data is drawn.  One row per computed metric:
+    #   RR, LL  — only when a Perley-Butler flux model exists for the source
+    #   V       — always, when both RR and LL are loaded
+    _pre_metrics: List[str] = []
+    if source_has_flux_model:
+        _pre_metrics.extend(s for s in ('RR', 'LL') if s in stokes_labels)
+    if 'RR' in stokes_labels and 'LL' in stokes_labels:
+        _pre_metrics.append('V')
+    _n_metric_rows = max(1, len(_pre_metrics))
+    _n_rows = 1 + _n_metric_rows   # spectrum row + one row per metric
 
-    model_plot = np.where(chan_mask, model, np.nan)
-    ax_spec.plot(freqs_mhz, model_plot, color='k', lw=2.0, label='Perley-Butler 2017')
+    from matplotlib.gridspec import GridSpec as _GridSpec
+    fig = plt.figure(figsize=(15, 5 + 5 * _n_metric_rows))
+    _gs = _GridSpec(_n_rows, 2, figure=fig, hspace=0.38, wspace=0.24)
+    ax_spec  = fig.add_subplot(_gs[0, 0])
+    ax_resid = fig.add_subplot(_gs[0, 1])
+
+    if source_has_flux_model:
+        model_plot = np.where(chan_mask, model, np.nan)
+        ax_spec.plot(freqs_mhz, model_plot, color='k', lw=2.0, label='Perley-Butler 2017')
 
     pol_results = {}
     unique_pairs, inv = np.unique(np.column_stack([ant1, ant2]), axis=0, return_inverse=True)
@@ -1858,9 +1942,18 @@ def run_bandpass_diagnostics(
         ok = den > 0
         vec[ok] = num[ok] / den[ok]
         real_spec = np.real(vec)
+
+        # Always plot the per-pol vector-averaged spectrum so the user can inspect
+        # the bandpass shape even when no flux model is registered for the source.
+        ax_spec.plot(freqs_mhz, np.where(chan_mask, real_spec, np.nan), lw=1.4, label=f'{pol} vector-avg Re(V)')
+
+        # Residual records (and diagnostic scores) require a flux model — skip
+        # building pol_results[pol] for RR/LL when no model is available.
+        if not source_has_flux_model:
+            continue
+
         resid_spec = real_spec - model
 
-        ax_spec.plot(freqs_mhz, np.where(chan_mask, real_spec, np.nan), lw=1.4, label=f'{pol} vector-avg Re(V)')
         ax_resid.plot(freqs_mhz, np.where(chan_mask, resid_spec, np.nan), lw=1.4, label=f'{pol} residual')
 
         baseline_records = []
@@ -1912,45 +2005,157 @@ def run_bandpass_diagnostics(
             'real_spectrum_jy': real_spec,
         }
 
+    # — Stokes-V proxy: |RR − LL| bad-data detector —
+    # For an unpolarized calibrator (e.g. 3C48), corrected_RR ≈ corrected_LL ≈ sky
+    # model, so |Re(RR) − Re(LL)| ≈ 0.  Any antenna or baseline with a large mean
+    # |RR−LL| is most likely affected by RFI or hardware issues.  This metric is
+    # sky-model-independent and complementary to the per-pol residual approach.
+    # Results are stored in pol_results['V'] and can be used as a detection metric
+    # by setting OUTLIER_METRIC='V' (or including 'V' in a tuple of metrics).
+    if 'RR' in stokes_labels and 'LL' in stokes_labels:
+        rr_idx_v = stokes_labels.index('RR')
+        ll_idx_v = stokes_labels.index('LL')
+        rr_re_v = np.real(vis_corr[:, :, rr_idx_v])
+        ll_re_v = np.real(vis_corr[:, :, ll_idx_v])
+        rr_flag_v = flagged[:, :, rr_idx_v]
+        ll_flag_v = flagged[:, :, ll_idx_v]
+        rr_w_v = weights[:, :, rr_idx_v]
+        ll_w_v = weights[:, :, ll_idx_v]
+        v_signed = rr_re_v - ll_re_v         # Re(RR − LL) per row × channel — signed
+        v_diff = np.abs(v_signed)              # |RR − LL| — used only for per-baseline ranking
+        v_good = (
+            (~rr_flag_v) & (~ll_flag_v)
+            & np.isfinite(v_signed)
+            & (rr_w_v > 0) & (ll_w_v > 0)
+            & chan_mask[None, :]
+        )
+        v_w = np.minimum(rr_w_v, ll_w_v)  # conservative: use weaker weight
+
+        # Per-channel coherent baseline-average of Re(RR−LL) — the Stokes-V
+        # spectrum at the phase centre.  Signed average so noise cancels;
+        # for an unpolarised calibrator this should sit near zero.
+        v_num_spec = np.nansum(np.where(v_good, v_w * v_signed, 0.0), axis=0)
+        v_den_spec = np.nansum(np.where(v_good, v_w, 0.0), axis=0)
+        v_spec = np.full(freqs_hz.size, np.nan, dtype=np.float64)
+        v_ok = v_den_spec > 0
+        v_spec[v_ok] = v_num_spec[v_ok] / v_den_spec[v_ok]
+
+        v_baseline_records: List[dict] = []
+        for base_idx_v, (a1_v, a2_v) in enumerate(unique_pairs):
+            row_sel_v = inv == base_idx_v
+            if not np.any(row_sel_v):
+                continue
+            bg = v_good[row_sel_v]; bw = v_w[row_sel_v]; bv = v_diff[row_sel_v]
+            den_b = np.nansum(np.where(bg, bw, 0.0))
+            if den_b <= 0:
+                continue
+            mean_v = float(np.nansum(np.where(bg, bw * bv, 0.0)) / den_b)
+            v_baseline_records.append({
+                'pair': (int(a1_v), int(a2_v)),
+                'label': f'{ant_name_map.get(int(a1_v), a1_v)}-{ant_name_map.get(int(a2_v), a2_v)}',
+                'mean_resid': mean_v,
+                'mean_abs_resid': mean_v,
+            })
+
+        v_antenna_records: List[dict] = []
+        for ant_v in np.unique(np.concatenate([ant1, ant2])):
+            row_sel_v = (ant1 == ant_v) | (ant2 == ant_v)
+            if not np.any(row_sel_v):
+                continue
+            ag = v_good[row_sel_v]; aw = v_w[row_sel_v]; av = v_diff[row_sel_v]
+            den_a = np.nansum(np.where(ag, aw, 0.0))
+            if den_a <= 0:
+                continue
+            mean_v = float(np.nansum(np.where(ag, aw * av, 0.0)) / den_a)
+            v_antenna_records.append({
+                'ant': int(ant_v),
+                'label': ant_name_map.get(int(ant_v), str(int(ant_v))),
+                'mean_resid': mean_v,
+                'mean_abs_resid': mean_v,
+            })
+
+        v_baseline_records.sort(key=lambda r: r['mean_abs_resid'], reverse=True)
+        v_antenna_records.sort(key=lambda r: r['mean_abs_resid'], reverse=True)
+        pol_results['V'] = {
+            'baseline_records': v_baseline_records,
+            'antenna_records': v_antenna_records,
+            'residual_spectrum_jy': v_spec,      # coherent Re⟨RR−LL⟩ spectrum
+            'real_spectrum_jy':     v_spec,
+            'coherent_v_spectrum_jy': v_spec,    # alias used by C3 convergence
+        }
+
     ax_spec.set_title('Corrected vector-averaged spectrum')
     ax_spec.set_ylabel('Flux Density (Jy)')
     ax_spec.grid(True, alpha=0.3)
     ax_spec.legend(fontsize=9, loc='best')
 
     ax_resid.axhline(0.0, color='k', lw=1.0, ls='--')
-    ax_resid.set_title('Residual spectrum relative to PB2017')
-    ax_resid.set_ylabel('Data - Model (Jy)')
+    if 'V' in pol_results:
+        v_sp = pol_results['V']['coherent_v_spectrum_jy']
+        ax_resid.plot(
+            freqs_mhz, np.where(chan_mask, v_sp, np.nan),
+            lw=1.2, ls='--', color='tab:purple', label='Re⟨RR−LL⟩ (Stokes-V)',
+        )
+    if source_has_flux_model:
+        ax_resid.set_title('Residual spectrum relative to PB2017')
+        ax_resid.set_ylabel('Data - Model (Jy)')
+    else:
+        ax_resid.set_title('Re⟨RR−LL⟩ coherent baseline-average (Stokes-V at phase centre)')
+        ax_resid.set_ylabel('Re⟨RR−LL⟩ (Jy)')
     ax_resid.grid(True, alpha=0.3)
     ax_resid.legend(fontsize=9, loc='best')
 
-    rr_ant = {item['label']: item['mean_abs_resid'] for item in pol_results.get('RR', {}).get('antenna_records', [])}
-    ll_ant_top = pol_results.get('LL', {}).get('antenna_records', [])[:top_n]
-    labels_ant = [item['label'] for item in ll_ant_top]
-    rr_vals = [rr_ant.get(label, np.nan) for label in labels_ant]
-    ll_vals = [item['mean_abs_resid'] for item in ll_ant_top]
-    ypos = np.arange(len(labels_ant))
-    height = 0.38
-    ax_ant.barh(ypos - height / 2.0, rr_vals, height=height, label='RR |mean residual|')
-    ax_ant.barh(ypos + height / 2.0, ll_vals, height=height, label='LL |mean residual|')
-    ax_ant.set_yticks(ypos)
-    ax_ant.set_yticklabels(labels_ant)
-    ax_ant.invert_yaxis()
-    ax_ant.set_xlabel('Jy')
-    ax_ant.set_title('Top antennas by LL mean absolute residual')
-    ax_ant.grid(True, axis='x', alpha=0.3)
-    ax_ant.legend(fontsize=8, loc='best')
+    # ── Per-metric bar charts ────────────────────────────────────────────────
+    # One row per computed metric (RR, LL, V), each showing the top-N antennas
+    # (left) and top-N baselines (right) ranked by that metric's score.
+    # Rows for metrics that drove the actual flagging decisions are marked with ★.
+    _metric_order = [m for m in ('RR', 'LL', 'V') if m in pol_results]
+    _metric_colors  = {'RR': 'tab:blue',   'LL': 'tab:orange', 'V': 'tab:purple'}
+    _metric_ylabels = {
+        'RR': 'RR mean absolute residual',
+        'LL': 'LL mean absolute residual',
+        'V':  '|RR − LL| mean absolute (per-baseline outlier score)',
+    }
+    # Normalise ranking_metric to a frozenset of strings
+    if ranking_metric is None:
+        _flagging_metrics: set = set()
+    elif isinstance(ranking_metric, str):
+        _flagging_metrics = {ranking_metric}
+    else:
+        _flagging_metrics = set(ranking_metric)
 
-    ll_base_top = pol_results.get('LL', {}).get('baseline_records', [])[:top_n]
-    labels_base = [item['label'] for item in ll_base_top]
-    vals_base = [item['mean_abs_resid'] for item in ll_base_top]
-    ypos_base = np.arange(len(labels_base))
-    ax_base.barh(ypos_base, vals_base, color='tab:orange')
-    ax_base.set_yticks(ypos_base)
-    ax_base.set_yticklabels(labels_base)
-    ax_base.invert_yaxis()
-    ax_base.set_xlabel('Jy')
-    ax_base.set_title('Top baselines by LL mean absolute residual')
-    ax_base.grid(True, axis='x', alpha=0.3)
+    for _row_i, _m in enumerate(_metric_order, start=1):
+        _ax_a = fig.add_subplot(_gs[_row_i, 0])
+        _ax_b = fig.add_subplot(_gs[_row_i, 1])
+        _flag_tag = '  \u2605 used for flagging' if _m in _flagging_metrics else ''
+        _col = _metric_colors.get(_m, 'tab:blue')
+        _ylabel = _metric_ylabels.get(_m, _m)
+
+        # Antenna bar
+        _rec_ant = pol_results[_m].get('antenna_records', [])[:top_n]
+        _labels_a = [r['label'] for r in _rec_ant]
+        _vals_a   = [r['mean_abs_resid'] for r in _rec_ant]
+        _ypos_a   = np.arange(len(_labels_a))
+        _ax_a.barh(_ypos_a, _vals_a, color=_col)
+        _ax_a.set_yticks(_ypos_a)
+        _ax_a.set_yticklabels(_labels_a)
+        _ax_a.invert_yaxis()
+        _ax_a.set_xlabel('Jy')
+        _ax_a.set_title(f'Top antennas — {_ylabel}{_flag_tag}')
+        _ax_a.grid(True, axis='x', alpha=0.3)
+
+        # Baseline bar
+        _rec_base = pol_results[_m].get('baseline_records', [])[:top_n]
+        _labels_b = [r['label'] for r in _rec_base]
+        _vals_b   = [r['mean_abs_resid'] for r in _rec_base]
+        _ypos_b   = np.arange(len(_labels_b))
+        _ax_b.barh(_ypos_b, _vals_b, color=_col)
+        _ax_b.set_yticks(_ypos_b)
+        _ax_b.set_yticklabels(_labels_b)
+        _ax_b.invert_yaxis()
+        _ax_b.set_xlabel('Jy')
+        _ax_b.set_title(f'Top baselines — {_ylabel}{_flag_tag}')
+        _ax_b.grid(True, axis='x', alpha=0.3)
 
     plotted_freqs = freqs_mhz[chan_mask]
     if plotted_freqs.size:
@@ -1963,13 +2168,30 @@ def run_bandpass_diagnostics(
         plot_freq_max = np.nan
     ax_resid.set_xlabel('Frequency (MHz)')
 
+    # Channel numbers as secondary top x-axis on both spectrum panels.
+    _diag_chan_idxs = np.asarray(
+        solution.get('chan_indices', []) if solution is not None else [],
+        dtype=np.int32,
+    )
+    if _diag_chan_idxs.size >= 2:
+        _f0, _f1 = float(freqs_mhz[0]), float(freqs_mhz[-1])
+        _c0, _c1 = float(_diag_chan_idxs[0]), float(_diag_chan_idxs[-1])
+        def _freq_to_chan(f, _f0=_f0, _f1=_f1, _c0=_c0, _c1=_c1):
+            return _c0 + (f - _f0) * (_c1 - _c0) / (_f1 - _f0)
+        def _chan_to_freq(c, _f0=_f0, _f1=_f1, _c0=_c0, _c1=_c1):
+            return _f0 + (c - _c0) * (_f1 - _f0) / (_c1 - _c0)
+        for _ax_d in (ax_spec, ax_resid):
+            _sec_d = _ax_d.secondary_xaxis('top', functions=(_freq_to_chan, _chan_to_freq))
+            _sec_d.set_xlabel('Channel', fontsize=8)
+            _sec_d.tick_params(labelsize=7)
+
     fig.suptitle(title or 'Bandpass diagnostics', fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     if save_path is not None:
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=180, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
     return {
         'vis': vis,
@@ -1987,52 +2209,151 @@ def run_bandpass_diagnostics(
         'diagnostics_flag_table_count': int(diagnostics_flag_stats.get('flag_table_count', 0)),
         'diagnostics_flag_table_paths': list(diagnostics_flag_stats.get('flag_table_paths', [])),
         'diagnostics_dropped_rows_by_flag_table': int(diagnostics_flag_stats.get('dropped_rows', 0)),
+        'source': source,
+        'source_has_flux_model': source_has_flux_model,
     }
 
 
 def propose_flag_updates_from_diagnostics(
     diagnostics: dict,
     *,
-    pol: str = 'LL',
+    outlier_metric: Union[str, List[str]] = 'LL',
     mode: str = 'both',
-    antenna_flag_threshold_jy: float = 180.0,
-    baseline_flag_threshold_jy: float = 800.0,
+    antenna_flag_threshold_jy: Union[float, Dict[str, float]] = 180.0,
+    baseline_flag_threshold_jy: Union[float, Dict[str, float]] = 800.0,
     max_antennas_to_flag: int = 4,
     max_baselines_to_flag: int = 6,
+    outlier_metric_merge_strategy: str = 'union',
 ) -> dict:
-    """Convert diagnostic outliers into candidate flag-table updates."""
+    """Convert diagnostic outliers into candidate flag-table updates.
+
+    ``outlier_metric`` may be a single metric string (e.g. ``'LL'``) or a list
+    (e.g. ``['RR', 'LL', 'V']``).  Each metric is evaluated independently;
+    results are merged via ``outlier_metric_merge_strategy``:
+
+    - ``'union'``        : flag if threshold is exceeded in ANY metric.  Items
+                           are ranked by their *maximum* value across metrics.
+                           Recommended for GMRT — bad in one corr ~ bad in all.
+    - ``'intersection'`` : flag only if threshold is exceeded in ALL metrics.
+                           Most conservative choice.
+    - ``'max'``          : alias for ``'union'``.
+
+    ``antenna_flag_threshold_jy`` and ``baseline_flag_threshold_jy`` accept either
+    a single float (applied to all metrics) or a dict mapping metric name to threshold,
+    with an optional ``'default'`` key as fallback for unlisted metrics.  Example::
+
+        antenna_flag_threshold_jy = {'RR': 180.0, 'LL': 180.0, 'V': 30.0}
+        baseline_flag_threshold_jy = {'RR': 800.0, 'LL': 800.0, 'V': 150.0}
+
+    Thresholds are applied *per metric* before the merge strategy is evaluated —
+    so a V score of 35 Jy can trigger a flag under 'union' even when the RR/LL
+    residuals (measured against a higher threshold) are clean.
+
+    Flag-table entries are polarization-agnostic (antenna/baseline names only),
+    so any resulting flag is unconditionally applied to **all correlations** on
+    the next bandpass solve regardless of which metric triggered it.
+    """
     if mode not in ('antennas', 'baselines', 'both'):
         raise ValueError("mode must be 'antennas', 'baselines', or 'both'.")
-    if 'pol_results' not in diagnostics or pol not in diagnostics['pol_results']:
-        raise ValueError(f'Diagnostics do not contain polarization {pol}.')
+    if outlier_metric_merge_strategy not in ('union', 'intersection', 'max'):
+        raise ValueError("outlier_metric_merge_strategy must be 'union', 'intersection', or 'max'.")
 
-    pol_results = diagnostics['pol_results'][pol]
-    ant_records = pol_results['antenna_records']
-    base_records = pol_results['baseline_records']
+    # Normalise outlier_metric to a list.
+    pols: List[str] = [outlier_metric] if isinstance(outlier_metric, str) else list(outlier_metric)
+    pol_results_all = diagnostics.get('pol_results', {})
+    missing = [p for p in pols if p not in pol_results_all]
+    if missing:
+        # Give a targeted, actionable message when model-based metrics are requested
+        # for a source that has no registered flux model.
+        missing_model_based = [p for p in missing if p in _MODEL_BASED_METRICS]
+        if missing_model_based:
+            _supported = ', '.join(sorted(_FLUX_MODEL_REGISTRY))
+            _src = diagnostics.get('source', '<unknown>')
+            raise ValueError(
+                f'Metric(s) {missing_model_based} require a Perley-Butler flux model, but '
+                f'source "{_src}" is not in the code\'s flux model registry '
+                f'(registered calibrators: {_supported}).  '
+                f'Switch to outlier_metric="V" for the model-free Stokes-V proxy, '
+                f'or add a flux model entry for "{_src}" to _FLUX_MODEL_REGISTRY.'
+            )
+        raise ValueError(f'Diagnostics do not contain metric(s): {missing}.')
+
+    def _resolve_thresholds(param: Union[float, Dict[str, float]]) -> Dict[str, float]:
+        """Return a per-metric threshold dict from either a scalar or a dict.
+
+        Extra keys for inactive metrics are silently ignored, so a full dict
+        covering all possible metrics (RR, LL, V) can be kept in the notebook
+        without needing to be trimmed when switching active metrics.
+        """
+        if isinstance(param, dict):
+            resolved = {}
+            for m in pols:
+                if m in param:
+                    resolved[m] = float(param[m])
+                elif 'default' in param:
+                    resolved[m] = float(param['default'])
+                else:
+                    raise ValueError(
+                        f'Metric "{m}" has no entry in the threshold dict and no '
+                        f'"default" key is present.  Add "{m}" or a "default" key.'
+                    )
+            return resolved
+        return {m: float(param) for m in pols}
+
+    ant_thresholds  = _resolve_thresholds(antenna_flag_threshold_jy)
+    base_thresholds = _resolve_thresholds(baseline_flag_threshold_jy)
+
+    def _combine_records(key: str, thresholds: Dict[str, float]) -> List[dict]:
+        """Filter by per-metric threshold, merge decisions, return ranked list.
+
+        For each label, only metrics where the score exceeds that metric's own
+        threshold count as "triggered".  The merge strategy then decides:
+          union        → flag if triggered in ANY metric
+          intersection → flag only if triggered in ALL metrics
+        The ranking score is max (union) or min (intersection) across triggered metrics.
+        """
+        per_metric: Dict[str, Dict[str, float]] = {}  # label -> {metric: score}
+        for p in pols:
+            thresh = thresholds[p]
+            for rec in pol_results_all[p][key]:
+                if rec['mean_abs_resid'] >= thresh:
+                    per_metric.setdefault(rec['label'], {})[p] = rec['mean_abs_resid']
+
+        result = []
+        for label, triggered in per_metric.items():
+            if outlier_metric_merge_strategy == 'intersection':
+                # Must be triggered in every metric.
+                if len(triggered) < len(pols):
+                    continue
+                combined_resid = min(triggered.values())
+            else:
+                # 'union' / 'max': triggered in at least one metric.
+                combined_resid = max(triggered.values())
+            result.append({'label': label, 'mean_abs_resid': combined_resid})
+        result.sort(key=lambda r: r['mean_abs_resid'], reverse=True)
+        return result
+
+    ant_records  = _combine_records('antenna_records',  ant_thresholds)
+    base_records = _combine_records('baseline_records', base_thresholds)
 
     bad_antennas = []
     if mode in ('antennas', 'both'):
-        bad_antennas = [
-            rec['label']
-            for rec in ant_records
-            if rec['mean_abs_resid'] >= float(antenna_flag_threshold_jy)
-        ][:int(max_antennas_to_flag)]
+        bad_antennas = [rec['label'] for rec in ant_records][:int(max_antennas_to_flag)]
 
     bad_baselines = []
     if mode in ('baselines', 'both'):
         for rec in base_records:
-            if rec['mean_abs_resid'] < float(baseline_flag_threshold_jy):
-                continue
             left, right = rec['label'].split('-', 1)
             bad_baselines.append([left, right])
             if len(bad_baselines) >= int(max_baselines_to_flag):
                 break
 
+    pol_desc = pols[0] if len(pols) == 1 else f"{'+'.join(pols)}({outlier_metric_merge_strategy})"
     proposal = create_flag_table(
         bad_antennas=bad_antennas,
         bad_baselines=bad_baselines,
         notes=(
-            f'Proposed from {pol} diagnostics: '
+            f'Proposed from {pol_desc} diagnostics: '
             f'antenna_flag_threshold_jy={antenna_flag_threshold_jy}, '
             f'baseline_flag_threshold_jy={baseline_flag_threshold_jy}, mode={mode}'
         ),
@@ -2042,7 +2363,8 @@ def propose_flag_updates_from_diagnostics(
         'candidate_antennas': bad_antennas,
         'candidate_baselines': bad_baselines,
         'mode': mode,
-        'pol': pol,
+        'outlier_metric': pols[0] if len(pols) == 1 else pols,
+        'outlier_metric_merge_strategy': outlier_metric_merge_strategy if len(pols) > 1 else None,
     }
 
 
@@ -2121,6 +2443,7 @@ def run_iterative_bandpass_workflow(
     bandpass_out_base: Optional[Union[str, Path]] = None,
     diag_plot_base: Optional[Union[str, Path]] = None,
     diag_plot_unflagged_base: Optional[Union[str, Path]] = None,
+    gain_plot_base: Optional[Union[str, Path]] = None,
     flag_table_session_path: Optional[Union[str, Path]] = None,
     base_flag_table_paths: Optional[List[Union[str, Path]]] = None,
     pending_flag_tables: Optional[List[dict]] = None,
@@ -2142,26 +2465,63 @@ def run_iterative_bandpass_workflow(
     exclude_for_plots: Optional[List[Union[str, int]]] = None,
     diag_apply_flag_tables: bool = True,
     diag_save_unflagged_comparison: bool = False,
-    couple_stokes_flags: bool = False,
+    flag_all_corrs_if_any_rawvis_flagged: bool = False,
     skip_edge_channels: Union[int, Tuple[int, int]] = (0, 0),
     top_n: int = 12,
-    proposal_pol: str = 'LL',
+    outlier_metric: Union[str, List[str]] = 'LL',
+    outlier_metric_merge_strategy: str = 'union',
     proposal_mode: str = 'baselines',
-    antenna_flag_threshold_jy: float = 180.0,
-    baseline_flag_threshold_jy: float = 800.0,
+    antenna_flag_threshold_jy: Union[float, Dict[str, float]] = 180.0,
+    baseline_flag_threshold_jy: Union[float, Dict[str, float]] = 800.0,
     max_antennas_to_flag: int = 4,
     max_baselines_to_flag: int = 6,
     strict_flag_table: bool = False,
+    convergence_epsilon: float = 0.0,
+    convergence_min_iters: int = 3,
+    compare_metrics_for_convergence: Optional[List[str]] = None,
+    convergence_combine_strategy: str = 'any',
+    run_iter0_diagnostic: bool = True,
 ) -> Dict[str, Any]:
     """Run iterative bandpass -> diagnostics -> flag-update workflow.
 
-    Returns a history list with per-iteration summaries and the final pending
-    in-memory flag table state for subsequent runs.
+    Convergence stopping
+    --------------------
+    C1 (always active): stop when the cumulative flag set is identical to the
+        previous iteration.  Another solve would produce the same result.
+
+    C3 / C4 (epsilon-based, enabled when convergence_epsilon > 0):
+
+      convergence_epsilon         - fractional change threshold: stop when
+                                    |RMS(i-1) - RMS(i)| / RMS(i-1) < epsilon.
+                                    0.0 disables all epsilon criteria.
+      convergence_min_iters       - minimum iterations before epsilon criteria
+                                    are evaluated (default 3).
+      compare_metrics_for_convergence - list of metrics to track.  Supported:
+                                    'V'     (C3) coherent Re⟨RR−LL⟩ rms
+                                            at the phase centre.  Always
+                                            available when RR+LL are present.
+                                    'Model' (C4) RR and LL residual rms
+                                            (data minus flux model).  Requires
+                                            a PB2017 flux model for the source;
+                                            silently skipped otherwise.
+                                    Default: ['V', 'Model']
+      convergence_combine_strategy - how to combine multiple active criteria:
+                                    'any'  stop if ANY criterion fires
+                                    'all'  stop only if ALL criteria fire
+                                           in the same iteration
+
+    run_iter0_diagnostic - if True (default), run a raw-visibility diagnostic
+                           (no bandpass correction) before the first iteration,
+                           tagged '{iter_prefix}00'.  Provides a baseline view of
+                           uncorrected Stokes-V and RR/LL deviations from model.
+                           Requires diag_plot_base to be set to produce a plot.
+
+    gain_plot_base - if set, a per-antenna 6×5 amp/phase grid plot is saved
+                    after each iteration (e.g. WORK_DIR/'gains.png' produces
+                    'gains_iter01.png', 'gains_iter02.png', ...).
     """
     if n_iterations < 1:
         raise ValueError('n_iterations must be >= 1.')
-    if start_iteration < 1:
-        raise ValueError('start_iteration must be >= 1.')
 
     if index is None:
         index = get_or_build_row_index(
@@ -2175,11 +2535,44 @@ def run_iterative_bandpass_workflow(
 
     session_path = Path(flag_table_session_path) if flag_table_session_path is not None else None
     base_paths = [Path(p) for p in (base_flag_table_paths or [])]
+
+    # ── iter00: raw-visibility diagnostic (no bandpass correction) ──────────
+    if run_iter0_diagnostic:
+        _iter0_tag  = f'{iter_prefix}00'
+        _iter0_plot = tagged_output_path(diag_plot_base, _iter0_tag) if diag_plot_base is not None else None
+        print(f'[iter00] raw-visibility diagnostic (no correction){" → " + str(_iter0_plot) if _iter0_plot else ""}')
+        run_bandpass_diagnostics(
+            index,
+            solution=None,
+            source=source,
+            chan_range=chan_range,
+            stokes=stokes,
+            max_rows=max_rows_diag,
+            exclude_antennas=None,
+            apply_flag_tables=diag_apply_flag_tables,
+            flag_table_path=list(base_paths) if base_paths else None,
+            flag_table=None,
+            apply_correction=False,
+            flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
+            skip_edge_channels=skip_edge_channels,
+            top_n=top_n,
+            title=f'{source} RAW — no correction | {_iter0_tag}',
+            save_path=_iter0_plot,
+        )
     pending_tables = list(pending_flag_tables or [])
     history = []
     last_bandpass_run = None
     last_diag = None
     last_flag_update = None
+    _compare_metrics  = list(compare_metrics_for_convergence) if compare_metrics_for_convergence is not None else ['V', 'Model']
+    _prev_flag_key    = None   # C1 state
+    _prev_v_rms       = None   # C3 state: coherent Stokes-V rms
+    _prev_rr_rms      = None   # C4 state: RR residual rms
+    _prev_ll_rms      = None   # C4 state: LL residual rms
+    _warned_no_model  = False  # warn once if 'Model' requested but no flux model
+    _stop_reason      = None   # set on early exit; None means ran to completion
+    _canonical_ant_ids   = None  # fixed antenna order for gain plots (set from first solve)
+    _canonical_ant_names = None
 
     for iteration_num in range(start_iteration, start_iteration + n_iterations):
         iter_tag = f'{iter_prefix}{iteration_num:0{int(iter_width)}d}'
@@ -2203,11 +2596,34 @@ def run_iterative_bandpass_workflow(
             ignore_autos=ignore_autos,
             flag_table_path=active_disk_flag_paths if active_disk_flag_paths else None,
             flag_table=active_pending if active_pending else None,
-            couple_stokes_flags=couple_stokes_flags,
+            flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
             iteration_tag=iter_tag,
             dry_run=dry_run_bandpass,
         )
         bandpass_sol = bandpass_run['solution']
+
+        # Capture canonical antenna list from the very first solve so all
+        # subsequent gain-grid plots use the same fixed slot layout.
+        if _canonical_ant_ids is None:
+            _canonical_ant_ids   = [int(x) for x in bandpass_sol['antenna_ids']]
+            _canonical_ant_names = list(
+                bandpass_sol.get('antenna_names') or
+                [f'Ant{aid}' for aid in _canonical_ant_ids]
+            )
+
+        # Per-iteration gain grid plot
+        if gain_plot_base is not None:
+            _gp = tagged_output_path(gain_plot_base, iter_tag)
+            _gain_fig = plot_bandpass_solution_grid(
+                bandpass_run['solution'],
+                title=f'{source} bandpass gains | {iter_tag}',
+                skip_edge_channels=skip_edge_channels,
+                save_path=_gp,
+                canonical_antenna_ids=_canonical_ant_ids,
+                canonical_antenna_names=_canonical_ant_names,
+            )
+            import matplotlib.pyplot as _plt
+            _plt.close(_gain_fig)  # prevent figure accumulation over many iterations
 
         diag_plot_path = tagged_output_path(diag_plot_base, iter_tag) if diag_plot_base is not None else None
         diag = run_bandpass_diagnostics(
@@ -2222,9 +2638,10 @@ def run_iterative_bandpass_workflow(
             flag_table_path=active_disk_flag_paths if active_disk_flag_paths else None,
             flag_table=active_pending if active_pending else None,
             strict_flag_table=strict_flag_table,
-            couple_stokes_flags=couple_stokes_flags,
+            flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
             skip_edge_channels=skip_edge_channels,
             top_n=top_n,
+            ranking_metric=outlier_metric,
             title=f'{source} diagnostics | {iter_tag}',
             save_path=diag_plot_path,
         )
@@ -2243,7 +2660,7 @@ def run_iterative_bandpass_workflow(
                     max_rows=max_rows_diag,
                     exclude_antennas=exclude_for_plots or [],
                     apply_flag_tables=False,
-                    couple_stokes_flags=couple_stokes_flags,
+                    flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
                     skip_edge_channels=skip_edge_channels,
                     top_n=top_n,
                     title=f'{source} diagnostics (unflagged) | {iter_tag}',
@@ -2252,12 +2669,13 @@ def run_iterative_bandpass_workflow(
 
         proposal = propose_flag_updates_from_diagnostics(
             diag,
-            pol=proposal_pol,
+            outlier_metric=outlier_metric,
             mode=proposal_mode,
             antenna_flag_threshold_jy=antenna_flag_threshold_jy,
             baseline_flag_threshold_jy=baseline_flag_threshold_jy,
             max_antennas_to_flag=max_antennas_to_flag,
             max_baselines_to_flag=max_baselines_to_flag,
+            outlier_metric_merge_strategy=outlier_metric_merge_strategy,
         )
 
         if session_path is not None:
@@ -2302,10 +2720,130 @@ def run_iterative_bandpass_workflow(
             'cumulative_bad_baseline_count': len(cumulative_table.get('bad_baselines', [])),
         })
 
+        # ── Convergence checks ───────────────────────────────────────────────
+        _n_done = iteration_num - start_iteration + 1
+
+        # C1: flag set unchanged → the next solve would be identical, stop now.
+        _cum = flag_update.get('flag_table', {})
+        _curr_ants  = frozenset(_cum.get('bad_antennas', []))
+        _curr_bases = frozenset(tuple(sorted(b)) for b in _cum.get('bad_baselines', []))
+        _curr_flag_key = (_curr_ants, _curr_bases)
+        _c1_converged = (_prev_flag_key is not None and _curr_flag_key == _prev_flag_key)
+        _prev_flag_key = _curr_flag_key
+
+        # ── C3 / C4: epsilon-based convergence ──────────────────────────────
+        # _converged_criteria maps criterion name → human-readable detail string.
+        # _active_criteria tracks which metrics had data this iteration.
+        _converged_criteria: dict = {}
+        _active_criteria:    set  = set()
+
+        if convergence_epsilon > 0 and _n_done >= convergence_min_iters:
+
+            # C3: coherent Stokes-V rms at phase centre
+            if 'V' in _compare_metrics:
+                _v_spec = diag.get('pol_results', {}).get('V', {}).get('coherent_v_spectrum_jy')
+                if _v_spec is not None:
+                    _finite_v = _v_spec[np.isfinite(_v_spec)]
+                    if _finite_v.size > 0:
+                        _curr_v_rms = float(np.sqrt(np.mean(_finite_v ** 2)))
+                        _active_criteria.add('C3')
+                        if _prev_v_rms is not None and _prev_v_rms > 0:
+                            _v_frac = abs(_prev_v_rms - _curr_v_rms) / _prev_v_rms
+                            if _v_frac < convergence_epsilon:
+                                _converged_criteria['C3'] = (
+                                    f'|ΔV_rms|/V_prev={_v_frac * 100:.2f}% '
+                                    f'< {convergence_epsilon * 100:.1f}%'
+                                )
+                                print(f'[convergence] C3: {_converged_criteria["C3"]} after {iter_tag}')
+                        _prev_v_rms = _curr_v_rms
+
+            # C4: RR and LL model residual rms (requires flux model for source)
+            if 'Model' in _compare_metrics:
+                _pol_res = diag.get('pol_results', {})
+                _rr_spec = _pol_res.get('RR', {}).get('residual_spectrum_jy')
+                _ll_spec = _pol_res.get('LL', {}).get('residual_spectrum_jy')
+                if _rr_spec is None and _ll_spec is None:
+                    if not _warned_no_model:
+                        print(
+                            f'[convergence] WARNING: "Model" in compare_metrics but no flux '
+                            f'model available for source "{source}" — C4 disabled.'
+                        )
+                        _warned_no_model = True
+                else:
+                    _active_criteria.add('C4')
+                    _c4_rr_conv = False
+                    _c4_ll_conv = False
+                    _c4_details: list = []
+                    if _rr_spec is not None:
+                        _finite_rr = _rr_spec[np.isfinite(_rr_spec)]
+                        if _finite_rr.size > 0:
+                            _curr_rr_rms = float(np.sqrt(np.mean(_finite_rr ** 2)))
+                            if _prev_rr_rms is not None and _prev_rr_rms > 0:
+                                _rr_frac = abs(_prev_rr_rms - _curr_rr_rms) / _prev_rr_rms
+                                if _rr_frac < convergence_epsilon:
+                                    _c4_rr_conv = True
+                                    _c4_details.append(f'RR:Δrms={_rr_frac*100:.2f}%')
+                                    print(f'[convergence] C4-RR: |ΔRR_rms|/RR_prev={_rr_frac*100:.2f}% < {convergence_epsilon*100:.1f}% after {iter_tag}')
+                            _prev_rr_rms = _curr_rr_rms
+                    if _ll_spec is not None:
+                        _finite_ll = _ll_spec[np.isfinite(_ll_spec)]
+                        if _finite_ll.size > 0:
+                            _curr_ll_rms = float(np.sqrt(np.mean(_finite_ll ** 2)))
+                            if _prev_ll_rms is not None and _prev_ll_rms > 0:
+                                _ll_frac = abs(_prev_ll_rms - _curr_ll_rms) / _prev_ll_rms
+                                if _ll_frac < convergence_epsilon:
+                                    _c4_ll_conv = True
+                                    _c4_details.append(f'LL:Δrms={_ll_frac*100:.2f}%')
+                                    print(f'[convergence] C4-LL: |ΔLL_rms|/LL_prev={_ll_frac*100:.2f}% < {convergence_epsilon*100:.1f}% after {iter_tag}')
+                            _prev_ll_rms = _curr_ll_rms
+                    # C4 fires only when BOTH available pols have converged
+                    _pols_avail = int(_rr_spec is not None) + int(_ll_spec is not None)
+                    _pols_conv  = int(_c4_rr_conv)        + int(_c4_ll_conv)
+                    if _pols_avail > 0 and _pols_conv == _pols_avail:
+                        _converged_criteria['C4'] = (
+                            ', '.join(_c4_details) +
+                            f' — both pols < {convergence_epsilon * 100:.1f}%'
+                        )
+
+        # Apply combine strategy across active criteria
+        if _active_criteria:
+            if convergence_combine_strategy == 'any':
+                _epsilon_converged = bool(_converged_criteria)
+            else:  # 'all'
+                _epsilon_converged = (set(_converged_criteria.keys()) == _active_criteria)
+        else:
+            _epsilon_converged = False
+
         last_bandpass_run = bandpass_run
         last_diag = diag
         last_flag_update = flag_update
 
+        if _c1_converged:
+            _stop_reason = (
+                f'C1 — flag set identical to previous iteration ({iter_tag}): '
+                f'another solve would produce the same result.'
+            )
+            break
+        if _epsilon_converged:
+            _fired = sorted(_converged_criteria.keys())
+            _details = '; '.join(f'{k}: {_converged_criteria[k]}' for k in _fired)
+            _stop_reason = (
+                f'Epsilon convergence (strategy={convergence_combine_strategy}, '
+                f'epsilon={convergence_epsilon * 100:.1f}%) after {iter_tag} — '
+                f'{_details}.'
+            )
+            break
+
+    # ── Final stop-reason banner (always printed) ────────────────────────────
+    _n_ran = len(history)
+    if _stop_reason is None:
+        if _n_ran >= n_iterations:
+            _stop_reason = (
+                f'Completed all {n_iterations} requested iteration(s) '
+                f'without early convergence.'
+            )
+        else:
+            _stop_reason = f'Loop ended after {_n_ran} iteration(s) (undetermined reason).'
     return {
         'index': index,
         'history': history,
@@ -2313,6 +2851,7 @@ def run_iterative_bandpass_workflow(
         'last_bandpass_run': last_bandpass_run,
         'last_diagnostics': last_diag,
         'last_flag_update': last_flag_update,
+        'stop_reason': _stop_reason,
     }
 
 
@@ -2471,12 +3010,14 @@ def plot_bandpass_solution_grid(
     solution: dict,
     rows: int = 6,
     cols: int = 5,
-    figsize=(28, 36),
+    figsize=(32, 40),
     phase_ylim=(-200.0, 200.0),
     amp_ylim=None,
     skip_edge_channels: Union[int, Tuple[int, int]] = (5, 5),
     title: Optional[str] = None,
     save_path: Optional[Union[str, Path]] = None,
+    canonical_antenna_ids: Optional[List[int]] = None,
+    canonical_antenna_names: Optional[List[str]] = None,
 ):
     """Plot per-antenna bandpass on a rows x cols page using nested GridSpec.
 
@@ -2490,6 +3031,13 @@ def plot_bandpass_solution_grid(
     skip_edge_channels controls exclusion from plotting and auto y-scaling:
     - int k      -> skip first k and last k channels
     - (a, b)     -> skip first a and last b channels
+
+    canonical_antenna_ids / canonical_antenna_names:
+        If provided, the grid is built from this fixed ordered list so the
+        antenna slot layout is identical across all iterations.  Antennas
+        present in the canonical list but absent from the solution are rendered
+        as grey "NOT IN SOLUTION" panels.  Antennas present but fully-flagged
+        are rendered as grey "FULLY FLAGGED" panels.
     """
     import matplotlib.gridspec as gridspec
 
@@ -2500,6 +3048,18 @@ def plot_bandpass_solution_grid(
     gains = np.asarray(solution['gains'], dtype=np.complex128)
     valid = np.asarray(solution['valid'], dtype=bool)
     stokes_labels = list(solution['stokes_labels'])
+
+    # Build a lookup from antenna_id -> index within solution arrays
+    _sol_id_to_idx = {int(aid): i for i, aid in enumerate(antenna_ids)}
+
+    # Canonical ordered list of antennas to plot (fixed across iterations)
+    if canonical_antenna_ids is not None:
+        _plot_ids   = [int(x) for x in canonical_antenna_ids]
+        _plot_names = list(canonical_antenna_names) if canonical_antenna_names is not None \
+                      else [f'Ant{aid}' for aid in _plot_ids]
+    else:
+        _plot_ids   = [int(x) for x in antenna_ids]
+        _plot_names = list(antenna_names)
 
     # Skip edge channels in plotting and auto-scaling to avoid edge artifacts.
     if isinstance(skip_edge_channels, tuple):
@@ -2550,14 +3110,13 @@ def plot_bandpass_solution_grid(
     legend_handles = []
     legend_labels = []
 
-    for ant_idx, ant_id in enumerate(antenna_ids):
-        if ant_idx >= rows * cols:
+    for plot_slot, (ant_id, ant_name) in enumerate(zip(_plot_ids, _plot_names)):
+        if plot_slot >= rows * cols:
             break
 
-        ant_id = int(ant_id)
-        ant_name = antenna_names[ant_idx]
-        ant_row = ant_idx // cols
-        ant_col = ant_idx % cols
+        ant_row = plot_slot // cols
+        ant_col = plot_slot % cols
+        sol_idx = _sol_id_to_idx.get(ant_id)  # None if antenna absent from solution
 
         # Inner 2-row gridspec inside this antenna's cell
         inner = gridspec.GridSpecFromSubplotSpec(
@@ -2569,45 +3128,66 @@ def plot_bandpass_solution_grid(
         ax_amp   = fig.add_subplot(inner[0])
         ax_phase = fig.add_subplot(inner[1], sharex=ax_amp)
 
-        # --- Plot ---
-        for pol_idx, label in enumerate(stokes_labels):
-            col = colors[pol_idx % len(colors)]
-            good = valid[:, ant_idx, pol_idx]
-            amp = np.where(good, np.abs(gains[:, ant_idx, pol_idx]), np.nan)
-            pha = np.where(good, np.degrees(np.angle(gains[:, ant_idx, pol_idx])), np.nan)
-            amp = np.where(plot_mask, amp, np.nan)
-            pha = np.where(plot_mask, pha, np.nan)
-            ax_amp.plot(freqs_mhz, amp, color=col, lw=1.0, label=label)
-            ax_phase.plot(freqs_mhz, pha, color=col, lw=1.0)
+        # Determine grey-out state
+        _absent        = sol_idx is None
+        _fully_flagged = (not _absent) and (not np.any(valid[:, sol_idx, :]))
+        _grey          = _absent or _fully_flagged
 
-        # Amplitude panel
+        if not _grey:
+            # --- Plot gains ---
+            for pol_idx, label in enumerate(stokes_labels):
+                col = colors[pol_idx % len(colors)]
+                good = valid[:, sol_idx, pol_idx]
+                amp = np.where(good, np.abs(gains[:, sol_idx, pol_idx]), np.nan)
+                pha = np.where(good, np.degrees(np.angle(gains[:, sol_idx, pol_idx])), np.nan)
+                amp = np.where(plot_mask, amp, np.nan)
+                pha = np.where(plot_mask, pha, np.nan)
+                ax_amp.plot(freqs_mhz, amp, color=col, lw=1.0, label=label)
+                ax_phase.plot(freqs_mhz, pha, color=col, lw=1.0)
+
+        # Amplitude panel styling
         ax_amp.set_ylim(*amp_ylim)
-        ax_amp.set_ylabel('Amp', fontsize=8)
+        ax_amp.set_ylabel('Amp', fontsize=10)
         ax_amp.grid(True, alpha=0.25)
-        ax_amp.tick_params(axis='y', labelsize=7)
-        ax_amp.tick_params(axis='x', labelbottom=False)  # hide bottom ticks; shared with phase
-        ax_amp.set_title(f'{ant_name} | Ant {ant_id}', fontsize=9, pad=14)
+        ax_amp.tick_params(axis='y', labelsize=9)
+        ax_amp.tick_params(axis='x', labelbottom=False)
+        ax_amp.set_title(f'{ant_name} | Ant {ant_id}', fontsize=11, pad=14)
 
         # Channel numbers on top of amplitude panel
         top_ax = ax_amp.secondary_xaxis('top')
         top_ax.set_xticks(chan_tick_positions)
-        top_ax.set_xticklabels(chan_tick_labels, fontsize=6)
-        top_ax.set_xlabel('Channel', fontsize=7)
+        top_ax.set_xticklabels(chan_tick_labels, fontsize=8)
+        top_ax.set_xlabel('Channel', fontsize=9)
 
-        # Phase panel
+        # Phase panel styling
         ax_phase.set_ylim(*phase_ylim)
-        ax_phase.set_ylabel('Phase\n(deg)', fontsize=8)
-        ax_phase.set_xlabel('Freq (MHz)', fontsize=7)
+        ax_phase.set_ylabel('Phase\n(deg)', fontsize=10)
+        ax_phase.set_xlabel('Freq (MHz)', fontsize=9)
         ax_phase.grid(True, alpha=0.25)
-        ax_phase.tick_params(axis='both', labelsize=7)
+        ax_phase.tick_params(axis='both', labelsize=9)
         ax_phase.yaxis.set_ticks([-180, -90, 0, 90, 180])
+
+        # Grey-out fully-flagged or absent antennas
+        if _grey:
+            _label = 'NOT IN SOLUTION' if _absent else 'FULLY FLAGGED'
+            for _ax in (ax_amp, ax_phase):
+                _ax.set_facecolor('#e0e0e0')
+                for _s in _ax.spines.values():
+                    _s.set_edgecolor('#aaaaaa')
+            ax_amp.text(
+                0.5, 0.5, _label,
+                transform=ax_amp.transAxes,
+                ha='center', va='center',
+                fontsize=9, color='#888888',
+                fontweight='bold', alpha=0.9,
+            )
 
         if not legend_handles:
             legend_handles, legend_labels = ax_amp.get_legend_handles_labels()
 
     fig.suptitle(
         title or f'Bandpass solutions: {solution["source_name"]} | ref ant {solution["reference_antenna"]}',
-        fontsize=16,
+        fontsize=18,
         y=0.975,
     )
     if legend_handles:
@@ -2616,14 +3196,14 @@ def plot_bandpass_solution_grid(
             ncol=len(legend_handles),
             loc='upper center',
             bbox_to_anchor=(0.5, 0.965),
-            fontsize=10,
+            fontsize=11,
         )
 
     if save_path is not None:
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=200, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
     return fig
 
 
@@ -2733,7 +3313,7 @@ def plot_corrected_vector_avg_spectrum(
         save_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=180, bbox_inches='tight')
         print(f'[plot] Saved spectrum+residual plot to: {save_path}')
-    plt.show()
+    plt.show(block=True)
     return fig
 
 # ---------------------------------------------------------------------------
@@ -2789,7 +3369,7 @@ def plot_vis_amp_vs_time(
     axes[-1].set_xlabel(xlabel)
     fig.suptitle(title or 'Visibility amplitude vs time', fontsize=11)
     fig.tight_layout()
-    plt.show()
+    plt.show(block=True)
 
 
 def plot_vis_amp_vs_channel(
@@ -2831,7 +3411,7 @@ def plot_vis_amp_vs_channel(
     axes[-1].set_xlabel('Frequency (MHz)')
     fig.suptitle(title or 'Visibility amplitude vs channel', fontsize=11)
     fig.tight_layout()
-    plt.show()
+    plt.show(block=True)
 
 
 def plot_vis_amp_vs_uvdist(
@@ -3240,4 +3820,4 @@ def plot_vis_amp_vs_uvdist(
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=150, bbox_inches='tight')
         print(f'  Plot saved → {save_path}')
-    plt.show()
+    plt.show(block=True)
