@@ -107,6 +107,89 @@ shortest relative to the channel spacing, making it the most noise-like region).
    and the residual ripple is noise-level.  All three being satisfied simultaneously
    is a much stronger convergence signal than any single metric.
 
+---
+
+### Precise symbol definitions
+
+#### Criterion 1 — Δrms / σ̂ < τ_rms
+
+$$\frac{|\,\text{rms}_{i-1} - \text{rms}_i\,|}{\hat{\sigma}} < \tau_{\text{rms}}$$
+
+| Symbol | Definition |
+|---|---|
+| $\text{rms}_i$ | $\sqrt{\frac{1}{N_\nu}\sum_\nu r_{\text{clean}}(\nu)^2}$ — root-mean-square of the sinusoid-subtracted residual spectrum at iteration $i$, computed over $N_\nu$ unflagged channels |
+| $\text{rms}_{i-1}$ | Same quantity from the previous iteration |
+| $\Delta\text{rms}$ | $|\text{rms}_{i-1} - \text{rms}_i|$ — absolute *change* in cleaned rms between consecutive iterations |
+| $\hat{\sigma}$ | Noise floor estimate (see below, shared by all three criteria) |
+| $\tau_{\text{rms}}$ | Dimensionless threshold (default 0.1); stop when per-iteration improvement is less than 10 % of the noise floor |
+
+Fires when the solver is no longer meaningfully reducing scatter — further iterations
+gain less than a tenth of a noise unit per step.
+
+---
+
+#### Criterion 2 — \|median\| / σ̂ < τ_med
+
+$$\frac{|\,\text{median}_\nu\!\left[r_{\text{clean}}(\nu)\right]|}{\hat{\sigma}} < \tau_{\text{med}}$$
+
+| Symbol | Definition |
+|---|---|
+| $r_{\text{clean}}(\nu)$ | Sinusoid-subtracted residual spectrum at iteration $i$: $r(\nu) - A\sin(2\pi\nu/P+\phi)$ |
+| $\text{median}_\nu[\cdot]$ | Channel-wise median over all unflagged channels — robust to outlier channels, unlike the mean |
+| $|\,\cdot\,|$ | Absolute value; we care about any signed bias, not its direction |
+| $\hat{\sigma}$ | Noise floor estimate (see below) |
+| $\tau_{\text{med}}$ | Dimensionless threshold (default 1.0); stop when the spectral bias is below one noise unit |
+
+Fires when the residual spectrum has no net DC offset.  A persistent non-zero median
+means either the flux model is wrong (wrong total flux → non-zero mean in RR/LL
+residuals) or calibration has introduced a systematic bias (wrong polarisation balance
+→ non-zero mean in V).  This is physically separate from rms: you can have a small
+rms but a large bias, or a large rms but zero bias.  A persistent non-zero median
+that does not shrink across iterations should fire a *warning* rather than blocking
+convergence — it indicates a model error that more iterations cannot fix.
+
+---
+
+#### Criterion 3 — A / σ̂ < τ_ripple
+
+$$\frac{A_i}{\hat{\sigma}} < \tau_{\text{ripple}}$$
+
+| Symbol | Definition |
+|---|---|
+| $A_i$ | Fitted sinusoid amplitude at iteration $i$ from $r(\nu) = r_{\text{clean}}(\nu) + A\sin(2\pi\nu/P+\phi)$; peak amplitude of the sinusoid in Jy, as returned by the least-squares fit |
+| $\hat{\sigma}$ | Noise floor estimate (see below) |
+| $\tau_{\text{ripple}}$ | Dimensionless threshold (default 2.0); stop when the residual ripple is below 2 noise units |
+
+Fires when the sinusoid that was subtracted was itself too small to matter — the
+solver has already absorbed the ripple to the point where the remaining periodic
+component is below the statistical detection threshold.  A value of 2.0 means the
+fitted amplitude is less than $2\hat{\sigma}$, which is sub-detection for a single
+sinusoid fit.  If $A$ stops decreasing *above* this threshold across iterations, the
+solver has reached its ripple-absorption limit and a separate warning should be
+emitted: *"ripple floor reached; consider Level-2 feedback or narrowing smooth_window"*.
+
+---
+
+#### The shared noise floor estimate σ̂
+
+$$\hat{\sigma} = 1.4826 \times \text{MAD}_\nu\!\left[r_{\text{clean}}^{V}(\nu)\right]$$
+
+where $\text{MAD}_\nu = \text{median}_\nu\!\left|r_{\text{clean}}^V(\nu) - \text{median}_\nu[r_{\text{clean}}^V(\nu)]\right|$.
+
+| Symbol | Definition |
+|---|---|
+| $r_{\text{clean}}^V(\nu)$ | Sinusoid-subtracted Stokes-V spectrum Re⟨RR−LL⟩ for the current iteration |
+| $\text{MAD}_\nu$ | Median absolute deviation across unflagged channels |
+| $1.4826$ | Converts MAD to Gaussian-equivalent standard deviation ($\hat{\sigma} \approx \sigma$ for pure Gaussian noise) |
+
+Computed from the **V spectrum** because V is model-free and has no flux-scale bias —
+it is the cleanest estimator of the thermal noise floor available without an external
+flux model.  Re-estimated at every iteration so it tracks any global flux-scale change
+caused by flagging a bright antenna.  All three criteria share this denominator, so
+they are expressed in the same natural unit: *multiples of the current noise floor*.
+
+---
+
 #### User-facing config knobs (minimal set)
 
 | Key | Default | Meaning |

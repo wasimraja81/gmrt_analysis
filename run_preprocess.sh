@@ -17,6 +17,11 @@
 #   ./run_preprocess.sh --step all --auto --n-iters 10              # 10-iter batch, writes to disk
 #   ./run_preprocess.sh --step all --auto --n-iters 10 --dry-run    # 10-iter batch, preview only
 #   ./run_preprocess.sh --config /other/path.cfg --step all         # custom config
+#
+# Data-selection overrides (override any config key on the fly with --set):
+#   ./run_preprocess.sh --set "SOLVE_ELEVATION_MIN_DEG=25.0"        # discard data below 25°
+#   ./run_preprocess.sh --set "SOLVE_UVRANGE_KLAMBDA=(2.0, 50.0)"   # restrict UV range
+#   ./run_preprocess.sh --set "SOLVE_TIMERANGE=('2021-07-25 19:00','2021-07-25 23:00')"
 
 set -euo pipefail
 

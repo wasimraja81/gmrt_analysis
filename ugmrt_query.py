@@ -680,6 +680,1197 @@ def list_scan_times_by_source(
     )['scans']
 
 # ---------------------------------------------------------------------------
+# Antenna geometry — ENU positions and inter-dish separations
+# ---------------------------------------------------------------------------
+
+def _get_array_enu(fits_path: Union[str, Path]) -> dict:
+    """Read AIPS AN table and return per-antenna ENU coordinates.
+
+    Returns
+    -------
+    dict with keys:
+        'nos'       : list[int]   antenna numbers (NOSTA)
+        'names'     : list[str]   antenna names   (ANNAME)
+        'enu'       : ndarray (N, 3)  East/North/Up in metres relative to array centre
+        'ecef_centre': ndarray (3,)   array centre ECEF XYZ in metres
+        'lat_deg'   : float  geodetic latitude of array centre
+        'lon_deg'   : float  geodetic longitude of array centre
+    """
+    from astropy.coordinates import EarthLocation
+    import astropy.units as _u
+    with fits.open(str(fits_path), memmap=True, lazy_load_hdus=True) as hdul:
+        an  = _get_hdu(hdul, 'AIPS AN')
+        if an is None:
+            raise ValueError('No AIPS AN extension found in FITS file.')
+        ah  = an.header
+        arr_xyz = np.array([float(ah['ARRAYX']), float(ah['ARRAYY']), float(ah['ARRAYZ'])])
+        nos, names, xyz = [], [], []
+        for row in an.data:
+            nos.append(int(row['NOSTA']))
+            names.append(_decode_bytes(row['ANNAME']))
+            xyz.append(np.array(row['STABXYZ'], dtype=np.float64))
+    xyz = np.array(xyz)   # (N, 3) ECEF offsets from array centre
+    loc = EarthLocation.from_geocentric(*arr_xyz, unit=_u.m)
+    lat = np.radians(loc.lat.deg)
+    lon = np.radians(loc.lon.deg)
+    R = np.array([
+        [-np.sin(lon),               np.cos(lon),              0.0          ],
+        [-np.sin(lat)*np.cos(lon),  -np.sin(lat)*np.sin(lon),  np.cos(lat) ],
+        [ np.cos(lat)*np.cos(lon),   np.cos(lat)*np.sin(lon),  np.sin(lat) ],
+    ])
+    enu = xyz @ R.T  # (N, 3): East, North, Up
+    return {
+        'nos': nos, 'names': names, 'enu': enu,
+        'ecef_centre': arr_xyz,
+        'lat_deg': loc.lat.deg, 'lon_deg': loc.lon.deg,
+    }
+
+
+def compute_source_azel(
+    fits_path_or_index,
+    source: Union[str, int],
+    timerange: Optional[Tuple] = None,
+    time_step_s: float = 60.0,
+) -> dict:
+    """Compute Azimuth / Elevation vs time for a source in the FITS file.
+
+    Parameters
+    ----------
+    fits_path_or_index : str | Path | dict
+        FITS path, or a row index dict (``index['path']`` is used for the FITS file).
+    source : str | int
+        Source name (as in AIPS SU) or integer source ID.
+    timerange : (start, end) optional
+        Restrict to this JD range or ISO string range, e.g.:
+        ``(2459421.0, 2459421.5)``  or
+        ``('2021-07-25 19:00:00', '2021-07-26 02:00:00')``
+    time_step_s : float
+        Sampling interval in seconds (default 60 s).
+
+    Returns
+    -------
+    dict with keys:
+        'source_name', 'ra_deg', 'dec_deg',
+        'jd'         : ndarray  Julian dates,
+        'utc'        : list[str]  ISO UTC strings,
+        'az_deg'     : ndarray  Azimuth (N→E convention),
+        'el_deg'     : ndarray  Elevation in degrees,
+        'array_lat_deg', 'array_lon_deg'
+    """
+    from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+    from astropy.time import Time
+    import astropy.units as _u
+
+    if isinstance(fits_path_or_index, dict):
+        fits_path = fits_path_or_index['path']
+        index = fits_path_or_index
+    else:
+        fits_path = fits_path_or_index
+        index = None
+
+    # ── Source RA/Dec from AIPS SU ─────────────────────────────────────────────
+    with fits.open(str(fits_path), memmap=True, lazy_load_hdus=True) as hdul:
+        su = _get_hdu(hdul, 'AIPS SU')
+        if su is None:
+            raise ValueError('No AIPS SU extension in FITS file.')
+        su_data = su.data
+        id_col = next(
+            (c for c in su_data.dtype.names if 'ID' in c.upper() and 'NO' in c.upper()),
+            None)
+        src_row = None
+        for row in su_data:
+            sid  = int(row[id_col]) if id_col else None
+            name = _decode_bytes(row['SOURCE'])
+            if isinstance(source, str) and name.strip().lower() == source.strip().lower():
+                src_row = row; break
+            if isinstance(source, int) and sid == source:
+                src_row = row; break
+        if src_row is None:
+            available = [_decode_bytes(r['SOURCE']).strip() for r in su_data]
+            raise ValueError(f'Source "{source}" not found. Available: {available}')
+        src_name = _decode_bytes(src_row['SOURCE']).strip()
+        ra_deg   = float(src_row['RAEPO'])
+        dec_deg  = float(src_row['DECEPO'])
+
+    # ── Array location from AIPS AN ────────────────────────────────────────────
+    geo = _get_array_enu(fits_path)
+    loc = EarthLocation.from_geocentric(*geo['ecef_centre'], unit=_u.m)
+
+    # ── JD timestamps: all rows for this source ────────────────────────────────
+    if index is not None:
+        id_to_name = index['id_to_name']
+        if isinstance(source, str):
+            src_ids = [k for k, v in id_to_name.items()
+                       if v.strip().lower() == source.strip().lower()]
+        else:
+            src_ids = [int(source)]
+        jd_all = index['jd']
+        src_id_arr = index['source_id']
+        mask_src = np.isin(src_id_arr, src_ids)
+        jd_src = jd_all[mask_src]
+    else:
+        # Lightweight read without full index
+        with fits.open(str(fits_path), memmap=True) as hdul:
+            h = hdul[0].header
+            pz5 = float(h.get('PZERO5', 0)); ps5 = float(h.get('PSCAL5', 1))
+            pz6 = float(h.get('PZERO6', 0)); ps6 = float(h.get('PSCAL6', 1))
+            pars = hdul[0].data.par
+            step = max(1, h['GCOUNT'] // 20_000)
+            idx = np.arange(0, h['GCOUNT'], step)
+            p5 = ps5 * np.array([pars(4)[i] for i in idx], dtype=np.float64) + pz5
+            p6 = ps6 * np.array([pars(5)[i] for i in idx], dtype=np.float64) + pz6
+            jd_src = p5 + p6
+
+    jd_src = jd_src[np.isfinite(jd_src)]
+    if jd_src.size == 0:
+        raise ValueError(f'No timestamps found for source "{source}".')
+
+    # Apply optional JD / ISO timerange
+    if timerange is not None:
+        t0, t1 = timerange
+        if isinstance(t0, str):
+            t0 = Time(t0, format='iso', scale='utc').jd
+        if isinstance(t1, str):
+            t1 = Time(t1, format='iso', scale='utc').jd
+        jd_src = jd_src[(jd_src >= t0) & (jd_src <= t1)]
+
+    # Downsample to requested time_step_s
+    jd_step = time_step_s / 86400.0
+    jd_min, jd_max = jd_src.min(), jd_src.max()
+    n_steps = max(2, int((jd_max - jd_min) / jd_step) + 1)
+    jd_grid = np.linspace(jd_min, jd_max, n_steps)
+
+    # ── AltAz transform ────────────────────────────────────────────────────────
+    coord  = SkyCoord(ra=ra_deg * _u.deg, dec=dec_deg * _u.deg, frame='icrs')
+    t_grid = Time(jd_grid, format='jd', scale='utc')
+    frame  = AltAz(obstime=t_grid, location=loc)
+    altaz  = coord.transform_to(frame)
+
+    return {
+        'source_name':    src_name,
+        'ra_deg':         ra_deg,
+        'dec_deg':        dec_deg,
+        'jd':             jd_grid,
+        'utc':            [t.iso for t in t_grid],
+        'az_deg':         altaz.az.deg,
+        'el_deg':         altaz.alt.deg,
+        'array_lat_deg':  geo['lat_deg'],
+        'array_lon_deg':  geo['lon_deg'],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Source data-query application
+# ---------------------------------------------------------------------------
+#
+# Computes every property relevant to deciding observation quality and setting
+# data-selection parameters (elevation cuts, UV ranges, time windows).
+#
+# Public API:
+#   query_source(fits_path_or_index, source, ...)  → dict
+#   print_source_query(result)                      → None   (pretty-print)
+#   plot_source_query(result, ...)                  → Figure (4-panel)
+# ---------------------------------------------------------------------------
+
+def _gmst_deg(jd: np.ndarray) -> np.ndarray:
+    """Greenwich Mean Sidereal Time in degrees from Julian Date(s), via astropy."""
+    from astropy.time import Time as _T
+    t = _T(np.asarray(jd, dtype=np.float64), format='jd', scale='utc')
+    return np.asarray(t.sidereal_time('mean', 'greenwich').deg, dtype=np.float64)
+
+
+def _lmst_deg(jd: np.ndarray, lon_deg: float) -> np.ndarray:
+    """Local Mean Sidereal Time in degrees."""
+    return (_gmst_deg(jd) + lon_deg) % 360.0
+
+
+def _hour_angle_deg(jd: np.ndarray, ra_deg: float, lon_deg: float) -> np.ndarray:
+    """Hour angle in degrees in range (-180, 180]."""
+    ha = (_lmst_deg(jd, lon_deg) - ra_deg) % 360.0
+    ha[ha > 180.0] -= 360.0
+    return ha
+
+
+def _parallactic_angle_deg(
+    ha_deg: np.ndarray,
+    dec_deg: float,
+    lat_deg: float,
+) -> np.ndarray:
+    """Parallactic angle in degrees.
+
+    Uses the standard formula:
+      PA = atan2( -cos(φ)·sin(H), sin(φ)·cos(δ) - cos(φ)·sin(δ)·cos(H) )
+    where φ = geodetic latitude, δ = source declination, H = hour angle.
+    """
+    h   = np.radians(ha_deg)
+    phi = np.radians(lat_deg)
+    dec = np.radians(dec_deg)
+    num = -np.cos(phi) * np.sin(h)
+    den = np.sin(phi) * np.cos(dec) - np.cos(phi) * np.sin(dec) * np.cos(h)
+    return np.degrees(np.arctan2(num, den))
+
+
+def _uv_stats_for_source(
+    index: dict,
+    source: Union[str, int],
+) -> dict:
+    """Compute UV-coverage statistics from the row index.
+
+    Returns statistics in seconds (light-travel), metres, and kλ at
+    the band centre frequency.
+    """
+    id_to_name = index['id_to_name']
+    if isinstance(source, int):
+        src_ids = [source]
+    else:
+        wanted = str(source).strip().lower()
+        src_ids = [k for k, v in id_to_name.items() if v.strip().lower() == wanted]
+        if not src_ids:
+            raise ValueError(f'Source "{source}" not found. Available: {sorted(id_to_name.values())}')
+
+    mask = np.isin(index['source_id'], src_ids)
+    uu   = index['uu_sec'][mask].astype(np.float64)
+    vv   = index['vv_sec'][mask].astype(np.float64)
+
+    uv_sec  = np.hypot(uu, vv)
+    c_mps   = 299_792_458.0
+    freq    = index['freq']
+    nu_hz   = 0.5 * (freq['freq_min_hz'] + freq['freq_max_hz'])
+
+    uv_m      = uv_sec * c_mps
+    uv_klam   = uv_sec * nu_hz * 1e-3   # kλ at band centre
+
+    # Remove exact zeros (auto-correlations if present)
+    cross = uv_sec > 1e-10
+    uv_m_x    = uv_m[cross]
+    uv_klam_x = uv_klam[cross]
+    uu_x      = uu[cross] * c_mps
+    vv_x      = vv[cross] * c_mps
+
+    if uv_m_x.size == 0:
+        return {'warning': 'No cross-baseline UV data found for this source.'}
+
+    # UV plane filling: 2-D histogram density
+    n_bins = 50
+    uv_max_m = float(np.percentile(uv_m_x, 99.0))
+    hist2d, _, _ = np.histogram2d(
+        uu_x, vv_x,
+        bins=n_bins,
+        range=[[-uv_max_m, uv_max_m], [-uv_max_m, uv_max_m]],
+    )
+    n_filled = int(np.sum(hist2d > 0))
+    n_total  = n_bins * n_bins
+    uv_fill_pct = 100.0 * n_filled / n_total
+
+    # Angular resolution at band centre: θ ~ λ/(2·Bmax) in arcsec
+    lam_m = c_mps / nu_hz
+    theta_min_arcsec = float(206265.0 * lam_m / (2.0 * np.max(uv_m_x)))
+    # Largest angular scale: LAS ~ λ / (2·Bmin)
+    theta_las_arcmin = float(206265.0 * lam_m / (2.0 * np.min(uv_m_x))) / 60.0
+
+    return {
+        'n_vis_rows_cross':         int(uv_m_x.size),
+        'centre_freq_mhz':          round(nu_hz / 1e6, 3),
+        'wavelength_m':             round(lam_m, 4),
+        'bmin_m':                   round(float(np.min(uv_m_x)),   1),
+        'bmedian_m':                round(float(np.median(uv_m_x)), 1),
+        'bmax_m':                   round(float(np.max(uv_m_x)),   1),
+        'bmin_klambda':             round(float(np.min(uv_klam_x)),    3),
+        'bmedian_klambda':          round(float(np.median(uv_klam_x)), 3),
+        'bmax_klambda':             round(float(np.max(uv_klam_x)),    3),
+        'p10_blen_m':               round(float(np.percentile(uv_m_x, 10)), 1),
+        'p90_blen_m':               round(float(np.percentile(uv_m_x, 90)), 1),
+        'angular_resolution_arcsec': round(theta_min_arcsec, 3),
+        'largest_angular_scale_arcmin': round(theta_las_arcmin, 2),
+        'uv_filling_pct_50bins':    round(uv_fill_pct, 1),
+        'uu_m_raw':   uu_x,   # kept for plotting — not serialisable
+        'vv_m_raw':   vv_x,   # kept for plotting
+    }
+
+
+def _physical_baseline_stats(geo: dict) -> dict:
+    """Shortest, median, and longest physical dish separations from ENU coords."""
+    enu   = geo['enu']
+    nos   = geo['nos']
+    names = geo['names']
+    n     = len(nos)
+
+    lengths = []
+    pairs   = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            d = float(np.linalg.norm(enu[i] - enu[j]))
+            lengths.append(d)
+            pairs.append((names[i], names[j], d))
+
+    lengths = np.array(lengths)
+    pairs   = sorted(pairs, key=lambda x: x[2])
+
+    return {
+        'n_antennas':              n,
+        'n_physical_baselines':    len(lengths),
+        'shortest_m':              round(float(lengths.min()), 1),
+        'shortest_pair':           f'{pairs[0][0]}-{pairs[0][1]}',
+        'longest_m':               round(float(lengths.max()), 1),
+        'longest_pair':            f'{pairs[-1][0]}-{pairs[-1][1]}',
+        'median_m':                round(float(np.median(lengths)), 1),
+        'p10_m':                   round(float(np.percentile(lengths, 10)), 1),
+        'p90_m':                   round(float(np.percentile(lengths, 90)), 1),
+        'five_shortest_pairs':     [(f'{p[0]}-{p[1]}', round(p[2], 1)) for p in pairs[:5]],
+        'five_longest_pairs':      [(f'{p[0]}-{p[1]}', round(p[2], 1)) for p in pairs[-5:]],
+        'enu':                     enu,          # kept for plotting
+        'names':                   names,
+        'nos':                     nos,
+    }
+
+
+def query_source(
+    fits_path_or_index,
+    source: Union[str, int],
+    azel_time_step_s: float = 60.0,
+    elevation_thresholds_deg: Optional[List[float]] = None,
+    scan_gap_seconds: float = 5.0,
+    include_uv_raw: bool = True,
+) -> dict:
+    """Comprehensive per-source data-quality and observation-planning query.
+
+    Extracts **every** property that is relevant for deciding observation
+    quality, choosing data-selection parameters, and planning calibration
+    strategy — all from the FITS file alone, with no external input required.
+
+    Parameters
+    ----------
+    fits_path_or_index : str | Path | dict
+        Either the path to the UVFITS file or an already-built row index dict
+        (from :func:`build_row_index` or :func:`get_or_build_row_index`).
+    source : str | int
+        Source name (case-insensitive) or integer AIPS source ID.
+    azel_time_step_s : float
+        Time resolution for Az/El, HA, PA tracks (seconds).  Default 60 s.
+    elevation_thresholds_deg : list[float], optional
+        Elevation cut values to compute ``time_above_*_deg`` statistics.
+        Defaults to [15, 20, 25, 30, 35, 40, 45, 50, 60].
+    scan_gap_seconds : float
+        Gap in seconds used to identify scan breaks.  Default 5 s.
+    include_uv_raw : bool
+        Whether to include raw numpy arrays (``uu_m_raw``, ``vv_m_raw``,
+        ``enu``) in the returned dict.  Set to ``False`` for JSON export.
+
+    Returns
+    -------
+    dict
+        A nested dict with the following top-level keys:
+
+        ``source``
+            Name, RA, Dec, Galactic l/b.
+        ``file``
+            FITS path, file size.
+        ``frequency``
+            Centre frequency, bandwidth, channel width, number of channels.
+        ``timing``
+            Total duration, number of integrations, integration time,
+            per-scan start/end UTC strings and durations.
+        ``pointing``
+            Az/El time track, elevation statistics, time above each threshold.
+        ``hour_angle``
+            HA track, HA at start/end, transit UTC (if within observation).
+        ``parallactic_angle``
+            PA track, PA range, maximum PA rate — important for polarisation
+            calibration planning.
+        ``uv_coverage``
+            B_min/B_med/B_max in metres and kλ, angular resolution and
+            largest angular scale at band centre, UV-plane fill fraction.
+        ``physical_baselines``
+            Physical dish separations from the AIPS AN table ENU positions,
+            shortest/longest pairs (orthogonal to UV which depends on
+            frequency and hour angle).
+        ``sensitivity``
+            Geometric factors (N_pol, N_baselines, Δt, Δν) that go into
+            the noise formula σ = SEFD / sqrt(N_pol · N_bl · Δν · Δt).
+        ``data_selection_advice``
+            Ready-to-use ``--set`` strings and Python-dict values for
+            SOLVE_ELEVATION_MIN_DEG, SOLVE_UVRANGE_KLAMBDA, SOLVE_TIMERANGE.
+
+    Examples
+    --------
+    >>> import ugmrt_query as uq
+    >>> FITS = '/data/40_014_25jul2021_gsb.FITS'
+    >>> idx  = uq.get_or_build_row_index(FITS)
+    >>> result = uq.query_source(idx, '3C48')
+    >>> uq.print_source_query(result)
+    >>> fig = uq.plot_source_query(result)
+    >>> fig.savefig('3c48_query.png', dpi=150)
+    """
+    from astropy.coordinates import SkyCoord
+    import astropy.units as _u
+
+    if elevation_thresholds_deg is None:
+        elevation_thresholds_deg = [15, 20, 25, 30, 35, 40, 45, 50, 60]
+
+    # ── Resolve fits path and index ────────────────────────────────────────────
+    if isinstance(fits_path_or_index, dict):
+        fits_path = fits_path_or_index['path']
+        index     = fits_path_or_index
+    else:
+        fits_path = str(fits_path_or_index)
+        index     = None
+
+    fits_path = str(fits_path)
+
+    # ── 1. Frequency ───────────────────────────────────────────────────────────
+    freq_props = list_frequency_properties(fits_path)
+    nu_centre_hz = 0.5 * (freq_props['freq_min_hz'] + freq_props['freq_max_hz'])
+
+    # ── 2. Antenna geometry ────────────────────────────────────────────────────
+    geo = _get_array_enu(fits_path)
+    lat_deg = geo['lat_deg']
+    lon_deg = geo['lon_deg']
+
+    # ── 3. Az/El track ────────────────────────────────────────────────────────
+    azel = compute_source_azel(
+        fits_path_or_index   if index is not None else fits_path,
+        source=source,
+        time_step_s=azel_time_step_s,
+    )
+    jd_grid  = azel['jd']
+    el_deg   = azel['el_deg']
+    az_deg   = azel['az_deg']
+    ra_deg   = azel['ra_deg']
+    dec_deg  = azel['dec_deg']
+    src_name = azel['source_name']
+
+    # Elevation statistics
+    el_time_above = {}
+    dt_s = (jd_grid[-1] - jd_grid[0]) * 86400.0 / max(1, len(jd_grid) - 1)
+    for thr in elevation_thresholds_deg:
+        n_above = int(np.sum(el_deg >= thr))
+        el_time_above[f'time_above_{int(thr)}_deg_min'] = round(n_above * dt_s / 60.0, 1)
+
+    # ── 4. Hour angle ──────────────────────────────────────────────────────────
+    ha_deg  = _hour_angle_deg(jd_grid.copy(), ra_deg, lon_deg)
+    ha_mins = ha_deg * 4.0   # 1 deg HA = 4 minutes
+
+    # Find transit (HA closest to 0)
+    i_transit = int(np.argmin(np.abs(ha_deg)))
+    transit_utc = azel['utc'][i_transit]
+    ha_at_transit = float(ha_deg[i_transit])
+
+    # ── 5. Parallactic angle ───────────────────────────────────────────────────
+    pa_deg  = _parallactic_angle_deg(ha_deg, dec_deg, lat_deg)
+    # PA rate: max instantaneous rate in deg/min
+    if len(pa_deg) > 1:
+        dpa = np.diff(pa_deg)
+        # Wrap phase jumps (e.g. crossing ±180°)
+        dpa[dpa >  180] -= 360
+        dpa[dpa < -180] += 360
+        pa_rate_deg_per_min = float(np.max(np.abs(dpa)) / (dt_s / 60.0))
+    else:
+        pa_rate_deg_per_min = 0.0
+
+    # ── 6. Galactic coordinates ────────────────────────────────────────────────
+    sky = SkyCoord(ra=ra_deg * _u.deg, dec=dec_deg * _u.deg, frame='icrs')
+    gal = sky.galactic
+    gal_l = float(gal.l.deg)
+    gal_b = float(gal.b.deg)
+
+    # ── 7. Scan/timing properties ─────────────────────────────────────────────
+    obs = get_source_observation_properties(
+        index if index is not None else build_row_index(fits_path),
+        source=source,
+        scan_gap_seconds=scan_gap_seconds,
+        include_integrations=False,
+    )
+
+    # ── 8. UV statistics ───────────────────────────────────────────────────────
+    idx_for_uv = index if index is not None else build_row_index(fits_path)
+    uv_stats = _uv_stats_for_source(idx_for_uv, source)
+
+    # ── 9. Physical baselines from ENU ────────────────────────────────────────
+    bl_stats = _physical_baseline_stats(geo)
+
+    # ── 10. File metadata ──────────────────────────────────────────────────────
+    import os
+    file_size_gb = os.path.getsize(fits_path) / 1e9
+
+    # ── 11. Sensitivity geometric factors ─────────────────────────────────────
+    n_ant  = len(geo['nos'])
+    n_cross_bl = n_ant * (n_ant - 1) // 2
+    n_pol  = obs['n_correlations']
+    t_int_s = obs['integration_time_sec']
+    delta_nu_hz = freq_props['bandwidth_hz_estimated']
+    noise_formula = (
+        f'σ = SEFD / sqrt({n_pol} · {n_cross_bl} · '
+        f'{delta_nu_hz/1e6:.1f}MHz · t_s)'
+    )
+
+    # ── 12. Data-selection advice ─────────────────────────────────────────────
+    # Recommend elevation cut based on time-above statistics
+    recommended_el = None
+    for thr in sorted(elevation_thresholds_deg):
+        key = f'time_above_{int(thr)}_deg_min'
+        if el_time_above.get(key, 0) >= 20.0:   # at least 20 min above threshold
+            recommended_el = thr
+    # Recommended UV range derived from p2–p98 of the actual UV distribution
+    # Get percentiles from raw arrays if available
+    uu_raw = uv_stats.get('uu_m_raw')
+    vv_raw = uv_stats.get('vv_m_raw')
+    c_mps  = 299_792_458.0
+    if uu_raw is not None and len(uu_raw) > 0:
+        uv_rad_m = np.hypot(uu_raw, vv_raw)
+        uv_rad_klam_all = uv_rad_m / (c_mps / nu_centre_hz) * 1e-3
+        uv_adv_min_klam = round(float(np.percentile(uv_rad_klam_all, 2)), 2)
+        uv_adv_max_klam = round(float(np.percentile(uv_rad_klam_all, 98)), 2)
+    else:
+        uv_adv_min_klam = uv_stats.get('bmin_klambda', 0.0)
+        uv_adv_max_klam = uv_stats.get('bmax_klambda', 999.9)
+
+    # Best time window: UTC range where elevation >= recommended_el (or 30°)
+    el_cut_advice = recommended_el if recommended_el is not None else 30.0
+    above_mask = el_deg >= el_cut_advice
+    best_windows = []
+    in_win = False
+    t0_win = None
+    for ii, ok in enumerate(above_mask):
+        if ok and not in_win:
+            t0_win = azel['utc'][ii]; in_win = True
+        elif not ok and in_win:
+            best_windows.append((t0_win, azel['utc'][ii - 1])); in_win = False
+    if in_win and t0_win is not None:
+        best_windows.append((t0_win, azel['utc'][-1]))
+
+    # ── 13. Strip raw arrays if not wanted ────────────────────────────────────
+    uv_export = {k: v for k, v in uv_stats.items()
+                 if k not in ('uu_m_raw', 'vv_m_raw')}
+    bl_export  = {k: v for k, v in bl_stats.items()
+                  if k not in ('enu', 'names', 'nos')}
+
+    result = {
+        'source': {
+            'name':         src_name,
+            'ra_deg':       round(ra_deg, 6),
+            'dec_deg':      round(dec_deg, 6),
+            'gal_l_deg':    round(gal_l, 4),
+            'gal_b_deg':    round(gal_b, 4),
+        },
+        'file': {
+            'path':         fits_path,
+            'size_gb':      round(file_size_gb, 3),
+        },
+        'frequency': {
+            'centre_mhz':   round(nu_centre_hz / 1e6, 3),
+            'min_mhz':      round(freq_props['freq_min_hz'] / 1e6, 3),
+            'max_mhz':      round(freq_props['freq_max_hz'] / 1e6, 3),
+            'bandwidth_mhz': round(freq_props['bandwidth_hz_estimated'] / 1e6, 3),
+            'n_channels':   freq_props['nchan'],
+            'chan_width_khz': round(abs(freq_props['chan_width_hz']) / 1e3, 4),
+            'wavelength_m': round(c_mps / nu_centre_hz, 4),
+        },
+        'timing': {
+            'begin_utc':            obs['begin_time_utc'],
+            'end_utc':              obs['end_time_utc'],
+            'total_duration_min':   round(obs['total_duration_sec'] / 60.0, 1),
+            'total_duration_hr':    round(obs['total_duration_sec'] / 3600.0, 3),
+            'n_integrations':       obs['n_integrations'],
+            'integration_time_s':   round(t_int_s, 2),
+            'n_scans':              obs['n_scans'],
+            'n_vis_rows':           obs['n_vis_rows'],
+            'scans':                obs['scans'],
+        },
+        'pointing': {
+            'el_min_deg':          round(float(el_deg.min()), 2),
+            'el_max_deg':          round(float(el_deg.max()), 2),
+            'el_mean_deg':         round(float(el_deg.mean()), 2),
+            'el_at_start_deg':     round(float(el_deg[0]), 2),
+            'el_at_end_deg':       round(float(el_deg[-1]), 2),
+            'az_grid_deg':         az_deg.tolist(),
+            'el_grid_deg':         el_deg.tolist(),
+            'utc_grid':            azel['utc'],
+            **el_time_above,
+        },
+        'hour_angle': {
+            'ha_at_start_deg':     round(float(ha_deg[0]), 3),
+            'ha_at_start_min':     round(float(ha_mins[0]), 2),
+            'ha_at_end_deg':       round(float(ha_deg[-1]), 3),
+            'ha_at_end_min':       round(float(ha_mins[-1]), 2),
+            'ha_range_deg':        round(float(ha_deg.max() - ha_deg.min()), 3),
+            'ha_range_min':        round(float(ha_deg.max() - ha_deg.min()) * 4.0, 2),
+            'transit_utc':         transit_utc,
+            'ha_at_transit_deg':   round(ha_at_transit, 4),
+            'ha_grid_deg':         ha_deg.tolist(),
+        },
+        'parallactic_angle': {
+            'pa_at_start_deg':     round(float(pa_deg[0]), 2),
+            'pa_at_end_deg':       round(float(pa_deg[-1]), 2),
+            'pa_min_deg':          round(float(pa_deg.min()), 2),
+            'pa_max_deg':          round(float(pa_deg.max()), 2),
+            'pa_range_deg':        round(float(pa_deg.max() - pa_deg.min()), 2),
+            'pa_max_rate_deg_per_min': round(pa_rate_deg_per_min, 4),
+            'note': ('PA range relevant for polarisation leakage; '
+                     'max rate at transit if source passes near zenith.'),
+            'pa_grid_deg': pa_deg.tolist(),
+        },
+        'uv_coverage': uv_export,
+        'physical_baselines': bl_export,
+        'sensitivity': {
+            'n_antennas':          n_ant,
+            'n_cross_baselines':   n_cross_bl,
+            'n_polarisations':     n_pol,
+            'integration_time_s':  round(t_int_s, 2),
+            'bandwidth_mhz':       round(delta_nu_hz / 1e6, 3),
+            'noise_formula_hint':  noise_formula,
+            'note': ('Multiply by on-source time in seconds to get image noise. '
+                     'Provide SEFD (Jy) for your band to get σ in Jy/beam.'),
+        },
+        'data_selection_advice': {
+            'recommended_elevation_min_deg':   el_cut_advice,
+            'recommended_uvrange_klambda':     (uv_adv_min_klam, uv_adv_max_klam),
+            'best_time_windows_above_el_cut':  best_windows,
+            'set_strings': {
+                'SOLVE_ELEVATION_MIN_DEG': f'--set "SOLVE_ELEVATION_MIN_DEG={el_cut_advice}"',
+                'SOLVE_UVRANGE_KLAMBDA':   f'--set "SOLVE_UVRANGE_KLAMBDA=({uv_adv_min_klam}, {uv_adv_max_klam})"',
+                'SOLVE_TIMERANGE':         (
+                    f'--set "SOLVE_TIMERANGE=(\'{best_windows[0][0]}\', \'{best_windows[0][1]}\')"'
+                    if best_windows else 'No window above elevation cut found.'
+                ),
+            },
+        },
+        # Keep raw arrays attached for plot_source_query (not JSON-serialisable)
+        '_raw': {
+            'uu_m':   uu_raw if include_uv_raw else None,
+            'vv_m':   vv_raw if include_uv_raw else None,
+            'enu':    geo['enu'] if include_uv_raw else None,
+            'ant_names': geo['names'],
+            'ant_nos':   geo['nos'],
+            'jd_grid':   jd_grid,
+        },
+    }
+    return result
+
+
+def print_source_query(result: dict) -> None:
+    """Pretty-print the output of :func:`query_source` to stdout.
+
+    Parameters
+    ----------
+    result : dict
+        The dict returned by :func:`query_source`.
+
+    Examples
+    --------
+    >>> result = uq.query_source(idx, '3C48')
+    >>> uq.print_source_query(result)
+    """
+    W = 70
+    SEP = '─' * W
+
+    def hdr(title):
+        print(f'\n{SEP}')
+        print(f'  {title}')
+        print(SEP)
+
+    def row(label, value, unit=''):
+        u = f'  {unit}' if unit else ''
+        print(f'  {label:<42s} {value}{u}')
+
+    src  = result['source']
+    freq = result['frequency']
+    tim  = result['timing']
+    pt   = result['pointing']
+    ha   = result['hour_angle']
+    pa   = result['parallactic_angle']
+    uv   = result['uv_coverage']
+    bl   = result['physical_baselines']
+    sens = result['sensitivity']
+    adv  = result['data_selection_advice']
+    fil  = result['file']
+
+    print(f'\n{"━"*W}')
+    print(f'  SOURCE QUERY REPORT  ·  {src["name"]}')
+    print(f'{"━"*W}')
+
+    hdr('SOURCE & FILE')
+    row('Source',           src['name'])
+    row('RA (J2000)',        f'{src["ra_deg"]:.4f}°  ({_deg_to_hms(src["ra_deg"])})')
+    row('Dec (J2000)',       f'{src["dec_deg"]:.4f}°  ({_deg_to_dms(src["dec_deg"])})')
+    row('Galactic (l, b)',   f'({src["gal_l_deg"]:.2f}°, {src["gal_b_deg"]:.2f}°)')
+    row('File',              fil['path'])
+    row('File size',         f'{fil["size_gb"]:.2f}', 'GB')
+
+    hdr('FREQUENCY')
+    row('Centre frequency',  f'{freq["centre_mhz"]:.3f}', 'MHz')
+    row('Band',              f'{freq["min_mhz"]:.3f} – {freq["max_mhz"]:.3f}', 'MHz')
+    row('Bandwidth',         f'{freq["bandwidth_mhz"]:.3f}', 'MHz')
+    row('Channels',          f'{freq["n_channels"]}  ×  {freq["chan_width_khz"]:.1f} kHz/chan')
+    row('Wavelength (λ)',    f'{freq["wavelength_m"]:.4f}', 'm')
+
+    hdr('TIMING')
+    row('Observation start', tim['begin_utc'])
+    row('Observation end',   tim['end_utc'])
+    row('Total duration',    f'{tim["total_duration_hr"]:.3f} hr  ({tim["total_duration_min"]:.1f} min)')
+    row('Integration time',  f'{tim["integration_time_s"]:.1f}', 's')
+    row('Integrations / scans', f'{tim["n_integrations"]}  /  {tim["n_scans"]}')
+    row('Total visibility rows', f'{tim["n_vis_rows"]:,}')
+    if tim['scans']:
+        print(f'\n  {"Scan":>4}  {"Start UTC":>22}  {"End UTC":>22}  {"Dur(s)":>7}  {"N_int":>6}')
+        print(f'  {"-"*4}  {"-"*22}  {"-"*22}  {"-"*7}  {"-"*6}')
+        for s in tim['scans']:
+            print(f'  {s["scan_index"]:>4}  {s["start_utc"]:>22}  {s["end_utc"]:>22}  '
+                  f'{s["duration_sec"]:>7.0f}  {s["n_integrations"]:>6}')
+
+    hdr('POINTING  (Az / Elevation)')
+    row('El at obs start',   f'{pt["el_at_start_deg"]:.1f}°')
+    row('El at obs end',     f'{pt["el_at_end_deg"]:.1f}°')
+    row('El min / mean / max', f'{pt["el_min_deg"]:.1f}° / {pt["el_mean_deg"]:.1f}° / {pt["el_max_deg"]:.1f}°')
+    print()
+    thr_keys = sorted([k for k in pt if k.startswith('time_above_')])
+    print(f'  {"El threshold":>14}  {"Time above (min)":>18}')
+    print(f'  {"-"*14}  {"-"*18}')
+    for key in thr_keys:
+        lbl = key.replace('time_above_', '').replace('_deg_min', '°')
+        print(f'  {lbl:>14}  {pt[key]:>18.1f}')
+
+    hdr('HOUR ANGLE')
+    row('HA at start',       f'{ha["ha_at_start_deg"]:+.2f}°  ({ha["ha_at_start_min"]:+.1f} min)')
+    row('HA at end',         f'{ha["ha_at_end_deg"]:+.2f}°  ({ha["ha_at_end_min"]:+.1f} min)')
+    row('HA range',          f'{ha["ha_range_deg"]:.2f}°  ({ha["ha_range_min"]:.1f} min)')
+    row('Transit UTC',       ha['transit_utc'])
+    row('HA at transit',     f'{ha["ha_at_transit_deg"]:+.3f}°')
+
+    hdr('PARALLACTIC ANGLE  (polarisation planning)')
+    row('PA at start / end', f'{pa["pa_at_start_deg"]:+.1f}° / {pa["pa_at_end_deg"]:+.1f}°')
+    row('PA range',          f'{pa["pa_range_deg"]:.1f}°')
+    row('Max PA rate',       f'{pa["pa_max_rate_deg_per_min"]:.3f}  deg/min')
+    print(f'\n  Note: {pa["note"]}')
+
+    hdr('UV COVERAGE')
+    row('B_min',  f'{uv.get("bmin_m", "—"):.1f} m  =  {uv.get("bmin_klambda", "—"):.2f} kλ')
+    row('B_median', f'{uv.get("bmedian_m", "—"):.1f} m  =  {uv.get("bmedian_klambda", "—"):.2f} kλ')
+    row('B_max',  f'{uv.get("bmax_m", "—"):.1f} m  =  {uv.get("bmax_klambda", "—"):.2f} kλ')
+    row('Angular resolution (≈ λ/2B_max)', f'{uv.get("angular_resolution_arcsec", "—"):.2f}", ')
+    row('Largest angular scale',  f'{uv.get("largest_angular_scale_arcmin", "—"):.2f}′')
+    row('UV-plane fill fraction', f'{uv.get("uv_filling_pct_50bins", "—"):.1f}%  (50×50 grid)')
+
+    hdr('PHYSICAL BASELINES  (dish separations, freq-independent)')
+    row('Antennas',          f'{bl.get("n_antennas", "—")}')
+    row('Physical baselines',f'{bl.get("n_physical_baselines", "—")}')
+    row('Shortest pair',     f'{bl.get("shortest_pair","—")}  =  {bl.get("shortest_m","—")} m')
+    row('Median separation', f'{bl.get("median_m","—")} m')
+    row('Longest pair',      f'{bl.get("longest_pair","—")}  =  {bl.get("longest_m","—")} m')
+    print(f'\n  5 shortest pairs (risk of standing-wave / shadowing):')
+    for pair, d in bl.get('five_shortest_pairs', []):
+        print(f'    {pair:<20s}  {d:.0f} m')
+
+    hdr('SENSITIVITY  (geometric factors)')
+    row('Antennas',           f'{sens["n_antennas"]}')
+    row('Cross-baselines',    f'{sens["n_cross_baselines"]}')
+    row('Polarisations',      f'{sens["n_polarisations"]}')
+    row('Δt (integration)',   f'{sens["integration_time_s"]:.1f}', 's')
+    row('Δν (bandwidth)',     f'{sens["bandwidth_mhz"]:.1f}', 'MHz')
+    print(f'\n  Noise formula:  {sens["noise_formula_hint"]}')
+    print(f'  ({sens["note"]})')
+
+    hdr('DATA SELECTION ADVICE')
+    row('Recommended elevation cut', f'{adv["recommended_elevation_min_deg"]}°')
+    row('Recommended UV range',     f'{adv["recommended_uvrange_klambda"][0]} → {adv["recommended_uvrange_klambda"][1]} kλ')
+    print()
+    print('  Best time windows (elevation ≥ cut):')
+    for w0, w1 in adv['best_time_windows_above_el_cut']:
+        print(f'    {w0}  →  {w1}')
+    print()
+    print('  Shell --set strings:')
+    for key, val in adv['set_strings'].items():
+        print(f'    {val}')
+
+    print(f'\n{"━"*W}\n')
+
+
+def _deg_to_hms(deg: float) -> str:
+    """Format decimal degrees as HH:MM:SS.s (RA convention)."""
+    total_s = (deg % 360.0) * 3600.0 / 15.0
+    h  = int(total_s // 3600)
+    m  = int((total_s % 3600) // 60)
+    s  = total_s % 60
+    return f'{h:02d}h{m:02d}m{s:05.2f}s'
+
+
+def _deg_to_dms(deg: float) -> str:
+    """Format decimal degrees as ±DD:MM:SS (Dec convention)."""
+    sign = '+' if deg >= 0 else '-'
+    ad   = abs(deg)
+    d    = int(ad)
+    m    = int((ad - d) * 60)
+    s    = ((ad - d) * 60 - m) * 60
+    return f'{sign}{d:02d}d{m:02d}m{s:04.1f}s'
+
+
+def plot_source_query(
+    result: dict,
+    figsize: Tuple[float, float] = (18, 14),
+    save_path: Optional[Union[str, Path]] = None,
+    dpi: int = 120,
+) -> 'plt.Figure':
+    """Four-panel diagnostic plot from :func:`query_source` output.
+
+    Panels
+    ------
+    Top-left  : Elevation and Azimuth vs UT time
+    Top-right : UV coverage (u–v plane, cross-baselines only)
+    Bot-left  : Hour angle and Parallactic angle vs UT time
+    Bot-right : Histogram of baseline lengths (metres and kλ)
+
+    Parameters
+    ----------
+    result : dict
+        Return value of :func:`query_source`.
+    figsize : (float, float)
+        Figure width × height in inches.
+    save_path : str | Path, optional
+        If given, save the figure to this path.
+    dpi : int
+        Resolution for saving.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> fig = uq.plot_source_query(result)
+    >>> fig.savefig('3c48_query.png', dpi=150, bbox_inches='tight')
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from matplotlib.ticker import AutoMinorLocator
+
+    src  = result['source']
+    freq = result['frequency']
+    pt   = result['pointing']
+    ha   = result['hour_angle']
+    pa   = result['parallactic_angle']
+    uv   = result['uv_coverage']
+    adv  = result['data_selection_advice']
+    raw  = result.get('_raw', {})
+
+    utc_strs = pt['utc_grid']
+    from astropy.time import Time as _T
+    t_dt = [_T(s, format='iso', scale='utc').to_datetime() for s in utc_strs]
+
+    el   = np.array(pt['el_grid_deg'])
+    az   = np.array(pt['az_grid_deg'])
+    ha_v = np.array(ha['ha_grid_deg'])
+    pa_v = np.array(pa['pa_grid_deg'])
+
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    fig.patch.set_facecolor('#1a1a2e')
+    for ax in axes.flat:
+        ax.set_facecolor('#16213e')
+        ax.tick_params(colors='#cfd8dc', labelsize=9)
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#37474f')
+        ax.xaxis.label.set_color('#cfd8dc')
+        ax.yaxis.label.set_color('#cfd8dc')
+        ax.title.set_color('#eceff1')
+
+    # ── Panel A: Elevation + Azimuth ──────────────────────────────────────────
+    ax_el = axes[0, 0]
+    ax_az = ax_el.twinx()
+    ax_az.set_facecolor('#16213e')
+    ax_az.tick_params(colors='#90a4ae', labelsize=8)
+    ax_az.spines['right'].set_edgecolor('#455a64')
+    ax_az.yaxis.label.set_color('#90a4ae')
+
+    ax_el.plot(t_dt, el, color='#4fc3f7', lw=2, label='Elevation')
+    ax_az.plot(t_dt, az, color='#ffb74d', lw=1.2, ls='--', alpha=0.7, label='Azimuth')
+
+    el_cut = adv['recommended_elevation_min_deg']
+    ax_el.axhline(el_cut, color='#ef5350', ls=':', lw=1.4,
+                  label=f'El cut ({el_cut}°)')
+    ax_el.fill_between(t_dt, el_cut, el,
+                       where=(el >= el_cut), alpha=0.15, color='#4fc3f7')
+
+    ax_el.set_xlabel('UTC')
+    ax_el.set_ylabel('Elevation (°)')
+    ax_az.set_ylabel('Azimuth (°)')
+    ax_el.set_title(f'{src["name"]}  ·  Elevation & Azimuth track  '
+                    f'·  {freq["centre_mhz"]:.0f} MHz')
+    ax_el.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax_el.xaxis.set_minor_locator(AutoMinorLocator())
+    ax_el.yaxis.set_minor_locator(AutoMinorLocator())
+    lines_a  = ax_el.get_lines() + ax_az.get_lines()
+    labels_a = [l.get_label() for l in lines_a]
+    ax_el.legend(lines_a, labels_a, fontsize=8, facecolor='#1a1a2e', labelcolor='#eceff1')
+    fig.autofmt_xdate(rotation=30, ha='right')
+
+    # ── Panel B: UV coverage ──────────────────────────────────────────────────
+    ax_uv = axes[0, 1]
+    uu_m = raw.get('uu_m')
+    vv_m = raw.get('vv_m')
+    if uu_m is not None and len(uu_m) > 0:
+        step = max(1, len(uu_m) // 15_000)
+        uu_s = uu_m[::step] / 1e3   # km for plotting
+        vv_s = vv_m[::step] / 1e3
+        ax_uv.scatter( uu_s,  vv_s, s=0.5, c='#4dd0e1', alpha=0.4, rasterized=True)
+        ax_uv.scatter(-uu_s, -vv_s, s=0.5, c='#80cbc4', alpha=0.4, rasterized=True)
+    ax_uv.set_xlabel('u  (km)')
+    ax_uv.set_ylabel('v  (km)')
+    ax_uv.set_title(f'UV coverage  ·  {uv.get("angular_resolution_arcsec","—"):.2f}″ resolution  '
+                    f'/  {uv.get("largest_angular_scale_arcmin","—"):.1f}′ LAS')
+    ax_uv.set_aspect('equal')
+    ax_uv.axhline(0, color='#37474f', lw=0.5)
+    ax_uv.axvline(0, color='#37474f', lw=0.5)
+    ax_uv.text(0.02, 0.97,
+               f'B_max = {uv.get("bmax_m","—"):.0f} m  /  {uv.get("bmax_klambda","—"):.1f} kλ\n'
+               f'B_min = {uv.get("bmin_m","—"):.0f} m  /  {uv.get("bmin_klambda","—"):.1f} kλ\n'
+               f'Fill = {uv.get("uv_filling_pct_50bins","—"):.1f}%',
+               transform=ax_uv.transAxes, va='top', fontsize=8,
+               color='#b0bec5', family='monospace',
+               bbox=dict(facecolor='#0d0d1a', alpha=0.7, edgecolor='none', pad=4))
+
+    # ── Panel C: Hour angle + Parallactic angle ───────────────────────────────
+    ax_ha = axes[1, 0]
+    ax_pa = ax_ha.twinx()
+    ax_pa.set_facecolor('#16213e')
+    ax_pa.tick_params(colors='#a5d6a7', labelsize=8)
+    ax_pa.spines['right'].set_edgecolor('#455a64')
+    ax_pa.yaxis.label.set_color('#a5d6a7')
+
+    ax_ha.plot(t_dt, ha_v * 4.0, color='#ce93d8', lw=2, label='Hour angle')
+    ax_pa.plot(t_dt, pa_v,        color='#a5d6a7', lw=1.5, ls='--', label='Parallactic angle')
+    ax_ha.axhline(0, color='#546e7a', lw=0.8, ls=':')
+
+    ax_ha.set_xlabel('UTC')
+    ax_ha.set_ylabel('Hour angle (min)')
+    ax_pa.set_ylabel('Parallactic angle (°)')
+    ax_ha.set_title(f'Hour angle  &  Parallactic angle')
+    ax_ha.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax_ha.xaxis.set_minor_locator(AutoMinorLocator())
+    lines_c  = ax_ha.get_lines() + ax_pa.get_lines()
+    labels_c = [l.get_label() for l in lines_c]
+    ax_ha.legend(lines_c, labels_c, fontsize=8, facecolor='#1a1a2e', labelcolor='#eceff1')
+    fig.autofmt_xdate(rotation=30, ha='right')
+
+    # ── Panel D: Baseline length histogram ────────────────────────────────────
+    ax_bl = axes[1, 1]
+    if uu_m is not None and len(uu_m) > 0:
+        blen_m = np.hypot(uu_m, vv_m)
+        ax_bl.hist(blen_m / 1e3, bins=60, color='#4fc3f7', alpha=0.75,
+                   edgecolor='#1a1a2e', linewidth=0.3)
+        ax_bl2 = ax_bl.twiny()
+        ax_bl2.set_facecolor('#16213e')
+        ax_bl2.tick_params(colors='#ffcc80', labelsize=8)
+        lam_m = freq['wavelength_m']
+        lo_km = ax_bl.get_xlim()[0]
+        hi_km = ax_bl.get_xlim()[1]
+        ax_bl2.set_xlim(lo_km * 1e3 / lam_m * 1e-3,
+                        hi_km * 1e3 / lam_m * 1e-3)
+        ax_bl2.set_xlabel('Baseline length (kλ)', color='#ffcc80')
+    ax_bl.set_xlabel('Baseline length (km)')
+    ax_bl.set_ylabel('Count')
+    ax_bl.set_title(f'Baseline length distribution')
+    ax_bl.xaxis.set_minor_locator(AutoMinorLocator())
+    ax_bl.yaxis.set_minor_locator(AutoMinorLocator())
+
+    fig.suptitle(
+        f'Source Query: {src["name"]}  ·  '
+        f'RA {src["ra_deg"]:.3f}°  Dec {src["dec_deg"]:.3f}°  '
+        f'(l={src["gal_l_deg"]:.1f}°, b={src["gal_b_deg"]:.1f}°)',
+        fontsize=12, color='#eceff1', y=1.01,
+    )
+    plt.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(str(save_path), dpi=dpi, bbox_inches='tight',
+                    facecolor=fig.get_facecolor())
+        print(f'Saved: {save_path}')
+
+    return fig
+
+
+def plot_antenna_positions(
+    fits_path_or_index,
+    flagged_antenna_ids: Optional[List[int]] = None,
+    flagged_antenna_names: Optional[List[str]] = None,
+    highlight_pairs_closer_than_m: Optional[float] = None,
+    title: Optional[str] = None,
+    save_path: Optional[Union[str, Path]] = None,
+    figsize=(10, 10),
+) -> 'plt.Figure':
+    """Plot GMRT antenna positions (ENU) from the AIPS AN table.
+
+    Parameters
+    ----------
+    fits_path_or_index : str | Path | dict
+        FITS path, or row index dict.
+    flagged_antenna_ids : list[int], optional
+        Antenna numbers (NOSTA) to circle in red as flagged.
+    flagged_antenna_names : list[str], optional
+        Antenna names to circle instead of / in addition to IDs.
+    highlight_pairs_closer_than_m : float, optional
+        Draw a line between any pair of antennas within this distance (m)
+        and annotate with the implied standing-wave period.
+    title : str, optional
+    save_path : str | Path, optional
+    figsize : tuple
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    fits_path = fits_path_or_index['path'] if isinstance(fits_path_or_index, dict) \
+                else fits_path_or_index
+    geo    = _get_array_enu(fits_path)
+    nos    = geo['nos']
+    names  = geo['names']
+    enu    = geo['enu']   # (N, 3)
+    east   = enu[:, 0]
+    north  = enu[:, 1]
+
+    # Normalise flagged sets
+    _flag_ids   = set(flagged_antenna_ids or [])
+    _flag_names = {_norm_antenna_name(n) for n in (flagged_antenna_names or [])}
+    def _is_flagged(no, nm):
+        return (no in _flag_ids) or (_norm_antenna_name(nm) in _flag_names)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Optionally draw inter-dish separation lines
+    if highlight_pairs_closer_than_m is not None:
+        for i in range(len(nos)):
+            for j in range(i + 1, len(nos)):
+                d = float(np.hypot(east[i] - east[j], north[i] - north[j]))
+                if d < highlight_pairs_closer_than_m and d > 1.0:
+                    ax.plot([east[i], east[j]], [north[i], north[j]],
+                            color='orange', lw=1.2, alpha=0.6, zorder=1)
+                    mid_e = 0.5 * (east[i] + east[j])
+                    mid_n = 0.5 * (north[i] + north[j])
+                    period = 2.998e8 / (2 * d) / 1e6
+                    ax.text(mid_e, mid_n, f'{d:.0f} m\n{period:.2f} MHz',
+                            ha='center', va='bottom', fontsize=6,
+                            color='darkorange', zorder=5)
+
+    # Plot antennas
+    for no, nm, e, n in zip(nos, names, east, north):
+        flagged = _is_flagged(no, nm)
+        color = 'tomato' if flagged else 'steelblue'
+        ax.scatter(e, n, s=60, color=color, zorder=3)
+        ax.annotate(f'{nm}\n({no})', (e, n),
+                    textcoords='offset points', xytext=(4, 4),
+                    fontsize=7, color='black', zorder=4)
+        if flagged:
+            circ = plt.Circle((e, n), radius=30, fill=False,
+                               edgecolor='tomato', lw=2.0, zorder=4)
+            ax.add_patch(circ)
+
+    ax.set_xlabel('East (m)')
+    ax.set_ylabel('North (m)')
+    ax.set_aspect('equal')
+    ax.grid(True, alpha=0.25)
+    ax.set_title(title or f'Antenna positions — {Path(str(fits_path)).name}')
+    if flagged_antenna_ids or flagged_antenna_names:
+        from matplotlib.lines import Line2D as _L2D
+        ax.legend(handles=[
+            _L2D([0],[0], marker='o', color='w', mfc='steelblue',  ms=8, label='Active'),
+            _L2D([0],[0], marker='o', color='w', mfc='tomato',     ms=8, label='Flagged'),
+        ], fontsize=9)
+
+    plt.tight_layout()
+    if save_path is not None:
+        fig.savefig(str(save_path), dpi=120)
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Data selection / slicer — reusable filter spec for all loading functions
+# ---------------------------------------------------------------------------
+
+class DataSelection:
+    """Reusable filter specification passed to loading and calibration functions.
+
+    All fields are optional.  Any combination can be used simultaneously.
+
+    Parameters
+    ----------
+    timerange : (start, end) optional
+        JD float pair, or ISO string pair ('YYYY-MM-DD HH:MM:SS').
+        Rows outside this range are dropped.
+    chan_range : (first, last) optional
+        0-based inclusive channel indices (same as the existing ``chan_range``
+        parameter throughout the codebase).
+    uvrange_m : (min_m, max_m) optional
+        UV-distance range in metres.  Rows outside are dropped.
+    uvrange_klambda : (min_kλ, max_kλ) optional
+        UV-distance range in kilolambda (using the band centre frequency).
+        If both ``uvrange_m`` and ``uvrange_klambda`` are given, the metres
+        limit is applied first and kilolambda second.
+    elevation_min_deg : float, optional
+        Drop rows observed below this elevation (degrees).
+    elevation_max_deg : float, optional
+        Drop rows observed above this elevation (degrees).
+    ant_list : list[int], optional
+        Restrict to these antenna numbers (replaces/overrides the top-level
+        ``ant_list`` argument if both are given, with the selection taking
+        precedence).
+
+    Examples
+    --------
+    # Use only data above 30° elevation and within 2–50 kλ:
+    sel = DataSelection(elevation_min_deg=30.0,
+                        uvrange_klambda=(2.0, 50.0))
+
+    # Use only the first 2 hours of a 3C48 scan:
+    sel = DataSelection(timerange=('2021-07-25 19:00:00', '2021-07-25 21:00:00'))
+
+    # Pass to any loading or calibration function:
+    vis = load_vis_for_source(index, '3C48', selection=sel)
+    sol = derive_point_source_bandpass(index, '3C48', selection=sel)
+    run_iterative_bandpass_workflow(..., selection=sel)
+    """
+
+    def __init__(
+        self,
+        timerange: Optional[Tuple] = None,
+        chan_range: Optional[Tuple[int, int]] = None,
+        uvrange_m: Optional[Tuple[float, float]] = None,
+        uvrange_klambda: Optional[Tuple[float, float]] = None,
+        elevation_min_deg: Optional[float] = None,
+        elevation_max_deg: Optional[float] = None,
+        ant_list: Optional[List[int]] = None,
+    ):
+        self.timerange         = timerange
+        self.chan_range        = chan_range
+        self.uvrange_m         = uvrange_m
+        self.uvrange_klambda   = uvrange_klambda
+        self.elevation_min_deg = elevation_min_deg
+        self.elevation_max_deg = elevation_max_deg
+        self.ant_list          = ant_list
+
+    # normalise JD bounds (accept ISO strings)
+    def jd_bounds(self) -> Optional[Tuple[float, float]]:
+        if self.timerange is None:
+            return None
+        from astropy.time import Time as _T
+        t0, t1 = self.timerange
+        if isinstance(t0, str):
+            t0 = _T(t0, format='iso', scale='utc').jd
+        if isinstance(t1, str):
+            t1 = _T(t1, format='iso', scale='utc').jd
+        return (float(t0), float(t1))
+
+    def __repr__(self):
+        parts = []
+        if self.timerange:         parts.append(f'timerange={self.timerange}')
+        if self.chan_range:         parts.append(f'chan_range={self.chan_range}')
+        if self.uvrange_m:          parts.append(f'uvrange_m={self.uvrange_m}')
+        if self.uvrange_klambda:    parts.append(f'uvrange_klambda={self.uvrange_klambda}')
+        if self.elevation_min_deg:  parts.append(f'el_min={self.elevation_min_deg}°')
+        if self.elevation_max_deg:  parts.append(f'el_max={self.elevation_max_deg}°')
+        if self.ant_list:           parts.append(f'ant_list={self.ant_list}')
+        return f'DataSelection({", ".join(parts) or "no filters"})'
+
+
+# ---------------------------------------------------------------------------
 # Visibility loader — contiguous block I/O via the row index
 # ---------------------------------------------------------------------------
 
@@ -692,8 +1883,50 @@ def load_vis_for_source(
     stokes=None,
     max_rows=150_000,
     flag_all_corrs_if_any_rawvis_flagged: bool = False,
+    # ── DataSelection convenience params ─────────────────────────────────────
+    selection: Optional['DataSelection'] = None,
+    timerange: Optional[Tuple] = None,
+    uvrange_m: Optional[Tuple[float, float]] = None,
+    uvrange_klambda: Optional[Tuple[float, float]] = None,
+    elevation_min_deg: Optional[float] = None,
+    elevation_max_deg: Optional[float] = None,
 ):
-    """Load visibility data using the pre-built row index."""
+    """Load visibility data using the pre-built row index.
+
+    Filtering is applied in this order:
+    1. Antenna filter (``ant_list`` / ``ant_range``)
+    2. Time range     (``timerange`` or ``selection.timerange``)
+    3. UV-distance    (``uvrange_m`` / ``uvrange_klambda``)
+    4. Elevation      (``elevation_min_deg`` / ``elevation_max_deg``)
+
+    A :class:`DataSelection` object can be passed as ``selection`` to specify
+    all filters in one place. Explicit keyword arguments override the
+    corresponding field in ``selection``.
+    """
+    # ── Unpack DataSelection (explicit kwargs win) ────────────────────────────
+    if selection is not None:
+        if chan_range is None and selection.chan_range is not None:
+            chan_range = selection.chan_range
+        if ant_list is None and selection.ant_list is not None:
+            ant_list = selection.ant_list
+        if timerange is None and selection.timerange is not None:
+            timerange = selection.timerange
+        if uvrange_m is None and selection.uvrange_m is not None:
+            uvrange_m = selection.uvrange_m
+        if uvrange_klambda is None and selection.uvrange_klambda is not None:
+            uvrange_klambda = selection.uvrange_klambda
+        if elevation_min_deg is None and selection.elevation_min_deg is not None:
+            elevation_min_deg = selection.elevation_min_deg
+        if elevation_max_deg is None and selection.elevation_max_deg is not None:
+            elevation_max_deg = selection.elevation_max_deg
+    # Normalise JD bounds
+    _jd_bounds = None
+    if timerange is not None:
+        from astropy.time import Time as _T
+        t0r, t1r = timerange
+        if isinstance(t0r, str): t0r = _T(t0r, format='iso', scale='utc').jd
+        if isinstance(t1r, str): t1r = _T(t1r, format='iso', scale='utc').jd
+        _jd_bounds = (float(t0r), float(t1r))
     import time as _time
     t0 = _time.monotonic()
     id_to_name = index['id_to_name']
@@ -799,6 +2032,77 @@ def load_vis_for_source(
     uu   = np.concatenate(out_uu)
     vv   = np.concatenate(out_vv)
 
+    # ── Post-load row filtering ───────────────────────────────────────────────
+    _row_mask = np.ones(len(jd), dtype=bool)
+
+    # 1. Time range
+    if _jd_bounds is not None:
+        _row_mask &= (jd >= _jd_bounds[0]) & (jd <= _jd_bounds[1])
+        print(f'[load_vis] timerange filter: {_row_mask.sum():,} / {len(jd):,} rows kept')
+
+    # 2. UV-distance (metres)
+    if uvrange_m is not None:
+        _uv_m = np.sqrt(np.asarray(uu, dtype=np.float64)**2 +
+                        np.asarray(vv, dtype=np.float64)**2) * 2.998e8
+        _row_mask &= (_uv_m >= uvrange_m[0]) & (_uv_m <= uvrange_m[1])
+        print(f'[load_vis] uvrange_m filter: {_row_mask.sum():,} / {len(jd):,} rows kept')
+
+    # 3. UV-distance (kilolambda, using band-centre frequency)
+    if uvrange_klambda is not None:
+        _ref_f  = float(0.5 * (freqs_sel[0] + freqs_sel[-1]))
+        _uv_kl  = np.sqrt(np.asarray(uu, dtype=np.float64)**2 +
+                          np.asarray(vv, dtype=np.float64)**2) * _ref_f / 1e3
+        _row_mask &= (_uv_kl >= uvrange_klambda[0]) & (_uv_kl <= uvrange_klambda[1])
+        print(f'[load_vis] uvrange_klambda filter: {_row_mask.sum():,} / {len(jd):,} rows kept')
+
+    # 4. Elevation filter (uses array ECEF + source coords from FITS header)
+    if elevation_min_deg is not None or elevation_max_deg is not None:
+        try:
+            from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+            from astropy.time import Time as _T
+            import astropy.units as _u
+            _geo = _get_array_enu(index['path'])
+            _loc = EarthLocation.from_geocentric(*_geo['ecef_centre'], unit=_u.m)
+            # Look up source RA/Dec from FITS SU table
+            with fits.open(index['path'], memmap=True, lazy_load_hdus=True) as _hdul:
+                _su = _get_hdu(_hdul, 'AIPS SU')
+                _id_to_name = index['id_to_name']
+                if isinstance(source, str):
+                    _wanted_ids = [k for k, v in _id_to_name.items()
+                                   if v.strip().lower() == source.strip().lower()]
+                else:
+                    _wanted_ids = [int(source)]
+                _su_rows = {}
+                _id_col = next((c for c in _su.data.dtype.names
+                                if 'ID' in c.upper() and 'NO' in c.upper()), None)
+                for _row in _su.data:
+                    _sid = int(_row[_id_col]) if _id_col else None
+                    _su_rows[_sid] = _row
+                _ra_deg  = float(_su_rows[_wanted_ids[0]]['RAEPO'])
+                _dec_deg = float(_su_rows[_wanted_ids[0]]['DECEPO'])
+            _coord   = SkyCoord(ra=_ra_deg * _u.deg, dec=_dec_deg * _u.deg, frame='icrs')
+            _times   = _T(jd, format='jd', scale='utc')
+            _altaz   = _coord.transform_to(AltAz(obstime=_times, location=_loc))
+            _el      = _altaz.alt.deg
+            if elevation_min_deg is not None:
+                _row_mask &= _el >= elevation_min_deg
+            if elevation_max_deg is not None:
+                _row_mask &= _el <= elevation_max_deg
+            print(f'[load_vis] elevation filter (el>={elevation_min_deg}, el<={elevation_max_deg}): '
+                  f'{_row_mask.sum():,} / {len(jd):,} rows kept')
+        except Exception as _exc:
+            print(f'[load_vis] WARNING: elevation filter failed ({_exc}); no elevation cut applied.')
+
+    if not _row_mask.all():
+        if _row_mask.sum() == 0:
+            raise ValueError('DataSelection filters removed all rows — no data remains.')
+        data = data[_row_mask]
+        jd   = jd[_row_mask]
+        a1   = a1[_row_mask]
+        a2   = a2[_row_mask]
+        uu   = uu[_row_mask]
+        vv   = vv[_row_mask]
+
     re_ = data[..., 0]
     im_ = data[..., 1]
     wt_ = data[..., 2]
@@ -853,7 +2157,9 @@ def load_vis_for_source(
 # Non-destructive bandpass calibration utilities
 # ---------------------------------------------------------------------------
 
-_PB2017_3C48_COEFFS = np.array([1.3253, -0.7553, -0.1914, 0.0498], dtype=np.float64)
+_PB2017_3C48_COEFFS  = np.array([1.3253, -0.7553, -0.1914,  0.0498], dtype=np.float64)
+# Perley & Butler 2017 (ApJS 230, 7), Table 2 — 3C286 / J1331+3030, valid 0.05–50 GHz
+_PB2017_3C286_COEFFS = np.array([1.2481, -0.4507, -0.1798,  0.0357], dtype=np.float64)
 
 
 def _norm_antenna_name(name):
@@ -1206,27 +2512,49 @@ def apply_flag_tables_to_vis(
 
 
 def flux_model_3c48_perley_butler_2017(freq_hz):
-    """Return the 3C48 flux density model in Jy for the given frequencies."""
+    """Return the 3C48 Perley-Butler 2017 flux density model in Jy.
+
+    Reference: Perley & Butler 2017, ApJS 230, 7, Table 2.
+    Valid frequency range: 0.05 – 50 GHz.
+    log10(S/Jy) = a0 + a1*x + a2*x² + a3*x³  where x = log10(ν/GHz)
+    Coefficients: a = [1.3253, −0.7553, −0.1914, 0.0498]
+    """
     freq_hz = np.asarray(freq_hz, dtype=np.float64)
     if np.any(freq_hz <= 0):
         raise ValueError('All frequencies must be positive.')
-
     freq_ghz = freq_hz / 1e9
     x = np.log10(freq_ghz)
-    coeffs = _PB2017_3C48_COEFFS
-    log_s = coeffs[0] + coeffs[1] * x + coeffs[2] * x**2 + coeffs[3] * x**3
-    return np.power(10.0, log_s)
+    c = _PB2017_3C48_COEFFS
+    return np.power(10.0, c[0] + c[1]*x + c[2]*x**2 + c[3]*x**3)
+
+
+def flux_model_3c286_perley_butler_2017(freq_hz):
+    """Return the 3C286 Perley-Butler 2017 flux density model in Jy.
+
+    3C286 / J1331+3030 is a compact, steep-spectrum source widely used as a
+    primary flux-density calibrator at GMRT and VLA.
+
+    Reference: Perley & Butler 2017, ApJS 230, 7, Table 2.
+    Valid frequency range: 0.05 – 50 GHz.
+    log10(S/Jy) = a0 + a1*x + a2*x² + a3*x³  where x = log10(ν/GHz)
+    Coefficients: a = [1.2481, −0.4507, −0.1798, 0.0357]
+    """
+    freq_hz = np.asarray(freq_hz, dtype=np.float64)
+    if np.any(freq_hz <= 0):
+        raise ValueError('All frequencies must be positive.')
+    freq_ghz = freq_hz / 1e9
+    x = np.log10(freq_ghz)
+    c = _PB2017_3C286_COEFFS
+    return np.power(10.0, c[0] + c[1]*x + c[2]*x**2 + c[3]*x**3)
 
 
 # ── Flux model registry ────────────────────────────────────────────────────────
 # Maps uppercase source name → flux-model callable (freq_hz → flux Jy array).
 # Model-based outlier metrics ('RR', 'LL') can only be used when the calibrator
 # source is present here.  'V' (Stokes proxy) is always available regardless.
-#
-# To register a new calibrator, append an entry after its model function:
-#   _FLUX_MODEL_REGISTRY['3C286'] = flux_model_3c286_perley_butler_2017
 _FLUX_MODEL_REGISTRY: dict = {
-    '3C48': flux_model_3c48_perley_butler_2017,
+    '3C48':  flux_model_3c48_perley_butler_2017,
+    '3C286': flux_model_3c286_perley_butler_2017,
 }
 # Metrics that require a flux-model entry from _FLUX_MODEL_REGISTRY.
 _MODEL_BASED_METRICS: frozenset = frozenset({'RR', 'LL'})
@@ -1379,18 +2707,26 @@ def _smooth_complex_bandpass(gains, valid, window):
             if np.count_nonzero(good) < 2:
                 continue
 
-            amp = np.abs(gains[:, ant_idx, pol_idx])
-            phase = np.unwrap(np.angle(gains[:, ant_idx, pol_idx]))
+            g = gains[:, ant_idx, pol_idx]
+            re = g.real.copy()
+            im = g.imag.copy()
+            good_f = good.astype(np.float64)
 
-            amp_num = np.convolve(np.where(good, amp, 0.0), kernel, mode='same')
-            phase_num = np.convolve(np.where(good, phase, 0.0), kernel, mode='same')
-            den = np.convolve(good.astype(np.float64), kernel, mode='same')
+            # Smooth real and imaginary parts independently using a
+            # weighted box-car.  This avoids the branch-cut ambiguity that
+            # makes direct phase smoothing unreliable near ±π and across
+            # channel gaps where np.unwrap can accumulate error.
+            re_num  = np.convolve(np.where(good, re, 0.0), kernel, mode='same')
+            im_num  = np.convolve(np.where(good, im, 0.0), kernel, mode='same')
+            den     = np.convolve(good_f, kernel, mode='same')
             ok = den > 0
-            amp_s = amp.copy()
-            phase_s = phase.copy()
-            amp_s[ok] = amp_num[ok] / den[ok]
-            phase_s[ok] = phase_num[ok] / den[ok]
-            smoothed[:, ant_idx, pol_idx] = amp_s * np.exp(1j * phase_s)
+
+            re_s = re.copy()
+            im_s = im.copy()
+            re_s[ok] = re_num[ok] / den[ok]
+            im_s[ok] = im_num[ok] / den[ok]
+
+            smoothed[:, ant_idx, pol_idx] = re_s + 1j * im_s
 
     return smoothed
 
@@ -1414,11 +2750,25 @@ def derive_point_source_bandpass(
     flag_table_path: Optional[Union[str, Path, List[Union[str, Path]], Tuple[Union[str, Path], ...]]] = None,
     strict_flag_table: bool = False,
     flag_all_corrs_if_any_rawvis_flagged: bool = False,
+    # ── DataSelection convenience params ─────────────────────────────────────
+    selection: Optional['DataSelection'] = None,
+    timerange: Optional[Tuple] = None,
+    uvrange_m: Optional[Tuple[float, float]] = None,
+    uvrange_klambda: Optional[Tuple[float, float]] = None,
+    elevation_min_deg: Optional[float] = None,
+    elevation_max_deg: Optional[float] = None,
 ):
     """Derive per-antenna complex bandpass gains without modifying FITS data.
 
     This function only reads visibilities from disk, derives gains in memory,
     and returns a separate solution table that can be saved independently.
+
+    A :class:`DataSelection` object (or equivalent keyword arguments) can be
+    used to restrict the data used for solving: by time, UV range, or
+    elevation.  This is useful for example to discard low-elevation data::
+
+        sel = DataSelection(elevation_min_deg=25.0)
+        sol = derive_point_source_bandpass(index, '3C48', selection=sel)
     """
     vis = load_vis_for_source(
         index,
@@ -1429,6 +2779,12 @@ def derive_point_source_bandpass(
         stokes=list(stokes),
         max_rows=max_rows,
         flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
+        selection=selection,
+        timerange=timerange,
+        uvrange_m=uvrange_m,
+        uvrange_klambda=uvrange_klambda,
+        elevation_min_deg=elevation_min_deg,
+        elevation_max_deg=elevation_max_deg,
     )
 
     antenna_name_map = {
@@ -1541,6 +2897,7 @@ def derive_point_source_bandpass(
     if reference_antenna is None:
         chosen_ref = _choose_reference_antenna(antenna_ids, weight_sums.sum(axis=1))
         chosen_ref_idx = int(np.where(antenna_ids == chosen_ref)[0][0])
+        _ref_origin = 'auto-selected (most-connected)'
         finite = np.isfinite(gains.real) & np.isfinite(gains.imag)
         for pol_idx in range(npol):
             for chan_idx in range(nchan):
@@ -1551,7 +2908,12 @@ def derive_point_source_bandpass(
     else:
         chosen_ref = int(reference_antenna)
         chosen_ref_idx = int(np.where(antenna_ids == chosen_ref)[0][0])
+        _ref_origin = 'user-specified'
 
+    _ref_name = antenna_names[chosen_ref_idx] if chosen_ref_idx < len(antenna_names) else str(chosen_ref)
+    print(f'[bandpass-solve] reference antenna: {_ref_name} (antenna_no={chosen_ref})  [{_ref_origin}]')
+
+    gains_raw = gains.copy()  # preserve pre-smoothing solutions
     gains = _smooth_complex_bandpass(gains, valid, smooth_window)
 
     return {
@@ -1564,6 +2926,7 @@ def derive_point_source_bandpass(
         'antenna_names': antenna_names,
         'stokes_labels': stokes_labels,
         'gains': gains,
+        'gains_raw': gains_raw,  # unsmoothed per-channel solutions
         'valid': valid,
         'residual_rms': residual_rms,
         'baseline_counts': baseline_counts,
@@ -1626,6 +2989,7 @@ def save_bandpass_solution(solution, path: Union[str, Path]):
         antenna_names=np.asarray(solution['antenna_names'], dtype='U32'),
         stokes_labels=np.asarray(solution['stokes_labels'], dtype='U16'),
         gains=np.asarray(solution['gains'], dtype=np.complex128),
+        gains_raw=np.asarray(solution.get('gains_raw', solution['gains']), dtype=np.complex128),
         valid=np.asarray(solution['valid'], dtype=bool),
         residual_rms=np.asarray(solution['residual_rms'], dtype=np.float64),
         baseline_counts=np.asarray(solution['baseline_counts'], dtype=np.int32),
@@ -1669,6 +3033,11 @@ def load_bandpass_solution(path: Union[str, Path]) -> dict:
             'antenna_names': np.asarray(npz['antenna_names']).astype(str).tolist(),
             'stokes_labels': np.asarray(npz['stokes_labels']).astype(str).tolist(),
             'gains': np.asarray(npz['gains'], dtype=np.complex128),
+            'gains_raw': (
+                np.asarray(npz['gains_raw'], dtype=np.complex128)
+                if 'gains_raw' in npz.files
+                else None  # older files saved before gains_raw was added
+            ),
             'valid': np.asarray(npz['valid'], dtype=bool),
             'residual_rms': np.asarray(npz['residual_rms'], dtype=np.float64),
             'baseline_counts': np.asarray(npz['baseline_counts'], dtype=np.int32),
@@ -1773,6 +3142,13 @@ def run_bandpass_diagnostics(
     ranking_metric: Union[str, tuple, list, None] = None,
     title: str = '',
     save_path: Optional[Union[str, Path]] = None,
+    # ── DataSelection convenience params ────────────────────────────────────
+    selection: Optional['DataSelection'] = None,
+    timerange: Optional[Tuple] = None,
+    uvrange_m: Optional[Tuple[float, float]] = None,
+    uvrange_klambda: Optional[Tuple[float, float]] = None,
+    elevation_min_deg: Optional[float] = None,
+    elevation_max_deg: Optional[float] = None,
 ):
     """Run RR/LL residual diagnostics and return structured results.
 
@@ -1795,6 +3171,12 @@ def run_bandpass_diagnostics(
         ant_list=None,
         chan_range=chan_range,
         flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
+        selection=selection,
+        timerange=timerange,
+        uvrange_m=uvrange_m,
+        uvrange_klambda=uvrange_klambda,
+        elevation_min_deg=elevation_min_deg,
+        elevation_max_deg=elevation_max_deg,
     )
 
     diagnostics_flag_stats = {
@@ -1911,17 +3293,78 @@ def run_bandpass_diagnostics(
     _n_metric_rows = max(1, len(_pre_metrics))
     _n_rows = 1 + _n_metric_rows   # spectrum row + one row per metric
 
-    from matplotlib.gridspec import GridSpec as _GridSpec
-    fig = plt.figure(figsize=(15, 5 + 5 * _n_metric_rows))
+    from matplotlib.gridspec import GridSpec as _GridSpec, GridSpecFromSubplotSpec as _GSSS
+    fig = plt.figure(figsize=(15, 8 + 5 * _n_metric_rows))
     _gs = _GridSpec(_n_rows, 2, figure=fig, hspace=0.38, wspace=0.24)
     ax_spec  = fig.add_subplot(_gs[0, 0])
-    ax_resid = fig.add_subplot(_gs[0, 1])
+    # Right panel: split into residuals (top) + ripple-cleaned (bottom).
+    _gs_right = _GSSS(2, 1, subplot_spec=_gs[0, 1], hspace=0.80,
+                      height_ratios=[3, 2])
+    ax_resid = fig.add_subplot(_gs_right[0])
+    ax_clean = fig.add_subplot(_gs_right[1])
 
     if source_has_flux_model:
         model_plot = np.where(chan_mask, model, np.nan)
         ax_spec.plot(freqs_mhz, model_plot, color='k', lw=2.0, label='Perley-Butler 2017')
 
     pol_results = {}
+    _pol_cleaned: dict = {}   # sinusoid-subtracted residual spectra keyed by pol name
+
+    def _fit_sinusoid(
+        f_mhz: np.ndarray,
+        y: np.ndarray,
+        period_range_mhz: tuple = (0.5, 20.0),
+    ):
+        """Fit a + A*sin(2π*f/P + φ) to masked (f, y). Returns (a, A, P, phi) or None.
+
+        Uses an FFT periodogram to seed the initial period guess so that
+        curve_fit reliably converges to the dominant ripple even when its
+        period is far from the centre of period_range_mhz.
+        """
+        from scipy.optimize import curve_fit as _cf
+        if f_mhz.size < 20:
+            return None
+        _valid = np.isfinite(y)
+        if _valid.sum() < 20:
+            return None
+
+        fv = f_mhz[_valid]
+        yv = y[_valid]
+
+        # ── FFT-based initial period estimate ──────────────────────────────────
+        # Interpolate onto a uniform grid then FFT to find the dominant frequency
+        # within the allowed period range.
+        n_grid = 512
+        f_grid = np.linspace(fv[0], fv[-1], n_grid)
+        y_grid = np.interp(f_grid, fv, yv)
+        y_grid -= y_grid.mean()
+        df = (f_grid[-1] - f_grid[0]) / (n_grid - 1)           # MHz per sample
+        fft_amp = np.abs(np.fft.rfft(y_grid))
+        fft_freq = np.fft.rfftfreq(n_grid, d=df)               # cycles / MHz  →  period = 1/freq
+        # Avoid DC bin and periods outside the allowed range
+        with np.errstate(divide='ignore'):
+            fft_period = np.where(fft_freq > 0, 1.0 / fft_freq, np.inf)
+        in_range = (fft_period >= period_range_mhz[0]) & (fft_period <= period_range_mhz[1])
+        if in_range.any():
+            p0_period = float(fft_period[in_range][np.argmax(fft_amp[in_range])])
+        else:
+            p0_period = float(np.sqrt(period_range_mhz[0] * period_range_mhz[1]))  # geometric mid
+
+        def _model(f, a, A, P, phi):
+            return a + A * np.sin(2.0 * np.pi * f / P + phi)
+
+        try:
+            popt, _ = _cf(
+                _model, fv, yv,
+                p0=[float(np.median(yv)), float(np.std(yv)), p0_period, 0.0],
+                bounds=([-np.inf, -np.inf, period_range_mhz[0], -np.pi],
+                        [ np.inf,  np.inf, period_range_mhz[1],  np.pi]),
+                maxfev=20_000,
+            )
+            return popt
+        except Exception:
+            return None
+
     unique_pairs, inv = np.unique(np.column_stack([ant1, ant2]), axis=0, return_inverse=True)
 
     for pol_idx, pol in enumerate(stokes_labels):
@@ -1945,7 +3388,7 @@ def run_bandpass_diagnostics(
 
         # Always plot the per-pol vector-averaged spectrum so the user can inspect
         # the bandpass shape even when no flux model is registered for the source.
-        ax_spec.plot(freqs_mhz, np.where(chan_mask, real_spec, np.nan), lw=1.4, label=f'{pol} vector-avg Re(V)')
+        ax_spec.plot(freqs_mhz, np.where(chan_mask, real_spec, np.nan), lw=1.0, label=f'{pol}')
 
         # Residual records (and diagnostic scores) require a flux model — skip
         # building pol_results[pol] for RR/LL when no model is available.
@@ -1954,7 +3397,52 @@ def run_bandpass_diagnostics(
 
         resid_spec = real_spec - model
 
-        ax_resid.plot(freqs_mhz, np.where(chan_mask, resid_spec, np.nan), lw=1.4, label=f'{pol} residual')
+        _resid_line = ax_resid.plot(
+            freqs_mhz, np.where(chan_mask, resid_spec, np.nan),
+            lw=1.0, label=pol)[0]
+        _lc = _resid_line.get_color()
+        _fit_annot_lines = []   # collect annotation strings for this pol
+        _popt_r = _fit_sinusoid(freqs_mhz[chan_mask], resid_spec[chan_mask])
+        if _popt_r is not None:
+            _a_r, _A_r, _P_r, _phi_r = _popt_r
+            _sinu_r = _a_r + _A_r * np.sin(2.0 * np.pi * freqs_mhz / _P_r + _phi_r)
+            ax_resid.plot(
+                freqs_mhz, np.where(chan_mask, _sinu_r, np.nan),
+                lw=1.4, ls='--', color=_lc, alpha=0.75,
+            )
+            _fit_annot_lines.append(f'{pol}₁: {_A_r:.2f}Jy, {_P_r:.1f}MHz')
+            _cleaned_r = resid_spec - _sinu_r
+            # ── Pass 2: if pass 1 found a long-period component (P > 4 MHz),
+            # search for a secondary short-period ripple in the 0.5–4 MHz window.
+            if _P_r > 4.0:
+                _popt_r2 = _fit_sinusoid(
+                    freqs_mhz[chan_mask], _cleaned_r[chan_mask],
+                    period_range_mhz=(0.5, 4.0),
+                )
+                if _popt_r2 is not None:
+                    _a_r2, _A_r2, _P_r2, _phi_r2 = _popt_r2
+                    _sinu_r2 = _a_r2 + _A_r2 * np.sin(2.0 * np.pi * freqs_mhz / _P_r2 + _phi_r2)
+                    ax_resid.plot(
+                        freqs_mhz, np.where(chan_mask, _sinu_r2, np.nan),
+                        lw=1.4, ls=':', color=_lc, alpha=0.60,
+                    )
+                    _fit_annot_lines.append(f'{pol}₂: {_A_r2:.2f}Jy, {_P_r2:.1f}MHz')
+                    _cleaned_r = _cleaned_r - _sinu_r2
+            ax_clean.plot(
+                freqs_mhz, np.where(chan_mask, _cleaned_r, np.nan),
+                lw=1.0, color=_lc, label=pol,
+            )
+            _pol_cleaned[pol] = _cleaned_r
+        else:
+            ax_clean.plot(
+                freqs_mhz, np.where(chan_mask, resid_spec, np.nan),
+                lw=1.0, ls='--', color=_lc, label=f'{pol} (no fit)',
+            )
+            _pol_cleaned[pol] = resid_spec
+        # Store annotation lines for this pol so we can add a text box after all pols
+        if not hasattr(ax_resid, '_fit_annot'):
+            ax_resid._fit_annot = []
+        ax_resid._fit_annot.extend(_fit_annot_lines)
 
         baseline_records = []
         for base_idx, (a1, a2) in enumerate(unique_pairs):
@@ -2086,24 +3574,110 @@ def run_bandpass_diagnostics(
 
     ax_spec.set_title('Corrected vector-averaged spectrum')
     ax_spec.set_ylabel('Flux Density (Jy)')
-    ax_spec.grid(True, alpha=0.3)
-    ax_spec.legend(fontsize=9, loc='best')
+    ax_spec.grid(True, alpha=0.25)
+    ax_spec.legend(fontsize=9, loc='best', framealpha=0.85)
 
-    ax_resid.axhline(0.0, color='k', lw=1.0, ls='--')
+    ax_resid.axhline(0.0, color='k', lw=0.8, ls='--', alpha=0.5)
+    ax_clean.axhline(0.0, color='k', lw=0.8, ls='--', alpha=0.5)
+
+    # ── Stokes-V: fit in residuals panel (light), cleaned trace in cleaned panel ──
+    _v_fit_annot_lines = []
     if 'V' in pol_results:
         v_sp = pol_results['V']['coherent_v_spectrum_jy']
+        # V data shown on residuals panel — thin dashed, visually subordinate
         ax_resid.plot(
             freqs_mhz, np.where(chan_mask, v_sp, np.nan),
-            lw=1.2, ls='--', color='tab:purple', label='Re⟨RR−LL⟩ (Stokes-V)',
+            lw=0.8, ls='--', color='tab:purple', alpha=0.7, label='V',
         )
+        _popt_v = _fit_sinusoid(freqs_mhz[chan_mask], v_sp[chan_mask])
+        if _popt_v is not None:
+            _a_v, _A_v, _P_v, _phi_v = _popt_v
+            _sinu_v = _a_v + _A_v * np.sin(2.0 * np.pi * freqs_mhz / _P_v + _phi_v)
+            ax_resid.plot(
+                freqs_mhz, np.where(chan_mask, _sinu_v, np.nan),
+                lw=1.4, ls=':', color='tab:purple', alpha=0.55,
+            )
+            _v_fit_annot_lines.append(f'V₁: {_A_v:.2f}Jy, {_P_v:.1f}MHz')
+            _cleaned_v = v_sp - _sinu_v
+            if _P_v > 4.0:
+                _popt_v2 = _fit_sinusoid(
+                    freqs_mhz[chan_mask], _cleaned_v[chan_mask],
+                    period_range_mhz=(0.5, 4.0),
+                )
+                if _popt_v2 is not None:
+                    _a_v2, _A_v2, _P_v2, _phi_v2 = _popt_v2
+                    _sinu_v2 = _a_v2 + _A_v2 * np.sin(2.0 * np.pi * freqs_mhz / _P_v2 + _phi_v2)
+                    ax_resid.plot(
+                        freqs_mhz, np.where(chan_mask, _sinu_v2, np.nan),
+                        lw=1.4, ls=(0, (3, 1, 1, 1)), color='tab:purple', alpha=0.45,
+                    )
+                    _v_fit_annot_lines.append(f'V₂: {_A_v2:.2f}Jy, {_P_v2:.1f}MHz')
+                    _cleaned_v = _cleaned_v - _sinu_v2
+            ax_clean.plot(
+                freqs_mhz, np.where(chan_mask, _cleaned_v, np.nan),
+                lw=0.8, ls='--', color='tab:purple', label='V',
+            )
+            _pol_cleaned['V'] = _cleaned_v
+        else:
+            ax_clean.plot(
+                freqs_mhz, np.where(chan_mask, v_sp, np.nan),
+                lw=0.8, ls='--', color='tab:purple', label='V (no fit)',
+            )
+            _pol_cleaned['V'] = v_sp
+
+    # ── Fit summary text box inside residuals panel ────────────────────────────
+    # Format each fit line with explicit labels for clarity, then place in a
+    # light-green rounded box in the lower-left corner.  Y-axis limits are
+    # expanded downward to guarantee the box never overlaps the data traces.
+    _all_annot = getattr(ax_resid, '_fit_annot', []) + _v_fit_annot_lines
+
     if source_has_flux_model:
-        ax_resid.set_title('Residual spectrum relative to PB2017')
-        ax_resid.set_ylabel('Data - Model (Jy)')
+        _resid_title = 'Residuals  (data − model)'
+        ax_resid.set_ylabel('Data − Model (Jy)')
     else:
-        ax_resid.set_title('Re⟨RR−LL⟩ coherent baseline-average (Stokes-V at phase centre)')
+        _resid_title = 'Re⟨RR−LL⟩'
         ax_resid.set_ylabel('Re⟨RR−LL⟩ (Jy)')
-    ax_resid.grid(True, alpha=0.3)
-    ax_resid.legend(fontsize=9, loc='best')
+    ax_resid.set_title(_resid_title, fontsize=9)
+    ax_resid.grid(True, alpha=0.25)
+    ax_resid.legend(fontsize=8, loc='upper right', framealpha=0.85)
+
+    if _all_annot:
+        # Expand the lower y-limit by ~30% of the current data range so the
+        # box sits in clear whitespace below the traces.
+        _yr_lo, _yr_hi = ax_resid.get_ylim()
+        _yr_span = _yr_hi - _yr_lo
+        ax_resid.set_ylim(_yr_lo - 0.30 * _yr_span, _yr_hi)
+        # Rebuild text with explicit "A=" and "P=" labels now that space is clear
+        _box_lines = []
+        for _s in _all_annot:
+            # _s is e.g. "RR₁: 0.22Jy, 1.7MHz"  →  reformat to "RR₁  A=0.22 Jy  P=1.7 MHz"
+            _pol_tag, _vals = (_s.split(': ', 1) + [''])[:2]
+            _parts = [p.strip() for p in _vals.split(',')]
+            _a_str = _parts[0] if len(_parts) > 0 else ''
+            _p_str = _parts[1] if len(_parts) > 1 else ''
+            _box_lines.append(f'{_pol_tag:<5s}  A={_a_str:<9s}  P={_p_str}')
+        _box_text = '\n'.join(_box_lines)
+        ax_resid.text(
+            0.015, 0.04, _box_text,
+            transform=ax_resid.transAxes,
+            fontsize=6.5, va='bottom', ha='left', family='monospace',
+            color='#1a3a1a',
+            bbox=dict(
+                boxstyle='round,pad=0.5',
+                facecolor='#d4edda',    # light mint-green
+                edgecolor='#7fba7f',    # medium green border
+                alpha=0.82,
+            ),
+        )
+
+    if source_has_flux_model:
+        ax_clean.set_title('Cleaned residuals', fontsize=9)
+        ax_clean.set_ylabel('Cleaned (Jy)')
+    else:
+        ax_clean.set_title('Cleaned Re⟨RR−LL⟩', fontsize=9)
+        ax_clean.set_ylabel('Cleaned (Jy)')
+    ax_clean.grid(True, alpha=0.25)
+    ax_clean.legend(fontsize=8, loc='upper right', framealpha=0.85)
 
     # ── Per-metric bar charts ────────────────────────────────────────────────
     # One row per computed metric (RR, LL, V), each showing the top-N antennas
@@ -2161,12 +3735,13 @@ def run_bandpass_diagnostics(
     if plotted_freqs.size:
         plot_freq_min = float(plotted_freqs[0])
         plot_freq_max = float(plotted_freqs[-1])
-        for ax in (ax_spec, ax_resid):
+        for ax in (ax_spec, ax_resid, ax_clean):
             ax.set_xlim(plot_freq_min, plot_freq_max)
     else:
         plot_freq_min = np.nan
         plot_freq_max = np.nan
     ax_resid.set_xlabel('Frequency (MHz)')
+    ax_clean.set_xlabel('Frequency (MHz)')
 
     # Channel numbers as secondary top x-axis on both spectrum panels.
     _diag_chan_idxs = np.asarray(
@@ -2180,7 +3755,7 @@ def run_bandpass_diagnostics(
             return _c0 + (f - _f0) * (_c1 - _c0) / (_f1 - _f0)
         def _chan_to_freq(c, _f0=_f0, _f1=_f1, _c0=_c0, _c1=_c1):
             return _f0 + (c - _c0) * (_f1 - _f0) / (_c1 - _c0)
-        for _ax_d in (ax_spec, ax_resid):
+        for _ax_d in (ax_spec, ax_resid, ax_clean):
             _sec_d = _ax_d.secondary_xaxis('top', functions=(_freq_to_chan, _chan_to_freq))
             _sec_d.set_xlabel('Channel', fontsize=8)
             _sec_d.tick_params(labelsize=7)
@@ -2481,6 +4056,13 @@ def run_iterative_bandpass_workflow(
     compare_metrics_for_convergence: Optional[List[str]] = None,
     convergence_combine_strategy: str = 'any',
     run_iter0_diagnostic: bool = True,
+    # ── DataSelection params (passed to both solve and diagnostics) ───────────
+    selection: Optional['DataSelection'] = None,
+    timerange: Optional[Tuple] = None,
+    uvrange_m: Optional[Tuple[float, float]] = None,
+    uvrange_klambda: Optional[Tuple[float, float]] = None,
+    elevation_min_deg: Optional[float] = None,
+    elevation_max_deg: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Run iterative bandpass -> diagnostics -> flag-update workflow.
 
@@ -2558,6 +4140,12 @@ def run_iterative_bandpass_workflow(
             top_n=top_n,
             title=f'{source} RAW — no correction | {_iter0_tag}',
             save_path=_iter0_plot,
+            selection=selection,
+            timerange=timerange,
+            uvrange_m=uvrange_m,
+            uvrange_klambda=uvrange_klambda,
+            elevation_min_deg=elevation_min_deg,
+            elevation_max_deg=elevation_max_deg,
         )
     pending_tables = list(pending_flag_tables or [])
     history = []
@@ -2599,6 +4187,13 @@ def run_iterative_bandpass_workflow(
             flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
             iteration_tag=iter_tag,
             dry_run=dry_run_bandpass,
+            # DataSelection — forwarded through **solve_kwargs → derive_point_source_bandpass
+            selection=selection,
+            timerange=timerange,
+            uvrange_m=uvrange_m,
+            uvrange_klambda=uvrange_klambda,
+            elevation_min_deg=elevation_min_deg,
+            elevation_max_deg=elevation_max_deg,
         )
         bandpass_sol = bandpass_run['solution']
 
@@ -2644,6 +4239,12 @@ def run_iterative_bandpass_workflow(
             ranking_metric=outlier_metric,
             title=f'{source} diagnostics | {iter_tag}',
             save_path=diag_plot_path,
+            selection=selection,
+            timerange=timerange,
+            uvrange_m=uvrange_m,
+            uvrange_klambda=uvrange_klambda,
+            elevation_min_deg=elevation_min_deg,
+            elevation_max_deg=elevation_max_deg,
         )
 
         unflagged_plot_path = None
@@ -2665,6 +4266,12 @@ def run_iterative_bandpass_workflow(
                     top_n=top_n,
                     title=f'{source} diagnostics (unflagged) | {iter_tag}',
                     save_path=unflagged_plot_path,
+                    selection=selection,
+                    timerange=timerange,
+                    uvrange_m=uvrange_m,
+                    uvrange_klambda=uvrange_klambda,
+                    elevation_min_deg=elevation_min_deg,
+                    elevation_max_deg=elevation_max_deg,
                 )
 
         proposal = propose_flag_updates_from_diagnostics(
@@ -3135,15 +4742,32 @@ def plot_bandpass_solution_grid(
 
         if not _grey:
             # --- Plot gains ---
+            gains_raw = solution.get('gains_raw')
+            _sw = solution.get('smooth_window') or 0
+            _has_raw = gains_raw is not None and _sw > 1
             for pol_idx, label in enumerate(stokes_labels):
                 col = colors[pol_idx % len(colors)]
                 good = valid[:, sol_idx, pol_idx]
-                amp = np.where(good, np.abs(gains[:, sol_idx, pol_idx]), np.nan)
-                pha = np.where(good, np.degrees(np.angle(gains[:, sol_idx, pol_idx])), np.nan)
-                amp = np.where(plot_mask, amp, np.nan)
-                pha = np.where(plot_mask, pha, np.nan)
-                ax_amp.plot(freqs_mhz, amp, color=col, lw=1.0, label=label)
-                ax_phase.plot(freqs_mhz, pha, color=col, lw=1.0)
+                amp_sm = np.where(good, np.abs(gains[:, sol_idx, pol_idx]), np.nan)
+                pha_sm = np.where(good, np.degrees(np.angle(gains[:, sol_idx, pol_idx])), np.nan)
+                amp_sm = np.where(plot_mask, amp_sm, np.nan)
+                pha_sm = np.where(plot_mask, pha_sm, np.nan)
+                if _has_raw:
+                    amp_r = np.where(good, np.abs(np.asarray(gains_raw)[:, sol_idx, pol_idx]), np.nan)
+                    pha_r = np.where(good, np.degrees(np.angle(np.asarray(gains_raw)[:, sol_idx, pol_idx])), np.nan)
+                    amp_r = np.where(plot_mask, amp_r, np.nan)
+                    pha_r = np.where(plot_mask, pha_r, np.nan)
+                    # raw: dots only (no connecting line)
+                    ax_amp.plot(freqs_mhz, amp_r, color=col, lw=0, marker='.', ms=2.0,
+                                alpha=0.35, label=f'{label} raw')
+                    ax_phase.plot(freqs_mhz, pha_r, color=col, lw=0, marker='.', ms=2.0, alpha=0.35)
+                    # smoothed: solid line only (no markers, so it cleanly overlays)
+                    ax_amp.plot(freqs_mhz, amp_sm, color=col, lw=1.2, label=f'{label} (w={_sw})')
+                    ax_phase.plot(freqs_mhz, pha_sm, color=col, lw=1.2)
+                else:
+                    # No smoothing (w<=1) — dots + line show the per-channel values directly
+                    ax_amp.plot(freqs_mhz, amp_sm, color=col, lw=0.7, marker='.', ms=2.0, label=label)
+                    ax_phase.plot(freqs_mhz, pha_sm, color=col, lw=0.7, marker='.', ms=2.0)
 
         # Amplitude panel styling
         ax_amp.set_ylim(*amp_ylim)

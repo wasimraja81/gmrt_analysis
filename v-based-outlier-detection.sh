@@ -170,6 +170,11 @@ Passthrough arguments (appended after the preset):
                            --set "SOURCE='3C147'"
                            --set "CAL_FITS=Path('/data/3c147.FITS')"
                            --set "WORK_DIR=Path('/data/3c147/work')"
+                           # ── data-selection (applied to every solve + diagnostic):
+                           --set "SOLVE_ELEVATION_MIN_DEG=25.0"        (drop below 25°)
+                           --set "SOLVE_UVRANGE_KLAMBDA=(2.0, 50.0)"   (UV range kλ)
+                           --set "SOLVE_UVRANGE_M=(200.0, 50000.0)"    (UV range metres)
+                           --set "SOLVE_TIMERANGE=('2021-07-25 19:00','2021-07-25 23:00')"
 
 For the full driver reference:
     ./run_preprocess.sh --help

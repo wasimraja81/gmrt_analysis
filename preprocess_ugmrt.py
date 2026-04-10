@@ -711,6 +711,11 @@ def run_auto(args):
         compare_metrics_for_convergence=COMPARE_METRICS_FOR_CONVERGENCE,
         convergence_combine_strategy=CONVERGENCE_COMBINE_STRATEGY,
         run_iter0_diagnostic=RUN_ITER0_DIAGNOSTIC,
+        elevation_min_deg=SOLVE_ELEVATION_MIN_DEG,
+        elevation_max_deg=SOLVE_ELEVATION_MAX_DEG,
+        uvrange_m=SOLVE_UVRANGE_M,
+        uvrange_klambda=SOLVE_UVRANGE_KLAMBDA,
+        timerange=SOLVE_TIMERANGE,
     )
 
     _index = result.get('index', {})
