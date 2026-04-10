@@ -2832,7 +2832,17 @@ def derive_point_source_bandpass(
 
     stokes_labels = list(vis['stokes_labels'])
     freqs_hz = np.asarray(vis['freqs_hz'], dtype=np.float64)
-    flux_jy = flux_model_3c48_perley_butler_2017(freqs_hz) if model_flux_jy is None else np.asarray(model_flux_jy, dtype=np.float64)
+    if model_flux_jy is not None:
+        flux_jy = np.asarray(model_flux_jy, dtype=np.float64)
+    else:
+        _model_fn = _FLUX_MODEL_REGISTRY.get(str(source).upper())
+        if _model_fn is None:
+            raise ValueError(
+                f'No flux density model registered for source "{source}". '
+                f'Registered sources: {sorted(_FLUX_MODEL_REGISTRY)}. '
+                f'Pass model_flux_jy explicitly or register a model via _FLUX_MODEL_REGISTRY.'
+            )
+        flux_jy = _model_fn(freqs_hz)
     if flux_jy.shape != freqs_hz.shape:
         raise ValueError('model_flux_jy must have one value per selected channel.')
 

@@ -179,6 +179,42 @@ def _apply_overrides(overrides: list) -> None:
         log.debug('  --set %s = %r', key, val)
 
 
+def _rederive_source_paths() -> None:
+    """Re-compute all output paths that embed the source name.
+
+    Called after --set overrides are applied so that ``--set "SOURCE='3C286'"``
+    correctly updates BANDPASS_OUT, DIAG_PLOT_BASE, FLAG_TABLE_* etc.  Without
+    this step the paths would remain frozen to whatever SOURCE was set to when
+    the config file was exec'd.
+    """
+    g = globals()
+    src = str(g.get('SOURCE', '3C48')).lower()
+    work = Path(g.get('WORK_DIR', '.'))        # already a Path from config exec
+
+    # Derive the stem used by the config (everything after the source prefix).
+    # Strategy: read the original BANDPASS_OUT stem and replace the leading
+    # token up to the first '_bandpass' with the new source name.
+    # Fallback: build sensible defaults if the existing value can't be parsed.
+    def _restem(old_path, new_prefix, marker):
+        """Replace the source-name prefix in a filename."""
+        old = Path(old_path)
+        name = old.name
+        idx = name.find(marker)
+        if idx != -1:
+            return work / (new_prefix + name[idx:])
+        # Couldn't find marker — fall back to <src><marker><suffix>
+        return work / (new_prefix + marker + old.suffix)
+
+    g['BANDPASS_OUT']        = _restem(g.get('BANDPASS_OUT',        work / f'{src}_bandpass.npz'),         src, '_bandpass')
+    g['DIAG_PLOT_BASE']      = _restem(g.get('DIAG_PLOT_BASE',      work / f'{src}_bandpass_diagnostics.png'), src, '_bandpass')
+    g['DIAG_PLOT_UNFLAGGED'] = _restem(g.get('DIAG_PLOT_UNFLAGGED', work / f'{src}_bandpass_diagnostics_unflagged.png'), src, '_bandpass')
+    g['FLAG_TABLE_BASE']     = _restem(g.get('FLAG_TABLE_BASE',     work / f'{src}_flag_table.json'),      src, '_flag_table')
+    g['FLAG_TABLE_SESSION']  = _restem(g.get('FLAG_TABLE_SESSION',  work / f'{src}_flag_table_session.json'), src, '_flag_table')
+    g['FLAG_TABLE_PATHS']    = [p for p in [g['FLAG_TABLE_BASE'], g['FLAG_TABLE_SESSION']] if Path(p).exists()]
+    if g.get('GAIN_PLOT_BASE') is not None:
+        g['GAIN_PLOT_BASE']  = _restem(g['GAIN_PLOT_BASE'], src, '_bandpass')
+
+
 def _derive_index_cache() -> Path:
     """Return the index-cache path derived from CAL_FITS.
 
@@ -756,6 +792,7 @@ def main():
     pre_args, _ = pre.parse_known_args()
     _load_config(pre_args.config)
     _apply_overrides(pre_args.set_overrides)
+    _rederive_source_paths()   # re-sync output paths if SOURCE was overridden
 
     parser = argparse.ArgumentParser(
         description='uGMRT bandpass calibration workflow driver.',
