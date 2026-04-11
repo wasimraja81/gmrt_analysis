@@ -761,6 +761,9 @@ def _get_array_enu(fits_path: Union[str, Path]) -> dict:
     enu = xyz @ R.T  # (N, 3): East, North, Up
     return {
         'nos': nos, 'names': names, 'enu': enu,
+        # stabxyz: raw ECEF offset of each antenna from the array-centre (ARRAYX/Y/Z).
+        # An all-zero row means no position was ever recorded in the AN table (dud antenna).
+        'stabxyz': xyz,
         'ecef_centre': arr_xyz,
         'lat_deg': loc.lat.deg, 'lon_deg': loc.lon.deg,
     }
@@ -1062,14 +1065,30 @@ def _detect_dud_antennas(
     names = geo['names']
     n     = len(nos)
 
+    # stabxyz is the raw ECEF offset of each antenna from the array reference
+    # point (ARRAYX/Y/Z in the AN table header).  An all-zero row means the
+    # antenna was never assigned a valid position in the FITS file — that is
+    # the definitive criterion for a "dud".
+    # We use the raw STABXYZ magnitude, NOT the ENU distance from array centre,
+    # because central-square antennas can legitimately sit within 1 m of the
+    # reference point in ENU while still having correct (non-zero) STABXYZ.
+    stabxyz = geo.get('stabxyz')          # (N, 3) or None for old geo dicts
+
     dud_set: set = set()
 
-    # Zero-position check: only horizontal (E, N); Up offset may be legitimate
-    for i in range(n):
-        if float(np.hypot(enu[i, 0], enu[i, 1])) < zero_threshold_m:
-            dud_set.add(nos[i])
+    if stabxyz is not None:
+        # Primary check: STABXYZ magnitude exactly zero → no position recorded
+        for i in range(n):
+            if float(np.linalg.norm(stabxyz[i])) < zero_threshold_m:
+                dud_set.add(nos[i])
+    else:
+        # Fallback (geo dict predates stabxyz key): use ENU horizontal distance
+        for i in range(n):
+            if float(np.hypot(enu[i, 0], enu[i, 1])) < zero_threshold_m:
+                dud_set.add(nos[i])
 
-    # Duplicate-position check: flag the higher-numbered of each co-located pair
+    # Secondary check: duplicate positions in ENU (two antennas at the same
+    # physical location within dup_threshold_m — keep lower-numbered one)
     for i in range(n):
         if nos[i] in dud_set:
             continue
@@ -1077,12 +1096,11 @@ def _detect_dud_antennas(
             if nos[j] in dud_set:
                 continue
             if float(np.linalg.norm(enu[i] - enu[j])) < dup_threshold_m:
-                # Keep the lower-numbered antenna as valid; flag the other
                 dud_set.add(max(nos[i], nos[j]))
 
-    dud_nos   = sorted(dud_set)
+    dud_nos    = sorted(dud_set)
     no_to_name = dict(zip(nos, names))
-    dud_names = [no_to_name.get(no, f'Ant{no}') for no in dud_nos]
+    dud_names  = [no_to_name.get(no, f'Ant{no}') for no in dud_nos]
     return dud_nos, dud_names
 
 
@@ -1236,6 +1254,13 @@ def query_source(
     lat_deg = geo['lat_deg']
     lon_deg = geo['lon_deg']
 
+    # Dud-antenna list: prefer cached values from a pre-built index; otherwise
+    # detect from the raw STABXYZ vectors (zero magnitude = no position recorded).
+    if index and 'dud_antenna_nos' in index:
+        _query_dud_nos = index['dud_antenna_nos']
+    else:
+        _query_dud_nos, _ = _detect_dud_antennas(geo)
+
     # ── 3. Az/El track ────────────────────────────────────────────────────────
     azel = compute_source_azel(
         fits_path_or_index   if index is not None else fits_path,
@@ -1296,8 +1321,7 @@ def query_source(
     uv_stats = _uv_stats_for_source(idx_for_uv, source)
 
     # ── 9. Physical baselines from ENU ────────────────────────────────────────
-    _dud_nos_for_bl = index['dud_antenna_nos'] if index and 'dud_antenna_nos' in index else []
-    bl_stats = _physical_baseline_stats(geo, dud_nos=_dud_nos_for_bl)
+    bl_stats = _physical_baseline_stats(geo, dud_nos=_query_dud_nos)
 
     # ── 10. File metadata ──────────────────────────────────────────────────────
     import os
@@ -1307,7 +1331,7 @@ def query_source(
     # Use active (non-dud) antenna count for noise formula
     n_ant  = (len(index['active_antennas'])
               if index and 'active_antennas' in index
-              else len(geo['nos']))
+              else len(geo['nos']) - len(_query_dud_nos))
     n_cross_bl = n_ant * (n_ant - 1) // 2
     n_pol  = obs['n_correlations']
     t_int_s = obs['integration_time_sec']
