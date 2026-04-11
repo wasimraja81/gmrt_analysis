@@ -5178,7 +5178,12 @@ def plot_corrected_vector_avg_spectrum(
     skip_edge_channels: Union[int, Tuple[int, int]] = (10, 5),
     save_path: Optional[Union[str, Path]] = None,
 ):
-    """Plot corrected vector-averaged real spectrum vs Perley-Butler 3C48 model.
+    """Plot corrected vector-averaged real spectrum vs the Perley-Butler flux model.
+
+    The flux model is looked up from ``_FLUX_MODEL_REGISTRY`` using
+    ``solution['source_name']`` so the correct model is used regardless of
+    whether the solution was derived from 3C48, 3C286, or any other registered
+    calibrator.
 
     Top panel: per-pol vector-averaged real(vis) and PB2017 model.
     Bottom panel: residual (data - model) per pol.
@@ -5188,7 +5193,14 @@ def plot_corrected_vector_avg_spectrum(
 
     freqs_hz = np.asarray(corrected['freqs_hz'], dtype=np.float64)
     freqs_mhz = freqs_hz / 1e6
-    model = flux_model_3c48_perley_butler_2017(freqs_hz)
+    _sol_source = (solution.get('source_name') or '').upper()
+    _model_fn = _FLUX_MODEL_REGISTRY.get(_sol_source)
+    if _model_fn is None:
+        raise ValueError(
+            f'plot_corrected_vector_avg_spectrum: no flux model registered for '
+            f'source "{_sol_source}". Registered: {sorted(_FLUX_MODEL_REGISTRY)}'
+        )
+    model = _model_fn(freqs_hz)
 
     if isinstance(skip_edge_channels, tuple):
         if len(skip_edge_channels) != 2:
@@ -5216,7 +5228,7 @@ def plot_corrected_vector_avg_spectrum(
     )
 
     model_plot = np.where(chan_mask, model, np.nan)
-    ax_top.plot(freqs_mhz, model_plot, color='k', lw=2.0, label='Perley-Butler 2017 (3C48)')
+    ax_top.plot(freqs_mhz, model_plot, color='k', lw=2.0, label=f'Perley-Butler 2017 ({_sol_source})')
 
     for pol_idx, pol in enumerate(stokes_labels):
         z = vis_corr[:, :, pol_idx]
@@ -5246,7 +5258,7 @@ def plot_corrected_vector_avg_spectrum(
     ax_bot.grid(True, alpha=0.3)
     ax_bot.legend(fontsize=8, loc='best')
 
-    fig.suptitle(title or '3C48 corrected vector-averaged spectrum vs PB2017 model', fontsize=12)
+    fig.suptitle(title or f'{_sol_source} corrected vector-averaged spectrum vs PB2017 model', fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
 
     if save_path is not None:
