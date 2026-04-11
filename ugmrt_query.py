@@ -1202,7 +1202,10 @@ def query_source(
         index     = fits_path_or_index
     else:
         fits_path = str(fits_path_or_index)
-        index     = None
+        # Build once here so override_dud_names is honoured and the index is
+        # reused for all subsequent internal calls (obs, UV stats, etc.).
+        index     = build_row_index(Path(fits_path),
+                                    override_dud_names=override_dud_names)
 
     fits_path = str(fits_path)
 
@@ -1233,7 +1236,7 @@ def query_source(
 
     # ── 3. Az/El track ────────────────────────────────────────────────────────
     azel = compute_source_azel(
-        fits_path_or_index   if index is not None else fits_path,
+        index,
         source=source,
         time_step_s=azel_time_step_s,
     )
@@ -1280,15 +1283,14 @@ def query_source(
 
     # ── 7. Scan/timing properties ─────────────────────────────────────────────
     obs = get_source_observation_properties(
-        index if index is not None else build_row_index(fits_path),
+        index,
         source=source,
         scan_gap_seconds=scan_gap_seconds,
         include_integrations=False,
     )
 
     # ── 8. UV statistics ───────────────────────────────────────────────────────
-    idx_for_uv = index if index is not None else build_row_index(fits_path)
-    uv_stats = _uv_stats_for_source(idx_for_uv, source)
+    uv_stats = _uv_stats_for_source(index, source)
 
     # ── 9. Physical baselines from ENU ────────────────────────────────────────
     bl_stats = _physical_baseline_stats(geo, dud_nos=_query_dud_nos)
