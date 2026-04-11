@@ -1811,7 +1811,9 @@ def plot_source_query(
     >>> fig.savefig('3c48_query.png', dpi=150, bbox_inches='tight')
     """
     import matplotlib
-    matplotlib.use('Agg')
+    # Do NOT call matplotlib.use() here — the caller (notebook or script) sets
+    # the backend via %matplotlib inline / %matplotlib widget / savefig().
+    # Forcing Agg here would break interactive display for all subsequent cells.
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
     from matplotlib.ticker import AutoMinorLocator
