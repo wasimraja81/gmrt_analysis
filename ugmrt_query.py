@@ -1234,7 +1234,7 @@ def query_source(
     else:
         _query_dud_nos = []
 
-    # ── 3. Az/El track ────────────────────────────────────────────────────────
+    # ── 3. Az/El track (uniform grid — spans full timerange incl. scan gaps) ───
     azel = compute_source_azel(
         index,
         source=source,
@@ -1247,28 +1247,29 @@ def query_source(
     dec_deg  = azel['dec_deg']
     src_name = azel['source_name']
 
-    # Elevation statistics
-    el_time_above = {}
+    # Grid step (seconds) — used for timespan-based statistics
     dt_s = (jd_grid[-1] - jd_grid[0]) * 86400.0 / max(1, len(jd_grid) - 1)
+
+    # Elevation statistics from uniform grid (timespan — includes scan gaps)
+    el_time_above = {}
     for thr in elevation_thresholds_deg:
         n_above = int(np.sum(el_deg >= thr))
         el_time_above[f'time_above_{int(thr)}_deg_min'] = round(n_above * dt_s / 60.0, 1)
 
-    # ── 4. Hour angle ──────────────────────────────────────────────────────────
+    # ── 4. Hour angle (from grid) ──────────────────────────────────────────────
     ha_deg  = _hour_angle_deg(jd_grid.copy(), ra_deg, lon_deg)
     ha_mins = ha_deg * 4.0   # 1 deg HA = 4 minutes
 
-    # Find transit (HA closest to 0)
+    # Find transit (HA closest to 0) on the grid
     i_transit = int(np.argmin(np.abs(ha_deg)))
     transit_utc = azel['utc'][i_transit]
     ha_at_transit = float(ha_deg[i_transit])
 
-    # ── 5. Parallactic angle ───────────────────────────────────────────────────
+    # ── 5. Parallactic angle (from grid) ──────────────────────────────────────
     pa_deg  = _parallactic_angle_deg(ha_deg, dec_deg, lat_deg)
-    # PA rate: max instantaneous rate in deg/min
+    # PA rate from grid: max instantaneous rate in deg/min
     if len(pa_deg) > 1:
         dpa = np.diff(pa_deg)
-        # Wrap phase jumps (e.g. crossing ±180°)
         dpa[dpa >  180] -= 360
         dpa[dpa < -180] += 360
         pa_rate_deg_per_min = float(np.max(np.abs(dpa)) / (dt_s / 60.0))
@@ -1288,6 +1289,103 @@ def query_source(
         scan_gap_seconds=scan_gap_seconds,
         include_integrations=False,
     )
+    t_int_s = obs['integration_time_sec']
+
+    # ── 7b. On-source pointing statistics (actual integration timestamps) ──────
+    # The azel grid above spans from first to last integration timestamp at a
+    # uniform step, which includes inter-scan gaps.  Here we extract the actual
+    # on-source integration timestamps and re-evaluate el/HA/PA at each one to
+    # produce statistics that reflect only the time the telescope was on source.
+    from astropy.coordinates import EarthLocation as _ELq, AltAz as _AAq
+    from astropy.time import Time as _TTq
+
+    _id_to_nm_q   = index['id_to_name']
+    _s_lower_q    = str(source).strip().lower()
+    _obs_ids_q    = np.array(
+        [k for k, v in _id_to_nm_q.items() if v.strip().lower() == _s_lower_q],
+        dtype=np.int32)
+    if _obs_ids_q.size == 0:
+        _obs_ids_q = np.array(
+            [k for k, v in _id_to_nm_q.items() if _s_lower_q in v.strip().lower()],
+            dtype=np.int32)
+
+    _jd_rows_q = np.sort(index['jd'][np.isin(index['source_id'], _obs_ids_q)])
+    # Deduplicate baseline-sharing rows into one timestamp per integration
+    # (use 5 s gap; GMRT integrations are 2–16 s so this is safe)
+    if _jd_rows_q.size > 1:
+        _keep_q = np.concatenate([[True], np.diff(_jd_rows_q) > 5.0 / 86400.0])
+        _jd_int = _jd_rows_q[_keep_q]
+    elif _jd_rows_q.size == 1:
+        _jd_int = _jd_rows_q.copy()
+    else:
+        _jd_int = np.array([], dtype=np.float64)
+
+    if _jd_int.size > 0:
+        _loc_q    = _ELq.from_geocentric(*geo['ecef_centre'], unit=_u.m)
+        _coord_q  = SkyCoord(ra=ra_deg * _u.deg, dec=dec_deg * _u.deg, frame='icrs')
+        _t_int_q  = _TTq(_jd_int, format='jd', scale='utc')
+        _altaz_q  = _coord_q.transform_to(_AAq(obstime=_t_int_q, location=_loc_q))
+        _el_int   = np.array(_altaz_q.alt.deg)
+        _ha_int   = _hour_angle_deg(_jd_int.copy(), ra_deg, lon_deg)
+        _pa_int   = _parallactic_angle_deg(_ha_int, dec_deg, lat_deg)
+        _utc_int  = [t.iso for t in _t_int_q]
+    else:
+        _el_int  = np.array([])
+        _ha_int  = np.array([])
+        _pa_int  = np.array([])
+        _utc_int = []
+
+    # On-source elevation stats
+    el_on_source_time_above = {}
+    el_on_source_windows    = {}
+    for thr in elevation_thresholds_deg:
+        _mask_el = _el_int >= thr if _el_int.size > 0 else np.array([], dtype=bool)
+        on_src_t = round(float(np.sum(_mask_el)) * t_int_s / 60.0, 1)
+        el_on_source_time_above[f'on_source_time_above_{int(thr)}_deg_min'] = on_src_t
+        # UTC windows: contiguous on-source blocks above threshold
+        _wins = []
+        if _mask_el.size > 0 and np.any(_mask_el):
+            _in_win = False
+            _tw0 = None
+            for _ii, _ok in enumerate(_mask_el):
+                if _ok and not _in_win:
+                    _tw0 = _utc_int[_ii]; _in_win = True
+                elif not _ok and _in_win:
+                    _wins.append((_tw0, _utc_int[_ii - 1])); _in_win = False
+            if _in_win:
+                _wins.append((_tw0, _utc_int[-1]))
+        el_on_source_windows[f'on_source_windows_above_{int(thr)}_deg'] = _wins
+
+    # On-source HA range
+    if _ha_int.size > 0:
+        ha_on_src_min  = float(_ha_int.min())
+        ha_on_src_max  = float(_ha_int.max())
+        ha_on_src_range_deg = float(_ha_int.max() - _ha_int.min())
+        # Integration closest to transit (HA = 0)
+        _i_tr_int = int(np.argmin(np.abs(_ha_int)))
+        ha_transit_closest_deg = float(_ha_int[_i_tr_int])
+        transit_closest_utc    = _utc_int[_i_tr_int]
+        # Sampled if nearest integration is within 1.5 × integration time of HA=0
+        _ha_tol_deg = (t_int_s * 1.5) * (15.0 / 3600.0)  # 15 deg/hr × t_int_s
+        transit_sampled = abs(ha_transit_closest_deg) <= _ha_tol_deg
+    else:
+        ha_on_src_min  = ha_on_src_max  = ha_on_src_range_deg = 0.0
+        ha_transit_closest_deg = float('nan')
+        transit_closest_utc    = 'N/A'
+        transit_sampled        = False
+
+    # On-source PA stats
+    if _pa_int.size > 1:
+        _dpa_int = np.diff(_pa_int)
+        _dpa_int[_dpa_int >  180] -= 360
+        _dpa_int[_dpa_int < -180] += 360
+        _rates_int            = np.abs(_dpa_int) / (t_int_s / 60.0)
+        _i_max_pa             = int(np.argmax(_rates_int))
+        pa_rate_on_src        = float(_rates_int[_i_max_pa])
+        pa_rate_on_src_utc    = _utc_int[_i_max_pa]
+    else:
+        pa_rate_on_src     = 0.0
+        pa_rate_on_src_utc = _utc_int[0] if _utc_int else 'N/A'
 
     # ── 8. UV statistics ───────────────────────────────────────────────────────
     uv_stats = _uv_stats_for_source(index, source)
@@ -1306,7 +1404,7 @@ def query_source(
               else len(geo['nos']) - len(_query_dud_nos))
     n_cross_bl = n_ant * (n_ant - 1) // 2
     n_pol  = obs['n_correlations']
-    t_int_s = obs['integration_time_sec']
+    # t_int_s already set in step 7
     delta_nu_hz = freq_props['bandwidth_hz_estimated']
     noise_formula = (
         f'σ = SEFD / sqrt({n_pol} · {n_cross_bl} · '
@@ -1399,7 +1497,11 @@ def query_source(
             'az_grid_deg':         az_deg.tolist(),
             'el_grid_deg':         el_deg.tolist(),
             'utc_grid':            azel['utc'],
+            # timespan-based thresholds (grid, includes scan gaps):
             **el_time_above,
+            # on-source thresholds (actual integrations × t_int_s):
+            **el_on_source_time_above,
+            **el_on_source_windows,
         },
         'hour_angle': {
             'ha_at_start_deg':     round(float(ha_deg[0]), 3),
@@ -1408,8 +1510,16 @@ def query_source(
             'ha_at_end_min':       round(float(ha_mins[-1]), 2),
             'ha_range_deg':        round(float(ha_deg.max() - ha_deg.min()), 3),
             'ha_range_min':        round(float(ha_deg.max() - ha_deg.min()) * 4.0, 2),
+            'ha_on_source_min_deg':   round(ha_on_src_min, 3),
+            'ha_on_source_max_deg':   round(ha_on_src_max, 3),
+            'ha_on_source_range_deg': round(ha_on_src_range_deg, 3),
+            'ha_on_source_range_min': round(ha_on_src_range_deg * 4.0, 2),
             'transit_utc':         transit_utc,
             'ha_at_transit_deg':   round(ha_at_transit, 4),
+            'transit_sampled':     transit_sampled,
+            'transit_closest_integration_ha_deg': round(ha_transit_closest_deg, 4)
+                                                   if not _jd_int.size == 0 else None,
+            'transit_closest_integration_utc':    transit_closest_utc,
             'ha_grid_deg':         ha_deg.tolist(),
         },
         'parallactic_angle': {
@@ -1418,7 +1528,11 @@ def query_source(
             'pa_min_deg':          round(float(pa_deg.min()), 2),
             'pa_max_deg':          round(float(pa_deg.max()), 2),
             'pa_range_deg':        round(float(pa_deg.max() - pa_deg.min()), 2),
-            'pa_max_rate_deg_per_min': round(pa_rate_deg_per_min, 4),
+            # Rate from uniform grid (includes unsampled times near transit):
+            'pa_max_rate_deg_per_min':          round(pa_rate_deg_per_min, 4),
+            # Rate from actual on-source integrations only:
+            'pa_max_rate_on_source_deg_per_min': round(pa_rate_on_src, 4),
+            'pa_max_rate_on_source_utc':         pa_rate_on_src_utc,
             'note': ('PA range relevant for polarisation leakage; '
                      'max rate at transit if source passes near zenith.'),
             'pa_grid_deg': pa_deg.tolist(),
@@ -1545,23 +1659,59 @@ def print_source_query(result: dict) -> None:
     row('El min / mean / max', f'{pt["el_min_deg"]:.1f}° / {pt["el_mean_deg"]:.1f}° / {pt["el_max_deg"]:.1f}°')
     print()
     thr_keys = sorted([k for k in pt if k.startswith('time_above_')])
-    print(f'  {"El threshold":>14}  {"Time above (min)":>18}')
-    print(f'  {"-"*14}  {"-"*18}')
+    print(f'  {"El threshold":>12}  {"On-source (min)":>15}  {"Timespan (min)":>14}  On-source UTC window (first → last integration)')
+    print(f'  {"-"*12}  {"-"*15}  {"-"*14}  {"-"*48}')
     for key in thr_keys:
-        lbl = key.replace('time_above_', '').replace('_deg_min', '°')
-        print(f'  {lbl:>14}  {pt[key]:>18.1f}')
+        thr_str = key.replace('time_above_', '').replace('_deg_min', '')
+        lbl = thr_str + '°'
+        on_src_key  = f'on_source_time_above_{thr_str}_deg_min'
+        win_key     = f'on_source_windows_above_{thr_str}_deg'
+        on_src_t    = pt.get(on_src_key, float('nan'))
+        wins        = pt.get(win_key, [])
+        if wins:
+            utc0 = wins[0][0][11:19]    # HH:MM:SS of first window start
+            utc1 = wins[-1][1][11:19]   # HH:MM:SS of last window end
+            n_gaps = len(wins) - 1
+            win_str = f'{utc0} → {utc1}'
+            if n_gaps > 0:
+                win_str += f'  ({n_gaps} gap{"s" if n_gaps > 1 else ""})'  
+        else:
+            win_str = '—'
+        print(f'  {lbl:>12}  {on_src_t:>15.1f}  {pt[key]:>14.1f}  {win_str}')
 
     hdr('HOUR ANGLE')
     row('HA at start',       f'{ha["ha_at_start_deg"]:+.2f}°  ({ha["ha_at_start_min"]:+.1f} min)')
     row('HA at end',         f'{ha["ha_at_end_deg"]:+.2f}°  ({ha["ha_at_end_min"]:+.1f} min)')
-    row('HA range',          f'{ha["ha_range_deg"]:.2f}°  ({ha["ha_range_min"]:.1f} min)')
+    row('HA range (timespan)',
+        f'{ha["ha_range_deg"]:.2f}°  ({ha["ha_range_min"]:.1f} min)',
+        '← includes scan gaps')
+    row('HA range (on-source)',
+        f'{ha["ha_on_source_range_deg"]:.2f}°  ({ha["ha_on_source_range_min"]:.1f} min)',
+        '← actual integrations only')
     row('Transit UTC',       ha['transit_utc'])
     row('HA at transit',     f'{ha["ha_at_transit_deg"]:+.3f}°')
+    _sampled = ha.get('transit_sampled', False)
+    _cl_ha   = ha.get('transit_closest_integration_ha_deg')
+    _cl_utc  = ha.get('transit_closest_integration_utc', 'N/A')
+    _sam_str = 'YES' if _sampled else 'NO'
+    if _cl_ha is not None and not (_cl_ha != _cl_ha):   # not NaN
+        _sam_str += f'  (nearest integration: HA={_cl_ha:+.3f}°  at {_cl_utc[11:19]})'
+    row('Transit sampled?',  _sam_str)
 
     hdr('PARALLACTIC ANGLE  (polarisation planning)')
     row('PA at start / end', f'{pa["pa_at_start_deg"]:+.1f}° / {pa["pa_at_end_deg"]:+.1f}°')
     row('PA range',          f'{pa["pa_range_deg"]:.1f}°')
-    row('Max PA rate',       f'{pa["pa_max_rate_deg_per_min"]:.3f}  deg/min')
+    row('Max PA rate (timespan)',
+        f'{pa["pa_max_rate_deg_per_min"]:.3f}  deg/min',
+        '← grid incl. unsampled intervals')
+    _on_src_pa_rate = pa.get('pa_max_rate_on_source_deg_per_min', float('nan'))
+    _on_src_pa_utc  = pa.get('pa_max_rate_on_source_utc', 'N/A')
+    row('Max PA rate (on-source)',
+        f'{_on_src_pa_rate:.3f}  deg/min  @ {_on_src_pa_utc[11:19] if len(str(_on_src_pa_utc)) > 11 else _on_src_pa_utc}',
+        '← actual integrations only')
+    if not ha.get('transit_sampled', True):
+        print(f'  *** NOTE: transit was NOT sampled — true max PA rate (near zenith) may be'
+              f' higher than measured. ***')
     print(f'\n  Note: {pa["note"]}')
 
     hdr('UV COVERAGE')
