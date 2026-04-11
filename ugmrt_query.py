@@ -210,8 +210,21 @@ def _decode_baseline_array(bl_arr):
     return ant1.astype(np.int16), ant2.astype(np.int16)
 
 
-def build_row_index(path: Union[str, Path]) -> dict:
-    """Build a fast row index by reading group parameters in one sequential pass."""
+def build_row_index(
+    path: Union[str, Path],
+    override_dud_names: Optional[List[str]] = None,
+) -> dict:
+    """Build a fast row index by reading group parameters in one sequential pass.
+
+    Parameters
+    ----------
+    override_dud_names : list[str], optional
+        Explicit list of antenna *names* (as they appear in the AIPS AN table,
+        e.g. ``['C07', 'S05']``) that should always be treated as dud antennas,
+        **bypassing** automatic STABXYZ-based detection entirely.  Use this when
+        you know from domain knowledge or prior observation which antennas are
+        non-functional.  If ``None`` (the default) the automatic detector runs.
+    """
     import time as _time
     t0 = _time.monotonic()
     path = Path(path)
@@ -257,21 +270,41 @@ def build_row_index(path: Union[str, Path]) -> dict:
         antennas = list_antennas(path)
         freq = list_frequency_properties(path)
 
-    # ── Dud-antenna detection ──────────────────────────────────────────────────
-    # A "dud" antenna is one whose STABXYZ offset is all zeros (or near-zero),
-    # meaning it was never assigned a position in the FITS AN table, OR whose
-    # position is identical (within 1 m) to another antenna's position.
-    # These are non-functional antennas that should be excluded from all counts,
-    # baseline lists, sensitivity formulae, and calibration.
+    # ── Dud-antenna resolution ─────────────────────────────────────────────────
+    # Two modes:
+    #   explicit  — caller supplies override_dud_names (authoritative, no guessing)
+    #   auto      — STABXYZ-magnitude / duplicate-position heuristic (fragile)
+    # The explicit list is the recommended path for production use; set it in the
+    # notebook configuration cell via DUD_ANTENNA_NAMES and pass it here.
     _geo_local = _get_array_enu(path)
-    _dud_nos, _dud_names = _detect_dud_antennas(_geo_local)
+    if override_dud_names is not None:
+        # Resolve provided names → antenna numbers using the AN table
+        _name_to_no = {nm: no for no, nm in zip(_geo_local['nos'], _geo_local['names'])}
+        # Accept both exact names and prefix matches (e.g. 'C07' matches 'C07:31')
+        _dud_nos, _dud_names = [], []
+        for _wanted in override_dud_names:
+            _hit = next(
+                (no for nm, no in _name_to_no.items()
+                 if nm == _wanted or nm.startswith(_wanted + ':') or nm.startswith(_wanted)),
+                None,
+            )
+            if _hit is not None:
+                _full_name = _geo_local['names'][_geo_local['nos'].index(_hit)]
+                _dud_nos.append(_hit)
+                _dud_names.append(_full_name)
+            else:
+                print(f'  WARNING: override_dud_names entry "{_wanted}" not found in AN table; skipped.')
+        _dud_nos  = sorted(_dud_nos)
+        _dud_names = [_geo_local['names'][_geo_local['nos'].index(n)] for n in _dud_nos]
+        print(f'  Dud antennas (explicit override): {list(zip(_dud_names, _dud_nos))}')
+    else:
+        _dud_nos, _dud_names = _detect_dud_antennas(_geo_local)
+        if _dud_nos:
+            print(f'  WARNING: {len(_dud_nos)} dud antenna(s) auto-detected (STABXYZ=0 or duplicate position):')
+            for _no, _nm in zip(_dud_nos, _dud_names):
+                print(f'    antenna_no={_no}  name={_nm}  — excluded from all counts/solves')
     _dud_set = set(_dud_nos)
     active_antennas = [a for a in antennas if a['antenna_no'] not in _dud_set]
-    if _dud_nos:
-        print(f'  WARNING: {len(_dud_nos)} dud antenna(s) detected (zero/duplicate position '
-              f'in AIPS AN table STABXYZ):')
-        for _no, _nm in zip(_dud_nos, _dud_names):
-            print(f'    antenna_no={_no}  name={_nm}  — will be excluded from all counts/solves')
 
     data_per_group = naxis5 * naxis4 * naxis3 * naxis2
     group_size = pcount + data_per_group
@@ -539,8 +572,15 @@ def get_or_build_row_index(
     force_rebuild: bool = False,
     validation_mode: str = 'fast',
     write_cache: bool = True,
+    override_dud_names: Optional[List[str]] = None,
 ) -> dict:
-    """Load a persistent row index if valid, otherwise build and cache one."""
+    """Load a persistent row index if valid, otherwise build and cache one.
+
+    override_dud_names : list[str], optional
+        Passed to :func:`build_row_index`.  Explicit antenna names to treat as
+        duds, bypassing automatic STABXYZ-based detection.  Example:
+        ``override_dud_names=['C07', 'S05']``.
+    """
     path = Path(path)
     cache_path = Path(cache_path) if cache_path is not None else default_row_index_cache_path(path, cache_dir=cache_dir)
 
@@ -559,7 +599,7 @@ def get_or_build_row_index(
     source_identity = get_file_identity(path)
     # Always store SHA256 in cache so fast+sha fallback works in future runs.
     source_sha256 = compute_file_sha256(path)
-    index = build_row_index(path)
+    index = build_row_index(path, override_dud_names=override_dud_names)
     index['source_sha256'] = source_sha256
     index['source_identity'] = source_identity
     index['index_cache_path'] = str(cache_path)
@@ -1159,6 +1199,7 @@ def query_source(
     elevation_thresholds_deg: Optional[List[float]] = None,
     scan_gap_seconds: float = 5.0,
     include_uv_raw: bool = True,
+    override_dud_names: Optional[List[str]] = None,
 ) -> dict:
     """Comprehensive per-source data-quality and observation-planning query.
 
@@ -1254,9 +1295,18 @@ def query_source(
     lat_deg = geo['lat_deg']
     lon_deg = geo['lon_deg']
 
-    # Dud-antenna list: prefer cached values from a pre-built index; otherwise
-    # detect from the raw STABXYZ vectors (zero magnitude = no position recorded).
-    if index and 'dud_antenna_nos' in index:
+    # Dud-antenna list resolution (priority order):
+    #   1. Explicit override_dud_names passed by caller (highest authority)
+    #   2. Cached values from a pre-built index (already resolved at build time)
+    #   3. Auto-detection from STABXYZ (fragile fallback; may mis-identify)
+    if override_dud_names is not None:
+        _name_to_no_q = {nm: no for no, nm in zip(geo['nos'], geo['names'])}
+        _query_dud_nos = sorted(
+            _name_to_no_q[nm] for _w in override_dud_names
+            for nm, no in _name_to_no_q.items()
+            if nm == _w or nm.startswith(_w + ':') or nm.startswith(_w)
+        )
+    elif index and 'dud_antenna_nos' in index:
         _query_dud_nos = index['dud_antenna_nos']
     else:
         _query_dud_nos, _ = _detect_dud_antennas(geo)
