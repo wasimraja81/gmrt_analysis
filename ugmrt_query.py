@@ -1360,7 +1360,20 @@ def query_source(
     if _ha_int.size > 0:
         ha_on_src_min  = float(_ha_int.min())
         ha_on_src_max  = float(_ha_int.max())
-        ha_on_src_range_deg = float(_ha_int.max() - _ha_int.min())
+        # Cumulative in-scan HA swept: sum |dHA| only across consecutive integration
+        # pairs that belong to the same scan (gap < 3 × t_int_s).  This avoids
+        # counting the large HA jump across inter-scan gaps, so the result is
+        # always ≤ total on-source time × 15°/hr and never equals the full
+        # first-to-last timespan when there are gaps.
+        if _ha_int.size > 1:
+            _jd_gap_s = np.diff(_jd_int) * 86400.0
+            _in_scan  = _jd_gap_s < 3.0 * t_int_s
+            _dha = np.diff(_ha_int)
+            _dha[_dha >  180] -= 360
+            _dha[_dha < -180] += 360
+            ha_on_src_range_deg = float(np.sum(np.abs(_dha[_in_scan])))
+        else:
+            ha_on_src_range_deg = 0.0
         # Integration closest to transit (HA = 0)
         _i_tr_int = int(np.argmin(np.abs(_ha_int)))
         ha_transit_closest_deg = float(_ha_int[_i_tr_int])
@@ -1685,9 +1698,9 @@ def print_source_query(result: dict) -> None:
     row('HA range (timespan)',
         f'{ha["ha_range_deg"]:.2f}°  ({ha["ha_range_min"]:.1f} min)',
         '← includes scan gaps')
-    row('HA range (on-source)',
+    row('HA sweep (on-source, Σ scans)',
         f'{ha["ha_on_source_range_deg"]:.2f}°  ({ha["ha_on_source_range_min"]:.1f} min)',
-        '← actual integrations only')
+        '← cumulative in-scan rotation only')
     row('Transit UTC',       ha['transit_utc'])
     row('HA at transit',     f'{ha["ha_at_transit_deg"]:+.3f}°')
     _sampled = ha.get('transit_sampled', False)
@@ -2007,7 +2020,7 @@ def plot_antenna_positions(
     def _is_flagged(no, nm):
         return (no in _flag_ids) or (_norm_antenna_name(nm) in _flag_names)
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
 
     # Optionally draw inter-dish separation lines
     if highlight_pairs_closer_than_m is not None:
@@ -2039,7 +2052,7 @@ def plot_antenna_positions(
 
     ax.set_xlabel('East (m)')
     ax.set_ylabel('North (m)')
-    ax.set_aspect('equal')
+    ax.set_aspect('equal', adjustable='datalim')
     ax.grid(True, alpha=0.25)
     ax.set_title(title or f'Antenna positions — {Path(str(fits_path)).name}')
     if flagged_antenna_ids or flagged_antenna_names:
@@ -2049,7 +2062,6 @@ def plot_antenna_positions(
             _L2D([0],[0], marker='o', color='w', mfc='tomato',     ms=8, label='Flagged'),
         ], fontsize=9)
 
-    plt.tight_layout()
     if save_path is not None:
         fig.savefig(str(save_path), dpi=120)
     return fig
@@ -4789,8 +4801,24 @@ def apply_bandpass_solution(vis: dict, solution: dict) -> dict:
     ant_to_idx = {int(ant): idx for idx, ant in enumerate(antenna_ids)}
     ant1_idx = np.array([ant_to_idx.get(int(ant), -1) for ant in vis['ant1']], dtype=np.int32)
     ant2_idx = np.array([ant_to_idx.get(int(ant), -1) for ant in vis['ant2']], dtype=np.int32)
-    if np.any(ant1_idx < 0) or np.any(ant2_idx < 0):
-        raise ValueError('Some visibility antennas are missing from the bandpass solution.')
+    _missing_bl = (ant1_idx < 0) | (ant2_idx < 0)
+    if np.any(_missing_bl):
+        _missing_nos = sorted(set(
+            [int(a) for a in vis['ant1'][ant1_idx < 0]] +
+            [int(a) for a in vis['ant2'][ant2_idx < 0]]
+        ))
+        import warnings as _warnings
+        _warnings.warn(
+            f'apply_bandpass_solution: {int(np.sum(_missing_bl))} baseline row(s) reference '
+            f'antenna NOSTA {_missing_nos} which are absent from the bandpass solution '
+            f'(likely newly flagged in a later iteration). '
+            f'Those baselines will be flagged NaN in the corrected output.',
+            stacklevel=2,
+        )
+    # Clamp -1 sentinel to 0 so numpy indexing below is safe; affected rows are
+    # flagged after the correction loop regardless of what gain was applied.
+    _safe_ant1 = np.where(ant1_idx >= 0, ant1_idx, 0)
+    _safe_ant2 = np.where(ant2_idx >= 0, ant2_idx, 0)
 
     corrected = np.array(vis['vis_complex'], dtype=np.complex128, copy=True)
     corrected_flagged = np.array(vis.get('flagged', np.zeros_like(vis['weight'], dtype=bool)), copy=True)
@@ -4802,14 +4830,19 @@ def apply_bandpass_solution(vis: dict, solution: dict) -> dict:
         if label not in common_labels:
             continue
         sol_pol_idx = sol_labels.index(label)
-        g1 = sol_gains[:, ant1_idx, sol_pol_idx].T
-        g2 = sol_gains[:, ant2_idx, sol_pol_idx].T
-        valid = sol_valid[:, ant1_idx, sol_pol_idx].T & sol_valid[:, ant2_idx, sol_pol_idx].T
+        g1 = sol_gains[:, _safe_ant1, sol_pol_idx].T
+        g2 = sol_gains[:, _safe_ant2, sol_pol_idx].T
+        valid = sol_valid[:, _safe_ant1, sol_pol_idx].T & sol_valid[:, _safe_ant2, sol_pol_idx].T
         denom = g1 * np.conj(g2)
         good = valid & np.isfinite(denom.real) & np.isfinite(denom.imag) & (np.abs(denom) > 0)
         corrected[:, :, vis_pol_idx][good] = corrected[:, :, vis_pol_idx][good] / denom[good]
         corrected[:, :, vis_pol_idx][~good] = np.nan + 1j * np.nan
         corrected_flagged[:, :, vis_pol_idx] |= ~good
+
+    # Flag any baseline rows whose antennas were absent from the solution
+    if np.any(_missing_bl):
+        corrected[_missing_bl] = np.nan + 1j * np.nan
+        corrected_flagged[_missing_bl] = True
 
     amp = np.abs(corrected)
     phase = np.degrees(np.angle(corrected)).astype(np.float32)
