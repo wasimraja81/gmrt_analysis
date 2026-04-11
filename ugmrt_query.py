@@ -257,6 +257,22 @@ def build_row_index(path: Union[str, Path]) -> dict:
         antennas = list_antennas(path)
         freq = list_frequency_properties(path)
 
+    # ── Dud-antenna detection ──────────────────────────────────────────────────
+    # A "dud" antenna is one whose STABXYZ offset is all zeros (or near-zero),
+    # meaning it was never assigned a position in the FITS AN table, OR whose
+    # position is identical (within 1 m) to another antenna's position.
+    # These are non-functional antennas that should be excluded from all counts,
+    # baseline lists, sensitivity formulae, and calibration.
+    _geo_local = _get_array_enu(path)
+    _dud_nos, _dud_names = _detect_dud_antennas(_geo_local)
+    _dud_set = set(_dud_nos)
+    active_antennas = [a for a in antennas if a['antenna_no'] not in _dud_set]
+    if _dud_nos:
+        print(f'  WARNING: {len(_dud_nos)} dud antenna(s) detected (zero/duplicate position '
+              f'in AIPS AN table STABXYZ):')
+        for _no, _nm in zip(_dud_nos, _dud_names):
+            print(f'    antenna_no={_no}  name={_nm}  — will be excluded from all counts/solves')
+
     data_per_group = naxis5 * naxis4 * naxis3 * naxis2
     group_size = pcount + data_per_group
 
@@ -306,6 +322,9 @@ def build_row_index(path: Union[str, Path]) -> dict:
         'source_ranges': source_ranges,
         'id_to_name': id_to_name,
         'antennas': antennas, 'freq': freq,
+        'dud_antenna_nos': _dud_nos,
+        'dud_antenna_names': _dud_names,
+        'active_antennas': active_antennas,
         'chan_freqs_hz': chan_freqs,
         'stokes_labels': stokes_labels,
         'path': str(path),
@@ -321,8 +340,12 @@ def build_row_index(path: Union[str, Path]) -> dict:
 
     mem_mb = (source_id.nbytes + jd.nbytes + ant1.nbytes + ant2.nbytes
               + uu_sec.nbytes + vv_sec.nbytes) / 1e6
+    n_active = len(active_antennas)
+    n_dud    = len(_dud_nos)
     print(f'Index built: {gcount:,} rows, {len(id_to_name)} sources, '
-          f'{mem_mb:.1f} MB RAM, {elapsed:.1f}s')
+          f'{n_active} active antennas'
+          f'{f" ({n_dud} dud: {_dud_names})" if n_dud else ""},'
+          f' {mem_mb:.1f} MB RAM, {elapsed:.1f}s')
     for sid, name in sorted(id_to_name.items()):
         ranges = source_ranges.get(sid, [])
         total_rows = sum(e - s for s, e in ranges)
@@ -374,6 +397,8 @@ def save_row_index_cache(index: dict, cache_path: Union[str, Path], source_sha25
         'source_ranges': index['source_ranges'],
         'id_to_name': {str(k): v for k, v in index['id_to_name'].items()},
         'antennas': index['antennas'],
+        'dud_antenna_nos': index.get('dud_antenna_nos', []),
+        'dud_antenna_names': index.get('dud_antenna_names', []),
         'freq': index['freq'],
         'stokes_labels': list(index['stokes_labels']),
         'gcount': int(index['gcount']),
@@ -482,6 +507,10 @@ def load_row_index_cache(
             'source_ranges': source_ranges,
             'id_to_name': id_to_name,
             'antennas': metadata['antennas'],
+            'dud_antenna_nos': metadata.get('dud_antenna_nos', []),
+            'dud_antenna_names': metadata.get('dud_antenna_names', []),
+            'active_antennas': [a for a in metadata['antennas']
+                                if a['antenna_no'] not in set(metadata.get('dud_antenna_nos', []))],
             'freq': metadata['freq'],
             'chan_freqs_hz': np.asarray(npz['chan_freqs_hz'], dtype=np.float64),
             'stokes_labels': list(metadata['stokes_labels']),
@@ -633,9 +662,15 @@ def get_source_observation_properties(
             'autos_present': bool(sau.max() > 0),
         })
 
-    n_ant = len(index['antennas'])
+    # Use active (non-dud) antenna count for all statistics
+    n_ant = len(index.get('active_antennas', index['antennas']))
     cross_th = n_ant * (n_ant - 1) // 2
     freq = index['freq']
+
+    # On-source time: number of actual integrations × integration duration.
+    # This differs from total_duration_sec (= last - first timestamp) when the
+    # source is observed in multiple scans separated by slews or other targets.
+    on_source_time_sec = float(n_int * inferred_sec)
 
     summary = {
         'file': index['path'],
@@ -649,13 +684,18 @@ def get_source_observation_properties(
         'integration_time_sec': inferred_sec,
         'begin_time_utc': Time(float(int_times[0]), format='jd', scale='utc').isot,
         'end_time_utc':   Time(float(int_times[-1]), format='jd', scale='utc').isot,
+        # total_duration_sec = timespan from first to last integration (includes gaps between scans).
+        # on_source_time_sec = n_integrations * integration_time — the actual on-sky accumulation time.
         'total_duration_sec': float((int_times[-1] - int_times[0]) * 86400.0),
+        'on_source_time_sec': on_source_time_sec,
         'n_channels': index['naxis4'],
         'n_correlations': index['naxis3'],
         'centre_freq_hz': 0.5 * (freq['freq_min_hz'] + freq['freq_max_hz']),
         'bFreq_hz': freq['freq_min_hz'],
         'eFreq_hz': freq['freq_max_hz'],
         'antenna_count': n_ant,
+        'dud_antenna_nos': index.get('dud_antenna_nos', []),
+        'dud_antenna_names': index.get('dud_antenna_names', []),
         'cross_baselines_theoretical': cross_th,
         'baselines_with_autos_theoretical': cross_th + n_ant,
         'autos_present_anywhere': bool(auto_cnts.max() > 0),
@@ -988,11 +1028,81 @@ def _uv_stats_for_source(
     }
 
 
-def _physical_baseline_stats(geo: dict) -> dict:
-    """Shortest, median, and longest physical dish separations from ENU coords."""
+def _detect_dud_antennas(
+    geo: dict,
+    zero_threshold_m: float = 1.0,
+    dup_threshold_m: float = 1.0,
+):
+    """Return (nos_list, names_list) of dud antennas.
+
+    A dud is an antenna whose STABXYZ entry in the AIPS AN table is missing or
+    all-zero (the antenna never had a valid position assigned), identified by an
+    ENU horizontal distance from the array centre below *zero_threshold_m*.
+    Duplicate positions (two antennas whose ENU positions are within
+    *dup_threshold_m* of each other) are also flagged — the lower-numbered
+    antenna in each pair is kept as the real one.
+
+    Parameters
+    ----------
+    geo : dict
+        Output of :func:`_get_array_enu`.
+    zero_threshold_m : float
+        Horizontal distance (metres) below which an antenna is considered
+        to have no valid position (default 1 m).
+    dup_threshold_m : float
+        3-D distance (metres) below which two antennas are considered
+        co-located duplicates (default 1 m).
+
+    Returns
+    -------
+    (dud_nos, dud_names) : (list[int], list[str])
+    """
     enu   = geo['enu']
     nos   = geo['nos']
     names = geo['names']
+    n     = len(nos)
+
+    dud_set: set = set()
+
+    # Zero-position check: only horizontal (E, N); Up offset may be legitimate
+    for i in range(n):
+        if float(np.hypot(enu[i, 0], enu[i, 1])) < zero_threshold_m:
+            dud_set.add(nos[i])
+
+    # Duplicate-position check: flag the higher-numbered of each co-located pair
+    for i in range(n):
+        if nos[i] in dud_set:
+            continue
+        for j in range(i + 1, n):
+            if nos[j] in dud_set:
+                continue
+            if float(np.linalg.norm(enu[i] - enu[j])) < dup_threshold_m:
+                # Keep the lower-numbered antenna as valid; flag the other
+                dud_set.add(max(nos[i], nos[j]))
+
+    dud_nos   = sorted(dud_set)
+    no_to_name = dict(zip(nos, names))
+    dud_names = [no_to_name.get(no, f'Ant{no}') for no in dud_nos]
+    return dud_nos, dud_names
+
+
+def _physical_baseline_stats(geo: dict, dud_nos=None) -> dict:
+    """Shortest, median, and longest physical dish separations from ENU coords.
+
+    Parameters
+    ----------
+    geo : dict
+        Output of :func:`_get_array_enu`.
+    dud_nos : list[int], optional
+        Antenna numbers to exclude from baseline statistics.
+        Defaults to ``None`` (no exclusion).
+    """
+    _dud_set = set(dud_nos or [])
+    # Filter out dud antennas before computing separations
+    _keep    = [i for i, no in enumerate(geo['nos']) if no not in _dud_set]
+    enu   = geo['enu'][_keep]
+    nos   = [geo['nos'][i]   for i in _keep]
+    names = [geo['names'][i] for i in _keep]
     n     = len(nos)
 
     lengths = []
@@ -1186,14 +1296,18 @@ def query_source(
     uv_stats = _uv_stats_for_source(idx_for_uv, source)
 
     # ── 9. Physical baselines from ENU ────────────────────────────────────────
-    bl_stats = _physical_baseline_stats(geo)
+    _dud_nos_for_bl = index['dud_antenna_nos'] if index and 'dud_antenna_nos' in index else []
+    bl_stats = _physical_baseline_stats(geo, dud_nos=_dud_nos_for_bl)
 
     # ── 10. File metadata ──────────────────────────────────────────────────────
     import os
     file_size_gb = os.path.getsize(fits_path) / 1e9
 
     # ── 11. Sensitivity geometric factors ─────────────────────────────────────
-    n_ant  = len(geo['nos'])
+    # Use active (non-dud) antenna count for noise formula
+    n_ant  = (len(index['active_antennas'])
+              if index and 'active_antennas' in index
+              else len(geo['nos']))
     n_cross_bl = n_ant * (n_ant - 1) // 2
     n_pol  = obs['n_correlations']
     t_int_s = obs['integration_time_sec']
@@ -1266,15 +1380,19 @@ def query_source(
             'wavelength_m': round(c_mps / nu_centre_hz, 4),
         },
         'timing': {
-            'begin_utc':            obs['begin_time_utc'],
-            'end_utc':              obs['end_time_utc'],
-            'total_duration_min':   round(obs['total_duration_sec'] / 60.0, 1),
-            'total_duration_hr':    round(obs['total_duration_sec'] / 3600.0, 3),
-            'n_integrations':       obs['n_integrations'],
-            'integration_time_s':   round(t_int_s, 2),
-            'n_scans':              obs['n_scans'],
-            'n_vis_rows':           obs['n_vis_rows'],
-            'scans':                obs['scans'],
+            'begin_utc':              obs['begin_time_utc'],
+            'end_utc':                obs['end_time_utc'],
+            # timespan: clock time from first to last integration (includes gaps between scans)
+            'total_duration_min':     round(obs['total_duration_sec'] / 60.0, 1),
+            'total_duration_hr':      round(obs['total_duration_sec'] / 3600.0, 3),
+            # on_source_time: n_integrations × integration_time — actual data accumulation
+            'on_source_time_min':     round(obs['on_source_time_sec'] / 60.0, 1),
+            'on_source_time_hr':      round(obs['on_source_time_sec'] / 3600.0, 3),
+            'n_integrations':         obs['n_integrations'],
+            'integration_time_s':     round(t_int_s, 2),
+            'n_scans':                obs['n_scans'],
+            'n_vis_rows':             obs['n_vis_rows'],
+            'scans':                  obs['scans'],
         },
         'pointing': {
             'el_min_deg':          round(float(el_deg.min()), 2),
@@ -1404,11 +1522,19 @@ def print_source_query(result: dict) -> None:
     row('Wavelength (λ)',    f'{freq["wavelength_m"]:.4f}', 'm')
 
     hdr('TIMING')
-    row('Observation start', tim['begin_utc'])
-    row('Observation end',   tim['end_utc'])
-    row('Total duration',    f'{tim["total_duration_hr"]:.3f} hr  ({tim["total_duration_min"]:.1f} min)')
-    row('Integration time',  f'{tim["integration_time_s"]:.1f}', 's')
-    row('Integrations / scans', f'{tim["n_integrations"]}  /  {tim["n_scans"]}')
+    row('Observation start',     tim['begin_utc'])
+    row('Observation end',       tim['end_utc'])
+    row('Time span (first–last)',
+        f'{tim["total_duration_hr"]:.3f} hr  ({tim["total_duration_min"]:.1f} min)',
+        '← includes gaps between scans')
+    row('On-source time (Σ ints)',
+        f'{tim["on_source_time_hr"]:.3f} hr  ({tim["on_source_time_min"]:.1f} min)',
+        '← actual data accumulation')
+    if tim.get('on_source_time_min', 0) < tim.get('total_duration_min', 0) * 0.8:
+        print(f'  *** NOTE: on-source time is much less than timespan — '
+              f'source was observed in {tim["n_scans"]} separate scan(s) ***')
+    row('Integration time',      f'{tim["integration_time_s"]:.1f}', 's')
+    row('Integrations / scans',  f'{tim["n_integrations"]}  /  {tim["n_scans"]}')
     row('Total visibility rows', f'{tim["n_vis_rows"]:,}')
     if tim['scans']:
         print(f'\n  {"Scan":>4}  {"Start UTC":>22}  {"End UTC":>22}  {"Dur(s)":>7}  {"N_int":>6}')
