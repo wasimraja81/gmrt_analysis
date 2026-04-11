@@ -69,6 +69,7 @@ log = logging.getLogger('ugmrt.preprocess')
 CAL_FITS = INDEX_CACHE = BANDPASS_OUT = DIAG_PLOT_BASE = DIAG_PLOT_UNFLAGGED = None
 FLAG_TABLE_SESSION = FLAG_TABLE_PATHS = None
 INDEX_VALIDATION_MODE = None
+DUD_ANTENNA_NAMES = None
 SOURCE = STOKES = CHAN_RANGE = None
 MAX_ROWS_SOLVE = SMOOTH_WINDOW = MIN_BASELINES = None
 ITER_TAG = None
@@ -417,9 +418,12 @@ def step_1_index(q):
         force_rebuild=False,
         validation_mode=INDEX_VALIDATION_MODE,
         write_cache=True,
+        override_dud_names=DUD_ANTENNA_NAMES if DUD_ANTENNA_NAMES is not None else None,
     )
     log.info('  index_cache_path : %s', index.get('index_cache_path', cache))
     log.info('  source_identity  : %s', index.get('source_identity'))
+    log.info('  dud_antennas     : %s', index.get('dud_antenna_names', []))
+    log.info('  active_antennas  : %d', len(index.get('active_antennas', index['antennas'])))
     log.debug('  source_sha256    : %s', index.get('source_sha256'))
     return index
 
