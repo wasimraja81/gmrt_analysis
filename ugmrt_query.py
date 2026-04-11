@@ -271,17 +271,14 @@ def build_row_index(
         freq = list_frequency_properties(path)
 
     # ── Dud-antenna resolution ─────────────────────────────────────────────────
-    # Two modes:
-    #   explicit  — caller supplies override_dud_names (authoritative, no guessing)
-    #   auto      — STABXYZ-magnitude / duplicate-position heuristic (fragile)
-    # The explicit list is the recommended path for production use; set it in the
-    # notebook configuration cell via DUD_ANTENNA_NAMES and pass it here.
+    # Caller must supply override_dud_names (set DUD_ANTENNA_NAMES in the cfg /
+    # notebook configuration cell).  Prefix matching is used: 'C07' matches
+    # the AN-table entry 'C07:31', 'S05' matches 'S05:32', etc.
+    # If override_dud_names is None or empty, no antennas are excluded.
     _geo_local = _get_array_enu(path)
-    if override_dud_names is not None:
-        # Resolve provided names → antenna numbers using the AN table
+    _dud_nos, _dud_names = [], []
+    if override_dud_names:
         _name_to_no = {nm: no for no, nm in zip(_geo_local['nos'], _geo_local['names'])}
-        # Accept both exact names and prefix matches (e.g. 'C07' matches 'C07:31')
-        _dud_nos, _dud_names = [], []
         for _wanted in override_dud_names:
             _hit = next(
                 (no for nm, no in _name_to_no.items()
@@ -296,13 +293,8 @@ def build_row_index(
                 print(f'  WARNING: override_dud_names entry "{_wanted}" not found in AN table; skipped.')
         _dud_nos  = sorted(_dud_nos)
         _dud_names = [_geo_local['names'][_geo_local['nos'].index(n)] for n in _dud_nos]
-        print(f'  Dud antennas (explicit override): {list(zip(_dud_names, _dud_nos))}')
-    else:
-        _dud_nos, _dud_names = _detect_dud_antennas(_geo_local)
-        if _dud_nos:
-            print(f'  WARNING: {len(_dud_nos)} dud antenna(s) auto-detected (STABXYZ=0 or duplicate position):')
-            for _no, _nm in zip(_dud_nos, _dud_names):
-                print(f'    antenna_no={_no}  name={_nm}  — excluded from all counts/solves')
+    if _dud_nos:
+        print(f'  Dud antennas (excluded): {list(zip(_dud_names, _dud_nos))}')
     _dud_set = set(_dud_nos)
     active_antennas = [a for a in antennas if a['antenna_no'] not in _dud_set]
 
@@ -1071,78 +1063,6 @@ def _uv_stats_for_source(
     }
 
 
-def _detect_dud_antennas(
-    geo: dict,
-    zero_threshold_m: float = 1.0,
-    dup_threshold_m: float = 1.0,
-):
-    """Return (nos_list, names_list) of dud antennas.
-
-    A dud is an antenna whose STABXYZ entry in the AIPS AN table is missing or
-    all-zero (the antenna never had a valid position assigned), identified by an
-    ENU horizontal distance from the array centre below *zero_threshold_m*.
-    Duplicate positions (two antennas whose ENU positions are within
-    *dup_threshold_m* of each other) are also flagged — the lower-numbered
-    antenna in each pair is kept as the real one.
-
-    Parameters
-    ----------
-    geo : dict
-        Output of :func:`_get_array_enu`.
-    zero_threshold_m : float
-        Horizontal distance (metres) below which an antenna is considered
-        to have no valid position (default 1 m).
-    dup_threshold_m : float
-        3-D distance (metres) below which two antennas are considered
-        co-located duplicates (default 1 m).
-
-    Returns
-    -------
-    (dud_nos, dud_names) : (list[int], list[str])
-    """
-    enu   = geo['enu']
-    nos   = geo['nos']
-    names = geo['names']
-    n     = len(nos)
-
-    # stabxyz is the raw ECEF offset of each antenna from the array reference
-    # point (ARRAYX/Y/Z in the AN table header).  An all-zero row means the
-    # antenna was never assigned a valid position in the FITS file — that is
-    # the definitive criterion for a "dud".
-    # We use the raw STABXYZ magnitude, NOT the ENU distance from array centre,
-    # because central-square antennas can legitimately sit within 1 m of the
-    # reference point in ENU while still having correct (non-zero) STABXYZ.
-    stabxyz = geo.get('stabxyz')          # (N, 3) or None for old geo dicts
-
-    dud_set: set = set()
-
-    if stabxyz is not None:
-        # Primary check: STABXYZ magnitude exactly zero → no position recorded
-        for i in range(n):
-            if float(np.linalg.norm(stabxyz[i])) < zero_threshold_m:
-                dud_set.add(nos[i])
-    else:
-        # Fallback (geo dict predates stabxyz key): use ENU horizontal distance
-        for i in range(n):
-            if float(np.hypot(enu[i, 0], enu[i, 1])) < zero_threshold_m:
-                dud_set.add(nos[i])
-
-    # Secondary check: duplicate positions in ENU (two antennas at the same
-    # physical location within dup_threshold_m — keep lower-numbered one)
-    for i in range(n):
-        if nos[i] in dud_set:
-            continue
-        for j in range(i + 1, n):
-            if nos[j] in dud_set:
-                continue
-            if float(np.linalg.norm(enu[i] - enu[j])) < dup_threshold_m:
-                dud_set.add(max(nos[i], nos[j]))
-
-    dud_nos    = sorted(dud_set)
-    no_to_name = dict(zip(nos, names))
-    dud_names  = [no_to_name.get(no, f'Ant{no}') for no in dud_nos]
-    return dud_nos, dud_names
-
 
 def _physical_baseline_stats(geo: dict, dud_nos=None) -> dict:
     """Shortest, median, and longest physical dish separations from ENU coords.
@@ -1298,18 +1218,18 @@ def query_source(
     # Dud-antenna list resolution (priority order):
     #   1. Explicit override_dud_names passed by caller (highest authority)
     #   2. Cached values from a pre-built index (already resolved at build time)
-    #   3. Auto-detection from STABXYZ (fragile fallback; may mis-identify)
+    #   3. Empty — no auto-detection; caller must provide the list explicitly.
     if override_dud_names is not None:
         _name_to_no_q = {nm: no for no, nm in zip(geo['nos'], geo['names'])}
         _query_dud_nos = sorted(
-            _name_to_no_q[nm] for _w in override_dud_names
+            no for _w in override_dud_names
             for nm, no in _name_to_no_q.items()
             if nm == _w or nm.startswith(_w + ':') or nm.startswith(_w)
         )
     elif index and 'dud_antenna_nos' in index:
         _query_dud_nos = index['dud_antenna_nos']
     else:
-        _query_dud_nos, _ = _detect_dud_antennas(geo)
+        _query_dud_nos = []
 
     # ── 3. Az/El track ────────────────────────────────────────────────────────
     azel = compute_source_azel(
