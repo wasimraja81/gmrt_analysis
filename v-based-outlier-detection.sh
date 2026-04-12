@@ -158,9 +158,10 @@ Convergence / early stopping:
       --set "CONVERGENCE_EPSILON=0.0"
 
 Passthrough arguments (appended after the preset):
-    --commit             REAL RUN — write bandpass + flags to disk each iteration.
-                         Without --commit the script is always a dry-run.
-                         Required for Phase-2 (run_clustering.sh) to find outputs.
+    --no-dry-run         REAL RUN — write bandpass + flags to disk each iteration.
+                         The script always passes --dry-run for safety; adding
+                         --no-dry-run overrides it.  Required for Phase-2
+                         (run_clustering.sh) to find outputs.
     --auto               fully unattended batch loop (no prompts, no blocking plots)
     --n-iters N          override iteration count
     --start-iter N       start labelling from iterN
@@ -187,25 +188,14 @@ EOF
     fi
 done
 
-# ── Detect --commit (consumed here; remainder passed through) ─────────────────
-# --commit makes this a real run: bandpass solutions and accepted flag tables
-# are written to disk.  Phase-2 (run_clustering.sh) requires these outputs.
-# Default (no --commit): dry-run — safe scratch pad, nothing written.
-DRY_RUN_FLAG='--dry-run'
-PASSTHROUGH_ARGS=()
-for arg in "$@"; do
-    if [[ "${arg}" == '--commit' ]]; then
-        DRY_RUN_FLAG=''
-    else
-        PASSTHROUGH_ARGS+=("${arg}")
-    fi
-done
-
 # ── Run ───────────────────────────────────────────────────────────────────────
+# --dry-run is hardcoded for safety.  Pass --no-dry-run to make a real run:
+#   ./v-based-outlier-detection.sh --no-dry-run --auto ...
+# argparse last-wins: --no-dry-run after --dry-run overrides it.
 "${DRIVER}" \
     --step all \
     --n-iters 15 \
-    ${DRY_RUN_FLAG} \
+    --dry-run \
     --set "OUTLIER_METRIC='V'" \
     --set "OUTLIER_METRIC_MERGE_STRATEGY='union'" \
     --set "ANTENNA_FLAG_THRESHOLD_JY={'V': 5.0}" \
@@ -213,14 +203,20 @@ done
     --set "CONVERGENCE_COMBINE_STRATEGY='all'" \
     --set "COMPARE_METRICS_FOR_CONVERGENCE=['V', 'Model']" \
     --set "RUN_ITER0_DIAGNOSTIC=True" \
-    "${PASSTHROUGH_ARGS[@]}"
+    "$@"
 EXIT_CODE=$?
 
 # ── Post-run reminder ─────────────────────────────────────────────────────────
+# Detect whether this was a real run (--no-dry-run present in original args).
+_IS_REAL_RUN=false
+for _arg in "$@"; do
+    [[ "${_arg}" == '--no-dry-run' ]] && { _IS_REAL_RUN=true; break; }
+done
+
 echo ""
-if [[ -z "${DRY_RUN_FLAG}" ]]; then
+if ${_IS_REAL_RUN}; then
     echo "════════════════════════════════════════════════════════════════════════"
-    echo "  COMMIT RUN COMPLETE — bandpass + flags written to disk."
+    echo "  REAL RUN COMPLETE — bandpass + flags written to disk."
     echo ""
     echo "  Run Phase-2 to apply clustering detection on the converged solution:"
     echo ""
@@ -228,18 +224,17 @@ if [[ -z "${DRY_RUN_FLAG}" ]]; then
     echo ""
     echo "  Tune the threshold, then commit clustering flags:"
     echo ""
-    echo "    ./run_clustering.sh --set \"CLUSTERING_THRESHOLD_JY=3.5\" --commit"
+    echo "    ./run_clustering.sh --no-dry-run --set \"CLUSTERING_THRESHOLD_JY=3.5\""
     echo "════════════════════════════════════════════════════════════════════════"
 else
     echo "════════════════════════════════════════════════════════════════════════"
     echo "  DRY-RUN COMPLETE — nothing was written to disk."
     echo ""
-    echo "  To write bandpass + flags to disk (required for Phase-2):"
+    echo "  To make a real run (required for Phase-2), add --no-dry-run:"
     echo ""
-    echo "    Add --commit to your command, e.g.:"
-    echo "      ./v-based-outlier-detection.sh --commit --auto \\"
-    echo "          --set \"FLAG_WHAT_TO_FLAG='baselines'\" --n-iters 100 \\"
-    echo "          --set \"CONVERGENCE_EPSILON=0.005\""
+    echo "    ./v-based-outlier-detection.sh --no-dry-run --auto \\"
+    echo "        --set \"FLAG_WHAT_TO_FLAG='baselines'\" --n-iters 100 \\"
+    echo "        --set \"CONVERGENCE_EPSILON=0.005\""
     echo "════════════════════════════════════════════════════════════════════════"
 fi
 echo ""

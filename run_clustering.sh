@@ -9,8 +9,8 @@
 # DEFAULT: DRY-RUN.  Clustering flags are detected and plotted but NOT written
 # to disk.  Safe for exploring CLUSTERING_THRESHOLD_JY multiple times.
 #
-# TO COMMIT CLUSTERING FLAGS:
-#   ./run_clustering.sh --commit
+# TO WRITE CLUSTERING FLAGS TO DISK:
+#   ./run_clustering.sh --no-dry-run
 #   Flags will be appended to FLAG_TABLE_SESSION (from .cfg).
 # ─────────────────────────────────────────────────────────────────────────────
 #
@@ -20,7 +20,7 @@
 #   ./run_clustering.sh --set "SOURCE='3C286'" --set "CLUSTERING_THRESHOLD_JY=4.0"
 #   ./run_clustering.sh --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 #   ./run_clustering.sh --config /path/to/other.cfg
-#   ./run_clustering.sh --commit          # write new flags to FLAG_TABLE_SESSION
+    ./run_clustering.sh --no-dry-run      # write new flags to FLAG_TABLE_SESSION
 #   ./run_clustering.sh --refit           # re-solve bandpass with clustering flags
 #   ./run_clustering.sh --save-plots      # save 6 PNGs to WORK_DIR
 #

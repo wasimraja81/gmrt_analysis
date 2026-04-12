@@ -15,7 +15,7 @@ Usage
     ./run_clustering.sh --set "CLUSTERING_THRESHOLD_JY=3.0"
     ./run_clustering.sh --set "SOURCE='3C286'"
     ./run_clustering.sh --config /path/to/other.cfg
-    ./run_clustering.sh --commit                  # write clustering flags to FLAG_TABLE_SESSION
+    ./run_clustering.sh --no-dry-run              # write clustering flags to FLAG_TABLE_SESSION
     ./run_clustering.sh --refit                   # also re-solve bandpass with clustering flags
     ./run_clustering.sh --save-plots              # save 6 PNGs to WORK_DIR
 
@@ -210,9 +210,13 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        '--commit', action='store_true', default=False,
-        help='Write the new clustering flags to FLAG_TABLE_SESSION on disk. '
-             'Default: dry-run — plots only, nothing written.',
+        '--dry-run',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            'Default: dry-run — plots only, nothing written to disk. '
+            'Use --no-dry-run to write clustering flags to FLAG_TABLE_SESSION.'
+        ),
     )
     parser.add_argument(
         '--refit', action='store_true', default=False,
@@ -240,11 +244,11 @@ def main() -> None:
         format='%(asctime)s  %(levelname)-8s  %(message)s',
     )
 
-    dry_run = not args.commit
+    dry_run = args.dry_run
     if dry_run:
         log.info('DRY-RUN mode — clustering flags will NOT be written to disk')
     else:
-        log.info('COMMIT mode — accepted clustering flags will be written to %s',
+        log.info('REAL RUN — clustering flags will be written to %s',
                  FLAG_TABLE_SESSION)
 
     log.info('Source        : %s', SOURCE)
@@ -355,7 +359,7 @@ def main() -> None:
         log.info('Clustering flags written to %s', FLAG_TABLE_SESSION)
     elif new_ants or new_bases:
         log.info('dry-run — clustering flags NOT written to disk  '
-                 '(re-run with --commit to persist)')
+                 '(re-run with --no-dry-run to persist)')
     else:
         log.info('No new clustering flags proposed.')
 

@@ -89,6 +89,25 @@ CONVERGENCE_COMBINE_STRATEGY     = 'any'
 RUN_ITER0_DIAGNOSTIC             = True
 LOG_LEVEL = 'INFO'
 
+# ── Final clustering stage (post-convergence, optional) ───────────────────────
+# When RUN_FINAL_CLUSTERING=True the auto workflow runs one extra pass of the
+# outlier_detection.py clustering algorithm *after* the residual-based loop
+# has converged (stopped on C1 or an epsilon criterion).  The corrected
+# visibilities are already in memory so no extra FITS I/O is needed.
+RUN_FINAL_CLUSTERING                     = False
+CLUSTERING_CORR                          = 'V'
+CLUSTERING_THRESHOLD_JY                  = 5.0
+CLUSTERING_MIN_CLUSTER_FRACTION          = 0.80
+CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT = 3
+CLUSTERING_MIN_BURST_BASELINE_FRACTION   = 0.50
+CLUSTERING_WHOLE_SCAN_BAD_FRACTION       = 0.70
+CLUSTERING_PER_SCAN_ANT_FRACTION         = 0.60
+CLUSTERING_PER_SCAN_ANT_BL_FRACTION      = 0.50
+CLUSTERING_BASELINE_MAX_BAD_SAMPLES      = 100
+CLUSTERING_MAX_GAP_SAMPLES               = 2
+CLUSTERING_MAX_GAP_MINUTES               = 30.0
+CLUSTERING_SCAN_GAP_MINUTES              = 2.0
+
 # Ordered list of every config key this driver knows about.
 # Used to write reproducible config snapshots to the log directory.
 _CONFIG_KEYS = (
@@ -109,6 +128,12 @@ _CONFIG_KEYS = (
     'COMPARE_METRICS_FOR_CONVERGENCE', 'CONVERGENCE_COMBINE_STRATEGY',
     'RUN_ITER0_DIAGNOSTIC',
     'LOG_LEVEL',
+    'RUN_FINAL_CLUSTERING', 'CLUSTERING_CORR', 'CLUSTERING_THRESHOLD_JY',
+    'CLUSTERING_MIN_CLUSTER_FRACTION', 'CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT',
+    'CLUSTERING_MIN_BURST_BASELINE_FRACTION', 'CLUSTERING_WHOLE_SCAN_BAD_FRACTION',
+    'CLUSTERING_PER_SCAN_ANT_FRACTION', 'CLUSTERING_PER_SCAN_ANT_BL_FRACTION',
+    'CLUSTERING_BASELINE_MAX_BAD_SAMPLES', 'CLUSTERING_MAX_GAP_SAMPLES',
+    'CLUSTERING_MAX_GAP_MINUTES', 'CLUSTERING_SCAN_GAP_MINUTES',
 )
 
 
@@ -697,6 +722,160 @@ def run_manual(args):
                          iter_tag)
 
 
+def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
+    """Run outlier_detection.run_clustering_detection after residual-loop convergence.
+
+    Loads corrected visibilities using the last accumulated flag set and the
+    final bandpass solution (both already in memory from the workflow result).
+    Merges the per-channel clustering flags, optionally writes them to
+    FLAG_TABLE_SESSION, then runs one final bandpass solve + diagnostic plot.
+
+    Returns the dict returned by run_clustering_detection.
+    """
+    import importlib.util
+
+    # ── Import outlier_detection from the same directory as this script ─────
+    _od_path = Path(__file__).resolve().parent / 'outlier_detection.py'
+    if not _od_path.exists():
+        raise FileNotFoundError(
+            f'outlier_detection.py not found next to preprocess_ugmrt.py: {_od_path}'
+        )
+    _spec = importlib.util.spec_from_file_location('outlier_detection', _od_path)
+    od    = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(od)
+
+    index       = workflow_result['index']
+    bandpass_sol = workflow_result['last_bandpass_run']['solution']
+    pending      = list(workflow_result.get('pending_flag_tables', []))
+
+    session_path = Path(FLAG_TABLE_SESSION) if FLAG_TABLE_SESSION else None
+    active_disk  = [Path(p) for p in (FLAG_TABLE_PATHS or [])]
+    if session_path is not None and session_path.exists() and session_path not in active_disk:
+        active_disk.append(session_path)
+
+    # ── Build ant_name_map from row index ───────────────────────────────────
+    ant_name_map = {
+        int(a['antenna_no']): str(a['name'])
+        for a in index.get('antennas', [])
+    }
+
+    # ── Load vis (final accumulated flags applied) ──────────────────────────
+    needed_stokes = list(od._CORR_STOKES_NEEDED[CLUSTERING_CORR])
+    log.info('[final-clustering] Loading vis for %s (stokes=%s) ...', SOURCE, needed_stokes)
+    vis_raw = q.load_vis_for_source(
+        index,
+        source           = SOURCE,
+        chan_range        = CHAN_RANGE,
+        stokes            = needed_stokes,
+        max_rows          = MAX_ROWS_SOLVE,
+        flag_table_path   = active_disk if active_disk else None,
+        flag_table        = pending if pending else None,
+        flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
+        elevation_min_deg = SOLVE_ELEVATION_MIN_DEG,
+    )
+    vis_corr = q.apply_bandpass_solution(vis_raw, bandpass_sol)
+    log.info('[final-clustering] Bandpass correction applied; shape=%s', vis_corr['amp'].shape)
+
+    # ── Run clustering detection ────────────────────────────────────────────
+    log.info('[final-clustering] Running per-channel clustering (corr=%s, thr=%s Jy) ...',
+             CLUSTERING_CORR, CLUSTERING_THRESHOLD_JY)
+    cluster_result = od.run_clustering_detection(
+        vis_corr,
+        ant_name_map,
+        corr                            = CLUSTERING_CORR,
+        threshold_jy                    = CLUSTERING_THRESHOLD_JY,
+        min_cluster_fraction            = CLUSTERING_MIN_CLUSTER_FRACTION,
+        min_distinct_baselines_for_ant  = CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT,
+        min_burst_baseline_fraction     = CLUSTERING_MIN_BURST_BASELINE_FRACTION,
+        whole_scan_bad_fraction         = CLUSTERING_WHOLE_SCAN_BAD_FRACTION,
+        per_scan_ant_fraction           = CLUSTERING_PER_SCAN_ANT_FRACTION,
+        per_scan_ant_bl_fraction        = CLUSTERING_PER_SCAN_ANT_BL_FRACTION,
+        baseline_max_bad_samples        = CLUSTERING_BASELINE_MAX_BAD_SAMPLES,
+        max_gap_samples                 = CLUSTERING_MAX_GAP_SAMPLES,
+        max_gap_minutes                 = CLUSTERING_MAX_GAP_MINUTES,
+        scan_gap_minutes                = CLUSTERING_SCAN_GAP_MINUTES,
+        source                          = SOURCE,
+        obs_jd_start                    = float(vis_raw['jd'].min()),
+        obs_jd_end                      = float(vis_raw['jd'].max()),
+        elevation_min_deg               = SOLVE_ELEVATION_MIN_DEG,
+        verbose                         = True,
+    )
+    ft = cluster_result['flag_table']
+    new_ants  = ft.get('bad_antennas', [])
+    new_bases = ft.get('bad_baselines', [])
+    log.info('[final-clustering] New flags — antennas: %s  baselines: %s',
+             new_ants or '—', [f'{b[0]}-{b[1]}' for b in new_bases] or '—')
+
+    # ── Persist to FLAG_TABLE_SESSION ───────────────────────────────────────
+    if not dry_run and (new_ants or new_bases):
+        q.update_flag_table(
+            FLAG_TABLE_SESSION,
+            add_antennas  = new_ants,
+            add_baselines = new_bases,
+            notes         = 'Final clustering stage (post-convergence)',
+            dry_run       = False,
+        )
+        log.info('[final-clustering] Written to %s', FLAG_TABLE_SESSION)
+    elif dry_run:
+        log.info('[final-clustering] dry-run — flag table NOT written')
+
+    # ── Final bandpass solve with clustering flags active ──────────────────
+    final_tag = f'{AUTO_ITER_PREFIX}final_clustering'
+    log.info('[final-clustering] Final bandpass solve tagged %s ...', final_tag)
+    # Include the new clustering flag table in-memory so it applies even
+    # in dry-run mode (we still want to see the corrected solution).
+    final_pending = pending + [ft]
+    final_bp = q.derive_bandpass_iteration(
+        fits_path        = CAL_FITS,
+        index            = index,
+        bandpass_out     = BANDPASS_OUT,
+        source           = SOURCE,
+        stokes           = STOKES,
+        chan_range        = CHAN_RANGE,
+        max_rows         = MAX_ROWS_SOLVE,
+        smooth_window    = SMOOTH_WINDOW,
+        min_baselines    = MIN_BASELINES,
+        flag_table_path  = active_disk if active_disk else None,
+        flag_table       = final_pending,
+        flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
+        iteration_tag    = final_tag,
+        dry_run          = dry_run,
+        elevation_min_deg = SOLVE_ELEVATION_MIN_DEG,
+        elevation_max_deg = SOLVE_ELEVATION_MAX_DEG,
+        uvrange_m         = SOLVE_UVRANGE_M,
+        uvrange_klambda   = SOLVE_UVRANGE_KLAMBDA,
+        timerange         = SOLVE_TIMERANGE,
+    )
+
+    # ── Final diagnostic plot ───────────────────────────────────────────────
+    if DIAG_PLOT_BASE is not None:
+        _plot_path = q.tagged_output_path(DIAG_PLOT_BASE, final_tag)
+        log.info('[final-clustering] Final diagnostic plot → %s', _plot_path)
+        import matplotlib.pyplot as _plt
+        _fig = q.run_bandpass_diagnostics(
+            index,
+            final_bp['solution'],
+            source           = SOURCE,
+            chan_range        = CHAN_RANGE,
+            stokes           = STOKES,
+            max_rows         = MAX_ROWS_DIAG,
+            elevation_min_deg = SOLVE_ELEVATION_MIN_DEG,
+            exclude_antennas  = EXCLUDE_FOR_PLOTS,
+            apply_flag_tables = DIAG_APPLY_FLAGS_ON_THE_FLY,
+            flag_table_path   = active_disk if active_disk else None,
+            flag_table        = final_pending,
+            flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
+            skip_edge_channels = SKIP_EDGE_CHANNELS,
+            top_n              = TOP_N,
+            title              = f'{SOURCE} FINAL — post-clustering | {final_tag}',
+            save_path          = _plot_path,
+        )
+        if _fig is not None:
+            _plt.close(_fig)
+
+    return cluster_result
+
+
 def run_auto(args):
     """Run the automated iterative workflow."""
     q = _import_ugmrt()
@@ -776,6 +955,20 @@ def run_auto(args):
         log.info(_data_coverage_summary(_index, _final_ft))
     log.info('Iterations executed : %d  (of %d requested)', len(result['history']), args.n_iters)
     log.info('Stop reason         : %s', result.get('stop_reason', 'unknown'))
+
+    # ── Optional post-convergence clustering step ────────────────────────────
+    if RUN_FINAL_CLUSTERING:
+        _stop = result.get('stop_reason', '')
+        _converged = 'C1 —' in _stop or 'Epsilon convergence' in _stop
+        if _converged:
+            log.info('[final-clustering] Convergence confirmed — starting clustering stage.')
+            _run_final_clustering_step(q, result, args.dry_run)
+        else:
+            log.warning(
+                '[final-clustering] RUN_FINAL_CLUSTERING=True but loop ended without '
+                'convergence ("%s"). Clustering step skipped. '
+                'Increase AUTO_N_ITERS or CONVERGENCE_EPSILON and re-run.', _stop
+            )
 
 
 def main():
@@ -887,9 +1080,13 @@ def main():
     )
     parser.add_argument(
         '--dry-run',
-        action='store_true',
+        action=argparse.BooleanOptionalAction,
         default=False,
-        help='Preview only — do not write bandpass solutions or flag tables to disk.',
+        help=(
+            'Preview only — do not write bandpass solutions or flag tables to disk. '
+            'Use --no-dry-run to override a hardcoded --dry-run (e.g. from a '
+            'wrapper script that defaults to dry-run for safety).'
+        ),
     )
 
     parser.add_argument(
