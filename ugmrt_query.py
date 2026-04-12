@@ -2491,8 +2491,8 @@ def load_flag_table(path: Union[str, Path]) -> dict:
         raise ValueError('Flag table JSON must contain an object at top level.')
     if table.get('kind', 'ugmrt_flag_table') != 'ugmrt_flag_table':
         raise ValueError('Unsupported flag table kind. Expected "ugmrt_flag_table".')
-    if int(table.get('version', 1)) != 1:
-        raise ValueError('Unsupported flag table version. Expected version 1.')
+    if int(table.get('version', 1)) not in (1, 2):
+        raise ValueError('Unsupported flag table version. Expected version 1 or 2.')
 
     table.setdefault('bad_antennas', [])
     table.setdefault('bad_baselines', [])
@@ -2795,6 +2795,319 @@ def apply_flag_tables_to_vis(
         'flag_table_paths': paths,
     }
     return vis_use, stats
+
+
+def count_vis_rows_flagged(
+    vis: dict,
+    flag_table: dict,
+    antenna_name_map: Dict[int, str],
+    strict: bool = False,
+    context: str = 'flag-count',
+) -> dict:
+    """Count how many visibility rows in *vis* would be flagged by *flag_table*.
+
+    Handles all five flag-table key types:
+
+    * ``bad_antennas``            – whole antenna flagged at all times
+    * ``bad_baselines``           – whole baseline flagged at all times
+    * ``bad_antenna_timeranges``  – per-antenna selective time-range masks
+    * ``bad_baseline_timeranges`` – per-baseline selective time-range masks
+    * ``bad_burst_timeranges``    – global time-range masks (all antennas)
+
+    Multiple flag types can overlap; the union is counted (no double-counting).
+
+    Parameters
+    ----------
+    vis : dict
+        Visibility dict with ``ant1``, ``ant2``, and ``jd`` arrays.
+    flag_table : dict
+        A single ugmrt flag-table dict.
+    antenna_name_map : Dict[int, str]
+        Mapping antenna_id → name (from ``row_index['antennas']``).
+    strict : bool, optional
+        Raise on unresolved antenna/baseline selectors (default: warn).
+    context : str, optional
+        Label prefix used in diagnostic messages.
+
+    Returns
+    -------
+    dict with keys:
+      ``total_rows``   – int   total rows in vis
+      ``flagged_rows`` – int   rows masked by the flag table (union of all types)
+      ``kept_rows``    – int   total_rows − flagged_rows
+      ``pct_flagged``  – float percentage flagged (0–100, two decimal places)
+    """
+    ant1  = np.asarray(vis['ant1'], dtype=np.int32)
+    ant2  = np.asarray(vis['ant2'], dtype=np.int32)
+    jd    = np.asarray(vis['jd'],   dtype=np.float64)
+    nrows = len(ant1)
+
+    # Reverse map: antenna name → id
+    name_to_id: Dict[str, int] = {v: k for k, v in antenna_name_map.items()}
+
+    flag_mask = np.zeros(nrows, dtype=bool)   # True = flagged
+
+    # ── 1.  Whole-antenna flags ───────────────────────────────────────────────
+    ant_ids = _resolve_antenna_selector_ids(
+        flag_table.get('bad_antennas', []),
+        antenna_name_map=antenna_name_map,
+        strict=strict,
+        context=context,
+    )
+    if ant_ids:
+        flag_mask |= np.isin(ant1, ant_ids) | np.isin(ant2, ant_ids)
+
+    # ── 2.  Whole-baseline flags ──────────────────────────────────────────────
+    base_pairs = _resolve_baseline_selector_pairs(
+        flag_table.get('bad_baselines', []),
+        antenna_name_map=antenna_name_map,
+        strict=strict,
+        context=context,
+    )
+    if base_pairs:
+        bp_set = {tuple(sorted((int(a), int(b)))) for a, b in base_pairs}
+        b1 = np.minimum(ant1, ant2)
+        b2 = np.maximum(ant1, ant2)
+        flag_mask |= np.array(
+            [(int(a), int(b)) in bp_set for a, b in zip(b1, b2)], dtype=bool
+        )
+
+    def _iso_to_jd_local(s: str) -> float:
+        # Accept both 'T'-separated (isot) and space-separated (iso) strings.
+        return float(Time(str(s).replace('T', ' '), format='iso', scale='utc').jd)
+
+    def _time_mask(jd_arr: np.ndarray, ranges: list) -> np.ndarray:
+        """Boolean mask: True where jd falls in any (iso_t0, iso_t1) range."""
+        m = np.zeros(len(jd_arr), dtype=bool)
+        for t0_iso, t1_iso in ranges:
+            t0 = _iso_to_jd_local(t0_iso)
+            t1 = _iso_to_jd_local(t1_iso)
+            m |= (jd_arr >= t0) & (jd_arr <= t1)
+        return m
+
+    def _flatten_entries(entries: list) -> list:
+        """Normalize v1 or v2 timerange entries to flat [(t0, t1), ...] list."""
+        flat = []
+        for entry in entries:
+            if isinstance(entry, dict):
+                for t0, t1 in entry['intervals']:
+                    flat.append((t0, t1))
+            else:
+                flat.append((entry[0], entry[1]))
+        return flat
+
+    # ── 3.  Per-antenna time-range flags ─────────────────────────────────────
+    for ant_name, entries in flag_table.get('bad_antenna_timeranges', {}).items():
+        if not entries:
+            continue
+        aid = name_to_id.get(str(ant_name))
+        if aid is None:
+            continue
+        rows_for_ant = (ant1 == aid) | (ant2 == aid)
+        flag_mask[rows_for_ant] |= _time_mask(jd[rows_for_ant], _flatten_entries(entries))
+
+    # ── 4.  Per-baseline time-range flags ────────────────────────────────────
+    for bl_key, entries in flag_table.get('bad_baseline_timeranges', {}).items():
+        if not entries:
+            continue
+        parts = bl_key.split('::', 1)
+        if len(parts) != 2:
+            continue
+        a_id = name_to_id.get(parts[0])
+        b_id = name_to_id.get(parts[1])
+        if a_id is None or b_id is None:
+            continue
+        rows_for_bl = (
+            ((ant1 == a_id) & (ant2 == b_id)) |
+            ((ant1 == b_id) & (ant2 == a_id))
+        )
+        flag_mask[rows_for_bl] |= _time_mask(jd[rows_for_bl], _flatten_entries(entries))
+
+    # ── 5.  Global burst time-range flags ────────────────────────────────────
+    burst_ranges = flag_table.get('bad_burst_timeranges', [])
+    if burst_ranges:
+        flag_mask |= _time_mask(jd, burst_ranges)
+
+    flagged = int(np.count_nonzero(flag_mask))
+    return {
+        'total_rows':   nrows,
+        'flagged_rows': flagged,
+        'kept_rows':    nrows - flagged,
+        'pct_flagged':  round(100.0 * flagged / nrows, 2) if nrows > 0 else 0.0,
+    }
+
+
+def expand_flag_table_to_mask(
+    vis: dict,
+    flag_table: dict,
+    antenna_name_map: Dict[int, str],
+    strict: bool = False,
+    context: str = 'expand-flags',
+) -> np.ndarray:
+    """Decode a flag table into a 2-D boolean visibility mask.
+
+    Returns ``flag_mask[nRows, nChans]`` where ``True`` means *flagged*.
+    This is the canonical v2-schema decode: time-range entries are applied
+    only to the channel range specified by their ``chanrange`` field (or
+    all channels for ``chanrange=None``).
+
+    Parameters
+    ----------
+    vis : dict
+        Visibility dict with ``ant1``, ``ant2``, ``jd``, and ``chan_indices``
+        arrays.  ``chan_indices`` must be the absolute FITS channel indices
+        loaded for this vis slice (e.g. ``vis['chan_indices']``).
+    flag_table : dict
+        A single ugmrt_flag_table, version 1 or 2.
+    antenna_name_map : Dict[int, str]
+        Mapping antenna_id → name.
+    strict : bool
+        Raise on unresolved antenna/baseline selectors (default: warn only).
+    context : str
+        Label prefix for diagnostic messages.
+
+    Returns
+    -------
+    np.ndarray, shape (nRows, nChans), dtype bool
+        ``True`` wherever the visibility cell is flagged.
+    """
+    ant1 = np.asarray(vis['ant1'], dtype=np.int32)
+    ant2 = np.asarray(vis['ant2'], dtype=np.int32)
+    jd   = np.asarray(vis['jd'],   dtype=np.float64)
+    nrows = len(ant1)
+
+    # Build absolute channel index → local column index mapping
+    raw_ci = vis.get('chan_indices')
+    if raw_ci is not None:
+        chan_indices_abs: List[int] = [int(c) for c in raw_ci]
+    else:
+        # Fall back: infer from vis_complex shape
+        vis_c = vis.get('vis_complex')
+        if vis_c is not None:
+            nchans = vis_c.shape[1]
+        else:
+            nchans = 1
+        chan_indices_abs = list(range(nchans))
+
+    nchans = len(chan_indices_abs)
+    abs_to_local: Dict[int, int] = {c: i for i, c in enumerate(chan_indices_abs)}
+
+    flag_mask = np.zeros((nrows, nchans), dtype=bool)
+
+    name_to_id: Dict[str, int] = {v: k for k, v in antenna_name_map.items()}
+
+    # ── 1.  Whole-antenna flags (all channels) ────────────────────────────────
+    ant_ids = _resolve_antenna_selector_ids(
+        flag_table.get('bad_antennas', []),
+        antenna_name_map=antenna_name_map,
+        strict=strict,
+        context=context,
+    )
+    if ant_ids:
+        ant_rows = np.isin(ant1, ant_ids) | np.isin(ant2, ant_ids)
+        flag_mask[ant_rows, :] = True
+
+    # ── 2.  Whole-baseline flags (all channels) ───────────────────────────────
+    base_pairs = _resolve_baseline_selector_pairs(
+        flag_table.get('bad_baselines', []),
+        antenna_name_map=antenna_name_map,
+        strict=strict,
+        context=context,
+    )
+    if base_pairs:
+        bp_set = {tuple(sorted((int(a), int(b)))) for a, b in base_pairs}
+        b1 = np.minimum(ant1, ant2)
+        b2 = np.maximum(ant1, ant2)
+        bl_rows = np.array([(int(a), int(b)) in bp_set for a, b in zip(b1, b2)], dtype=bool)
+        flag_mask[bl_rows, :] = True
+
+    def _iso_to_jd_loc(s: str) -> float:
+        return float(Time(str(s).replace('T', ' '), format='iso', scale='utc').jd)
+
+    def _time_row_mask(jd_arr: np.ndarray, intervals: list) -> np.ndarray:
+        m = np.zeros(len(jd_arr), dtype=bool)
+        for t0_iso, t1_iso in intervals:
+            t0 = _iso_to_jd_loc(t0_iso)
+            t1 = _iso_to_jd_loc(t1_iso)
+            m |= (jd_arr >= t0) & (jd_arr <= t1)
+        return m
+
+    def _local_chan_slice(chanrange) -> slice:
+        """Return all-channel slice if chanrange is None.
+        Otherwise map absolute chanrange [c0,c1] to local column indices.
+        """
+        if chanrange is None:
+            return slice(None)
+        c0_abs, c1_abs = int(chanrange[0]), int(chanrange[1])
+        locs = sorted(abs_to_local[c] for c in range(c0_abs, c1_abs + 1)
+                      if c in abs_to_local)
+        if not locs:
+            return None   # no overlap with loaded channels
+        return slice(locs[0], locs[-1] + 1)
+
+    def _iter_entries(entries):
+        """Yield (intervals, chanrange) for v1 or v2 entry lists."""
+        for entry in entries:
+            if isinstance(entry, dict):
+                yield entry['intervals'], entry.get('chanrange')
+            else:
+                yield [list(entry)], None
+
+    # ── 3.  Per-antenna time-range flags ─────────────────────────────────────
+    for ant_name, entries in flag_table.get('bad_antenna_timeranges', {}).items():
+        if not entries:
+            continue
+        aid = name_to_id.get(str(ant_name))
+        if aid is None:
+            continue
+        ant_row_idx = np.where((ant1 == aid) | (ant2 == aid))[0]
+        if len(ant_row_idx) == 0:
+            continue
+        for intervals, chanrange in _iter_entries(entries):
+            col_slice = _local_chan_slice(chanrange)
+            if col_slice is None:
+                continue
+            time_m = _time_row_mask(jd[ant_row_idx], intervals)
+            affected = ant_row_idx[time_m]
+            if len(affected):
+                flag_mask[np.ix_(affected, np.arange(nchans)[col_slice])] = True
+
+    # ── 4.  Per-baseline time-range flags ────────────────────────────────────
+    for bl_key, entries in flag_table.get('bad_baseline_timeranges', {}).items():
+        if not entries:
+            continue
+        parts = bl_key.split('::', 1)
+        if len(parts) != 2:
+            continue
+        a_id = name_to_id.get(parts[0])
+        b_id = name_to_id.get(parts[1])
+        if a_id is None or b_id is None:
+            continue
+        bl_row_idx = np.where(
+            ((ant1 == a_id) & (ant2 == b_id)) |
+            ((ant1 == b_id) & (ant2 == a_id))
+        )[0]
+        if len(bl_row_idx) == 0:
+            continue
+        for intervals, chanrange in _iter_entries(entries):
+            col_slice = _local_chan_slice(chanrange)
+            if col_slice is None:
+                continue
+            time_m = _time_row_mask(jd[bl_row_idx], intervals)
+            affected = bl_row_idx[time_m]
+            if len(affected):
+                flag_mask[np.ix_(affected, np.arange(nchans)[col_slice])] = True
+
+    # ── 5.  Global burst time-range flags (all channels) ─────────────────────
+    burst_ranges = flag_table.get('bad_burst_timeranges', [])
+    if burst_ranges:
+        burst_flat = [(e[0], e[1]) if not isinstance(e, dict) else
+                      (e['intervals'][0][0], e['intervals'][0][1])
+                      for e in burst_ranges]
+        burst_m = _time_row_mask(jd, burst_flat)
+        flag_mask[burst_m, :] = True
+
+    return flag_mask
 
 
 def flux_model_3c48_perley_butler_2017(freq_hz):
@@ -4859,6 +5172,138 @@ def apply_bandpass_solution(vis: dict, solution: dict) -> dict:
     return out
 
 
+def compute_stokes_vis(
+    vis: dict,
+    solution: dict,
+    output_stokes: str = 'V',
+) -> dict:
+    """Apply bandpass and return a vis-like dict for a derived Stokes parameter.
+
+    Supported Stokes codes and the correlations they require:
+
+    Circular basis (RR, LL, RL, LR)
+      'I'  →  (RR + LL) / 2              requires RR, LL
+      'V'  →  (RR − LL) / 2              requires RR, LL
+      'Q'  →  (RL + LR) / 2              requires RL, LR
+      'U'  →  i·(RL − LR) / 2            requires RL, LR
+
+    Linear basis (XX, YY, XY, YX)
+      'I'  →  (XX + YY) / 2              requires XX, YY
+      'Q'  →  (XX − YY) / 2              requires XX, YY
+      'U'  →  (XY + YX) / 2              requires XY, YX
+      'V'  →  i·(YX − XY) / 2            requires XY, YX
+
+    A ``ValueError`` is raised with an informative message if the requested
+    Stokes parameter cannot be formed from the correlations present in *vis*.
+
+    Parameters
+    ----------
+    vis : dict
+        Raw visibility dict as returned by ``load_vis_for_source``.
+    solution : dict
+        Bandpass solution dict as returned by ``derive_bandpass_iteration``.
+    output_stokes : str
+        One of 'I', 'Q', 'U', 'V'.
+
+    Returns
+    -------
+    dict
+        A vis-like dict with ``amp``, ``phase_deg``, ``vis_complex``, and
+        ``stokes_labels = [output_stokes]``, suitable for direct use with
+        ``plot_vis_amp_vs_uvdist`` and related plot functions.
+    """
+    VALID = {'I', 'Q', 'U', 'V'}
+    if output_stokes not in VALID:
+        raise ValueError(f'output_stokes={output_stokes!r} not one of {sorted(VALID)}')
+
+    corr       = apply_bandpass_solution(vis, solution)
+    vc         = corr['vis_complex_corrected']   # (rows, chans, pols)
+    labels     = list(vis['stokes_labels'])
+
+    def _get(pol: str):
+        """Return corrected-vis slice for *pol*, or None if unavailable."""
+        return vc[:, :, labels.index(pol)] if pol in labels else None
+
+    circ_present = {p for p in ('RR', 'LL', 'RL', 'LR') if p in labels}
+    lin_present  = {p for p in ('XX', 'YY', 'XY', 'YX') if p in labels}
+
+    if circ_present:
+        # ── circular basis ────────────────────────────────────────────────────
+        RR, LL = _get('RR'), _get('LL')
+        RL, LR = _get('RL'), _get('LR')
+        if output_stokes == 'I':
+            if RR is None or LL is None:
+                raise ValueError(
+                    f'Stokes I (circular basis) requires RR+LL; '
+                    f'available correlations: {labels}')
+            out_cplx = (RR + LL) / 2.0
+        elif output_stokes == 'V':
+            if RR is None or LL is None:
+                raise ValueError(
+                    f'Stokes V (circular basis) requires RR+LL; '
+                    f'available correlations: {labels}')
+            out_cplx = (RR - LL) / 2.0
+        elif output_stokes == 'Q':
+            if RL is None or LR is None:
+                raise ValueError(
+                    f'Stokes Q (circular basis) requires RL+LR; '
+                    f'available correlations: {labels}  '
+                    f'(dual-circ data with only RR+LL cannot produce Q or U)')
+            out_cplx = (RL + LR) / 2.0
+        else:  # 'U'
+            if RL is None or LR is None:
+                raise ValueError(
+                    f'Stokes U (circular basis) requires RL+LR; '
+                    f'available correlations: {labels}  '
+                    f'(dual-circ data with only RR+LL cannot produce Q or U)')
+            out_cplx = 1j * (RL - LR) / 2.0
+
+    elif lin_present:
+        # ── linear basis ──────────────────────────────────────────────────────
+        XX, YY = _get('XX'), _get('YY')
+        XY, YX = _get('XY'), _get('YX')
+        if output_stokes == 'I':
+            if XX is None or YY is None:
+                raise ValueError(
+                    f'Stokes I (linear basis) requires XX+YY; '
+                    f'available correlations: {labels}')
+            out_cplx = (XX + YY) / 2.0
+        elif output_stokes == 'Q':
+            if XX is None or YY is None:
+                raise ValueError(
+                    f'Stokes Q (linear basis) requires XX+YY; '
+                    f'available correlations: {labels}')
+            out_cplx = (XX - YY) / 2.0
+        elif output_stokes == 'U':
+            if XY is None or YX is None:
+                raise ValueError(
+                    f'Stokes U (linear basis) requires XY+YX; '
+                    f'available correlations: {labels}  '
+                    f'(dual-lin data with only XX+YY cannot produce U or V)')
+            out_cplx = (XY + YX) / 2.0
+        else:  # 'V'
+            if XY is None or YX is None:
+                raise ValueError(
+                    f'Stokes V (linear basis) requires XY+YX; '
+                    f'available correlations: {labels}  '
+                    f'(dual-lin data with only XX+YY cannot produce U or V)')
+            out_cplx = 1j * (YX - XY) / 2.0
+
+    else:
+        raise ValueError(
+            f'Cannot determine polarisation basis from correlations {labels}; '
+            f'expected circular (RR/LL/RL/LR) or linear (XX/YY/XY/YX).')
+
+    out_amp   = np.abs(out_cplx)[:, :, np.newaxis].astype(np.float32)
+    out_phase = np.degrees(np.angle(out_cplx))[:, :, np.newaxis].astype(np.float32)
+
+    return {**vis,
+            'amp':           out_amp,
+            'phase_deg':     out_phase,
+            'vis_complex':   out_cplx[:, :, np.newaxis].astype(np.complex64),
+            'stokes_labels': [output_stokes]}
+
+
 def _filter_vis_excluded_antennas(vis: dict, solution: dict, exclude_antennas=None) -> dict:
     """Return a visibility dict with baselines touching excluded antennas removed."""
     if not exclude_antennas:
@@ -5378,6 +5823,7 @@ def plot_vis_amp_vs_uvdist(
     fit_gaussian=False,
     nbins=80,
     save_path=None,
+    hline_jy=None,
 ):
     """Amplitude (and optionally phase) vs UV distance with optional model fit.
 
@@ -5472,6 +5918,10 @@ def plot_vis_amp_vs_uvdist(
         if amp_ylim is not None:
             ax_amp.set_ylim(*amp_ylim)
         ax_amp.grid(True, alpha=0.3)
+        if hline_jy is not None:
+            ax_amp.axhline(hline_jy, color='red', lw=1.5, ls='--', alpha=0.8,
+                           label=f'flag threshold = {hline_jy} Jy')
+            ax_amp.legend(fontsize=8, loc='upper right')
 
         # --- envelope fit -------------------------------------------------
         if fit in ('gaussian', 'disk', 'ring', 'annulus', 'composite'):
