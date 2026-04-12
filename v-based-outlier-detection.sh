@@ -158,6 +158,9 @@ Convergence / early stopping:
       --set "CONVERGENCE_EPSILON=0.0"
 
 Passthrough arguments (appended after the preset):
+    --commit             REAL RUN — write bandpass + flags to disk each iteration.
+                         Without --commit the script is always a dry-run.
+                         Required for Phase-2 (run_clustering.sh) to find outputs.
     --auto               fully unattended batch loop (no prompts, no blocking plots)
     --n-iters N          override iteration count
     --start-iter N       start labelling from iterN
@@ -184,11 +187,25 @@ EOF
     fi
 done
 
+# ── Detect --commit (consumed here; remainder passed through) ─────────────────
+# --commit makes this a real run: bandpass solutions and accepted flag tables
+# are written to disk.  Phase-2 (run_clustering.sh) requires these outputs.
+# Default (no --commit): dry-run — safe scratch pad, nothing written.
+DRY_RUN_FLAG='--dry-run'
+PASSTHROUGH_ARGS=()
+for arg in "$@"; do
+    if [[ "${arg}" == '--commit' ]]; then
+        DRY_RUN_FLAG=''
+    else
+        PASSTHROUGH_ARGS+=("${arg}")
+    fi
+done
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 "${DRIVER}" \
     --step all \
     --n-iters 15 \
-    --dry-run \
+    ${DRY_RUN_FLAG} \
     --set "OUTLIER_METRIC='V'" \
     --set "OUTLIER_METRIC_MERGE_STRATEGY='union'" \
     --set "ANTENNA_FLAG_THRESHOLD_JY={'V': 5.0}" \
@@ -196,19 +213,35 @@ done
     --set "CONVERGENCE_COMBINE_STRATEGY='all'" \
     --set "COMPARE_METRICS_FOR_CONVERGENCE=['V', 'Model']" \
     --set "RUN_ITER0_DIAGNOSTIC=True" \
-    "$@"
+    "${PASSTHROUGH_ARGS[@]}"
 EXIT_CODE=$?
 
 # ── Post-run reminder ─────────────────────────────────────────────────────────
 echo ""
-echo "════════════════════════════════════════════════════════════════════════"
-echo "  DRY-RUN COMPLETE — nothing was written to disk."
-echo ""
-echo "  TO MAKE A REAL RUN:"
-echo "    Edit v-based-outlier-detection.sh and remove the --dry-run line"
-echo "    from the CMD block, then re-run.  Accepted flags will be written"
-echo "    to FLAG_TABLE_SESSION after each accepted iteration."
-echo "════════════════════════════════════════════════════════════════════════"
+if [[ -z "${DRY_RUN_FLAG}" ]]; then
+    echo "════════════════════════════════════════════════════════════════════════"
+    echo "  COMMIT RUN COMPLETE — bandpass + flags written to disk."
+    echo ""
+    echo "  Run Phase-2 to apply clustering detection on the converged solution:"
+    echo ""
+    echo "    ./run_clustering.sh --set \"CLUSTERING_THRESHOLD_JY=5.0\""
+    echo ""
+    echo "  Tune the threshold, then commit clustering flags:"
+    echo ""
+    echo "    ./run_clustering.sh --set \"CLUSTERING_THRESHOLD_JY=3.5\" --commit"
+    echo "════════════════════════════════════════════════════════════════════════"
+else
+    echo "════════════════════════════════════════════════════════════════════════"
+    echo "  DRY-RUN COMPLETE — nothing was written to disk."
+    echo ""
+    echo "  To write bandpass + flags to disk (required for Phase-2):"
+    echo ""
+    echo "    Add --commit to your command, e.g.:"
+    echo "      ./v-based-outlier-detection.sh --commit --auto \\"
+    echo "          --set \"FLAG_WHAT_TO_FLAG='baselines'\" --n-iters 100 \\"
+    echo "          --set \"CONVERGENCE_EPSILON=0.005\""
+    echo "════════════════════════════════════════════════════════════════════════"
+fi
 echo ""
 
 exit ${EXIT_CODE}
