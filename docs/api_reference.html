@@ -216,6 +216,7 @@
   <a class="nav-item sub" href="#script-run-preprocess">run_preprocess.sh</a>
   <a class="nav-item sub" href="#script-v-based">v-based-outlier-detection.sh</a>
   <a class="nav-item sub" href="#script-run-clustering">run_clustering.sh</a>
+  <a class="nav-item sub" href="#script-run-bandpass">run_bandpass.sh ✦</a>
 
   <div class="nav-section">Roadmap</div>
   <a class="nav-item" href="#todo">TODO</a>
@@ -1423,6 +1424,98 @@ result = q.run_iterative_bandpass_workflow(
         <tr><td class="p-name">--log-level LEVEL</td><td class="p-desc"><code>DEBUG | INFO | WARNING | ERROR</code> (default from config).</td></tr>
       </tbody>
     </table>
+    </div>
+  </div>
+
+  <!-- run_bandpass.sh — unified dispatcher -->
+  <div class="fn-card" id="script-run-bandpass" style="border-color:var(--accent2)">
+    <div class="fn-header">
+      <span class="fn-name">run_bandpass.sh &#9734; &nbsp;&mdash;&nbsp; Unified workflow</span>
+      <span class="fn-kind function">script &mdash; Phase 1 + 2</span>
+    </div>
+    <div class="fn-desc">
+      <p>Single entry point for the complete bandpass derivation workflow.
+      Replaces <code>v-based-outlier-detection.sh</code> + <code>run_clustering.sh</code>
+      with a unified <code>--phase</code> flag. Internally delegates to the same
+      Python scripts — no new logic.</p>
+      <table class="params" style="margin:.6em 0">
+        <thead><tr><th>--phase</th><th>What it does</th><th>Requires</th></tr></thead>
+        <tbody>
+          <tr><td class="p-name">derive</td><td class="p-desc">V-based iterative loop → converged bandpass + flag table on disk</td><td class="p-desc">fresh start</td></tr>
+          <tr><td class="p-name">audit</td><td class="p-desc">Clustering detection: six BEFORE/AFTER plots, optional commit</td><td class="p-desc">Phase 1 done</td></tr>
+          <tr><td class="p-name">derive-and-audit</td><td class="p-desc">Both phases sequentially in one command</td><td class="p-desc">fresh start + <code>--no-dry-run</code></td></tr>
+        </tbody>
+      </table>
+      <p>Flags are automatically bucketed: derive-only flags
+      (<code>--auto</code>, <code>--n-iters</code>, <code>--start-iter</code>) are
+      passed only to Phase 1; audit-only flags (<code>--refit</code>,
+      <code>--save-plots</code>) are passed only to Phase 2; everything else is
+      shared.</p>
+    </div>
+    <div class="shell-block">
+<span class="sh-comment"># First-time full pipeline — derive + audit, commit everything:</span>
+<span class="prompt">$ </span>./run_bandpass.sh \
+    --phase=derive-and-audit \
+    --no-dry-run \
+    --auto \
+    --n-iters 100 \
+    --refit \
+    --set "SOURCE='3C48'" \
+    --set "FLAG_WHAT_TO_FLAG='baselines'" \
+    --set "CLUSTERING_THRESHOLD_JY=3.5" \
+    --set "CONVERGENCE_EPSILON=0.005" \
+    --set "SOLVE_ELEVATION_MIN_DEG=25.0"
+
+<span class="sh-comment"># Re-audit with a different threshold (Phase 1 not re-run):</span>
+<span class="prompt">$ </span>./run_bandpass.sh \
+    --phase=audit \
+    --set "SOURCE='3C48'" \
+    --set "CLUSTERING_THRESHOLD_JY=2.5" \
+    --set "SOLVE_ELEVATION_MIN_DEG=25.0"
+
+<span class="sh-comment"># Commit clustering flags + re-fit bandpass:</span>
+<span class="prompt">$ </span>./run_bandpass.sh \
+    --phase=audit \
+    --no-dry-run \
+    --refit \
+    --save-plots \
+    --set "SOURCE='3C48'" \
+    --set "CLUSTERING_THRESHOLD_JY=2.5" \
+    --set "SOLVE_ELEVATION_MIN_DEG=25.0"
+
+<span class="sh-comment"># Derive only (decide threshold later):</span>
+<span class="prompt">$ </span>./run_bandpass.sh \
+    --phase=derive \
+    --no-dry-run \
+    --auto \
+    --n-iters 100 \
+    --set "SOURCE='3C48'" \
+    --set "FLAG_WHAT_TO_FLAG='baselines'" \
+    --set "CONVERGENCE_EPSILON=0.005" \
+    --set "SOLVE_ELEVATION_MIN_DEG=25.0"
+    </div>
+    <div class="param-table-wrap">
+    <table class="params">
+      <thead><tr><th>Flag</th><th>Phase</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td class="p-name">--phase</td><td class="p-desc">both</td><td class="p-desc"><strong>Required.</strong> <code>derive</code> | <code>audit</code> | <code>derive-and-audit</code></td></tr>
+        <tr><td class="p-name">--dry-run / --no-dry-run</td><td class="p-desc">both</td><td class="p-desc">Default: dry-run. <code>--no-dry-run</code> writes bandpass + flags to disk (both phases).</td></tr>
+        <tr><td class="p-name">--auto</td><td class="p-desc">derive</td><td class="p-desc">Non-interactive: auto-accept all flag proposals each iteration.</td></tr>
+        <tr><td class="p-name">--n-iters N</td><td class="p-desc">derive</td><td class="p-desc">Iteration cap (default 15).</td></tr>
+        <tr><td class="p-name">--start-iter N</td><td class="p-desc">derive</td><td class="p-desc">Start labelling output files from iterN.</td></tr>
+        <tr><td class="p-name">--refit</td><td class="p-desc">audit</td><td class="p-desc">Re-solve bandpass with clustering flags active for the AFTER plots.</td></tr>
+        <tr><td class="p-name">--save-plots</td><td class="p-desc">audit</td><td class="p-desc">Save the six BEFORE/AFTER plots to <code>WORK_DIR</code>.</td></tr>
+        <tr><td class="p-name">--config FILE</td><td class="p-desc">both</td><td class="p-desc">Alternate config file.</td></tr>
+        <tr><td class="p-name">--set KEY=expr</td><td class="p-desc">both</td><td class="p-desc">Override any config key. Passed to both phases. All <code>CLUSTERING_*</code>, <code>SOLVE_*</code>, and convergence keys accepted.</td></tr>
+        <tr><td class="p-name">--log-level LEVEL</td><td class="p-desc">both</td><td class="p-desc"><code>DEBUG | INFO | WARNING | ERROR</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="callout callout-warn">
+      <strong><code>derive-and-audit</code> requires <code>--no-dry-run</code>.</strong>
+      Without it, Phase 1 writes nothing to disk, so Phase 2 cannot load the
+      bandpass solution and will fail.  The script prints a warning if you
+      forget.
     </div>
   </div>
 </div>
