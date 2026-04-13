@@ -172,17 +172,24 @@ done
 #
 # Derive-only  : --auto  --n-iters  --start-iter
 # Audit-only   : --refit  --save-plots
-# Shared       : everything else (--set, --config, --dry-run, --log-level, ...)
+# Dry-run      : --dry-run / --no-dry-run captured separately — never passed
+#                through SHARED_ARGS to avoid duplicate/conflicting flags.
+# Shared       : everything else (--set, --config, --log-level, ...)
 # ─────────────────────────────────────────────────────────────────────────────
 PHASE=""
 SHARED_ARGS=()
 DERIVE_ARGS=()
 AUDIT_ARGS=()
+DRY_RUN_ARG=--dry-run          # default: safe dry-run; overridden below
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --phase=*)      PHASE="${1#--phase=}"; shift ;;
         --phase)        PHASE="$2"; shift 2 ;;
+
+        # dry-run: captured separately, never forwarded via SHARED_ARGS
+        --dry-run)      DRY_RUN_ARG=--dry-run; shift ;;
+        --no-dry-run)   DRY_RUN_ARG=--no-dry-run; shift ;;
 
         # derive-only flags
         --auto)             DERIVE_ARGS+=("$1"); shift ;;
@@ -195,10 +202,15 @@ while [[ $# -gt 0 ]]; do
         --refit)            AUDIT_ARGS+=("$1"); shift ;;
         --save-plots)       AUDIT_ARGS+=("$1"); shift ;;
 
-        # shared (everything else, including --set, --config, --dry-run, --log-level)
+        # shared (everything else: --set, --config, --log-level, ...)
         *)                  SHARED_ARGS+=("$1"); shift ;;
     esac
 done
+
+# Derive and audit each get their own dry-run flag derived from the single
+# DRY_RUN_ARG the user provided — never duplicated.
+_DERIVE_DRY_RUN_FLAG="${DRY_RUN_ARG}"
+_AUDIT_DRY_RUN_FLAG="${DRY_RUN_ARG}"
 
 # ── Phase validation ──────────────────────────────────────────────────────────
 if [[ -z "${PHASE}" ]]; then
@@ -215,19 +227,13 @@ case "${PHASE}" in
 esac
 
 # ── Warn if derive-and-audit is run without --no-dry-run ─────────────────────
-if [[ "${PHASE}" == "derive-and-audit" ]]; then
-    _HAS_REAL_RUN=false
-    for _a in "${SHARED_ARGS[@]+"${SHARED_ARGS[@]}"}"; do
-        [[ "${_a}" == '--no-dry-run' ]] && { _HAS_REAL_RUN=true; break; }
-    done
-    if ! ${_HAS_REAL_RUN}; then
-        echo ""
-        echo "  WARNING: --phase=derive-and-audit without --no-dry-run."
-        echo "  The derive phase will be a dry-run (nothing written to disk)."
-        echo "  The audit phase will then fail to load the bandpass solution."
-        echo "  Add --no-dry-run to write Phase-1 outputs before auditing."
-        echo ""
-    fi
+if [[ "${PHASE}" == "derive-and-audit" && "${DRY_RUN_ARG}" != "--no-dry-run" ]]; then
+    echo ""
+    echo "  WARNING: --phase=derive-and-audit without --no-dry-run."
+    echo "  The derive phase will be a dry-run (nothing written to disk)."
+    echo "  The audit phase will then fail to load the bandpass solution."
+    echo "  Add --no-dry-run to write Phase-1 outputs before auditing."
+    echo ""
 fi
 
 # ── MPLBACKEND ────────────────────────────────────────────────────────────────
@@ -250,18 +256,9 @@ fi
 # These mirror the presets hardcoded in v-based-outlier-detection.sh.
 # The caller can override any of them with --set.
 #
-# Dry-run flag: check SHARED_ARGS explicitly rather than relying on argparse
-# last-wins through the shell wrapper chain (run_preprocess.sh re-inserts
-# --dry-run after user args, so last-wins is not safe here).
-_DERIVE_DRY_RUN_FLAG=--dry-run
-for _a in "${SHARED_ARGS[@]+"${SHARED_ARGS[@]}"}"; do
-    [[ "${_a}" == '--no-dry-run' ]] && { _DERIVE_DRY_RUN_FLAG=--no-dry-run; break; }
-done
-
 DERIVE_PRESETS=(
     --step all
     --n-iters 15
-    "${_DERIVE_DRY_RUN_FLAG}"
     --set "OUTLIER_METRIC='V'"
     --set "OUTLIER_METRIC_MERGE_STRATEGY='union'"
     --set "ANTENNA_FLAG_THRESHOLD_JY={'V': 5.0}"
@@ -277,12 +274,13 @@ DERIVE_PRESETS=(
 run_derive() {
     echo ""
     echo "════════════════════════════════════════════════════════════════════════"
-    echo "  PHASE 1 — V-based iterative flagging (derive)"
+    echo "  PHASE 1 — V-based iterative flagging (derive)  [${_DERIVE_DRY_RUN_FLAG}]"
     echo "════════════════════════════════════════════════════════════════════════"
     echo ""
     MPLBACKEND="${_DERIVE_MPLBACKEND}" \
         "${DRIVER}" \
             "${DERIVE_PRESETS[@]}" \
+            "${_DERIVE_DRY_RUN_FLAG}" \
             "${SHARED_ARGS[@]+"${SHARED_ARGS[@]}"}" \
             "${DERIVE_ARGS[@]+"${DERIVE_ARGS[@]}"}"
 }
@@ -293,12 +291,6 @@ run_audit() {
     echo "  PHASE 2 — Clustering detection (audit)"
     echo "════════════════════════════════════════════════════════════════════════"
     echo ""
-    # Dry-run flag: same explicit detection as for derive — don't rely on
-    # argparse last-wins through the Python script's pre-parser.
-    _AUDIT_DRY_RUN_FLAG=--dry-run
-    for _a in "${SHARED_ARGS[@]+"${SHARED_ARGS[@]}"}"; do
-        [[ "${_a}" == '--no-dry-run' ]] && { _AUDIT_DRY_RUN_FLAG=--no-dry-run; break; }
-    done
     MPLBACKEND="${_AUDIT_MPLBACKEND}" \
         python "${CLUSTERING}" \
             "${_AUDIT_DRY_RUN_FLAG}" \
