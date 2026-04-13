@@ -300,10 +300,15 @@ def main() -> None:
         chan_range         = CHAN_RANGE,
         stokes             = needed_stokes,
         max_rows           = MAX_ROWS_SOLVE,
-        flag_table_path    = active_disk if active_disk else None,
         flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
         elevation_min_deg  = SOLVE_ELEVATION_MIN_DEG,
     )
+    if active_disk:
+        vis_raw, _flag_stats = q.apply_flag_tables_to_vis(
+            vis_raw, ant_name_map, flag_table_paths=active_disk,
+        )
+        log.info('  Phase-1 flags applied: dropped %d rows (%d kept)',
+                 _flag_stats['dropped_rows'], _flag_stats['kept_rows'])
     vis_corr = q.apply_bandpass_solution(vis_raw, bandpass_sol)
     log.info('Vis loaded; shape=%s', vis_corr['amp'].shape)
 
