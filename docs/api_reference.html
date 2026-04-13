@@ -97,11 +97,17 @@
   .callout strong { color: #fff; }
 
   /* ── Shell pill ── */
-  .shell-block { background: #0a0c12; border: 1px solid var(--border); border-radius: var(--radius);
-                 padding: 14px 18px; margin: 14px 20px; font-family: monospace; font-size: 12.5px;
-                 line-height: 1.7; overflow-x: auto; }
+  .shell-block { position: relative; background: #0a0c12; border: 1px solid var(--border);
+                 border-radius: var(--radius); padding: 14px 18px 14px 18px; margin: 14px 20px;
+                 font-family: monospace; font-size: 12.5px; line-height: 1.7; overflow-x: auto; }
   .prompt { color: #5b8dee; user-select: none; }
   .sh-comment { color: #4a5273; }
+  .copy-btn { position: absolute; top: 8px; right: 10px; background: #1e2133;
+              border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim);
+              font-size: 11px; font-family: var(--font-sans, sans-serif); padding: 2px 9px;
+              cursor: pointer; line-height: 1.6; z-index: 1; }
+  .copy-btn:hover { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+  .copy-btn.copied { background: #1a7a45; color: #fff; border-color: #1a7a45; }
 
   /* ── Config table ── */
   table.cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -325,20 +331,24 @@ result = q.run_iterative_bandpass_workflow(
   </p>
   <div class="shell-block">
 <span class="sh-comment"># Typical Phase 1 invocation (3C48):</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh --no-dry-run --auto \
-    --set "FLAG_WHAT_TO_FLAG='baselines'" \
+<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+    --no-dry-run \
+    --auto \
     --n-iters 100 \
+    --set "SOURCE='3C48'" \
+    --set "FLAG_WHAT_TO_FLAG='baselines'" \
     --set "CONVERGENCE_EPSILON=0.005" \
-    --set "SOLVE_ELEVATION_MIN_DEG=25.0" \
-    --set "SOURCE='3C48'"
+    --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Same for 3C286 (only SOURCE changes):</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh --no-dry-run --auto \
-    --set "FLAG_WHAT_TO_FLAG='baselines'" \
+<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+    --no-dry-run \
+    --auto \
     --n-iters 100 \
+    --set "SOURCE='3C286'" \
+    --set "FLAG_WHAT_TO_FLAG='baselines'" \
     --set "CONVERGENCE_EPSILON=0.005" \
-    --set "SOLVE_ELEVATION_MIN_DEG=25.0" \
-    --set "SOURCE='3C286'"
+    --set "SOLVE_ELEVATION_MIN_DEG=25.0"
   </div>
   <div class="callout callout-info">
     <strong>Why <code>'baselines'</code> mode?</strong>
@@ -377,7 +387,10 @@ result = q.run_iterative_bandpass_workflow(
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Happy with threshold → commit flags &amp; also re-fit the bandpass:</span>
-<span class="prompt">$ </span>./run_clustering.sh --no-dry-run --refit --save-plots \
+<span class="prompt">$ </span>./run_clustering.sh \
+    --no-dry-run \
+    --refit \
+    --save-plots \
     --set "SOURCE='3C48'" \
     --set "CLUSTERING_THRESHOLD_JY=3.5" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
@@ -1272,18 +1285,26 @@ result = q.run_iterative_bandpass_workflow(
     <div class="fn-desc"><p>Thin wrapper that activates the venv and passes all arguments to <code>preprocess_ugmrt.py</code>. The base entry point for the entire pipeline.</p></div>
     <div class="shell-block">
 <span class="sh-comment"># Single iteration, dry-run (preview only)</span>
-<span class="prompt">$ </span>./run_preprocess.sh --step all --iter-tag iter01
+<span class="prompt">$ </span>./run_preprocess.sh \
+    --step all \
+    --iter-tag iter01
 
 <span class="sh-comment"># 10-iteration automated batch, commit to disk</span>
-<span class="prompt">$ </span>./run_preprocess.sh --step all --auto --n-iters 10 --no-dry-run
+<span class="prompt">$ </span>./run_preprocess.sh \
+    --step all \
+    --auto \
+    --n-iters 10 \
+    --no-dry-run
 
 <span class="sh-comment"># Override config values on the fly</span>
-<span class="prompt">$ </span>./run_preprocess.sh --set "SOURCE='3C147'" \
+<span class="prompt">$ </span>./run_preprocess.sh \
+    --set "SOURCE='3C147'" \
     --set "CHAN_RANGE=(50, 200)" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Restrict UV range</span>
-<span class="prompt">$ </span>./run_preprocess.sh --set "SOLVE_UVRANGE_KLAMBDA=(2.0, 50.0)"
+<span class="prompt">$ </span>./run_preprocess.sh \
+    --set "SOLVE_UVRANGE_KLAMBDA=(2.0, 50.0)"
     </div>
     <div class="param-table-wrap">
     <table class="params">
@@ -1312,13 +1333,15 @@ result = q.run_iterative_bandpass_workflow(
 <span class="prompt">$ </span>./v-based-outlier-detection.sh
 
 <span class="sh-comment"># Automated non-interactive run, flag baselines only</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh --auto \
-    --set "FLAG_WHAT_TO_FLAG='baselines'" \
+<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+    --auto \
     --n-iters 100 \
+    --set "FLAG_WHAT_TO_FLAG='baselines'" \
     --set "CONVERGENCE_EPSILON=0.01"
 
 <span class="sh-comment"># Apply elevation and UV-range data selection</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh --auto \
+<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+    --auto \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0" \
     --set "SOLVE_UVRANGE_KLAMBDA=(2.0, 50.0)"
 
@@ -1373,13 +1396,17 @@ result = q.run_iterative_bandpass_workflow(
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Commit clustering flags to FLAG_TABLE_SESSION:</span>
-<span class="prompt">$ </span>./run_clustering.sh --no-dry-run \
+<span class="prompt">$ </span>./run_clustering.sh \
+    --no-dry-run \
     --set "SOURCE='3C48'" \
     --set "CLUSTERING_THRESHOLD_JY=3.5" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Commit + re-fit bandpass + save all 6 plots as PNG:</span>
-<span class="prompt">$ </span>./run_clustering.sh --no-dry-run --refit --save-plots \
+<span class="prompt">$ </span>./run_clustering.sh \
+    --no-dry-run \
+    --refit \
+    --save-plots \
     --set "SOURCE='3C48'" \
     --set "CLUSTERING_THRESHOLD_JY=3.5" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
@@ -1429,5 +1456,29 @@ result = q.run_iterative_bandpass_workflow(
 
 </main>
 </div>
+<script>
+// Copy-to-clipboard button for each shell block
+document.querySelectorAll('.shell-block').forEach(function(block) {
+  var btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.textContent = 'copy';
+  btn.addEventListener('click', function() {
+    // Collect only text nodes that belong to the block, skipping the button itself
+    var lines = [];
+    block.childNodes.forEach(function(node) {
+      if (node === btn) return;
+      if (node.nodeType === 3) { lines.push(node.textContent); }
+      else if (node.nodeType === 1) { lines.push(node.textContent); }
+    });
+    var text = lines.join('').replace(/^[\n]+/, '').replace(/[\n]+$/, '');
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = 'copied!';
+      btn.classList.add('copied');
+      setTimeout(function() { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 1800);
+    });
+  });
+  block.insertBefore(btn, block.firstChild);
+});
+</script>
 </body>
 </html>
