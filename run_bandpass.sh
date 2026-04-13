@@ -249,10 +249,19 @@ fi
 # ── Derive preset args ────────────────────────────────────────────────────────
 # These mirror the presets hardcoded in v-based-outlier-detection.sh.
 # The caller can override any of them with --set.
+#
+# Dry-run flag: check SHARED_ARGS explicitly rather than relying on argparse
+# last-wins through the shell wrapper chain (run_preprocess.sh re-inserts
+# --dry-run after user args, so last-wins is not safe here).
+_DERIVE_DRY_RUN_FLAG=--dry-run
+for _a in "${SHARED_ARGS[@]+"${SHARED_ARGS[@]}"}"; do
+    [[ "${_a}" == '--no-dry-run' ]] && { _DERIVE_DRY_RUN_FLAG=--no-dry-run; break; }
+done
+
 DERIVE_PRESETS=(
     --step all
     --n-iters 15
-    --dry-run
+    "${_DERIVE_DRY_RUN_FLAG}"
     --set "OUTLIER_METRIC='V'"
     --set "OUTLIER_METRIC_MERGE_STRATEGY='union'"
     --set "ANTENNA_FLAG_THRESHOLD_JY={'V': 5.0}"
@@ -284,9 +293,15 @@ run_audit() {
     echo "  PHASE 2 — Clustering detection (audit)"
     echo "════════════════════════════════════════════════════════════════════════"
     echo ""
+    # Dry-run flag: same explicit detection as for derive — don't rely on
+    # argparse last-wins through the Python script's pre-parser.
+    _AUDIT_DRY_RUN_FLAG=--dry-run
+    for _a in "${SHARED_ARGS[@]+"${SHARED_ARGS[@]}"}"; do
+        [[ "${_a}" == '--no-dry-run' ]] && { _AUDIT_DRY_RUN_FLAG=--no-dry-run; break; }
+    done
     MPLBACKEND="${_AUDIT_MPLBACKEND}" \
         python "${CLUSTERING}" \
-            --dry-run \
+            "${_AUDIT_DRY_RUN_FLAG}" \
             "${SHARED_ARGS[@]+"${SHARED_ARGS[@]}"}" \
             "${AUDIT_ARGS[@]+"${AUDIT_ARGS[@]}"}"
 }
