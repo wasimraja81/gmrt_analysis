@@ -20,7 +20,7 @@
 #   ./run_clustering.sh --set "SOURCE='3C286'" --set "CLUSTERING_THRESHOLD_JY=4.0"
 #   ./run_clustering.sh --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 #   ./run_clustering.sh --config /path/to/other.cfg
-    ./run_clustering.sh --no-dry-run      # write new flags to FLAG_TABLE_SESSION
+#   ./run_clustering.sh --no-dry-run      # write new flags to FLAG_TABLE_SESSION
 #   ./run_clustering.sh --refit           # re-solve bandpass with clustering flags
 #   ./run_clustering.sh --save-plots      # save 6 PNGs to WORK_DIR
 #

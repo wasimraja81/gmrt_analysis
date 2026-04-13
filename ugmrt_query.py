@@ -3571,6 +3571,13 @@ def save_bandpass_solution(solution, path: Union[str, Path]):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    # flag_table_notes is a ' | '.join() of every accumulated flag-table notes
+    # string; after many iterations it can exceed NumPy's scalar string limit.
+    # Truncate to 4 KB — it is human-readable metadata only, not used by code.
+    _ft_notes = str(solution.get('flag_table_notes', ''))
+    if len(_ft_notes) > 4096:
+        _ft_notes = _ft_notes[:4093] + '...'
+
     metadata = {
         'kind': solution['kind'],
         'source_name': solution['source_name'],
@@ -3583,7 +3590,7 @@ def save_bandpass_solution(solution, path: Union[str, Path]):
         'flag_table_path': solution.get('flag_table_path'),
         'flag_table_paths': list(solution.get('flag_table_paths', [])),
         'flag_table_count': int(solution.get('flag_table_count', 0)),
-        'flag_table_notes': solution.get('flag_table_notes', ''),
+        'flag_table_notes': _ft_notes,
         'solve_input_rows': int(solution.get('solve_input_rows', 0)),
         'solve_dropped_rows_by_flag_table': int(solution.get('solve_dropped_rows_by_flag_table', 0)),
         'bad_data_policy': solution['bad_data_policy'],
