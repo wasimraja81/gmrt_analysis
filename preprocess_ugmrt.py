@@ -956,6 +956,29 @@ def run_auto(args):
     log.info('Iterations executed : %d  (of %d requested)', len(result['history']), args.n_iters)
     log.info('Stop reason         : %s', result.get('stop_reason', 'unknown'))
 
+    # ── Persist final iteration bandpass to BANDPASS_OUT (no iter suffix) ────
+    # run_iterative_bandpass_workflow writes <BASE>_iter01.npz, _iter02.npz, …
+    # but never the base path itself.  Copy the last iteration's file to
+    # BANDPASS_OUT so that a subsequent --phase=audit / run_clustering.py step
+    # finds the file where it expects it.
+    # (If RUN_FINAL_CLUSTERING below re-derives and overwrites BANDPASS_OUT,
+    # that polished version takes precedence — the copy is just a safe default.)
+    if not dry_run_bp and result['history']:
+        import shutil as _shutil
+        _last_tag = result['history'][-1]['iteration_tag']
+        _last_bp  = (BANDPASS_OUT.parent
+                     / f'{BANDPASS_OUT.stem}_{_last_tag}{BANDPASS_OUT.suffix}')
+        if _last_bp.exists():
+            _shutil.copy2(str(_last_bp), str(BANDPASS_OUT))
+            log.info('Final bandpass  : %s  →  %s  (ready for audit phase)',
+                     _last_bp.name, BANDPASS_OUT.name)
+        else:
+            log.warning(
+                'Last-iter bandpass %s not found on disk — BANDPASS_OUT not updated. '
+                'Check that dry_run_bandpass=False reached the library.',
+                _last_bp,
+            )
+
     # ── Optional post-convergence clustering step ────────────────────────────
     if RUN_FINAL_CLUSTERING:
         _stop = result.get('stop_reason', '')
