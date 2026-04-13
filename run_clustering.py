@@ -410,8 +410,10 @@ def main() -> None:
         'phase_deg': vis_raw['phase_deg'][:, _c0:_c1, :],
         'freqs_hz':  vis_raw['freqs_hz'][_c0:_c1],
     }
-    # Keep uvdist_per_chan 2-D (nrows, nchans) so apply_flag_tables_to_vis
-    # slices axis-0 correctly; plot_vis_amp_vs_uvdist calls .ravel() internally.
+    # chan_indices must be sliced so expand_flag_table_to_mask can map absolute
+    # chanrange entries in flag table to local column indices.
+    if 'chan_indices' in vis_raw:
+        _vis_plot['chan_indices'] = vis_raw['chan_indices'][_c0:_c1]
     if 'uvdist_per_chan' in vis_raw:
         _vis_plot['uvdist_per_chan'] = vis_raw['uvdist_per_chan'][:, _c0:_c1]
     if 'vis_complex' in vis_raw:
@@ -419,15 +421,32 @@ def main() -> None:
 
     log.info('Plotting %d channels (PLOT_CHAN_RANGE=%s)', _c1 - _c0, plot_cr)
 
-    # ── AFTER vis: mask rows flagged by the new clustering flags ─────────────
-    _vis_plot_after, _mask_stats = q.apply_flag_tables_to_vis(
-        _vis_plot,
-        antenna_name_map = ant_name_map,
-        flag_tables      = [ft_new],
+    # ── AFTER vis: 2-D (row × channel) masking via expand_flag_table_to_mask ─
+    # apply_flag_tables_to_vis is row-only (bad_antennas + bad_baselines).
+    # expand_flag_table_to_mask also covers bad_antenna_timeranges and
+    # bad_baseline_timeranges with their chanrange fields, which is where the
+    # channel-selective RFI detections live.
+    import numpy as _np
+    _flag_mask_2d = q.expand_flag_table_to_mask(
+        _vis_plot, ft_new, ant_name_map,
     )
-    log.info('AFTER masking: removed %d / %d rows (bad_antennas + bad_baselines)',
-             _mask_stats['dropped_rows'],
-             _mask_stats['dropped_rows'] + _mask_stats['kept_rows'])
+    _vis_plot_after = {**_vis_plot}
+    _vis_plot_after['amp'] = _np.where(
+        _flag_mask_2d[:, :, _np.newaxis], _np.nan, _vis_plot['amp'],
+    )
+    if 'vis_complex' in _vis_plot:
+        _vis_plot_after['vis_complex'] = _np.where(
+            _flag_mask_2d[:, :, _np.newaxis], _np.nan + 0j, _vis_plot['vis_complex'],
+        )
+    if 'phase_deg' in _vis_plot:
+        _vis_plot_after['phase_deg'] = _np.where(
+            _flag_mask_2d[:, :, _np.newaxis], _np.nan, _vis_plot['phase_deg'],
+        )
+    _n_flagged = int(_flag_mask_2d.sum())
+    _n_total   = int(_flag_mask_2d.size)
+    log.info('AFTER masking: %d / %d vis cells flagged (%.1f%%)  '
+             '[wholesale + chanrange time-range entries]',
+             _n_flagged, _n_total, 100.0 * _n_flagged / _n_total)
 
     # ── save-path helpers ─────────────────────────────────────────────────────
     _src = SOURCE.lower()
