@@ -77,7 +77,7 @@ import sys
 import json
 import warnings
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 
@@ -1352,13 +1352,28 @@ def _build_chan_aware_proposals(
     per_chan_proposals: List[dict],
     chan_indices: List[int],
     max_gap_minutes: float,
+    *,
+    obs_jd_start: Optional[float] = None,
+    obs_jd_end: Optional[float] = None,
+    wholesale_chan_majority: float = 1.0,
 ) -> dict:
     """Compress per-channel cluster proposals into channel-annotated flag entries.
 
-    Wholesale flags (``bad_antennas``, ``bad_baselines``) are the union across
-    all channels — a coordinate flagged wholesale in *any* channel is treated
-    as pervasively bad across the full band.  These carry no channel
-    restriction.
+    Wholesale flags (``bad_antennas``, ``bad_baselines``) are promoted to the
+    top-level list **only** when a coordinate is wholesale-bad in at least
+    ``wholesale_chan_majority`` fraction of all loaded channels (default: all
+    channels).  A coordinate wholesale-bad in *fewer* channels is instead
+    demoted to a full-observation-time, ``chanrange``-restricted
+    ``bad_antenna_timeranges`` / ``bad_baseline_timeranges`` entry so that
+    only the affected channels are dropped — not the entire band.
+
+    The old behaviour (union across ALL channels without restriction) caused
+    up to 128× data loss when a single bad channel triggered a wholesale flag
+    that was then applied band-wide.
+
+    If ``obs_jd_start`` / ``obs_jd_end`` are not supplied and a coordinate is
+    wholesale-bad in fewer than the majority of channels, it falls back to the
+    old all-band promotion and emits a warning.
 
     Time-range flags (``bad_antenna_timeranges``, ``bad_baseline_timeranges``)
     are channel-annotated.  For each coordinate, the per-channel interval
@@ -1377,6 +1392,15 @@ def _build_chan_aware_proposals(
     max_gap_minutes : float
         Carried through for provenance; interval merging was already done
         inside :func:`cluster_flags` for each channel.
+    obs_jd_start, obs_jd_end : float, optional
+        JD boundaries of the analysed rows.  Required to build the full-obs
+        time interval for partial-channel wholesale demotions.  When omitted
+        and demotion is needed, falls back to all-band promotion with a
+        warning.
+    wholesale_chan_majority : float
+        Fraction of loaded channels (0 < f ≤ 1.0) in which a coordinate must
+        be wholesale-bad before it is promoted to the all-band top-level lists.
+        Default ``1.0`` = must be bad in ALL loaded channels.
 
     Returns
     -------
@@ -1385,22 +1409,30 @@ def _build_chan_aware_proposals(
         for time-range entries: each value is a list of
         ``{"intervals": [[t0_iso, t1_iso], ...], "chanrange": [c0, c1] | None}``.
     """
-    # ── Wholesale flags: union across ALL channels ──────────────────────────
-    all_ants:     set  = set()
-    all_bases:    set  = set()   # tuple((a_name, b_name)) sorted
+    n_chans_total = len(chan_indices)
+    c_min_loaded  = min(chan_indices) if chan_indices else 0
+    c_max_loaded  = max(chan_indices) if chan_indices else 0
+
+    # Pass 1: track per-channel wholesale prevalence + scan/burst lists
+    # ant_wholesale_chans[name]   = set of abs_chan_idx where wholesale-bad
+    # bl_wholesale_chans['a::b']  = set of abs_chan_idx
+    ant_wholesale_chans: Dict[str, Set[int]] = {}
+    bl_wholesale_chans:  Dict[str, Set[int]] = {}
     all_scan_tr:  list = []
     all_burst_tr: list = []
 
-    for p in per_chan_proposals:
-        for a in p.get('bad_antennas', []):
-            all_ants.add(a)
-        for bl in p.get('bad_baselines', []):
-            all_bases.add(tuple(sorted(bl)))
-        all_scan_tr.extend(p.get('bad_scan_timeranges', []))
-        all_burst_tr.extend(p.get('bad_burst_timeranges', []))
+    for proposal, abs_chan in zip(per_chan_proposals, chan_indices):
+        for a in proposal.get('bad_antennas', []):
+            ant_wholesale_chans.setdefault(a, set()).add(abs_chan)
+        for bl in proposal.get('bad_baselines', []):
+            a_name, b_name = sorted(str(x) for x in bl)
+            _bl_key = f'{a_name}::{b_name}'
+            bl_wholesale_chans.setdefault(_bl_key, set()).add(abs_chan)
+        all_scan_tr.extend(proposal.get('bad_scan_timeranges', []))
+        all_burst_tr.extend(proposal.get('bad_burst_timeranges', []))
 
-    # ── Time-range flags: collect per channel ──────────────────────────────
-    # Structure: {key → {abs_chan_idx → [(t0_iso, t1_iso), ...]}}}
+    # Pass 2: collect per-channel time-range entries
+    # Structure: {key -> {abs_chan_idx -> [(t0_iso, t1_iso), ...]}}
     bl_tr_per_chan:  Dict[str, Dict[int, List]] = {}
     ant_tr_per_chan: Dict[str, Dict[int, List]] = {}
 
@@ -1410,9 +1442,56 @@ def _build_chan_aware_proposals(
         for ant_name, trs in proposal.get('bad_antenna_timeranges', {}).items():
             ant_tr_per_chan.setdefault(ant_name, {})[abs_chan] = list(trs)
 
-    n_chans_total = len(chan_indices)
-    c_min_loaded  = min(chan_indices) if chan_indices else 0
-    c_max_loaded  = max(chan_indices) if chan_indices else 0
+    # Promote: all-band wholesale OR chanrange-restricted full-obs entry
+    majority_count = max(1, int(np.ceil(wholesale_chan_majority * n_chans_total)))
+    obs_start_iso = jd_to_iso(obs_jd_start) if obs_jd_start is not None else None
+    obs_end_iso   = jd_to_iso(obs_jd_end)   if obs_jd_end   is not None else None
+
+    all_ants:  set = set()
+    all_bases: set = set()   # tuple((a_name, b_name)) sorted
+
+    for ant, bad_chans in ant_wholesale_chans.items():
+        if len(bad_chans) >= majority_count:
+            # Bad in all (or majority) channels -> genuine all-band wholesale
+            all_ants.add(ant)
+        elif obs_start_iso is not None:
+            # Partial-channel wholesale -> full-obs time, chanrange-restricted.
+            # Overwrites any specific sub-interval already collected for this
+            # (ant, chan) because wholesale (all-time-in-that-channel) subsumes it.
+            for abs_chan in bad_chans:
+                ant_tr_per_chan.setdefault(ant, {})[abs_chan] = [
+                    (obs_start_iso, obs_end_iso)
+                ]
+        else:
+            import warnings
+            warnings.warn(
+                f'[_build_chan_aware_proposals] antenna {ant!r} is wholesale-bad '
+                f'in {len(bad_chans)}/{n_chans_total} channel(s) but '
+                f'obs_jd_start/end not supplied; promoting to all-band wholesale '
+                f'(over-conservative fallback).',
+                stacklevel=3,
+            )
+            all_ants.add(ant)
+
+    for bl_key, bad_chans in bl_wholesale_chans.items():
+        a_name, b_name = bl_key.split('::', 1)
+        if len(bad_chans) >= majority_count:
+            all_bases.add((a_name, b_name))
+        elif obs_start_iso is not None:
+            for abs_chan in bad_chans:
+                bl_tr_per_chan.setdefault(bl_key, {})[abs_chan] = [
+                    (obs_start_iso, obs_end_iso)
+                ]
+        else:
+            import warnings
+            warnings.warn(
+                f'[_build_chan_aware_proposals] baseline {bl_key!r} is wholesale-bad '
+                f'in {len(bad_chans)}/{n_chans_total} channel(s) but '
+                f'obs_jd_start/end not supplied; promoting to all-band wholesale '
+                f'(over-conservative fallback).',
+                stacklevel=3,
+            )
+            all_bases.add((a_name, b_name))
 
     def _compress(per_chan: Dict[int, List]) -> List[dict]:
         """per_chan: {abs_chan_idx: [(t0_iso, t1_iso), ...]}
@@ -1703,7 +1782,11 @@ def run_clustering_detection(
         if verbose and nchans > 1:
             print()   # newline after \r progress
 
-        merged = _build_chan_aware_proposals(per_chan_proposals, chan_indices, max_gap_minutes)
+        merged = _build_chan_aware_proposals(
+            per_chan_proposals, chan_indices, max_gap_minutes,
+            obs_jd_start=obs_jd_start_,
+            obs_jd_end=obs_jd_end_,
+        )
 
         _notes = (
             f'run_clustering_detection; corr={_c}; thr={_thr_h} Jy'
