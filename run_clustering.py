@@ -227,6 +227,15 @@ def main() -> None:
              'exploration).',
     )
     parser.add_argument(
+        '--write-refit',
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help='When --refit is active, also write the refitted bandpass solution '
+             'to BANDPASS_OUT on disk, overwriting the Phase-1 solution.  '
+             'Default: False — the refit is used only for the AFTER plots.  '
+             'Enable once you are satisfied with the audit results.',
+    )
+    parser.add_argument(
         '--save-plots', action='store_true', default=False,
         help='Save the six plots as PNGs to WORK_DIR.',
     )
@@ -404,7 +413,13 @@ def main() -> None:
     # ── optional bandpass refit with clustering flags ─────────────────────────
     if args.refit:
         _refit_tag = f'{AUTO_ITER_PREFIX}_final_clustering'
-        log.info('Post-clustering bandpass re-solve (tag=%s) ...', _refit_tag)
+        _write_refit = bool(getattr(args, 'write_refit', False))
+        if _write_refit and dry_run:
+            log.warning('--write-refit requested but --dry-run is active; '
+                        'refitted bandpass will NOT be written to disk.')
+            _write_refit = False
+        log.info('Post-clustering bandpass re-solve (tag=%s, write=%s) ...',
+                 _refit_tag, _write_refit)
         final_bp = q.derive_bandpass_iteration(
             fits_path         = CAL_FITS,
             index             = index,
@@ -419,7 +434,7 @@ def main() -> None:
             flag_table        = [ft_new],
             flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
             iteration_tag     = _refit_tag,
-            dry_run           = True,   # never overwrite BANDPASS_OUT from here
+            dry_run           = not _write_refit,
             elevation_min_deg = SOLVE_ELEVATION_MIN_DEG,
             elevation_max_deg = SOLVE_ELEVATION_MAX_DEG,
             uvrange_m         = SOLVE_UVRANGE_M,
@@ -428,6 +443,11 @@ def main() -> None:
         )
         bandpass_sol_after = final_bp['solution']
         _after_label = _refit_tag
+        if _write_refit:
+            log.info('Refitted bandpass written to %s', BANDPASS_OUT)
+        else:
+            log.info('Refitted bandpass used for AFTER plots only '
+                     '(add --write-refit to persist to disk)')
     else:
         bandpass_sol_after = bandpass_sol
         _after_label = 'saved bandpass (no refit)'
