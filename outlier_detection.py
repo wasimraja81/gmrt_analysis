@@ -667,20 +667,26 @@ def cluster_flags(
     # ------------------------------------------------------------------
     # Per-antenna time-ranges (for antennas NOT wholesale-flagged)
     # ------------------------------------------------------------------
-    # Wholesale-flagged antennas need no time restriction.
-    # All others: merge fine-grained per-row intervals with per-scan intervals.
+    # Only Level-1b per-scan detections (Method 1: fraction of all rows in scan
+    # >= per_scan_ant_fraction; Method 2: >= per_scan_ant_bl_fraction of
+    # baselines exceed baseline_max_bad_samples) belong here.  Both methods
+    # already gate on a meaningfully large fraction of the antenna's baselines
+    # being bad *within that scan*, so emitting a per-antenna timerange is
+    # justified — the flag will expand to all baselines for that antenna during
+    # that window.
+    #
+    # Fine-grained per-row bad intervals are NOT collected here.  Those bad
+    # rows are already captured at baseline granularity in bad_baseline_timeranges
+    # below.  Collecting them here as well would promote isolated per-baseline
+    # RFI to a per-antenna flag, incorrectly flagging all N-1 other baselines
+    # for the offending antenna whenever even one of its baselines had bad rows.
     bad_antenna_timeranges: Dict[str, List[Tuple[str, str]]] = {}
     for a in all_ant_ids:
         if name_of[a] in bad_antennas:
             continue   # wholesale flag already covers this antenna
-        rows_for_a = np.where((ant1 == a) | (ant2 == a))[0]
-        bad_rows_a = rows_for_a[bad_mask[rows_for_a]]
-        # Combine fine-grained per-row intervals with coarse per-scan intervals.
-        _all_ant_ivs: List[Tuple[float, float]] = []
-        if len(bad_rows_a) > 0:
-            _all_ant_ivs.extend(_rows_to_intervals(jd, bad_rows_a, effective_gap_minutes, jd))
-        if a in _per_scan_ant_ivs:
-            _all_ant_ivs.extend(_per_scan_ant_ivs[a])
+        if a not in _per_scan_ant_ivs:
+            continue   # no Level-1b per-scan detection for this antenna
+        _all_ant_ivs: List[Tuple[float, float]] = list(_per_scan_ant_ivs[a])
         if not _all_ant_ivs:
             continue
         _merged_ant = _merge_jd_intervals(_all_ant_ivs, effective_gap_minutes)
