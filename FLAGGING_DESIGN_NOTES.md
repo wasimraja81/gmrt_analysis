@@ -180,23 +180,38 @@ hard-codes `True`:
 - `patch_thresholds.py` line 86: `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED = True`
 
 The underlying function signatures default to `False` (e.g. `ugmrt_query.py`
-lines 2171, 3446, 3849, 4856) — that default is **never** exercised in any
+lines 2171, 3573, 3987, 4994) — that default is **never** exercised in any
 real pipeline run. The `False` code path is untested and unsupported.
 
-### Step 1 — Verify the current `True` behaviour (must be done first)
+### Step 1 — Verify the current `True` behaviour ✅ VERIFIED
 
-Before any refactor, confirm:
-1. When `True`, every natively-FITS-flagged sample is symmetrised to **all**
-   correlations (RR+LL) in `load_vis_for_source` at the `flagged` array union
-   step (~line 2399 of `ugmrt_query.py`).
-2. Flags written to the JSON flag table (`bad_antennas`, `bad_baselines`,
-   `bad_antenna_timeranges`, etc.) carry **no per-corr field**, so
-   `apply_flag_tables_to_vis` applies them to all corrs implicitly — confirm
-   this holds regardless of the `flag_all_corrs_if_any_rawvis_flagged` setting.
-3. Outlier detection (`compute_test_quantity`, `build_bad_mask`) runs on data
-   already symmetrised by `load_vis_for_source`, so JSON flags produced are
-   inherently all-corr — confirm no code path allows a corr-specific outlier
-   decision to escape into a flag-table entry.
+**1. Symmetrisation in `load_vis_for_source`** (`ugmrt_query.py` ~line 2399):
+```python
+shared_flagged = np.any(flagged, axis=2, keepdims=True)  # OR across corr axis
+flagged = np.broadcast_to(shared_flagged, flagged.shape).copy()  # back to all corrs
+wt_[flagged] = 0.0
+```
+A post-condition assertion is now present confirming
+`flagged.all(axis=2) == flagged.any(axis=2)` (uniformity across corrs).
+A diagnostic count log reports how many `(row, chan)` asymmetric cells were corrected.
+
+**2. Flag-table entries carry no per-corr field** — verified:
+- `expand_flag_table_to_mask` returns `(nRows, nChans)` — no pol axis.
+  The pol axis is handled at apply time by broadcasting over `vis_complex`
+  `(nRows, nChans, nPols)`. A `# TODO #3 sanity` comment marks this invariant.
+- `apply_flag_tables_to_vis` drops whole rows (all corrs simultaneously).
+- The JSON schema (`bad_antennas`, `bad_baselines`, `bad_antenna_timeranges`,
+  `bad_baseline_timeranges`) has no `corr` or `stokes` field — all-corr by
+  construction.
+
+**3. Outlier detection is corr-free** — verified:
+- `compute_test_quantity` collapses all corrs into a single scalar per
+  `(row, chan)` before any threshold decision (Stokes-V: `|RR−LL|/2`;
+  Stokes-I: `(|RR|+|LL|)/2`; single-pol: `|pol|`). Output shape:
+  `(nrows, nchans)` — no corr index.
+- `build_bad_mask` operates on that scalar — no per-corr state.
+- `_build_chan_aware_proposals` maps `(row, chan)` cells into flag-table entries
+  that carry no corr field. ✅
 
 ### Step 2 — WISHLIST: wire consistently end-to-end
 

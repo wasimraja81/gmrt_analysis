@@ -2401,9 +2401,25 @@ def load_vis_for_source(
         # in the raw FITS data, force all correlations to be flagged.  This keeps
         # RR and LL symmetric: the solve and diagnostics see the same rows for
         # both feed chains.  The raw FITS file is never modified.
+        #
+        # Sanity-check (TODO #3): verify the result is corr-uniform, i.e. every
+        # (row, chan) cell is either flagged in ALL corrs or in NONE.
         shared_flagged = np.any(flagged, axis=2, keepdims=True)
+        _n_asymmetric = int(np.count_nonzero(
+            shared_flagged.squeeze(axis=2) != flagged.all(axis=2)
+        ))
+        if _n_asymmetric:
+            print(
+                f'[load_vis] FLAG_ALL_CORRS symmetrisation corrected '
+                f'{_n_asymmetric:,} asymmetric (row,chan) cells '
+                f'(≈{100.0 * _n_asymmetric / max(shared_flagged.size, 1):.2f}%)'
+            )
         flagged = np.broadcast_to(shared_flagged, flagged.shape).copy()
         wt_[flagged] = 0.0
+        # Post-condition: every (row,chan) must be uniformly flagged across corrs.
+        assert np.array_equal(flagged.all(axis=2), flagged.any(axis=2)), (
+            'FLAG_ALL_CORRS symmetrisation failed: corr-asymmetric flags remain'
+        )
     # Flag exact hardware zeros: correlator dropouts produce re_=im_=0 with a
     # valid (positive) weight, which are NOT caught by the wt_<=0 test above.
     # These appear as identically-zero visibilities in amplitude/Stokes-V plots.
@@ -3088,6 +3104,9 @@ def expand_flag_table_to_mask(
     abs_to_local: Dict[int, int] = {c: i for i, c in enumerate(chan_indices_abs)}
 
     flag_mask = np.zeros((nrows, nchans), dtype=bool)
+    # TODO #3 sanity: output is (nRows, nChans) — no pol axis.  pols are handled
+    # by broadcasting this mask over vis_complex (nRows, nChans, nPols) at
+    # apply time, not stored here.  See FLAG_ALL_CORRS in FLAGGING_DESIGN_NOTES.
 
     name_to_id: Dict[str, int] = {v: k for k, v in antenna_name_map.items()}
 
