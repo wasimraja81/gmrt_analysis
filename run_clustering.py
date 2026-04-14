@@ -535,7 +535,7 @@ def main() -> None:
         title      = f'{SOURCE} Stokes-V corrected  BEFORE clustering',
         show_phase = False,
         alpha      = 0.10,
-        hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, float) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
+        hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, (int, float)) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
         signed     = True,
     )
 
@@ -568,7 +568,7 @@ def main() -> None:
                       f'AFTER clustering  [{_after_label}]'),
         show_phase = False,
         alpha      = 0.10,
-        hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, float) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
+        hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, (int, float)) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
         signed     = True,
         save_path  = _save(f'{_src}_clustering_stokesV_after.png'),
     )
