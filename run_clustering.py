@@ -349,20 +349,44 @@ def main() -> None:
     print(od.format_casa_commands(ft_new))
     print()
 
-    # ── optionally commit clustering flags to disk ────────────────────────────
-    if not dry_run and (new_ants or new_bases):
-        q.update_flag_table(
+    # ── optionally commit clustering flags to disk — ALL six sections ─────────
+    # merge_flag_table_into_file persists bad_antennas, bad_baselines,
+    # bad_antenna_timeranges, bad_baseline_timeranges, bad_scan_timeranges,
+    # and bad_burst_timeranges.  update_flag_table (old code) only persisted
+    # bad_antennas + bad_baselines, silently discarding all time-range and
+    # chanrange entries — causing a re-run at --phase=audit to see the same
+    # RFIs again because those flags were never on disk.
+    _has_any_flags = (
+        new_ants
+        or new_bases
+        or ft_new.get('bad_antenna_timeranges')
+        or ft_new.get('bad_baseline_timeranges')
+        or ft_new.get('bad_scan_timeranges')
+        or ft_new.get('bad_burst_timeranges')
+    )
+    if not dry_run and _has_any_flags:
+        q.merge_flag_table_into_file(
             FLAG_TABLE_SESSION,
-            add_antennas  = new_ants,
-            add_baselines = new_bases,
-            notes         = (
+            ft_new,
+            notes   = (
                 f'Clustering detection — corr={CLUSTERING_CORR} '
                 f'thr={CLUSTERING_THRESHOLD_JY} Jy'
             ),
-            dry_run       = False,
+            dry_run = False,
         )
-        log.info('Clustering flags written to %s', FLAG_TABLE_SESSION)
-    elif new_ants or new_bases:
+        log.info('Clustering flags (all 6 sections) written to %s', FLAG_TABLE_SESSION)
+        log.info('  antennas         : %s', new_ants or '—')
+        log.info('  baselines        : %s',
+                 [f'{b[0]}-{b[1]}' for b in new_bases] or '—')
+        log.info('  ant  time-ranges : %d key(s)',
+                 len(ft_new.get('bad_antenna_timeranges', {})))
+        log.info('  bl   time-ranges : %d key(s)',
+                 len(ft_new.get('bad_baseline_timeranges', {})))
+        log.info('  scan time-ranges : %d',
+                 len(ft_new.get('bad_scan_timeranges', [])))
+        log.info('  burst time-ranges: %d',
+                 len(ft_new.get('bad_burst_timeranges', [])))
+    elif _has_any_flags:
         log.info('dry-run — clustering flags NOT written to disk  '
                  '(re-run with --no-dry-run to persist)')
     else:

@@ -2805,9 +2805,17 @@ def apply_flag_tables_to_vis(
         and any(table.get(k) for table in tables for k in _TR_KEYS)
     ):
         # Ensure writable copies (vis arrays may be memory-mapped views).
-        _vc = np.array(vis_use['vis_complex'])
-        _wt = np.array(vis_use['weight'])   if 'weight'  in vis_use else None
-        _fl = np.array(vis_use['flagged'])  if 'flagged' in vis_use else None
+        _vc  = np.array(vis_use['vis_complex'])
+        _wt  = np.array(vis_use['weight'])     if 'weight'    in vis_use else None
+        _fl  = np.array(vis_use['flagged'])    if 'flagged'   in vis_use else None
+        # amp and phase_deg are pre-computed arrays stored separately; they
+        # must be NaN-filled in sync with vis_complex so the plot code — which
+        # reads vis['amp'] directly — does not show the original amplitude at
+        # time-range-flagged cells.
+        _amp = np.array(vis_use['amp'],       dtype=np.float32) \
+               if 'amp'       in vis_use else None
+        _ph  = np.array(vis_use['phase_deg'], dtype=np.float32) \
+               if 'phase_deg' in vis_use else None
 
         for table in tables:
             if not any(table.get(k) for k in _TR_KEYS):
@@ -2826,18 +2834,27 @@ def apply_flag_tables_to_vis(
             _n_cells_zeroed += int(_cell_mask.sum())
             # Boolean 2-D mask on a 3-D (nrows, nchans, npol) array:
             # arr[mask2d] selects the (npol,) vectors at True positions,
-            # so the assignment arr[mask2d] = 0.0 zeros all polarisations.
-            _vc[_cell_mask] = 0.0
+            # so the assignment broadcasts across all polarisations.
+            _vc[_cell_mask]  = 0.0
             if _wt is not None:
                 _wt[_cell_mask] = 0.0
             if _fl is not None:
                 _fl[_cell_mask] = True
+            # NaN pre-computed amp / phase_deg so plot code sees missing cells.
+            if _amp is not None:
+                _amp[_cell_mask] = np.nan
+            if _ph is not None:
+                _ph[_cell_mask] = np.nan
 
         vis_use['vis_complex'] = _vc
         if _wt is not None:
-            vis_use['weight'] = _wt
+            vis_use['weight']    = _wt
         if _fl is not None:
-            vis_use['flagged'] = _fl
+            vis_use['flagged']   = _fl
+        if _amp is not None:
+            vis_use['amp']       = _amp
+        if _ph is not None:
+            vis_use['phase_deg'] = _ph
         if _n_cells_zeroed:
             print(
                 f'[{context}] time-range/chanrange flags applied: '
