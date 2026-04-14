@@ -481,34 +481,46 @@ def main() -> None:
                 )
         log.info('Post-clustering bandpass re-solve (tag=%s, write=%s) ...',
                  _refit_tag, _write_refit)
-        final_bp = q.derive_bandpass_iteration(
-            fits_path         = CAL_FITS,
-            index             = index,
-            bandpass_out      = BANDPASS_OUT,
-            source            = SOURCE,
-            stokes            = STOKES,
-            chan_range         = CHAN_RANGE,
-            max_rows          = MAX_ROWS_SOLVE,
-            smooth_window     = SMOOTH_WINDOW,
-            min_baselines     = MIN_BASELINES,
-            flag_table_path   = active_disk if active_disk else None,
-            flag_table        = [ft_new],
-            flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
-            iteration_tag     = _refit_tag,
-            dry_run           = not _write_refit,
-            elevation_min_deg = SOLVE_ELEVATION_MIN_DEG,
-            elevation_max_deg = SOLVE_ELEVATION_MAX_DEG,
-            uvrange_m         = SOLVE_UVRANGE_M,
-            uvrange_klambda   = SOLVE_UVRANGE_KLAMBDA,
-            timerange         = SOLVE_TIMERANGE,
-        )
-        bandpass_sol_after = final_bp['solution']
-        _after_label = _refit_tag
-        if _write_refit:
-            log.info('Refitted bandpass written to %s', BANDPASS_OUT)
-        else:
-            log.info('Refitted bandpass used for AFTER plots only '
-                     '(add --write-refit to persist to disk)')
+        try:
+            final_bp = q.derive_bandpass_iteration(
+                fits_path         = CAL_FITS,
+                index             = index,
+                bandpass_out      = BANDPASS_OUT,
+                source            = SOURCE,
+                stokes            = STOKES,
+                chan_range         = CHAN_RANGE,
+                max_rows          = MAX_ROWS_SOLVE,
+                smooth_window     = SMOOTH_WINDOW,
+                min_baselines     = MIN_BASELINES,
+                flag_table_path   = active_disk if active_disk else None,
+                flag_table        = [ft_new],
+                flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
+                iteration_tag     = _refit_tag,
+                dry_run           = not _write_refit,
+                elevation_min_deg = SOLVE_ELEVATION_MIN_DEG,
+                elevation_max_deg = SOLVE_ELEVATION_MAX_DEG,
+                uvrange_m         = SOLVE_UVRANGE_M,
+                uvrange_klambda   = SOLVE_UVRANGE_KLAMBDA,
+                timerange         = SOLVE_TIMERANGE,
+            )
+            bandpass_sol_after = final_bp['solution']
+            _after_label = _refit_tag
+            if _write_refit:
+                log.info('Refitted bandpass written to %s', BANDPASS_OUT)
+            else:
+                log.info('Refitted bandpass used for AFTER plots only '
+                         '(add --write-refit to persist to disk)')
+        except (ValueError, RuntimeError) as _refit_exc:
+            log.warning(
+                'Refit bandpass solve FAILED (%s: %s). '
+                'The clustering flags are too aggressive — all rows were removed '
+                'after applying active flags + new clustering flags. '
+                'AFTER plots will use the saved Phase-1 bandpass instead. '
+                'Raise CLUSTERING_THRESHOLD_JY before using --refit.',
+                type(_refit_exc).__name__, _refit_exc,
+            )
+            bandpass_sol_after = bandpass_sol
+            _after_label = 'saved bandpass (refit failed — over-flagged)'
     else:
         bandpass_sol_after = bandpass_sol
         _after_label = 'saved bandpass (no refit)'

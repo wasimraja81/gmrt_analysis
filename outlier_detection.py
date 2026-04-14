@@ -380,8 +380,18 @@ def build_bad_mask(
     -------
     boolean ndarray of shape (nrows,).
     """
-    bad = (tq > threshold_jy) | (~np.isfinite(tq))   # (nrows, 1)
+    # NaN in tq means the cell has no valid measurement (natively FITS-flagged,
+    # or gained out).  Treat these as absent — do NOT count them as outliers.
+    # numpy comparisons against NaN return False, so (tq > threshold_jy) already
+    # ignores NaN safely.  The old (~np.isfinite(tq)) term was intended to catch
+    # computation failures, but after vis_complex NaN-propagation it fires on
+    # every natively-flagged cell, inflating bad-row counts and driving spurious
+    # whole-antenna cluster flags.
+    bad = (tq > threshold_jy)                          # (nrows, 1); NaN → False
     if threshold_low is not None:
+        # (tq < threshold_low) also returns False for NaN, so dead-correlator
+        # zeros (now NaN after load_vis fix) are no longer caught here.
+        # Use threshold_low_jy only for genuinely measured near-zero amplitudes.
         bad = bad | (tq < threshold_low)
     return bad.any(axis=1)                             # (nrows,)
 
