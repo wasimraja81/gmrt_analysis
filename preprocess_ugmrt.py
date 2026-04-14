@@ -139,22 +139,36 @@ _CONFIG_KEYS = (
 )
 
 
-def _data_coverage_summary(index, cumulative_flag_table):
-    """Return a log string summarising the flagging impact on data coverage."""
-    n_ants = len(index.get('antennas', []))
-    n_baselines_total = n_ants * max(0, n_ants - 1) // 2
+def _data_coverage_summary(index, cumulative_flag_table,
+                           n_obs_active_bls=None, n_obs_active_ants=None):
+    """Return a log string summarising the flagging impact on data coverage.
+
+    Uses observed unique (ant1,ant2) pairs from the most recent bandpass
+    solve (``n_obs_active_bls``, ``n_obs_active_ants``) when available.
+    Falls back to the DUD-corrected ``active_antennas`` count from the index
+    (better than the raw antenna-table count which includes dead hardware).
+    """
+    # Denominator: observed > DUD-corrected theoretical > raw theoretical
+    active_ants = index.get('active_antennas', index.get('antennas', []))
+    n_ants_theory = len(active_ants)
+    n_bls_theory  = n_ants_theory * max(0, n_ants_theory - 1) // 2
+
+    n_ants_denom = n_obs_active_ants if n_obs_active_ants is not None else n_ants_theory
+    n_bls_denom  = n_obs_active_bls  if n_obs_active_bls  is not None else n_bls_theory
+    obs_label = '' if n_obs_active_bls is not None else ' (est.)'
+
     flagged_ants  = list(cumulative_flag_table.get('bad_antennas', []))
     flagged_bases = list(cumulative_flag_table.get('bad_baselines', []))
     n_fa = len(flagged_ants)
     n_fb = len(flagged_bases)
-    n_rem_ants = n_ants - n_fa
+    n_rem_ants = n_ants_denom - n_fa
     n_eff_rem  = n_rem_ants * max(0, n_rem_ants - 1) // 2 - n_fb
-    frac = n_eff_rem / max(1, n_baselines_total)
+    frac = n_eff_rem / max(1, n_bls_denom)
     warn = '  *** WARNING: >50% baselines affected — solutions may be unreliable ***' if frac < 0.5 else ''
     return (
-        f'  Coverage: {n_fa}/{n_ants} antennas flagged {flagged_ants or "—"} | '
+        f'  Coverage: {n_fa}/{n_ants_denom} antennas flagged {flagged_ants or "—"} | '
         f'{n_fb} explicit baseline flags | '
-        f'≈{n_eff_rem}/{n_baselines_total} baselines remain ({frac*100:.0f}%)'
+        f'≈{n_eff_rem}/{n_bls_denom}{obs_label} baselines remain ({frac*100:.0f}%)'
         + (f'\n{warn}' if warn else '')
     )
 
@@ -713,7 +727,12 @@ def run_manual(args):
                 for ft in accepted_flags:
                     _cum_ft.setdefault('bad_antennas', []).extend(ft.get('bad_antennas', []))
                     _cum_ft.setdefault('bad_baselines', []).extend(ft.get('bad_baselines', []))
-                log.info(_data_coverage_summary(index, _cum_ft))
+                _sol = (bandpass_run or {}).get('solution', {})
+                log.info(_data_coverage_summary(
+                    index, _cum_ft,
+                    n_obs_active_bls=_sol.get('obs_active_baselines'),
+                    n_obs_active_ants=_sol.get('obs_active_antennas'),
+                ))
                 if not dry_run:
                     q.update_flag_table(
                         FLAG_TABLE_SESSION,
@@ -995,8 +1014,13 @@ def run_auto(args):
         )
     # Final data coverage summary
     _final_ft = result.get('last_flag_update', {}).get('flag_table', {})
+    _last_sol = (result.get('last_bandpass_run') or {}).get('solution', {})
     if _index and _final_ft:
-        log.info(_data_coverage_summary(_index, _final_ft))
+        log.info(_data_coverage_summary(
+            _index, _final_ft,
+            n_obs_active_bls=_last_sol.get('obs_active_baselines'),
+            n_obs_active_ants=_last_sol.get('obs_active_antennas'),
+        ))
     log.info('Iterations executed : %d  (of %d requested)', len(result['history']), args.n_iters)
     log.info('Stop reason         : %s', result.get('stop_reason', 'unknown'))
 

@@ -3481,6 +3481,14 @@ def derive_point_source_bandpass(
         elevation_max_deg=elevation_max_deg,
     )
 
+    # Observed active baselines/antennas: computed BEFORE flag-table row drops
+    # so this is the true denominator for all flagging-fraction statistics.
+    # (DUD antennas have no rows in FITS, so they naturally drop out here.)
+    _obs_ant1 = np.asarray(vis['ant1'], dtype=np.int32)
+    _obs_ant2 = np.asarray(vis['ant2'], dtype=np.int32)
+    _obs_active_bls  = len(set(zip(_obs_ant1.tolist(), _obs_ant2.tolist())))
+    _obs_active_ants = len(set(_obs_ant1.tolist()) | set(_obs_ant2.tolist()))
+
     antenna_name_map = {
         int(item['antenna_no']): (item.get('name') or f'Ant{int(item["antenna_no"])}')
         for item in index.get('antennas', [])
@@ -3652,6 +3660,9 @@ def derive_point_source_bandpass(
         'excluded_baseline_pairs': np.asarray(flag_stats.get('excluded_baseline_pairs', []), dtype=np.int32).reshape(-1, 2),
         'solve_input_rows': int(flag_stats.get('kept_rows', vis.get('nrows', 0))),
         'solve_dropped_rows_by_flag_table': int(flag_stats.get('dropped_rows', 0)),
+        # Observed counts (from raw vis before flag-table row drops):
+        'obs_active_baselines': _obs_active_bls,
+        'obs_active_antennas':  _obs_active_ants,
         'bad_data_policy': (
             'Ignored non-finite samples, zero-or-negative FITS weights, optional autos, '
             'and channels with insufficient surviving baselines. Optional flag-table exclusions '
