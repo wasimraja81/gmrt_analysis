@@ -97,6 +97,7 @@ LOG_LEVEL = 'INFO'
 RUN_FINAL_CLUSTERING                     = False
 CLUSTERING_CORR                          = 'V'
 CLUSTERING_THRESHOLD_JY                  = 5.0
+CLUSTERING_THRESHOLD_LOW_JY              = None   # e.g. {'RR': 0.5, 'LL': 0.5} to catch dead antennas
 CLUSTERING_MIN_CLUSTER_FRACTION          = 0.80
 CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT = 3
 CLUSTERING_MIN_BURST_BASELINE_FRACTION   = 0.50
@@ -129,6 +130,7 @@ _CONFIG_KEYS = (
     'RUN_ITER0_DIAGNOSTIC',
     'LOG_LEVEL',
     'RUN_FINAL_CLUSTERING', 'CLUSTERING_CORR', 'CLUSTERING_THRESHOLD_JY',
+    'CLUSTERING_THRESHOLD_LOW_JY',
     'CLUSTERING_MIN_CLUSTER_FRACTION', 'CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT',
     'CLUSTERING_MIN_BURST_BASELINE_FRACTION', 'CLUSTERING_WHOLE_SCAN_BAD_FRACTION',
     'CLUSTERING_PER_SCAN_ANT_FRACTION', 'CLUSTERING_PER_SCAN_ANT_BL_FRACTION',
@@ -764,7 +766,13 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
     }
 
     # ── Load vis (final accumulated flags applied) ──────────────────────────
-    needed_stokes = list(od._CORR_STOKES_NEEDED[CLUSTERING_CORR])
+    # Build union of needed Stokes from all requested corrs
+    _corr_list = [CLUSTERING_CORR] if isinstance(CLUSTERING_CORR, str) else list(CLUSTERING_CORR)
+    needed_stokes: list = []
+    for _c in _corr_list:
+        for _s in od._CORR_STOKES_NEEDED[_c]:
+            if _s not in needed_stokes:
+                needed_stokes.append(_s)
     log.info('[final-clustering] Loading vis for %s (stokes=%s) ...', SOURCE, needed_stokes)
     vis_raw = q.load_vis_for_source(
         index,
@@ -794,6 +802,7 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
         ant_name_map,
         corr                            = CLUSTERING_CORR,
         threshold_jy                    = CLUSTERING_THRESHOLD_JY,
+        threshold_low_jy                = CLUSTERING_THRESHOLD_LOW_JY,
         min_cluster_fraction            = CLUSTERING_MIN_CLUSTER_FRACTION,
         min_distinct_baselines_for_ant  = CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT,
         min_burst_baseline_fraction     = CLUSTERING_MIN_BURST_BASELINE_FRACTION,

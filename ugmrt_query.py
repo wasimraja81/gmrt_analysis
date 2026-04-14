@@ -5363,6 +5363,7 @@ def compute_stokes_vis(
     vis: dict,
     solution: dict,
     output_stokes: str = 'V',
+    signed: bool = False,
 ) -> dict:
     """Apply bandpass and return a vis-like dict for a derived Stokes parameter.
 
@@ -5391,6 +5392,13 @@ def compute_stokes_vis(
         Bandpass solution dict as returned by ``derive_bandpass_iteration``.
     output_stokes : str
         One of 'I', 'Q', 'U', 'V'.
+    signed : bool
+        If *True*, the ``amp`` field in the returned dict contains
+        Re(out_complex) rather than |out_complex|.  Useful for Stokes-V plots
+        where the sign of (RR−LL)/2 carries physical meaning (positive =
+        right-hand excess, negative = left-hand excess) and RFI appears as
+        large *absolute* deviations from zero.  Detection is always performed
+        on |V|, so this only affects plotting.  Default *False*.
 
     Returns
     -------
@@ -5481,7 +5489,7 @@ def compute_stokes_vis(
             f'Cannot determine polarisation basis from correlations {labels}; '
             f'expected circular (RR/LL/RL/LR) or linear (XX/YY/XY/YX).')
 
-    out_amp   = np.abs(out_cplx)[:, :, np.newaxis].astype(np.float32)
+    out_amp   = (out_cplx.real if signed else np.abs(out_cplx))[:, :, np.newaxis].astype(np.float32)
     out_phase = np.degrees(np.angle(out_cplx))[:, :, np.newaxis].astype(np.float32)
 
     return {**vis,
@@ -6011,6 +6019,7 @@ def plot_vis_amp_vs_uvdist(
     nbins=80,
     save_path=None,
     hline_jy=None,
+    signed=False,
 ):
     """Amplitude (and optionally phase) vs UV distance with optional model fit.
 
@@ -6101,13 +6110,18 @@ def plot_vis_amp_vs_uvdist(
         amp_flat = amp[:, :, pi].ravel()
         ax_amp.scatter(uvd_broad, amp_flat, s=0.3, alpha=alpha,
                        rasterized=True, color=f'C{pi}')
-        ax_amp.set_ylabel(f'{label}\nAmp')
+        ax_amp.set_ylabel(f'{label}\n{"Re(V)" if signed else "Amp"}')
         if amp_ylim is not None:
             ax_amp.set_ylim(*amp_ylim)
         ax_amp.grid(True, alpha=0.3)
         if hline_jy is not None:
-            ax_amp.axhline(hline_jy, color='red', lw=1.5, ls='--', alpha=0.8,
-                           label=f'flag threshold = {hline_jy} Jy')
+            if signed:
+                ax_amp.axhline(+hline_jy, color='red', lw=1.5, ls='--', alpha=0.8,
+                               label=f'flag threshold = \u00b1{hline_jy} Jy')
+                ax_amp.axhline(-hline_jy, color='red', lw=1.5, ls='--', alpha=0.8)
+            else:
+                ax_amp.axhline(hline_jy, color='red', lw=1.5, ls='--', alpha=0.8,
+                               label=f'flag threshold = {hline_jy} Jy')
             ax_amp.legend(fontsize=8, loc='upper right')
 
         # --- envelope fit -------------------------------------------------

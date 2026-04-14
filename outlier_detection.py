@@ -77,7 +77,7 @@ import sys
 import json
 import warnings
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -360,6 +360,7 @@ def compute_test_quantity(
 def build_bad_mask(
     tq: np.ndarray,
     threshold_jy: float,
+    threshold_low: Optional[float] = None,
 ) -> np.ndarray:
     """Return a boolean row mask for a single-channel test-quantity slice.
 
@@ -369,12 +370,19 @@ def build_bad_mask(
         Single-channel slice from :func:`compute_test_quantity`.
     threshold_jy : float
         Flag a row if the test quantity exceeds this value for the channel.
+    threshold_low : float or None
+        If given, also flag rows whose test quantity falls *below* this value.
+        Useful for catching dead antennas with anomalously low power on RR/LL
+        correlations.  Has no meaningful use for Stokes-V (which is ~0 for
+        clean data).  Default is ``None`` (no lower-bound clip).
 
     Returns
     -------
     boolean ndarray of shape (nrows,).
     """
     bad = (tq > threshold_jy) | (~np.isfinite(tq))   # (nrows, 1)
+    if threshold_low is not None:
+        bad = bad | (tq < threshold_low)
     return bad.any(axis=1)                             # (nrows,)
 
 
@@ -1448,12 +1456,85 @@ def _build_chan_aware_proposals(
     }
 
 
+def _merge_flag_tables_in_memory(ft_a: dict, ft_b: dict, notes: str = '') -> dict:
+    """Merge two in-memory flag tables, unioning all six v2 sections.
+
+    This is the in-memory equivalent of
+    :func:`ugmrt_query.merge_flag_table_into_file`.  It is used by
+    :func:`run_clustering_detection` to union flag tables produced by
+    independent per-corr detection runs.
+    """
+    # ── Wholesale antennas: union with dedup by name ──────────────────────
+    seen_ants: set = set()
+    merged_ants: list = []
+    for ant in list(ft_a.get('bad_antennas', [])) + list(ft_b.get('bad_antennas', [])):
+        key = str(ant).strip().upper()
+        if key not in seen_ants:
+            seen_ants.add(key)
+            merged_ants.append(ant)
+
+    # ── Wholesale baselines: union with dedup by sorted name pair ─────────
+    seen_bls: set = set()
+    merged_bls: list = []
+    for bl in list(ft_a.get('bad_baselines', [])) + list(ft_b.get('bad_baselines', [])):
+        if isinstance(bl, (list, tuple)) and len(bl) == 2:
+            key = tuple(sorted([str(bl[0]).strip().upper(), str(bl[1]).strip().upper()]))
+        else:
+            key = str(bl)
+        if key not in seen_bls:
+            seen_bls.add(key)
+            merged_bls.append(bl)
+
+    # ── Time-range dicts: merge per key; append new entries ───────────────
+    def _merge_tr_dict(section_key: str) -> dict:
+        old_d: dict = dict(ft_a.get(section_key, {}))
+        new_d: dict = dict(ft_b.get(section_key, {}))
+        for coord_key, new_entries in new_d.items():
+            if coord_key not in old_d:
+                old_d[coord_key] = list(new_entries)
+            else:
+                old_d[coord_key] = list(old_d[coord_key]) + list(new_entries)
+        return old_d
+
+    # ── Scan / burst timeranges: union by string key ──────────────────────
+    def _merge_tr_list(section_key: str) -> list:
+        old_l = [tuple(str(t) for t in x) for x in ft_a.get(section_key, [])]
+        new_l = [tuple(str(t) for t in x) for x in ft_b.get(section_key, [])]
+        seen: set = set(old_l)
+        merged_out: list = list(ft_a.get(section_key, []))
+        for item, key in zip(ft_b.get(section_key, []), new_l):
+            if key not in seen:
+                seen.add(key)
+                merged_out.append(item)
+        return merged_out
+
+    all_notes = ' | '.join(filter(None, [
+        str(ft_a.get('notes', '')).strip(),
+        str(ft_b.get('notes', '')).strip(),
+        notes,
+    ]))
+
+    return {
+        'kind':    'ugmrt_flag_table',
+        'version': 2,
+        'source':  ft_b.get('source', ft_a.get('source', '')),
+        'notes':   all_notes,
+        'bad_antennas':            merged_ants,
+        'bad_baselines':           merged_bls,
+        'bad_antenna_timeranges':  _merge_tr_dict('bad_antenna_timeranges'),
+        'bad_baseline_timeranges': _merge_tr_dict('bad_baseline_timeranges'),
+        'bad_scan_timeranges':     _merge_tr_list('bad_scan_timeranges'),
+        'bad_burst_timeranges':    _merge_tr_list('bad_burst_timeranges'),
+    }
+
+
 def run_clustering_detection(
     vis_corr:    dict,
     ant_name_map: dict,
     *,
-    corr:                            str            = 'V',
-    threshold_jy:                    float          = 5.0,
+    corr:                            Union[str, List[str]]                   = 'V',
+    threshold_jy:                    Union[float, Dict[str, float]]          = 5.0,
+    threshold_low_jy:                Union[float, Dict[str, float], None]   = None,
     min_cluster_fraction:            float          = 0.80,
     min_distinct_baselines_for_ant:  int            = 3,
     min_burst_baseline_fraction:     float          = 0.50,
@@ -1481,23 +1562,37 @@ def run_clustering_detection(
     ant_name_map : dict
         Mapping ``{antenna_id: antenna_name}`` used to name flag entries.
         Typically built from ``row_index['antennas']``.
-    corr : str
-        Correlator product for the test statistic (same options as
-        ``DETECTION_CORR`` in the CONFIG block).  Default ``'V'``.
-    threshold_jy : float
-        Rows whose test statistic exceeds this value are marked bad.
+    corr : str or list of str
+        Correlator product(s) for the test statistic.  A single string (e.g.
+        ``'V'``) reproduces the original single-corr behaviour.  A list (e.g.
+        ``['V', 'RR', 'LL']``) runs detection independently per corr and
+        unions the resulting flag tables before returning.
+    threshold_jy : float or dict
+        Upper flag threshold.  A scalar applies the same value to all corrs.
+        A dict (e.g. ``{'V': 8.0, 'RR': 500.0}``) sets per-corr thresholds;
+        missing corrs fall back to 5.0 Jy.
+    threshold_low_jy : float, dict, or None
+        Lower flag threshold.  Rows whose test quantity falls *below* this
+        value are also flagged.  Useful for catching dead antennas via
+        anomalously low RR/LL power.  Not meaningful for Stokes-V.  Same
+        scalar/dict/None semantics as *threshold_jy*.
     verbose : bool
         Print per-channel progress and final summary.
 
     Returns
     -------
     dict with keys:
-        ``'flag_table'``          — merged ``ugmrt_flag_table`` dict, compatible
-                                    with ``q.apply_flag_tables_to_vis`` and
+        ``'flag_table'``          — merged ``ugmrt_flag_table`` dict (union
+                                    across all corrs), compatible with
+                                    ``q.apply_flag_tables_to_vis`` and
                                     ``q.save_flag_table``.
-        ``'per_chan_proposals'``  — list of raw per-channel proposal dicts.
+        ``'per_chan_proposals'``  — per-channel proposals for the first corr
+                                    (backward-compatible).
         ``'n_channels'``         — number of channels processed.
-        ``'n_bad_channels'``     — channels that produced at least one flag.
+        ``'n_bad_channels'``     — channels where at least one corr flagged.
+        ``'per_corr_results'``   — dict keyed by corr with full per-corr
+                                    breakdown (flag_table, per_chan_proposals,
+                                    n_bad_channels).
 
     Notes
     -----
@@ -1507,96 +1602,156 @@ def run_clustering_detection(
     contiguous block of channels the flag applies to.  Wholesale
     ``bad_antennas`` / ``bad_baselines`` entries (bad fraction >=
     *min_cluster_fraction*) are still all-channel since they are considered
-    pervasively bad.  Time-range entries are channel-selective: flagging e.g.
-    baseline C00-C01 only in channels 64-80 during a specific time window
-    leaves the other channels and the rest of the time unflagged.
+    pervasively bad.  Time-range entries are channel-selective.
     """
-    if corr not in _CORR_STOKES_NEEDED:
-        raise ValueError(
-            f"Unknown corr '{corr}'. "
-            f"Supported values: {sorted(_CORR_STOKES_NEEDED)}"
-        )
+    # ── Normalise corr and thresholds to lists / dicts ────────────────────
+    if isinstance(corr, str):
+        corr_list: List[str] = [corr]
+    else:
+        corr_list = list(corr)
+    for _c in corr_list:
+        if _c not in _CORR_STOKES_NEEDED:
+            raise ValueError(
+                f"Unknown corr '{_c}'. "
+                f"Supported values: {sorted(_CORR_STOKES_NEEDED)}"
+            )
 
-    test_quantity_arr = compute_test_quantity(vis_corr, corr)
-    nrows, nchans = test_quantity_arr.shape
+    if isinstance(threshold_jy, (int, float)):
+        thr_high: Dict[str, float] = {_c: float(threshold_jy) for _c in corr_list}
+    else:
+        thr_high = {_c: float(threshold_jy.get(_c, 5.0)) for _c in corr_list}
 
-    # Absolute (0-based FITS) channel indices for this vis load.
-    # Used to annotate per-channel flag entries with their channel coordinate.
+    if threshold_low_jy is None:
+        thr_low: Dict[str, Optional[float]] = {_c: None for _c in corr_list}
+    elif isinstance(threshold_low_jy, (int, float)):
+        thr_low = {_c: float(threshold_low_jy) for _c in corr_list}
+    else:
+        thr_low = {
+            _c: (float(threshold_low_jy[_c]) if _c in threshold_low_jy else None)
+            for _c in corr_list
+        }
+
+    # ── Shared channel meta (identical across corrs from same vis_corr) ───
     _raw_ci = vis_corr.get('chan_indices')
+    _tq_tmp = compute_test_quantity(vis_corr, corr_list[0])
+    nrows, nchans = _tq_tmp.shape
+    del _tq_tmp
     if _raw_ci is not None:
-        chan_indices: List[int] = [int(c) for c in _raw_ci]
+        chan_indices: List[int] = [int(_c) for _c in _raw_ci]
     else:
         chan_indices = list(range(nchans))
-
-    if verbose:
-        print(f'[clustering] corr={corr}  thr={threshold_jy} Jy  '
-              f'{nchans} channel(s)  chans={chan_indices[0]}-{chan_indices[-1]}  '
-              f'{nrows:,} rows')
-
-    per_chan_proposals: List[dict] = []
-    for c_local in range(nchans):
-        tq_chan  = test_quantity_arr[:, c_local:c_local + 1]
-        bad_mask = build_bad_mask(tq_chan, threshold_jy)
-
-        proposal = cluster_flags(
-            vis_corr,
-            bad_mask,
-            ant_name_map,
-            min_cluster_fraction,
-            min_distinct_baselines_for_ant,
-            min_burst_baseline_fraction,
-            max_gap_minutes,
-            scan_gap_minutes,
-            whole_scan_bad_fraction  = whole_scan_bad_fraction,
-            per_scan_ant_fraction    = per_scan_ant_fraction,
-            per_scan_ant_bl_fraction = per_scan_ant_bl_fraction,
-            baseline_max_bad_samples = baseline_max_bad_samples,
-            max_gap_samples          = max_gap_samples,
-        )
-        per_chan_proposals.append(proposal)
-
-        if verbose and nchans > 1:
-            n_a = len(proposal['bad_antennas'])
-            n_b = len(proposal['bad_baselines'])
-            print(f'\r  chan {c_local+1:>3d}/{nchans}: '
-                  f'{int(bad_mask.sum()):,}/{nrows:,} bad rows  '
-                  f'→ {n_a} ant(s) {n_b} bl(s)    ',
-                  end='', flush=True)
-
-    if verbose and nchans > 1:
-        print()   # newline after \r progress
-
-    merged = _build_chan_aware_proposals(per_chan_proposals, chan_indices, max_gap_minutes)
 
     obs_jd_start_ = obs_jd_start if obs_jd_start is not None else float(vis_corr['jd'].min())
     obs_jd_end_   = obs_jd_end   if obs_jd_end   is not None else float(vis_corr['jd'].max())
 
-    flag_table = build_output_flag_table(
-        merged,
-        source = source,
-        notes  = (f'run_clustering_detection; corr={corr}; thr={threshold_jy} Jy; '
-                  f'{nchans} channel(s) chans={chan_indices[0]}-{chan_indices[-1]}'),
-        obs_jd_start      = obs_jd_start_,
-        obs_jd_end        = obs_jd_end_,
-        elevation_min_deg = elevation_min_deg,
-    )
+    # ── Run per-corr detection; union flag tables across corrs ────────────
+    combined_ft:     Optional[dict]      = None
+    primary_per_chan: Optional[List[dict]] = None
+    per_corr_results: Dict[str, dict]    = {}
 
+    for _c in corr_list:
+        _thr_h = thr_high[_c]
+        _thr_l = thr_low[_c]
+        tq_arr = compute_test_quantity(vis_corr, _c)
+
+        if verbose:
+            _low_str = f'  low={_thr_l} Jy' if _thr_l is not None else ''
+            print(f'[clustering] corr={_c}  thr={_thr_h} Jy{_low_str}  '
+                  f'{nchans} channel(s)  chans={chan_indices[0]}-{chan_indices[-1]}  '
+                  f'{nrows:,} rows')
+
+        per_chan_proposals: List[dict] = []
+        for c_local in range(nchans):
+            tq_chan  = tq_arr[:, c_local:c_local + 1]
+            bad_mask = build_bad_mask(tq_chan, _thr_h, threshold_low=_thr_l)
+
+            proposal = cluster_flags(
+                vis_corr,
+                bad_mask,
+                ant_name_map,
+                min_cluster_fraction,
+                min_distinct_baselines_for_ant,
+                min_burst_baseline_fraction,
+                max_gap_minutes,
+                scan_gap_minutes,
+                whole_scan_bad_fraction  = whole_scan_bad_fraction,
+                per_scan_ant_fraction    = per_scan_ant_fraction,
+                per_scan_ant_bl_fraction = per_scan_ant_bl_fraction,
+                baseline_max_bad_samples = baseline_max_bad_samples,
+                max_gap_samples          = max_gap_samples,
+            )
+            per_chan_proposals.append(proposal)
+
+            if verbose and nchans > 1:
+                n_a = len(proposal['bad_antennas'])
+                n_b = len(proposal['bad_baselines'])
+                print(f'\r  chan {c_local+1:>3d}/{nchans}: '
+                      f'{int(bad_mask.sum()):,}/{nrows:,} bad rows  '
+                      f'→ {n_a} ant(s) {n_b} bl(s)    ',
+                      end='', flush=True)
+
+        if verbose and nchans > 1:
+            print()   # newline after \r progress
+
+        merged = _build_chan_aware_proposals(per_chan_proposals, chan_indices, max_gap_minutes)
+
+        _notes = (
+            f'run_clustering_detection; corr={_c}; thr={_thr_h} Jy'
+            + (f'/low={_thr_l} Jy' if _thr_l is not None else '')
+            + f'; {nchans} channel(s) chans={chan_indices[0]}-{chan_indices[-1]}'
+        )
+        ft = build_output_flag_table(
+            merged,
+            source            = source,
+            notes             = _notes,
+            obs_jd_start      = obs_jd_start_,
+            obs_jd_end        = obs_jd_end_,
+            elevation_min_deg = elevation_min_deg,
+        )
+
+        n_bad_c = sum(
+            1 for p in per_chan_proposals
+            if p['bad_antennas'] or p['bad_baselines']
+        )
+        per_corr_results[_c] = {
+            'flag_table':         ft,
+            'per_chan_proposals':  per_chan_proposals,
+            'n_bad_channels':     n_bad_c,
+        }
+        if primary_per_chan is None:
+            primary_per_chan = per_chan_proposals
+        combined_ft = ft if combined_ft is None else _merge_flag_tables_in_memory(combined_ft, ft)
+
+        if verbose:
+            print(f'[clustering] {_c}: '
+                  f'{len(merged["bad_antennas"])} antenna(s) flagged, '
+                  f'{len(merged["bad_baselines"])} baseline(s) flagged '
+                  f'(from {n_bad_c}/{nchans} active channels)')
+
+    # ── Summary n_bad_channels: any corr flagged in that channel ─────────
     n_bad_chans = sum(
-        1 for p in per_chan_proposals
-        if p['bad_antennas'] or p['bad_baselines']
+        1 for ci in range(nchans)
+        if any(
+            per_corr_results[_c]['per_chan_proposals'][ci]['bad_antennas']
+            or per_corr_results[_c]['per_chan_proposals'][ci]['bad_baselines']
+            for _c in corr_list
+        )
     )
 
-    if verbose:
-        print(f'[clustering] merged result: '
-              f'{len(merged["bad_antennas"])} antenna(s) flagged, '
-              f'{len(merged["bad_baselines"])} baseline(s) flagged '
+    if verbose and len(corr_list) > 1:
+        _comb_ants  = combined_ft.get('bad_antennas', [])
+        _comb_bases = combined_ft.get('bad_baselines', [])
+        print(f'[clustering] combined {corr_list}: '
+              f'{len(_comb_ants)} antenna(s) flagged, '
+              f'{len(_comb_bases)} baseline(s) flagged '
               f'(from {n_bad_chans}/{nchans} active channels)')
 
     return {
-        'flag_table':          flag_table,
-        'per_chan_proposals':  per_chan_proposals,
-        'n_channels':          nchans,
-        'n_bad_channels':      n_bad_chans,
+        'flag_table':         combined_ft,
+        'per_chan_proposals':  primary_per_chan,
+        'n_channels':         nchans,
+        'n_bad_channels':     n_bad_chans,
+        'per_corr_results':   per_corr_results,
     }
 
 

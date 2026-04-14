@@ -96,8 +96,9 @@ INDEX_VALIDATION_MODE: str      = 'warn'
 AUTO_ITER_PREFIX: str = 'iter'
 
 # Clustering (all params mirror preprocess_ugmrt.cfg defaults)
-CLUSTERING_CORR:                           str   = 'V'
-CLUSTERING_THRESHOLD_JY:                   float = 5.0
+CLUSTERING_CORR:                           Union[str, List]   = 'V'
+CLUSTERING_THRESHOLD_JY:                   Union[float, dict] = 5.0
+CLUSTERING_THRESHOLD_LOW_JY:              Union[float, dict, None] = None
 CLUSTERING_MIN_CLUSTER_FRACTION:           float = 0.80
 CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT: int   = 3
 CLUSTERING_MIN_BURST_BASELINE_FRACTION:    float = 0.50
@@ -252,7 +253,8 @@ def main() -> None:
                  FLAG_TABLE_SESSION)
 
     log.info('Source        : %s', SOURCE)
-    log.info('CLUSTERING_CORR=%s  threshold=%.3f Jy', CLUSTERING_CORR, CLUSTERING_THRESHOLD_JY)
+    log.info('CLUSTERING_CORR=%s  threshold=%s Jy  threshold_low=%s Jy',
+             CLUSTERING_CORR, CLUSTERING_THRESHOLD_JY, CLUSTERING_THRESHOLD_LOW_JY)
 
     od = _load_outlier_detection()
 
@@ -292,7 +294,13 @@ def main() -> None:
     bandpass_sol = q.load_bandpass_solution(bp_path)
 
     # ── load vis (Phase-1 flags already on disk, applied here) ───────────────
-    needed_stokes = list(od._CORR_STOKES_NEEDED[CLUSTERING_CORR])
+    # Build union of needed Stokes from all requested corrs
+    _corr_list = [CLUSTERING_CORR] if isinstance(CLUSTERING_CORR, str) else list(CLUSTERING_CORR)
+    needed_stokes: list = []
+    for _c in _corr_list:
+        for _s in od._CORR_STOKES_NEEDED[_c]:
+            if _s not in needed_stokes:
+                needed_stokes.append(_s)
     log.info('Loading vis for %s (stokes=%s) ...', SOURCE, needed_stokes)
     vis_raw = q.load_vis_for_source(
         index,
@@ -313,13 +321,14 @@ def main() -> None:
     log.info('Vis loaded; shape=%s', vis_corr['amp'].shape)
 
     # ── run clustering detection ──────────────────────────────────────────────
-    log.info('Running per-channel clustering (corr=%s, thr=%.3f Jy) ...',
+    log.info('Running per-channel clustering (corr=%s, thr=%s Jy) ...',
              CLUSTERING_CORR, CLUSTERING_THRESHOLD_JY)
     cluster_result = od.run_clustering_detection(
         vis_corr,
         ant_name_map,
         corr                            = CLUSTERING_CORR,
         threshold_jy                    = CLUSTERING_THRESHOLD_JY,
+        threshold_low_jy                = CLUSTERING_THRESHOLD_LOW_JY,
         min_cluster_fraction            = CLUSTERING_MIN_CLUSTER_FRACTION,
         min_distinct_baselines_for_ant  = CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT,
         min_burst_baseline_fraction     = CLUSTERING_MIN_BURST_BASELINE_FRACTION,
@@ -502,11 +511,12 @@ def main() -> None:
 
     # — BEFORE (3/3): Stokes-V amp vs UV-dist (threshold line) ───────────────
     q.plot_vis_amp_vs_uvdist(
-        q.compute_stokes_vis(_vis_plot, bandpass_sol, output_stokes='V'),
+        q.compute_stokes_vis(_vis_plot, bandpass_sol, output_stokes='V', signed=True),
         title      = f'{SOURCE} Stokes-V corrected  BEFORE clustering',
         show_phase = False,
         alpha      = 0.10,
-        hline_jy   = CLUSTERING_THRESHOLD_JY,
+        hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, float) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
+        signed     = True,
     )
 
     # — AFTER (4/3): corrected amp vs UV-dist ————————————————————————————————
@@ -533,12 +543,13 @@ def main() -> None:
 
     # — AFTER (6/3): Stokes-V amp vs UV-dist (threshold line) ────────────────
     q.plot_vis_amp_vs_uvdist(
-        q.compute_stokes_vis(_vis_plot_after, bandpass_sol_after, output_stokes='V'),
+        q.compute_stokes_vis(_vis_plot_after, bandpass_sol_after, output_stokes='V', signed=True),
         title      = (f'{SOURCE} Stokes-V corrected  '
                       f'AFTER clustering  [{_after_label}]'),
         show_phase = False,
         alpha      = 0.10,
-        hline_jy   = CLUSTERING_THRESHOLD_JY,
+        hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, float) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
+        signed     = True,
         save_path  = _save(f'{_src}_clustering_stokesV_after.png'),
     )
 
