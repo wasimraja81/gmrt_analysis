@@ -338,6 +338,37 @@ def main() -> None:
     vis_corr = q.apply_bandpass_solution(vis_raw, bandpass_sol)
     log.info('Vis loaded; shape=%s', vis_corr['amp'].shape)
 
+    # ── apply existing chanrange-restricted cell flags to vis_corr ────────────
+    # apply_flag_tables_to_vis (above) only drops whole rows (bad_antennas +
+    # bad_baselines).  The bad_*_timeranges entries with chanrange fields live in
+    # the same flag tables but are 2-D (row, chan) directives invisible to
+    # vis_corr until expand_flag_table_to_mask is called here.
+    #
+    # Without this, clustering re-detects every already-flagged (row, chan) cell
+    # as a fresh outlier, grossly inflating ft_new.
+    # Lesson from design notes: apply_flag_tables_to_vis is row-only;
+    # expand_flag_table_to_mask is the 2-D layer for chanrange entries.
+    if active_disk:
+        import json as _json
+        _nrows_vc, _nchans_vc = vis_corr['vis_complex_corrected'].shape[:2]
+        _prior_mask = _np_rc.zeros((_nrows_vc, _nchans_vc), dtype=bool)
+        for _ft_path in active_disk:
+            _ft = _json.load(open(_ft_path))
+            _prior_mask |= q.expand_flag_table_to_mask(vis_raw, _ft, ant_name_map)
+        _n_prior    = int(_prior_mask.sum())
+        _n_total_vc = _nrows_vc * _nchans_vc
+        if _n_prior:
+            vis_corr['vis_complex_corrected'][_prior_mask] = _np_rc.nan + 1j * _np_rc.nan
+            vis_corr['amp_corrected'][_prior_mask]         = _np_rc.nan
+            vis_corr['phase_deg_corrected'][_prior_mask]   = _np_rc.nan
+            vis_corr['flagged_corrected'][_prior_mask]     = True
+        log.info(
+            '  Prior cell flags masked in vis_corr: %d / %d cells (%.1f%%) — '
+            '%d cells (%0.1f%%) remain clean for clustering',
+            _n_prior, _n_total_vc, 100.0 * _n_prior / max(_n_total_vc, 1),
+            _n_total_vc - _n_prior, 100.0 * (_n_total_vc - _n_prior) / max(_n_total_vc, 1),
+        )
+
     # ── run clustering detection ──────────────────────────────────────────────
     log.info('Running per-channel clustering (corr=%s, thr=%s Jy) ...',
              CLUSTERING_CORR, CLUSTERING_THRESHOLD_JY)
