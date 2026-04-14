@@ -16,6 +16,68 @@
 
 ---
 
+## Flag Array Shape & Fine-Grained Statistics
+
+### Canonical flag array shape
+
+User-defined flag directives (wholesale antennas, baselines, timerange entries
+with optional `chanrange`) all resolve to `(row, channel)` cells. Polarisation
+is never an independent flag axis — `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED=True`
+is the only supported mode, so every flag covers all corrs implicitly.
+
+```
+flag_array shape:  (nRows, nChans)  =  (57456, 128)   bool
+```
+
+The pol axis is handled by broadcasting this mask over `vis_complex`
+`(nRows, nChans, nPols)` at apply time, not by storing it.
+
+### 3-D reshape for statistics
+
+Because DUD antennas have **zero rows** (not sparse/missing entries), the
+active-baseline grid is fully regular: every integration contributes exactly
+the same `nActiveBaselines` rows in the same order. This makes a lossless
+reshape valid:
+
+```
+flags_3d shape:  (nIntegrations, nActiveBaselines, nChans)
+               = (nIntegrations, 448, 128)          for this dataset
+```
+
+All statistics are then single numpy reductions:
+
+| Statistic | Operation | Output shape |
+|---|---|---|
+| % flagged per baseline | `flags_3d.mean(axis=(0,2))` | `(nActiveBaselines,)` |
+| % flagged per channel  | `flags_3d.mean(axis=(0,1))` | `(nChans,)` |
+| % flagged per integration | `flags_3d.mean(axis=(1,2))` | `(nIntegrations,)` |
+| total % flagged | `flags_3d.mean()` | scalar |
+
+### Per-antenna statistics
+
+A row involves **two** antennas (`ant1`, `ant2`), so antenna stats cannot be
+read off a single axis. An auxiliary lookup table is required:
+
+```python
+bl_ant_table: (nActiveBaselines, 2)   # bl_ant_table[b] = (ant1_idx, ant2_idx)
+```
+
+Then for antenna `i`:
+
+```python
+bl_mask = (bl_ant_table[:, 0] == i) | (bl_ant_table[:, 1] == i)
+pct_flagged_ant_i = flags_3d[:, bl_mask, :].mean()
+```
+
+### Implication for TODO #2
+
+Once `flags_3d` exists, all Coverage/flagging-% log lines reduce to axis
+reductions on it — there is no need to track separate counters. The correct
+denominators (observed `nActiveBaselines`, `nIntegrations`, `nChans`) fall
+out automatically as dimension sizes of `flags_3d`.
+
+---
+
 ## Active Baselines — Correct Denominator
 
 - The theoretical baseline count is `nAnt × (nAnt-1) / 2`.
@@ -152,6 +214,70 @@ time in `load_vis_for_source`.
 
 When `False` support is eventually added it must be tested with a synthetic
 dataset containing deliberately asymmetric RR/LL hardware flags.
+
+---
+
+## TODO #4 — Flag Array Shape, Reshape, and Fine-Grained Statistics
+
+**Files:** wherever `apply_flag_tables_to_vis` builds or returns a flag mask;
+any logging/reporting code that reports flagging fractions.
+
+### Flag array canonical shape
+
+User-defined flag directives (wholesale antennas, baselines, timerange entries
+with optional `chanrange`) each resolve to a set of `(row, channel)` cells.
+Pols are **never** differentiated — the flag table has no per-corr field and
+`FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED=True` is the only supported mode.
+
+**Canonical shape of the materialised flag array:**
+```
+(nRows, nChans)  →  bool
+```
+For this dataset: `(57456, 128)`.
+
+This is then **broadcast across the pol axis** when applied to
+`vis_complex` which is `(57456, 128, 2)`.
+
+Do NOT give it a pol axis — doing so would silently imply per-corr
+differentiation, which is unsupported (see TODO #3).
+
+### Reshape for statistics
+
+Because DUD antennas have zero rows and the active-baseline set is fully
+regular (every integration contributes exactly `nActiveBaselines` rows in
+the same order), the flat flag array can be losslessly reshaped to:
+
+```
+flags_3d = flags.reshape(nIntegrations, nActiveBaselines, nChans)  # bool
+```
+
+For this dataset: `(N_int, N_bl, 128)` where `N_bl` = observed unique
+`(ant1,ant2)` pairs (see TODO #2).
+
+### Fine-grained statistics via axis reductions
+
+`flags_3d` is boolean: `True=1, False=0`. `.mean()` along any axis gives
+the flagging *fraction* (multiply ×100 for percentage). All reductions are
+O(1) numpy operations on the already-materialised array:
+
+| Statistic | Expression | Output shape |
+|---|---|---|
+| % flagged per baseline | `flags_3d.mean(axis=(0,2)) * 100` | `(nActiveBaselines,)` |
+| % flagged per channel | `flags_3d.mean(axis=(0,1)) * 100` | `(nChans,)` |
+| % flagged per integration | `flags_3d.mean(axis=(1,2)) * 100` | `(nIntegrations,)` |
+| total % flagged | `flags_3d.mean() * 100` | scalar |
+
+**Per-antenna** requires a companion lookup table built once after loading:
+```python
+bl_ant_table  # shape (nActiveBaselines, 2)  — columns: ant1_idx, ant2_idx
+# % flagged for antenna i:
+bl_mask = (bl_ant_table[:, 0] == i) | (bl_ant_table[:, 1] == i)
+pct_ant_i = flags_3d[:, bl_mask, :].mean() * 100
+```
+
+This replaces all current ad-hoc flagging-fraction counters scattered across
+`run_clustering.py` and `preprocess_ugmrt.py` with a single materialised
+boolean array plus the five reductions above.
 
 ---
 
