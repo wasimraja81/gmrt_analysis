@@ -101,6 +101,60 @@ FITS antenna table. This overcounts when DUD antennas are present.
 
 ---
 
+## TODO #3 — Verify & Wire `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED` End-to-End
+
+**Files:** `ugmrt_query.py`, `run_clustering.py`, `preprocess_ugmrt.py`,
+`patch_thresholds.py`, `apply_flag_tables_to_vis` (wherever called).
+
+### Current state
+
+`FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED` is a config variable that controls
+whether natively-FITS-flagged samples are symmetrised across all correlations
+at load time. **Only `True` is supported.** Every production entry point
+hard-codes `True`:
+
+- `run_clustering.py` line 80: `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED: bool = True`
+- `preprocess_ugmrt.cfg` line 66: `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED = True`
+- `patch_thresholds.py` line 86: `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED = True`
+
+The underlying function signatures default to `False` (e.g. `ugmrt_query.py`
+lines 2171, 3446, 3849, 4856) — that default is **never** exercised in any
+real pipeline run. The `False` code path is untested and unsupported.
+
+### Step 1 — Verify the current `True` behaviour (must be done first)
+
+Before any refactor, confirm:
+1. When `True`, every natively-FITS-flagged sample is symmetrised to **all**
+   correlations (RR+LL) in `load_vis_for_source` at the `flagged` array union
+   step (~line 2399 of `ugmrt_query.py`).
+2. Flags written to the JSON flag table (`bad_antennas`, `bad_baselines`,
+   `bad_antenna_timeranges`, etc.) carry **no per-corr field**, so
+   `apply_flag_tables_to_vis` applies them to all corrs implicitly — confirm
+   this holds regardless of the `flag_all_corrs_if_any_rawvis_flagged` setting.
+3. Outlier detection (`compute_test_quantity`, `build_bad_mask`) runs on data
+   already symmetrised by `load_vis_for_source`, so JSON flags produced are
+   inherently all-corr — confirm no code path allows a corr-specific outlier
+   decision to escape into a flag-table entry.
+
+### Step 2 — WISHLIST: wire consistently end-to-end
+
+Ultimately `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED` should be a single
+authoritative switch, honoured consistently for **both**:
+
+1. **Native FITS flags** — symmetrisation at load time (current usage).
+2. **Clustering-detected outlier flags** written to the flag table.
+
+For case 2: once TODO #1 (chanrange-restricted entries) is implemented,
+ensure new `chanrange`-qualified entries still carry no per-corr field (the
+flag table schema must remain all-corr). The variable should be read at
+flag-application time in `apply_flag_tables_to_vis`, not only at load-parse
+time in `load_vis_for_source`.
+
+When `False` support is eventually added it must be tested with a synthetic
+dataset containing deliberately asymmetric RR/LL hardware flags.
+
+---
+
 ## Key Principle
 
 > A flag should only remove data at the **(baseline, channel, time)** coordinates
