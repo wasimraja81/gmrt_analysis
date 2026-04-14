@@ -653,6 +653,10 @@ def run_manual(args):
         index = step_1_index(q)
 
     for iter_num, iter_tag in enumerate(tags, 1):
+        # Refresh FLAG_TABLE_PATHS so that FLAG_TABLE_SESSION created or
+        # updated by the previous iteration is automatically included in
+        # the current solve without requiring a script restart.
+        _rederive_source_paths()
         if n_iters > 1:
             log.info('═' * 60)
             log.info('  Iteration %d / %d : %s', iter_num, n_iters, iter_tag)
@@ -812,16 +816,41 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
     log.info('[final-clustering] New flags — antennas: %s  baselines: %s',
              new_ants or '—', [f'{b[0]}-{b[1]}' for b in new_bases] or '—')
 
-    # ── Persist to FLAG_TABLE_SESSION ───────────────────────────────────────
-    if not dry_run and (new_ants or new_bases):
-        q.update_flag_table(
+    # ── Persist to FLAG_TABLE_SESSION — ALL six flag-table sections ──────────
+    # merge_flag_table_into_file merges bad_antennas, bad_baselines,
+    # bad_antenna_timeranges, bad_baseline_timeranges, bad_scan_timeranges,
+    # and bad_burst_timeranges into the session file, preserving flags
+    # written by earlier iterations.  Unlike update_flag_table this does
+    # NOT silently discard the chanrange-annotated per-channel entries
+    # produced by run_clustering_detection.
+    _has_any_flags = (
+        ft.get('bad_antennas')
+        or ft.get('bad_baselines')
+        or ft.get('bad_antenna_timeranges')
+        or ft.get('bad_baseline_timeranges')
+        or ft.get('bad_scan_timeranges')
+        or ft.get('bad_burst_timeranges')
+    )
+    if not dry_run and _has_any_flags:
+        q.merge_flag_table_into_file(
             FLAG_TABLE_SESSION,
-            add_antennas  = new_ants,
-            add_baselines = new_bases,
-            notes         = 'Final clustering stage (post-convergence)',
-            dry_run       = False,
+            ft,
+            notes   = 'Final clustering stage (post-convergence)',
+            dry_run = False,
         )
-        log.info('[final-clustering] Written to %s', FLAG_TABLE_SESSION)
+        log.info('[final-clustering] Full flag table (all 6 sections) written to %s',
+                 FLAG_TABLE_SESSION)
+        log.info('[final-clustering]   antennas         : %s', new_ants or '—')
+        log.info('[final-clustering]   baselines        : %s',
+                 [f'{b[0]}-{b[1]}' for b in new_bases] or '—')
+        log.info('[final-clustering]   ant  time-ranges : %d key(s)',
+                 len(ft.get('bad_antenna_timeranges', {})))
+        log.info('[final-clustering]   bl   time-ranges : %d key(s)',
+                 len(ft.get('bad_baseline_timeranges', {})))
+        log.info('[final-clustering]   scan time-ranges : %d',
+                 len(ft.get('bad_scan_timeranges', [])))
+        log.info('[final-clustering]   burst time-ranges: %d',
+                 len(ft.get('bad_burst_timeranges', [])))
     elif dry_run:
         log.info('[final-clustering] dry-run — flag table NOT written')
 

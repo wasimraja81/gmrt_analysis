@@ -2785,6 +2785,66 @@ def apply_flag_tables_to_vis(
             vis_use[key] = value
     vis_use['nrows'] = kept
 
+    # ── Step 2: apply time-range/burst/scan flags by cell-level zeroing ──────
+    # Wholesale antenna and baseline flags were handled above by row-dropping.
+    # All remaining flag sections (bad_antenna_timeranges,
+    # bad_baseline_timeranges, bad_scan_timeranges, bad_burst_timeranges)
+    # may carry chanrange-selective time windows.  Those are applied here by
+    # zeroing vis_complex amplitude and vis weight for the specific (row, chan)
+    # cells.  Setting weight=0 ensures the stefCal solver ignores those
+    # samples entirely; the rows are kept in the array so that adjacent cells
+    # on other channels remain contributing.
+    _TR_KEYS = (
+        'bad_antenna_timeranges', 'bad_baseline_timeranges',
+        'bad_scan_timeranges',    'bad_burst_timeranges',
+    )
+    _n_cells_zeroed = 0
+    if (
+        'vis_complex' in vis_use
+        and 'jd' in vis_use
+        and any(table.get(k) for table in tables for k in _TR_KEYS)
+    ):
+        # Ensure writable copies (vis arrays may be memory-mapped views).
+        _vc = np.array(vis_use['vis_complex'])
+        _wt = np.array(vis_use['weight'])   if 'weight'  in vis_use else None
+        _fl = np.array(vis_use['flagged'])  if 'flagged' in vis_use else None
+
+        for table in tables:
+            if not any(table.get(k) for k in _TR_KEYS):
+                continue
+            # expand_flag_table_to_mask returns (nrows_kept, nchans) and
+            # handles both v1 and v2 schemas including chanrange fields.
+            # Wholesale-flagged rows were already dropped above, so any
+            # residual antenna/baseline matches in the mask are harmless
+            # (those rows no longer exist in vis_use).
+            _cell_mask = expand_flag_table_to_mask(
+                vis_use, table, antenna_name_map,
+                strict=strict, context=context,
+            )  # shape (nrows_kept, nchans)
+            if not _cell_mask.any():
+                continue
+            _n_cells_zeroed += int(_cell_mask.sum())
+            # Boolean 2-D mask on a 3-D (nrows, nchans, npol) array:
+            # arr[mask2d] selects the (npol,) vectors at True positions,
+            # so the assignment arr[mask2d] = 0.0 zeros all polarisations.
+            _vc[_cell_mask] = 0.0
+            if _wt is not None:
+                _wt[_cell_mask] = 0.0
+            if _fl is not None:
+                _fl[_cell_mask] = True
+
+        vis_use['vis_complex'] = _vc
+        if _wt is not None:
+            vis_use['weight'] = _wt
+        if _fl is not None:
+            vis_use['flagged'] = _fl
+        if _n_cells_zeroed:
+            print(
+                f'[{context}] time-range/chanrange flags applied: '
+                f'{_n_cells_zeroed:,} vis cell(s) zeroed across '
+                f'{kept:,} kept row(s)'
+            )
+
     stats = {
         'dropped_rows': dropped,
         'kept_rows': kept,
@@ -2793,6 +2853,7 @@ def apply_flag_tables_to_vis(
         'flag_table_notes': ' | '.join(notes),
         'flag_table_count': len(tables),
         'flag_table_paths': paths,
+        'zeroed_cells_by_timerange_flags': _n_cells_zeroed,
     }
     return vis_use, stats
 
@@ -4619,6 +4680,108 @@ def update_flag_table(
         'written': bool(not dry_run),
         'added_antennas': list(add_antennas or []),
         'added_baselines': list(add_baselines or []),
+    }
+
+
+def merge_flag_table_into_file(
+    output_path: Union[str, Path],
+    new_table: dict,
+    *,
+    notes: str = '',
+    dry_run: bool = True,
+) -> dict:
+    """Merge *new_table* (ALL six flag sections) into the on-disk flag table.
+
+    Unlike :func:`update_flag_table`, this function merges every section of
+    the v2 flag schema:
+
+    * ``bad_antennas``            — merged with deduplication by name
+    * ``bad_baselines``           — merged with deduplication by sorted pair
+    * ``bad_antenna_timeranges``  — dict of entries appended per antenna key
+    * ``bad_baseline_timeranges`` — dict of entries appended per baseline key
+    * ``bad_scan_timeranges``     — de-duplicated list of [t0, t1] pairs
+    * ``bad_burst_timeranges``    — de-duplicated list of [t0, t1] pairs
+
+    If *output_path* does not yet exist the new table is written directly.
+    If *dry_run* is True the merged result is returned but NOT saved to disk.
+    """
+    output_path = Path(output_path)
+    existing: dict = load_flag_table(output_path) if output_path.exists() else {}
+
+    # ── Wholesale antennas: union with dedup by name ──────────────────────
+    seen_ants: set = set()
+    merged_ants: list = []
+    for ant in list(existing.get('bad_antennas', [])) + list(new_table.get('bad_antennas', [])):
+        key = str(ant).strip().upper()
+        if key not in seen_ants:
+            seen_ants.add(key)
+            merged_ants.append(ant)
+
+    # ── Wholesale baselines: union with dedup by sorted name pair ─────────
+    seen_bls: set = set()
+    merged_bls: list = []
+    for bl in list(existing.get('bad_baselines', [])) + list(new_table.get('bad_baselines', [])):
+        if isinstance(bl, (list, tuple)) and len(bl) == 2:
+            key = tuple(sorted([str(bl[0]).strip().upper(), str(bl[1]).strip().upper()]))
+        else:
+            key = str(bl)
+        if key not in seen_bls:
+            seen_bls.add(key)
+            merged_bls.append(bl)
+
+    # ── Time-range dicts: merge per key; append new entries ───────────────
+    def _merge_tr_dict(section_key: str) -> dict:
+        old_d: dict = dict(existing.get(section_key, {}))
+        new_d: dict = dict(new_table.get(section_key, {}))
+        for coord_key, new_entries in new_d.items():
+            if coord_key not in old_d:
+                old_d[coord_key] = list(new_entries)
+            else:
+                # Append without structural dedup; duplicate intervals are
+                # harmless — they just result in redundant but correct flagging.
+                old_d[coord_key] = list(old_d[coord_key]) + list(new_entries)
+        return old_d
+
+    # ── Scan / burst timeranges: union by string key ──────────────────────
+    def _merge_tr_list(section_key: str) -> list:
+        old_l = [tuple(str(t) for t in x) for x in existing.get(section_key, [])]
+        new_l = [tuple(str(t) for t in x) for x in new_table.get(section_key, [])]
+        seen: set = set(old_l)
+        merged: list = list(existing.get(section_key, []))
+        for item, key in zip(new_table.get(section_key, []), new_l):
+            if key not in seen:
+                seen.add(key)
+                merged.append(item)
+        return merged
+
+    # ── Assemble notes ────────────────────────────────────────────────────
+    all_notes = ' | '.join(filter(None, [
+        str(existing.get('notes', '')).strip(),
+        str(new_table.get('notes', '')).strip(),
+        notes,
+    ]))
+
+    merged = {
+        'kind':    'ugmrt_flag_table',
+        'version': 2,
+        'source':  new_table.get('source', existing.get('source', '')),
+        'notes':   all_notes,
+        'bad_antennas':            merged_ants,
+        'bad_baselines':           merged_bls,
+        'bad_antenna_timeranges':  _merge_tr_dict('bad_antenna_timeranges'),
+        'bad_baseline_timeranges': _merge_tr_dict('bad_baseline_timeranges'),
+        'bad_scan_timeranges':     _merge_tr_list('bad_scan_timeranges'),
+        'bad_burst_timeranges':    _merge_tr_list('bad_burst_timeranges'),
+    }
+
+    if not dry_run:
+        save_flag_table(merged, output_path)
+
+    return {
+        'flag_table':  merged,
+        'output_path': str(output_path),
+        'dry_run':     bool(dry_run),
+        'written':     bool(not dry_run),
     }
 
 
