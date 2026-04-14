@@ -2404,8 +2404,25 @@ def load_vis_for_source(
         shared_flagged = np.any(flagged, axis=2, keepdims=True)
         flagged = np.broadcast_to(shared_flagged, flagged.shape).copy()
         wt_[flagged] = 0.0
+    # Flag exact hardware zeros: correlator dropouts produce re_=im_=0 with a
+    # valid (positive) weight, which are NOT caught by the wt_<=0 test above.
+    # These appear as identically-zero visibilities in amplitude/Stokes-V plots.
+    # We flag them here so that all downstream consumers (bandpass solve,
+    # clustering detection, Stokes-V plots) see NaN, not 0.
+    _exact_zero = (re_ == 0.0) & (im_ == 0.0) & ~flagged
+    if _exact_zero.any():
+        _n_zero = int(_exact_zero.sum())
+        print(f'[load_vis] Flagging {_n_zero:,} exact-zero vis cells '
+              f'({100.0 * _n_zero / max(_exact_zero.size, 1):.2f}%) '
+              f'[hardware dropout / dead correlator output]')
+        flagged = flagged | _exact_zero
     amp[flagged]   = np.nan
     phase[flagged] = np.nan
+    # Build vis_complex with NaN at all flagged (row, chan, pol) positions so
+    # that apply_bandpass_solution and compute_stokes_vis never see 0+0j for
+    # dead cells (0/gain = 0, which would plot as a real point at exactly zero).
+    vis_complex = (re_.astype(np.float64) + 1j * im_.astype(np.float64)).astype(np.complex64)
+    vis_complex[flagged] = np.nan + 0j
 
     ref_freq = float(0.5 * (freqs_sel[0] + freqs_sel[-1]))
     uv_sec = np.sqrt(uu**2 + vv**2)              # per-row, in seconds
@@ -2428,7 +2445,7 @@ def load_vis_for_source(
         'uvdist_klambda': uvdist_klambda,
         'uvdist_per_chan': uvdist_per_chan,
         'freqs_hz': freqs_sel,
-        'vis_complex': re_ + 1j * im_,
+        'vis_complex': vis_complex,
         'amp': amp,
         'phase_deg': phase,
         'weight': wt_,
@@ -5348,6 +5365,12 @@ def apply_bandpass_solution(vis: dict, solution: dict) -> dict:
     phase = np.degrees(np.angle(corrected)).astype(np.float32)
     amp[corrected_flagged] = np.nan
     phase[corrected_flagged] = np.nan
+    # Propagate all flagged cells (pre-existing weight<=0 / exact-zero flags AND
+    # gain-invalid cells) through to vis_complex_corrected.  Without this,
+    # pre-flagged cells that passed through the gain division unmodified would
+    # remain as 0+0j (or the raw value) instead of NaN, causing compute_stokes_vis
+    # to produce identically-zero amplitudes in Stokes-V plots.
+    corrected[corrected_flagged] = np.nan + 1j * np.nan
 
     out = dict(vis)
     out['vis_complex_corrected'] = corrected
