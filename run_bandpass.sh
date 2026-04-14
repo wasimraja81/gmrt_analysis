@@ -91,6 +91,9 @@ Flags consumed by DERIVE only:
 
 Flags consumed by AUDIT only:
   --refit                  Re-solve bandpass with clustering flags active.
+  --write-refit            Persist the refitted bandpass to BANDPASS_OUT on
+                           disk.  Only meaningful with --refit --no-dry-run.
+                           Default: off — refit used for AFTER plots only.
   --save-plots             Save the six BEFORE/AFTER plots as PNGs.
 
 Flags shared by BOTH phases:
@@ -99,6 +102,8 @@ Flags shared by BOTH phases:
   --set KEY=expr           Override any config key, e.g.:
                              --set "SOURCE='3C48'"
                              --set "CLUSTERING_THRESHOLD_JY=3.5"
+                             --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':0.5,'LL':0.5}"
+                             --set "CLUSTERING_CORR=['V','RR','LL']"
                              --set "FLAG_WHAT_TO_FLAG='baselines'"
                              --set "CONVERGENCE_EPSILON=0.005"
                              --set "SOLVE_ELEVATION_MIN_DEG=25.0"
@@ -143,6 +148,23 @@ Examples:
       --set "SOURCE='3C48'" \
       --set "CLUSTERING_THRESHOLD_JY=2.5"
 
+  # Happy with audit — write the refitted bandpass to disk:
+  ./run_bandpass.sh \
+      --phase=audit \
+      --no-dry-run \
+      --refit \
+      --write-refit \
+      --set "SOURCE='3C48'" \
+      --set "CLUSTERING_THRESHOLD_JY=2.5"
+
+  # Multi-corr: detect on V + catch dead antennas via low RR/LL clip:
+  ./run_bandpass.sh \
+      --phase=audit \
+      --set "SOURCE='3C48'" \
+      --set "CLUSTERING_CORR=['V','RR','LL']" \
+      --set "CLUSTERING_THRESHOLD_JY={'V':3.5,'RR':500.0,'LL':500.0}" \
+      --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':0.5,'LL':0.5}"
+
   # Derive only (e.g. before deciding on audit threshold):
   ./run_bandpass.sh \
       --phase=derive \
@@ -171,7 +193,7 @@ done
 # run_preprocess.sh (which doesn't know it) would crash the derive phase.
 #
 # Derive-only  : --auto  --n-iters  --start-iter
-# Audit-only   : --refit  --save-plots
+# Audit-only   : --refit  --write-refit  --save-plots
 # Dry-run      : --dry-run / --no-dry-run captured separately — never passed
 #                through SHARED_ARGS to avoid duplicate/conflicting flags.
 # Shared       : everything else (--set, --config, --log-level, ...)
@@ -200,6 +222,8 @@ while [[ $# -gt 0 ]]; do
 
         # audit-only flags
         --refit)            AUDIT_ARGS+=("$1"); shift ;;
+        --write-refit)      AUDIT_ARGS+=("$1"); shift ;;
+        --no-write-refit)   AUDIT_ARGS+=("$1"); shift ;;
         --save-plots)       AUDIT_ARGS+=("$1"); shift ;;
 
         # shared (everything else: --set, --config, --log-level, ...)
