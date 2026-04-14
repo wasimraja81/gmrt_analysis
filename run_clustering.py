@@ -292,8 +292,6 @@ def main() -> None:
         int(a['antenna_no']): str(a['name'])
         for a in index.get('antennas', [])
     }
-    log.info('  active antennas: %d', len(index.get('active_antennas', index['antennas'])))
-
     # ── load saved bandpass solution ──────────────────────────────────────────
     bp_path = Path(BANDPASS_OUT) if BANDPASS_OUT else None
     if bp_path is None or not bp_path.exists():
@@ -326,6 +324,17 @@ def main() -> None:
         )
         log.info('  Phase-1 flags applied: dropped %d rows (%d kept)',
                  _flag_stats['dropped_rows'], _flag_stats['kept_rows'])
+
+    # Observed counts from the vis that will actually drive clustering — after
+    # elevation filter + Phase-1 row drops, before chanrange masking.
+    import numpy as _np_rc
+    _obs_ant1 = _np_rc.asarray(vis_raw['ant1'], dtype=_np_rc.int32)
+    _obs_ant2 = _np_rc.asarray(vis_raw['ant2'], dtype=_np_rc.int32)
+    _obs_active_ants = len(set(_obs_ant1.tolist()) | set(_obs_ant2.tolist()))
+    _obs_active_bls  = len(set(zip(_obs_ant1.tolist(), _obs_ant2.tolist())))
+    log.info('  active antennas (observed): %d  active baselines (observed): %d',
+             _obs_active_ants, _obs_active_bls)
+
     vis_corr = q.apply_bandpass_solution(vis_raw, bandpass_sol)
     log.info('Vis loaded; shape=%s', vis_corr['amp'].shape)
 
