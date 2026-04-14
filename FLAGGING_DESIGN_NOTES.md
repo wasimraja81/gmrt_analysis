@@ -217,10 +217,12 @@ dataset containing deliberately asymmetric RR/LL hardware flags.
 
 ---
 
-## TODO #4 — Flag Array Shape, Reshape, and Fine-Grained Statistics
+## TODO #4 — Flag Array Shape, Reshape, and Fine-Grained Statistics ✅ IMPLEMENTED
 
-**Files:** wherever `apply_flag_tables_to_vis` builds or returns a flag mask;
-any logging/reporting code that reports flagging fractions.
+**Implemented:** `ugmrt_query.materialise_flag_stats` (after `expand_flag_table_to_mask`);
+called from `run_clustering.py` after `expand_flag_table_to_mask` on `vis_raw`.
+
+**Files:** `ugmrt_query.py` (new function), `run_clustering.py` (detailed stats log).
 
 ### Flag array canonical shape
 

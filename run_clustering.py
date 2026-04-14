@@ -437,10 +437,17 @@ def main() -> None:
     # expand_flag_table_to_mask also covers bad_antenna_timeranges and
     # bad_baseline_timeranges with their chanrange fields, which is where the
     # channel-selective RFI detections live.
+    #
+    # Build on vis_raw (full CHAN_RANGE), then slice to plot channels.
+    # materialise_flag_stats reshapes to (nInteg, nBL, nChans) and reports
+    # all five flagging statistics without any row-sort assumption.
     import numpy as _np
-    _flag_mask_2d = q.expand_flag_table_to_mask(
-        _vis_plot, ft_new, ant_name_map,
+    _flag_mask_full = q.expand_flag_table_to_mask(
+        vis_raw, ft_new, ant_name_map,
     )
+    # Slice to plot-channel window for the diagnostic plots.
+    _flag_mask_2d = _flag_mask_full[:, _c0:_c1]
+
     _vis_plot_after = {**_vis_plot}
     _vis_plot_after['amp'] = _np.where(
         _flag_mask_2d[:, :, _np.newaxis], _np.nan, _vis_plot['amp'],
@@ -453,11 +460,51 @@ def main() -> None:
         _vis_plot_after['phase_deg'] = _np.where(
             _flag_mask_2d[:, :, _np.newaxis], _np.nan, _vis_plot['phase_deg'],
         )
-    _n_flagged = int(_flag_mask_2d.sum())
-    _n_total   = int(_flag_mask_2d.size)
-    log.info('AFTER masking: %d / %d vis cells flagged (%.1f%%)  '
-             '[wholesale + chanrange time-range entries]',
-             _n_flagged, _n_total, 100.0 * _n_flagged / _n_total)
+
+    # ── fine-grained flagging statistics (TODO #4) ───────────────────────────
+    _fstats = q.materialise_flag_stats(_flag_mask_full, vis_raw, ant_name_map)
+    _n_flagged = int(_flag_mask_full.sum())
+    _n_total   = int(_flag_mask_full.size)
+    log.info(
+        'AFTER masking: %d / %d vis cells flagged (%.1f%%)  '
+        '[nInteg=%d  nBL=%d  nChans=%d  regular=%s]',
+        _n_flagged, _n_total, _fstats['pct_total'],
+        _fstats['nInteg'], _fstats['nBL'], _fstats['nChans'],
+        _fstats['is_regular'],
+    )
+    if _fstats['is_regular']:
+        # Top-5 most-flagged baselines
+        _pct_bl = _fstats['pct_per_baseline']
+        _bl_labels = _fstats['bl_labels']
+        _top_bl_idx = _np.argsort(_pct_bl)[::-1][:5]
+        _top_bl_str = '  '.join(
+            f'{_bl_labels[i]}={_pct_bl[i]:.1f}%' for i in _top_bl_idx if _pct_bl[i] > 0
+        )
+        if _top_bl_str:
+            log.info('  top baselines (flagged%%): %s', _top_bl_str)
+
+        # Channel flagging profile: min / median / max
+        _pct_ch = _fstats['pct_per_channel']
+        log.info(
+            '  channel flag%%: min=%.1f  median=%.1f  max=%.1f',
+            float(_pct_ch.min()), float(_np.median(_pct_ch)), float(_pct_ch.max()),
+        )
+
+        # Per-integration profile: min / max
+        _pct_integ = _fstats['pct_per_integration']
+        log.info(
+            '  integration flag%%: min=%.1f  max=%.1f  (over %d integrations)',
+            float(_pct_integ.min()), float(_pct_integ.max()), _fstats['nInteg'],
+        )
+
+        # Top-5 most-flagged antennas
+        _pct_ant = _fstats['pct_per_antenna']
+        _ant_sorted = sorted(_pct_ant.items(), key=lambda kv: kv[1], reverse=True)[:5]
+        _top_ant_str = '  '.join(
+            f'{k}={v:.1f}%' for k, v in _ant_sorted if v > 0
+        )
+        if _top_ant_str:
+            log.info('  top antennas (flagged%%): %s', _top_ant_str)
 
     # ── optional bandpass refit with clustering flags ─────────────────────────
     if args.refit:

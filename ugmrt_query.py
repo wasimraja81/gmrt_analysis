@@ -3205,6 +3205,133 @@ def expand_flag_table_to_mask(
     return flag_mask
 
 
+def materialise_flag_stats(
+    flag_mask: np.ndarray,
+    vis: dict,
+    antenna_name_map: Optional[Dict[int, str]] = None,
+) -> dict:
+    """Reshape a ``(nRows, nChans)`` bool flag mask and compute fine-grained statistics.
+
+    The mask is mapped into a ``(nInteg, nBL, nChans)`` cube using index
+    assignment — no assumption is made about the row-sort order of the file.
+    The grid must be *regular*: every ``(integration, baseline)`` pair must
+    appear exactly once, i.e. ``nRows == nInteg * nBL``.  DUD antennas satisfy
+    this because they contribute zero rows rather than sparse/missing entries.
+
+    Parameters
+    ----------
+    flag_mask : np.ndarray, shape ``(nRows, nChans)``, dtype bool
+        The output of :func:`expand_flag_table_to_mask`.
+    vis : dict
+        Must contain ``'ant1'``, ``'ant2'``, and ``'jd'`` arrays.
+    antenna_name_map : dict, optional
+        ``{antenna_id: name}`` mapping.  When supplied, per-antenna statistics
+        use names as keys; otherwise antenna IDs are used.
+
+    Returns
+    -------
+    dict with keys:
+
+    ``nInteg``, ``nBL``, ``nChans``
+        Dimension sizes inferred from the data.
+    ``is_regular``
+        ``True`` when ``nRows == nInteg * nBL`` (reshape is valid).
+    ``flags_3d``
+        ``(nInteg, nBL, nChans)`` bool array (only present when regular).
+    ``pct_total``
+        Overall percentage of flagged cells (scalar float).
+    ``pct_per_baseline``
+        ``(nBL,)`` float — % flagged averaged over integrations and channels.
+    ``pct_per_channel``
+        ``(nChans,)`` float — % flagged averaged over integrations and baselines.
+    ``pct_per_integration``
+        ``(nInteg,)`` float — % flagged averaged over baselines and channels.
+    ``pct_per_antenna``
+        ``{antenna_name: float}`` — % flagged for all baselines involving
+        each antenna, averaged over integrations and channels.
+    ``bl_labels``
+        ``['ant1name:ant2name', …]`` length-``nBL`` list.
+    ``jd_unique``
+        Sorted array of unique Julian dates (one per integration).
+    """
+    ant1 = np.asarray(vis['ant1'], dtype=np.int32)
+    ant2 = np.asarray(vis['ant2'], dtype=np.int32)
+    jd   = np.asarray(vis['jd'],   dtype=np.float64)
+    nrows, nchans = flag_mask.shape
+
+    # ── unique integrations and baselines ────────────────────────────────────
+    jd_unique, jd_indices = np.unique(jd, return_inverse=True)
+    bl_key = np.stack([ant1, ant2], axis=1)              # (nrows, 2)
+    bl_unique, bl_indices = np.unique(bl_key, axis=0, return_inverse=True)
+    n_integ = int(len(jd_unique))
+    n_bl    = int(len(bl_unique))
+
+    # ── regularity check ─────────────────────────────────────────────────────
+    is_regular = (nrows == n_integ * n_bl)
+
+    amap = antenna_name_map or {}
+
+    # ── baseline labels ───────────────────────────────────────────────────────
+    bl_labels = [
+        f'{amap.get(int(bl_unique[b, 0]), str(int(bl_unique[b, 0])))}'
+        f':{amap.get(int(bl_unique[b, 1]), str(int(bl_unique[b, 1])))}'
+        for b in range(n_bl)
+    ]
+
+    result: dict = {
+        'nInteg':       n_integ,
+        'nBL':          n_bl,
+        'nChans':       nchans,
+        'is_regular':   is_regular,
+        'jd_unique':    jd_unique,
+        'bl_labels':    bl_labels,
+        'pct_total':    float(flag_mask.mean() * 100.0),
+        # per-channel is safe without the 3D cube
+        'pct_per_channel': (flag_mask.mean(axis=0) * 100.0),   # (nChans,)
+    }
+
+    if not is_regular:
+        import warnings
+        warnings.warn(
+            f'materialise_flag_stats: grid is NOT regular '
+            f'(nRows={nrows} ≠ nInteg({n_integ}) × nBL({n_bl})={n_integ*n_bl}). '
+            f'3D statistics unavailable; returning per-channel stats only.',
+            RuntimeWarning, stacklevel=2,
+        )
+        return result
+
+    # ── build 3D cube via index assignment (order-independent) ───────────────
+    flags_3d = np.zeros((n_integ, n_bl, nchans), dtype=bool)
+    flags_3d[jd_indices, bl_indices, :] = flag_mask    # broadcast over chans
+
+    result['flags_3d']             = flags_3d
+    result['pct_per_baseline']     = (flags_3d.mean(axis=(0, 2)) * 100.0)   # (nBL,)
+    result['pct_per_integration']  = (flags_3d.mean(axis=(1, 2)) * 100.0)   # (nInteg,)
+
+    # ── per-antenna requires a companion lookup ───────────────────────────────
+    ant_ids_sorted = sorted(set(ant1.tolist()) | set(ant2.tolist()))
+    id_to_idx = {aid: i for i, aid in enumerate(ant_ids_sorted)}
+    bl_a1 = np.array([id_to_idx[int(bl_unique[b, 0])] for b in range(n_bl)], dtype=np.int32)
+    bl_a2 = np.array([id_to_idx[int(bl_unique[b, 1])] for b in range(n_bl)], dtype=np.int32)
+    bl_ant_table = np.stack([bl_a1, bl_a2], axis=1)  # (nBL, 2)
+
+    pct_per_antenna: dict = {}
+    for i, aid in enumerate(ant_ids_sorted):
+        bl_mask = (bl_ant_table[:, 0] == i) | (bl_ant_table[:, 1] == i)
+        if bl_mask.any():
+            pct = float(flags_3d[:, bl_mask, :].mean() * 100.0)
+        else:
+            pct = float('nan')
+        name = amap.get(aid, str(aid))
+        pct_per_antenna[name] = pct
+
+    result['pct_per_antenna'] = pct_per_antenna
+    result['bl_ant_table']    = bl_ant_table
+    result['antenna_ids']     = ant_ids_sorted
+
+    return result
+
+
 def flux_model_3c48_perley_butler_2017(freq_hz):
     """Return the 3C48 Perley-Butler 2017 flux density model in Jy.
 
