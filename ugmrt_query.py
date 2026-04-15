@@ -2342,6 +2342,8 @@ def load_vis_for_source(
         print(f'[load_vis] uvrange_klambda filter: {_row_mask.sum():,} / {len(jd):,} rows kept')
 
     # 4. Elevation filter (uses array ECEF + source coords from FITS header)
+    _n_rows_before_elev = int(_row_mask.sum())   # rows surviving filters 1-3
+    _n_rows_skipped_elevation = 0
     if elevation_min_deg is not None or elevation_max_deg is not None:
         try:
             from astropy.coordinates import SkyCoord, EarthLocation, AltAz
@@ -2374,8 +2376,10 @@ def load_vis_for_source(
                 _row_mask &= _el >= elevation_min_deg
             if elevation_max_deg is not None:
                 _row_mask &= _el <= elevation_max_deg
+            _n_rows_skipped_elevation = _n_rows_before_elev - int(_row_mask.sum())
             print(f'[load_vis] elevation filter (el>={elevation_min_deg}, el<={elevation_max_deg}): '
-                  f'{_row_mask.sum():,} / {len(jd):,} rows kept')
+                  f'{_row_mask.sum():,} / {len(jd):,} rows kept '
+                  f'({_n_rows_skipped_elevation:,} rows skipped by elevation cut)')
         except Exception as _exc:
             print(f'[load_vis] WARNING: elevation filter failed ({_exc}); no elevation cut applied.')
 
@@ -2469,6 +2473,7 @@ def load_vis_for_source(
         'stokes_labels': stokes_sel,
         'chan_indices': chan_idx,
         'nrows': int(data.shape[0]),
+        'n_rows_skipped_elevation': _n_rows_skipped_elevation,
     }
 
 
@@ -6126,10 +6131,28 @@ def plot_vis_amp_vs_time(
 
     for pi, label in enumerate(stokes):
         ax_amp = axes[pi * (2 if show_phase else 1)]
-        ax_amp.scatter(t_broad, amp[:, :, pi].ravel(), s=0.3, alpha=alpha,
+        amp_flat = amp[:, :, pi].ravel()
+        ax_amp.scatter(t_broad, amp_flat, s=0.3, alpha=alpha,
                        rasterized=True, color=f'C{pi}')
         ax_amp.set_ylabel(f'{label}\nAmp')
         ax_amp.grid(True, alpha=0.3)
+        _n_tot  = amp_flat.size
+        _n_bad  = int(np.count_nonzero(~np.isfinite(amp_flat)))
+        _n_good = _n_tot - _n_bad
+        _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
+        _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
+        _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
+        _legend = f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)'
+        if _n_el:
+            _legend += f' | el-skipped: {_n_el:,} (not counted)'
+        if _n_p1:
+            _legend += f' | Phase-1 dropped: {_n_p1:,} (not counted)'
+        ax_amp.text(
+            0.01, 0.98, _legend,
+            transform=ax_amp.transAxes, fontsize=7,
+            va='top', ha='left',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
+        )
 
         if show_phase:
             ax_ph = axes[pi * 2 + 1]
@@ -6168,10 +6191,28 @@ def plot_vis_amp_vs_channel(
 
     for pi, label in enumerate(stokes):
         ax_amp = axes[pi * (2 if show_phase else 1)]
-        ax_amp.scatter(f_broad, amp[:, :, pi].ravel(), s=0.3, alpha=alpha,
+        amp_flat = amp[:, :, pi].ravel()
+        ax_amp.scatter(f_broad, amp_flat, s=0.3, alpha=alpha,
                        rasterized=True, color=f'C{pi}')
         ax_amp.set_ylabel(f'{label}\nAmp')
         ax_amp.grid(True, alpha=0.3)
+        _n_tot  = amp_flat.size
+        _n_bad  = int(np.count_nonzero(~np.isfinite(amp_flat)))
+        _n_good = _n_tot - _n_bad
+        _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
+        _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
+        _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
+        _legend = f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)'
+        if _n_el:
+            _legend += f' | el-skipped: {_n_el:,} (not counted)'
+        if _n_p1:
+            _legend += f' | Phase-1 dropped: {_n_p1:,} (not counted)'
+        ax_amp.text(
+            0.01, 0.98, _legend,
+            transform=ax_amp.transAxes, fontsize=7,
+            va='top', ha='left',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
+        )
 
         if show_phase:
             ax_ph = axes[pi * 2 + 1]
@@ -6294,6 +6335,23 @@ def plot_vis_amp_vs_uvdist(
         if amp_ylim is not None:
             ax_amp.set_ylim(*amp_ylim)
         ax_amp.grid(True, alpha=0.3)
+        _n_tot  = amp_flat.size
+        _n_bad  = int(np.count_nonzero(~np.isfinite(amp_flat)))
+        _n_good = _n_tot - _n_bad
+        _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
+        _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
+        _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
+        _legend = f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)'
+        if _n_el:
+            _legend += f' | el-skipped: {_n_el:,} (not counted)'
+        if _n_p1:
+            _legend += f' | Phase-1 dropped: {_n_p1:,} (not counted)'
+        ax_amp.text(
+            0.01, 0.98, _legend,
+            transform=ax_amp.transAxes, fontsize=7,
+            va='top', ha='left',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
+        )
         if hline_jy is not None:
             if signed:
                 ax_amp.axhline(+hline_jy, color='red', lw=1.5, ls='--', alpha=0.8,

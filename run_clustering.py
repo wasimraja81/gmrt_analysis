@@ -324,6 +324,7 @@ def main() -> None:
         )
         log.info('  Phase-1 flags applied: dropped %d rows (%d kept)',
                  _flag_stats['dropped_rows'], _flag_stats['kept_rows'])
+        vis_raw['n_rows_dropped_phase1'] = _flag_stats['dropped_rows']
 
     # Observed counts from the vis that will actually drive clustering — after
     # elevation filter + Phase-1 row drops, before chanrange masking.
