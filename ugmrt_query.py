@@ -6142,15 +6142,15 @@ def plot_vis_amp_vs_time(
         _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
         _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
         _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
-        _legend = f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)'
+        _lines  = [f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)']
         if _n_el:
-            _legend += f' | el-skipped: {_n_el:,} (not counted)'
+            _lines.append(f'el-skipped: {_n_el:,} (not counted)')
         if _n_p1:
-            _legend += f' | Phase-1 dropped: {_n_p1:,} (not counted)'
+            _lines.append(f'Phase-1 dropped: {_n_p1:,} (not counted)')
         ax_amp.text(
-            0.01, 0.98, _legend,
+            0.01, 0.98, '\n'.join(_lines),
             transform=ax_amp.transAxes, fontsize=7,
-            va='top', ha='left',
+            va='top', ha='left', linespacing=1.4,
             bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
         )
 
@@ -6202,15 +6202,15 @@ def plot_vis_amp_vs_channel(
         _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
         _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
         _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
-        _legend = f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)'
+        _lines  = [f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)']
         if _n_el:
-            _legend += f' | el-skipped: {_n_el:,} (not counted)'
+            _lines.append(f'el-skipped: {_n_el:,} (not counted)')
         if _n_p1:
-            _legend += f' | Phase-1 dropped: {_n_p1:,} (not counted)'
+            _lines.append(f'Phase-1 dropped: {_n_p1:,} (not counted)')
         ax_amp.text(
-            0.01, 0.98, _legend,
+            0.01, 0.98, '\n'.join(_lines),
             transform=ax_amp.transAxes, fontsize=7,
-            va='top', ha='left',
+            va='top', ha='left', linespacing=1.4,
             bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
         )
 
@@ -6341,15 +6341,15 @@ def plot_vis_amp_vs_uvdist(
         _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
         _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
         _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
-        _legend = f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)'
+        _lines  = [f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)']
         if _n_el:
-            _legend += f' | el-skipped: {_n_el:,} (not counted)'
+            _lines.append(f'el-skipped: {_n_el:,} (not counted)')
         if _n_p1:
-            _legend += f' | Phase-1 dropped: {_n_p1:,} (not counted)'
+            _lines.append(f'Phase-1 dropped: {_n_p1:,} (not counted)')
         ax_amp.text(
-            0.01, 0.98, _legend,
+            0.01, 0.98, '\n'.join(_lines),
             transform=ax_amp.transAxes, fontsize=7,
-            va='top', ha='left',
+            va='top', ha='left', linespacing=1.4,
             bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
         )
         if hline_jy is not None:
