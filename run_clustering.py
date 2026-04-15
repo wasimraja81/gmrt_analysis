@@ -631,6 +631,7 @@ def main() -> None:
         exclude_antennas = EXCLUDE_FOR_PLOTS,
         show_phase       = False,
         alpha            = 0.10,
+        save_path        = _save(f'{_src}_clustering_uvdist_before.png'),
     )
 
     # — BEFORE (2/3): vector-avg spectrum ————————————————————————————————————
@@ -639,6 +640,7 @@ def main() -> None:
         title              = f'{SOURCE} corrected spectrum  BEFORE clustering',
         exclude_antennas   = EXCLUDE_FOR_PLOTS,
         skip_edge_channels = SKIP_EDGE_CHANNELS,
+        save_path          = _save(f'{_src}_clustering_spectrum_before.png'),
     )
 
     # — BEFORE (3/3): Stokes-V amp vs UV-dist (threshold line) ───────────────
@@ -649,6 +651,7 @@ def main() -> None:
         alpha      = 0.10,
         hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, (int, float)) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
         signed     = True,
+        save_path  = _save(f'{_src}_clustering_stokesV_before.png'),
     )
 
     # — AFTER (4/3): corrected amp vs UV-dist ————————————————————————————————
