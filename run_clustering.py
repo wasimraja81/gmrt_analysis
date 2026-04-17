@@ -497,6 +497,53 @@ def main() -> None:
         for _ft_path in active_disk:
             _ft_prior = _json_plot.load(open(_ft_path))
             _flag_mask_full |= q.expand_flag_table_to_mask(vis_raw, _ft_prior, ant_name_map)
+
+    # ── Rogue-cell diagnostic ─────────────────────────────────────────────────
+    # For every corr that has a threshold, check if any cell exceeds threshold
+    # in vis_corr yet is NOT covered by the combined AFTER mask.
+    # vis_corr already has NaN at prior-masked cells, so those are invisible
+    # to the test quantity (NaN > thr = False) and are also in _flag_mask_full
+    # via the active_disk OR above.  Any cell that fires here is a genuine
+    # detection gap.
+    _corr_list_diag = [CLUSTERING_CORR] if isinstance(CLUSTERING_CORR, str) else list(CLUSTERING_CORR)
+    _thr_diag = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, dict) else {}
+    if not isinstance(CLUSTERING_THRESHOLD_JY, dict):
+        _thr_diag = {_c: float(CLUSTERING_THRESHOLD_JY) for _c in _corr_list_diag}
+    for _dc in _corr_list_diag:
+        _thr_v = float(_thr_diag.get(_dc, 5.0))
+        try:
+            _tq_diag = od.compute_test_quantity(vis_corr, _dc)   # (nrows, nchans)
+        except Exception:
+            continue
+        # _flag_mask_full covers all CHAN_RANGE columns; vis_corr also CHAN_RANGE.
+        # Both have nrows rows (vis_raw == vis_corr shape after apply_flag_tables_to_vis).
+        _rogue = (_tq_diag > _thr_v) & ~_flag_mask_full
+        _n_rogue = int(_rogue.sum())
+        if _n_rogue > 0:
+            _rogue_rows, _rogue_chans = _np.where(_rogue)
+            _rogue_bl = [
+                f'{ant_name_map.get(int(vis_raw["ant1"][r]),"?")}::'
+                f'{ant_name_map.get(int(vis_raw["ant2"][r]),"?")}'
+                for r in _rogue_rows[:10]
+            ]
+            log.warning(
+                'ROGUE CELLS: %d (row,chan) cells exceed %s threshold=%.1f Jy '
+                'in vis_corr but are NOT in the combined AFTER flag mask. '
+                'These will appear above threshold in the AFTER plot.\n'
+                '  First up-to-10 baselines: %s\n'
+                '  First up-to-10 abs-channels: %s\n'
+                '  tq values: %s',
+                _n_rogue, _dc, _thr_v,
+                _rogue_bl,
+                [int(vis_raw['chan_indices'][c]) if 'chan_indices' in vis_raw else c
+                 for c in _rogue_chans[:10].tolist()],
+                [f'{_tq_diag[r,c]:.2f}' for r,c in zip(_rogue_rows[:10], _rogue_chans[:10])],
+            )
+        else:
+            log.info('Rogue-cell check corr=%s thr=%.1f Jy: 0 escaping cells — mask is complete.',
+                     _dc, _thr_v)
+    # ─────────────────────────────────────────────────────────────────────────
+
     # Slice to plot-channel window for the diagnostic plots.
     _flag_mask_2d = _flag_mask_full[:, _c0:_c1]
 
