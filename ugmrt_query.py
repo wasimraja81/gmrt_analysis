@@ -3144,11 +3144,14 @@ def expand_flag_table_to_mask(
         return float(Time(str(s).replace('T', ' '), format='iso', scale='utc').jd)
 
     def _time_row_mask(jd_arr: np.ndarray, intervals: list) -> np.ndarray:
+        # 1-second epsilon guard: ISO ↔ JD round-trips can lose ~1 ms of
+        # precision, causing endpoint rows to fail exact >= / <= comparisons.
+        _EPS_JD = 1.0 / 86400  # 1 second in JD days
         m = np.zeros(len(jd_arr), dtype=bool)
         for t0_iso, t1_iso in intervals:
             t0 = _iso_to_jd_loc(t0_iso)
             t1 = _iso_to_jd_loc(t1_iso)
-            m |= (jd_arr >= t0) & (jd_arr <= t1)
+            m |= (jd_arr >= t0 - _EPS_JD) & (jd_arr <= t1 + _EPS_JD)
         return m
 
     def _local_chan_slice(chanrange) -> slice:
