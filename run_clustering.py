@@ -398,6 +398,52 @@ def main() -> None:
     ft_new   = cluster_result['flag_table']
     new_ants = ft_new.get('bad_antennas', [])
     new_bases = ft_new.get('bad_baselines', [])
+
+    # ── deep-dive diagnostic for rogue baseline ───────────────────────────────
+    _ROGUE_BL = 'C00:01::C01:02'
+    import numpy as _npd
+    _name_to_id_d = {v: k for k, v in ant_name_map.items()}
+    _rd_a = _name_to_id_d.get('C00:01')
+    _rd_b = _name_to_id_d.get('C01:02')
+    if _rd_a is not None and _rd_b is not None:
+        _rd_rows = _npd.where(
+            ((_npd.asarray(vis_raw['ant1']) == _rd_a) & (_npd.asarray(vis_raw['ant2']) == _rd_b)) |
+            ((_npd.asarray(vis_raw['ant1']) == _rd_b) & (_npd.asarray(vis_raw['ant2']) == _rd_a))
+        )[0]
+        log.info('[ROGUE-DIAG] %s: %d rows in vis_raw', _ROGUE_BL, len(_rd_rows))
+        # Check prior_mask for these rows
+        if active_disk:
+            import json as _jd2
+            _nrows_vc2, _nchans_vc2 = vis_corr['vis_complex_corrected'].shape[:2]
+            _pm2 = _npd.zeros((_nrows_vc2, _nchans_vc2), dtype=bool)
+            for _ft2p in active_disk:
+                _ft2 = _jd2.load(open(_ft2p))
+                _pm2 |= q.expand_flag_table_to_mask(vis_raw, _ft2, ant_name_map)
+            _rogue_chans_abs = [74, 75, 84, 105, 106, 107, 131, 132, 133, 134]
+            _ci = list(vis_raw.get('chan_indices', range(_nchans_vc2)))
+            for _rac in _rogue_chans_abs[:4]:
+                if _rac in _ci:
+                    _loc = _ci.index(_rac)
+                    _pm_bl = _pm2[_rd_rows, _loc]
+                    log.info('[ROGUE-DIAG]   chan abs=%d loc=%d: prior_mask True=%d/%d rows for %s',
+                             _rac, _loc, int(_pm_bl.sum()), len(_rd_rows), _ROGUE_BL)
+                    # tq at this channel for non-prior rows
+                    _tq_rd = od.compute_test_quantity(vis_corr, 'V')   # (nrows, nchans)
+                    _tq_bl_chan = _tq_rd[_rd_rows, _loc]
+                    _above = _tq_bl_chan > 8.0
+                    log.info('[ROGUE-DIAG]   chan abs=%d: tq>8 on %d/%d rows; prior_masked %d; unmasked+above: %d',
+                             _rac, int(_above.sum()), len(_rd_rows),
+                             int(_pm_bl.sum()),
+                             int((_above & ~_pm_bl).sum()))
+        # What ft_new has for this baseline
+        _ft_new_bl = ft_new.get('bad_baseline_timeranges', {}).get(_ROGUE_BL, [])
+        _ft_new_bl_rev = ft_new.get('bad_baseline_timeranges', {}).get('C01:02::C00:01', [])
+        log.info('[ROGUE-DIAG] ft_new bad_baseline_timeranges[%s]: %d entries', _ROGUE_BL, len(_ft_new_bl))
+        log.info('[ROGUE-DIAG] ft_new bad_baseline_timeranges[C01:02::C00:01]: %d entries', len(_ft_new_bl_rev))
+        log.info('[ROGUE-DIAG] ft_new bad_baselines containing C00:01 or C01:02: %s',
+                 [b for b in ft_new.get('bad_baselines',[]) if 'C00:01' in str(b) or 'C01:02' in str(b)])
+    # ─────────────────────────────────────────────────────────────────────────
+
     log.info('New flags — antennas: %s  baselines: %s',
              new_ants or '—', [f'{b[0]}-{b[1]}' for b in new_bases] or '—')
 
