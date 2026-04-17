@@ -482,10 +482,21 @@ def main() -> None:
     # Build on vis_raw (full CHAN_RANGE), then slice to plot channels.
     # materialise_flag_stats reshapes to (nInteg, nBL, nChans) and reports
     # all five flagging statistics without any row-sort assumption.
+    #
+    # IMPORTANT: union prior active_disk 2-D timerange flags with ft_new so
+    # the AFTER plot masks ALL flagged cells — not only the newly detected ones.
+    # Without this, cells excluded from detection (because they were already
+    # masked in vis_corr via the prior-flags block) still appear as live data
+    # in _vis_plot_after, potentially above threshold.
     import numpy as _np
+    import json as _json_plot
     _flag_mask_full = q.expand_flag_table_to_mask(
         vis_raw, ft_new, ant_name_map,
     )
+    if active_disk:
+        for _ft_path in active_disk:
+            _ft_prior = _json_plot.load(open(_ft_path))
+            _flag_mask_full |= q.expand_flag_table_to_mask(vis_raw, _ft_prior, ant_name_map)
     # Slice to plot-channel window for the diagnostic plots.
     _flag_mask_2d = _flag_mask_full[:, _c0:_c1]
 
