@@ -6,6 +6,20 @@ Phase-1 (v-based-outlier-detection.sh), then runs per-channel clustering
 detection and shows six before/after vis-amplitude plots for interactive
 threshold tuning — replicating notebook cell 15F as a script.
 
+TODO(iterative-refit): Iterative audit loop is broken.
+  - Without --refit:  AFTER flux scale is wrong (bandpass was contaminated by
+    bad rows during Phase-1 solve; good data appears under-corrected).
+  - With --refit:     AFTER flux scale is correct BUT each pass exposes new
+    >8 Jy points because the refit shifts the gain solution, pushing
+    previously-borderline rows above threshold.
+  - There is no convergence guarantee: each --no-dry-run pass writes new
+    flags, refitting shifts the solution, which may flag more rows next pass.
+  - Needs a proper iterative loop (detect → flag → refit → repeat) that
+    terminates when no new flags are added, with the final refitted bandpass
+    written atomically at convergence.  Current manual re-run workflow is
+    fragile and does not guarantee convergence or correct flux scale at
+    intermediate steps."""
+
 Default mode: DRY-RUN.  Plots are shown without writing any new flags to
 disk.  Safe for exploring CLUSTERING_THRESHOLD_JY repeatedly.
 
