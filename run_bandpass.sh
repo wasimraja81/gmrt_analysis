@@ -310,16 +310,26 @@ run_derive() {
 }
 
 run_audit() {
+    local _audit_log="/tmp/audit_clustering.log"
     echo ""
     echo "════════════════════════════════════════════════════════════════════════"
     echo "  PHASE 2 — Clustering detection (audit)"
+    echo "  Log: ${_audit_log}  (grep ROGUE / WARNING / ERROR to inspect)"
     echo "════════════════════════════════════════════════════════════════════════"
     echo ""
     MPLBACKEND="${_AUDIT_MPLBACKEND}" \
         python "${CLUSTERING}" \
             "${_AUDIT_DRY_RUN_FLAG}" \
             "${SHARED_ARGS[@]+"${SHARED_ARGS[@]}"}" \
-            "${AUDIT_ARGS[@]+"${AUDIT_ARGS[@]}"}"
+            "${AUDIT_ARGS[@]+"${AUDIT_ARGS[@]}"}" \
+        2>&1 | tee "${_audit_log}"
+    echo ""
+    echo "  Audit log saved to: ${_audit_log}"
+    echo "  Quick checks:"
+    echo "    grep 'ROGUE CELLS'    ${_audit_log}"
+    echo "    grep 'escaping cells' ${_audit_log}"
+    echo "    grep 'WARNING'        ${_audit_log}"
+    echo "    grep 'AFTER masking'  ${_audit_log}"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
