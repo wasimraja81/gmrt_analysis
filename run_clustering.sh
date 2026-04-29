@@ -53,4 +53,4 @@ if [[ -z "${MPLBACKEND:-}" ]]; then
     export MPLBACKEND=MacOSX
 fi
 
-exec python "${SCRIPT_DIR}/run_clustering.py" "$@"
+exec python "${SCRIPT_DIR}/pipeline_cli.py" clustering "$@"

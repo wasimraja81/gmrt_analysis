@@ -55,4 +55,4 @@ if [[ ! " $* " =~ " --config " ]]; then
     set -- --config "${CONFIG}" "$@"
 fi
 
-exec "${PYTHON}" "${SCRIPT_DIR}/preprocess_ugmrt.py" "$@"
+exec "${PYTHON}" "${SCRIPT_DIR}/pipeline_cli.py" preprocess "$@"
