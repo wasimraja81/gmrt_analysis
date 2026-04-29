@@ -580,6 +580,51 @@ def get_or_build_row_index(
         try:
             index = load_row_index_cache(cache_path, source_path=path, validation_mode=validation_mode)
             print(f'Loaded row index cache: {cache_path}')
+            if override_dud_names is not None:
+                antennas = list(index.get('antennas', []))
+                _resolved_nos: List[int] = []
+                _resolved_names: List[str] = []
+                for _wanted in override_dud_names:
+                    _hit = next(
+                        (
+                            int(a['antenna_no'])
+                            for a in antennas
+                            if (
+                                str(a.get('name', '')) == _wanted
+                                or str(a.get('name', '')).startswith(_wanted + ':')
+                                or str(a.get('name', '')).startswith(_wanted)
+                            )
+                        ),
+                        None,
+                    )
+                    if _hit is None:
+                        print(f'  WARNING: override_dud_names entry "{_wanted}" not found in cached AN table; skipped.')
+                        continue
+                    if _hit not in _resolved_nos:
+                        _resolved_nos.append(_hit)
+                        _full = next(
+                            (str(a.get('name', _hit)) for a in antennas if int(a['antenna_no']) == _hit),
+                            str(_hit),
+                        )
+                        _resolved_names.append(_full)
+
+                _resolved_nos = sorted(_resolved_nos)
+                _resolved_set = set(_resolved_nos)
+                _cached_nos = sorted(int(x) for x in index.get('dud_antenna_nos', []))
+
+                if _cached_nos != _resolved_nos:
+                    print(
+                        '[row-index-cache] applying override_dud_names to cached index: '
+                        f'cached={_cached_nos} -> override={_resolved_nos}'
+                    )
+                    index['dud_antenna_nos'] = _resolved_nos
+                    index['dud_antenna_names'] = _resolved_names
+                    index['active_antennas'] = [
+                        a for a in antennas if int(a['antenna_no']) not in _resolved_set
+                    ]
+                    if write_cache:
+                        save_row_index_cache(index, cache_path, source_sha256=index.get('source_sha256'))
+                        print(f'Saved row index cache: {cache_path}')
             return index
         except ValueError as exc:
             print(f'[row-index-cache] warning: {exc}')
@@ -5041,6 +5086,7 @@ def run_iterative_bandpass_workflow(
     uvrange_klambda: Optional[Tuple[float, float]] = None,
     elevation_min_deg: Optional[float] = None,
     elevation_max_deg: Optional[float] = None,
+    table_note_suffix: str = '',
 ) -> Dict[str, Any]:
     """Run iterative bandpass -> diagnostics -> flag-update workflow.
 
@@ -5116,7 +5162,7 @@ def run_iterative_bandpass_workflow(
             flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
             skip_edge_channels=skip_edge_channels,
             top_n=top_n,
-            title=f'{source} RAW — no correction | {_iter0_tag}',
+            title=f'{source} RAW — no correction | {_iter0_tag}{table_note_suffix}',
             save_path=_iter0_plot,
             selection=selection,
             timerange=timerange,
@@ -5139,6 +5185,14 @@ def run_iterative_bandpass_workflow(
     _stop_reason      = None   # set on early exit; None means ran to completion
     _canonical_ant_ids   = None  # fixed antenna order for gain plots (set from first solve)
     _canonical_ant_names = None
+
+    _index_active = list(index.get('active_antennas', index.get('antennas', [])))
+    _index_active_ids = [int(a['antenna_no']) for a in _index_active if a.get('antenna_no') is not None]
+    _index_active_names = [
+        str(a.get('name', f'Ant{int(a["antenna_no"])}'))
+        for a in _index_active
+        if a.get('antenna_no') is not None
+    ]
 
     for iteration_num in range(start_iteration, start_iteration + n_iterations):
         iter_tag = f'{iter_prefix}{iteration_num:0{int(iter_width)}d}'
@@ -5178,18 +5232,22 @@ def run_iterative_bandpass_workflow(
         # Capture canonical antenna list from the very first solve so all
         # subsequent gain-grid plots use the same fixed slot layout.
         if _canonical_ant_ids is None:
-            _canonical_ant_ids   = [int(x) for x in bandpass_sol['antenna_ids']]
-            _canonical_ant_names = list(
-                bandpass_sol.get('antenna_names') or
-                [f'Ant{aid}' for aid in _canonical_ant_ids]
-            )
+            if _index_active_ids:
+                _canonical_ant_ids = list(_index_active_ids)
+                _canonical_ant_names = list(_index_active_names)
+            else:
+                _canonical_ant_ids   = [int(x) for x in bandpass_sol['antenna_ids']]
+                _canonical_ant_names = list(
+                    bandpass_sol.get('antenna_names') or
+                    [f'Ant{aid}' for aid in _canonical_ant_ids]
+                )
 
         # Per-iteration gain grid plot
         if gain_plot_base is not None:
             _gp = tagged_output_path(gain_plot_base, iter_tag)
             _gain_fig = plot_bandpass_solution_grid(
                 bandpass_run['solution'],
-                title=f'{source} bandpass gains | {iter_tag}',
+                title=f'{source} bandpass gains | {iter_tag}{table_note_suffix}',
                 skip_edge_channels=skip_edge_channels,
                 save_path=_gp,
                 canonical_antenna_ids=_canonical_ant_ids,
@@ -5215,7 +5273,7 @@ def run_iterative_bandpass_workflow(
             skip_edge_channels=skip_edge_channels,
             top_n=top_n,
             ranking_metric=outlier_metric,
-            title=f'{source} diagnostics | {iter_tag}',
+            title=f'{source} diagnostics | {iter_tag}{table_note_suffix}',
             save_path=diag_plot_path,
             selection=selection,
             timerange=timerange,
@@ -5242,7 +5300,7 @@ def run_iterative_bandpass_workflow(
                     flag_all_corrs_if_any_rawvis_flagged=flag_all_corrs_if_any_rawvis_flagged,
                     skip_edge_channels=skip_edge_channels,
                     top_n=top_n,
-                    title=f'{source} diagnostics (unflagged) | {iter_tag}',
+                    title=f'{source} diagnostics (unflagged) | {iter_tag}{table_note_suffix}',
                     save_path=unflagged_plot_path,
                     selection=selection,
                     timerange=timerange,

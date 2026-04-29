@@ -18,7 +18,7 @@ TODO(iterative-refit): Iterative audit loop is broken.
     terminates when no new flags are added, with the final refitted bandpass
     written atomically at convergence.  Current manual re-run workflow is
     fragile and does not guarantee convergence or correct flux scale at
-    intermediate steps."""
+    intermediate steps.
 
 Default mode: DRY-RUN.  Plots are shown without writing any new flags to
 disk.  Safe for exploring CLUSTERING_THRESHOLD_JY repeatedly.
@@ -60,6 +60,7 @@ import importlib.util
 import logging
 import sys
 from pathlib import Path
+from typing import List, Union
 
 # ── locate siblings robustly regardless of cwd ───────────────────────────────
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -67,6 +68,16 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import ugmrt_query as q  # noqa: E402
+from workflow_common import (  # noqa: E402
+    add_common_config_set_arguments,
+    add_log_level_argument,
+    apply_overrides_to_globals,
+    bootstrap_config_from_cli,
+    derive_index_cache,
+    format_table_application_note,
+    load_config_into_globals,
+    resolve_versioned_path,
+)
 
 log = logging.getLogger(__name__)
 
@@ -125,6 +136,10 @@ CLUSTERING_MAX_GAP_MINUTES:                float = 30.0
 CLUSTERING_SCAN_GAP_MINUTES:               float = 2.0
 
 LOG_LEVEL: str = 'INFO'
+DOCAL: str = 'on'
+DOFLAG: str = 'on'
+CALVER: str = 'latest'
+FLAGVER: str = 'latest'
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config helpers — deliberately mirrors preprocess_ugmrt.py for consistency
@@ -132,46 +147,17 @@ LOG_LEVEL: str = 'INFO'
 
 def _load_config(config_path: str) -> None:
     """Exec the config file and inject every public name into module globals."""
-    path = Path(config_path).resolve()
-    if not path.exists():
-        sys.exit(f'ERROR: config file not found: {path}')
-    ns: dict = {}
-    with open(path) as fh:
-        exec(compile(fh.read(), str(path), 'exec'), ns)  # noqa: S102
-    g = globals()
-    for key, val in ns.items():
-        if not key.startswith('_'):
-            g[key] = val
+    load_config_into_globals(config_path, globals())
 
 
 def _apply_overrides(overrides: list) -> None:
     """Apply --set KEY=expr overrides to module globals (same contract as preprocess_ugmrt.py)."""
-    if not overrides:
-        return
-    from pathlib import Path as _Path
-    g = globals()
-    for item in overrides:
-        if '=' not in item:
-            sys.exit(f'ERROR: --set requires KEY=VALUE format, got: {item!r}')
-        key, _, expr = item.partition('=')
-        key = key.strip()
-        if not key.isidentifier():
-            sys.exit(f'ERROR: --set key must be a valid Python identifier, got: {key!r}')
-        try:
-            val = eval(expr.strip(), {'Path': _Path, '__builtins__': __builtins__})  # noqa: S307
-        except Exception as exc:
-            sys.exit(f'ERROR: could not evaluate --set {key}={expr!r}: {exc}')
-        g[key] = val
-        log.debug('  --set %s = %r', key, val)
+    apply_overrides_to_globals(overrides, globals(), log=log)
 
 
 def _derive_index_cache() -> Path:
     """Mirror preprocess_ugmrt._derive_index_cache: <WORK_DIR>/<cal_fits_stem>.index.npz."""
-    if INDEX_CACHE is not None:
-        return Path(INDEX_CACHE)
-    stem = Path(CAL_FITS).stem
-    base = Path(WORK_DIR) if WORK_DIR is not None else Path(CAL_FITS).parent
-    return base / f'{stem}.index.npz'
+    return derive_index_cache(INDEX_CACHE, CAL_FITS, WORK_DIR)
 
 
 def _load_outlier_detection():
@@ -180,9 +166,36 @@ def _load_outlier_detection():
     if not od_path.exists():
         raise FileNotFoundError(f'outlier_detection.py not found at {od_path}')
     spec = importlib.util.spec_from_file_location('outlier_detection', od_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'Failed to import outlier_detection module spec from {od_path}')
     od   = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(od)
     return od
+
+
+def _build_identity_bandpass(vis_raw: dict, index: dict, source_name: str) -> dict:
+    """Build a unity-gain solution aligned with vis_raw for DOCAL=off."""
+    import numpy as _np
+
+    ant_ids = sorted(
+        set(_np.asarray(vis_raw['ant1'], dtype=_np.int32).tolist())
+        | set(_np.asarray(vis_raw['ant2'], dtype=_np.int32).tolist())
+    )
+    stokes_labels = list(vis_raw['stokes_labels'])
+    freqs_hz = _np.asarray(vis_raw['freqs_hz'], dtype=_np.float64)
+    nchan, nant, npol = len(freqs_hz), len(ant_ids), len(stokes_labels)
+    ant_name = {int(a['antenna_no']): str(a['name']) for a in index.get('antennas', [])}
+
+    return {
+        'freqs_hz': freqs_hz,
+        'chan_indices': _np.asarray(vis_raw.get('chan_indices', list(range(nchan))), dtype=_np.int32),
+        'antenna_ids': _np.asarray(ant_ids, dtype=_np.int32),
+        'antenna_names': _np.asarray([ant_name.get(int(i), str(i)) for i in ant_ids]),
+        'stokes_labels': _np.asarray(stokes_labels),
+        'gains': _np.ones((nchan, nant, npol), dtype=_np.complex128),
+        'valid': _np.ones((nchan, nant, npol), dtype=bool),
+        'source_name': source_name,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -193,12 +206,7 @@ def main() -> None:
     _default_cfg = str(_SCRIPT_DIR / 'preprocess_ugmrt.cfg')
 
     # ── pre-parse: load config + overrides before the full parser sees defaults
-    pre = argparse.ArgumentParser(add_help=False)
-    pre.add_argument('--config', default=_default_cfg)
-    pre.add_argument('--set', dest='set_overrides', action='append', default=[])
-    pre_args, _ = pre.parse_known_args()
-    _load_config(pre_args.config)
-    _apply_overrides(pre_args.set_overrides)
+    pre_args = bootstrap_config_from_cli(_default_cfg, globals(), log=log)
 
     # ── full parser ───────────────────────────────────────────────────────────
     parser = argparse.ArgumentParser(
@@ -209,20 +217,18 @@ def main() -> None:
             'vis-amplitude plots.  Default: dry-run (plots only, nothing written).'
         ),
     )
-    parser.add_argument(
-        '--config', default=_default_cfg,
-        help='Path to .cfg file (default: preprocess_ugmrt.cfg next to this script)',
-    )
-    parser.add_argument(
-        '--set', dest='set_overrides', action='append', default=[],
-        metavar='KEY=expr',
-        help=(
+    add_common_config_set_arguments(
+        parser,
+        config_default=pre_args.config,
+        config_help='Path to .cfg file (default: preprocess_ugmrt.cfg next to this script)',
+        set_help=(
             'Override any config key after loading.  E.g.:\n'
             '  --set "CLUSTERING_THRESHOLD_JY=3.0"\n'
             '  --set "SOURCE=\'3C286\'"\n'
             '  --set "PLOT_CHAN_RANGE=(100,180)"\n'
             '  --set "SOLVE_ELEVATION_MIN_DEG=25.0"'
         ),
+        set_metavar='KEY=expr',
     )
     parser.add_argument(
         '--dry-run',
@@ -254,9 +260,28 @@ def main() -> None:
         help='Save the six plots as PNGs to WORK_DIR.',
     )
     parser.add_argument(
-        '--log-level', default=None,
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        help='Logging verbosity (default from config LOG_LEVEL or INFO).',
+        '--docal', choices=['on', 'off'], default=str(globals().get('DOCAL', 'on')),
+        help='Apply calibration table before detection/plots (AIPS-like DOCAL).',
+    )
+    parser.add_argument(
+        '--doflag', choices=['on', 'off'], default=str(globals().get('DOFLAG', 'on')),
+        help='Apply flag table(s) before detection/plots (AIPS-like DOFLAG).',
+    )
+    parser.add_argument(
+        '--calver', default=str(globals().get('CALVER', 'latest')),
+        metavar='VER',
+        help='Calibration table selector: latest | N | tag | /path/to/table.npz',
+    )
+    parser.add_argument(
+        '--flagver', default=str(globals().get('FLAGVER', 'latest')),
+        metavar='VER',
+        help='Flag table selector: latest | N | tag | /path/to/table.json',
+    )
+    add_log_level_argument(
+        parser,
+        default=None,
+        help_text='Logging verbosity (default from config LOG_LEVEL or INFO).',
+        metavar='LEVEL',
     )
     args = parser.parse_args()
     _apply_overrides(args.set_overrides)
@@ -276,6 +301,8 @@ def main() -> None:
                  FLAG_TABLE_SESSION)
 
     log.info('Source        : %s', SOURCE)
+    log.info('DOCAL/DOFLAG  : %s / %s   CALVER/FLAGVER: %s / %s',
+             args.docal, args.doflag, args.calver, args.flagver)
     log.info('CLUSTERING_CORR=%s  threshold=%s Jy  threshold_low=%s Jy',
              CLUSTERING_CORR, CLUSTERING_THRESHOLD_JY, CLUSTERING_THRESHOLD_LOW_JY)
 
@@ -286,6 +313,22 @@ def main() -> None:
     active_disk  = [Path(p) for p in (FLAG_TABLE_PATHS or [])]
     if session_path is not None and session_path.exists() and session_path not in active_disk:
         active_disk.append(session_path)
+    if args.doflag == 'off':
+        active_disk = []
+    elif args.flagver != 'latest':
+        try:
+            _src = str(SOURCE).lower()
+            _flag_candidates = list(active_disk)
+            _flag_candidates.extend(Path(WORK_DIR).glob(f'{_src}_flag_table*.json'))
+            _sel_flag = resolve_versioned_path(
+                candidates=_flag_candidates,
+                version=args.flagver,
+                default_path=(active_disk[-1] if active_disk else None),
+                label='flag table',
+            )
+            active_disk = [_sel_flag]
+        except ValueError as exc:
+            sys.exit(f'ERROR: {exc}')
     log.info('Active disk flag tables: %s', active_disk or '(none)')
 
     # ── load row index ────────────────────────────────────────────────────────
@@ -308,11 +351,32 @@ def main() -> None:
     }
     # ── load saved bandpass solution ──────────────────────────────────────────
     bp_path = Path(BANDPASS_OUT) if BANDPASS_OUT else None
-    if bp_path is None or not bp_path.exists():
-        sys.exit(f'ERROR: BANDPASS_OUT not found: {bp_path}  '
-                 '(Has Phase-1 run and committed at least one iteration?)')
-    log.info('Loading bandpass solution from %s ...', bp_path)
-    bandpass_sol = q.load_bandpass_solution(bp_path)
+    if args.docal == 'on' and args.calver != 'latest':
+        try:
+            _bp_candidates = []
+            if bp_path is not None:
+                _bp_candidates.append(bp_path)
+                _bp_candidates.extend(bp_path.parent.glob(f'{bp_path.stem}_*.npz'))
+            bp_path = resolve_versioned_path(
+                candidates=_bp_candidates,
+                version=args.calver,
+                default_path=bp_path,
+                label='bandpass table',
+            )
+        except ValueError as exc:
+            sys.exit(f'ERROR: {exc}')
+
+    _defer_identity = False
+    if args.docal == 'on':
+        if bp_path is None or not bp_path.exists():
+            sys.exit(f'ERROR: BANDPASS_OUT not found: {bp_path}  '
+                     '(Has Phase-1 run and committed at least one iteration?)')
+        log.info('Loading bandpass solution from %s ...', bp_path)
+        bandpass_sol = q.load_bandpass_solution(bp_path)
+    else:
+        bandpass_sol = {}
+        _defer_identity = True
+        log.info('DOCAL=off: will use identity calibration (raw vis amplitudes).')
 
     # ── load vis (Phase-1 flags already on disk, applied here) ───────────────
     # Build union of needed Stokes from all requested corrs
@@ -333,8 +397,9 @@ def main() -> None:
         elevation_min_deg  = SOLVE_ELEVATION_MIN_DEG,
     )
     if active_disk:
+        _active_disk_paths = tuple(str(p) for p in active_disk)
         vis_raw, _flag_stats = q.apply_flag_tables_to_vis(
-            vis_raw, ant_name_map, flag_table_paths=active_disk,
+            vis_raw, ant_name_map, flag_table_paths=_active_disk_paths,
         )
         log.info('  Phase-1 flags applied: dropped %d rows (%d kept)',
                  _flag_stats['dropped_rows'], _flag_stats['kept_rows'])
@@ -350,8 +415,22 @@ def main() -> None:
     log.info('  active antennas (observed): %d  active baselines (observed): %d',
              _obs_active_ants, _obs_active_bls)
 
-    vis_corr = q.apply_bandpass_solution(vis_raw, bandpass_sol)
+    if not _defer_identity:
+        vis_corr = q.apply_bandpass_solution(vis_raw, bandpass_sol)
+    else:
+        _id_bp = _build_identity_bandpass(vis_raw, index, SOURCE)
+        vis_corr = q.apply_bandpass_solution(vis_raw, _id_bp)
+        bandpass_sol = _id_bp
     log.info('Vis loaded; shape=%s', vis_corr['amp'].shape)
+
+    _table_note = format_table_application_note(
+        docal=args.docal,
+        doflag=args.doflag,
+        calver=args.calver,
+        flagver=args.flagver,
+        cal_path=(bp_path if args.docal == 'on' else None),
+        flag_paths=active_disk,
+    )
 
     # ── apply existing chanrange-restricted cell flags to vis_corr ────────────
     # apply_flag_tables_to_vis (above) only drops whole rows (bad_antennas +
@@ -484,6 +563,8 @@ def main() -> None:
         or ft_new.get('bad_burst_timeranges')
     )
     if not dry_run and _has_any_flags:
+        if FLAG_TABLE_SESSION is None:
+            sys.exit('ERROR: FLAG_TABLE_SESSION is not configured; cannot write clustering flags.')
         q.merge_flag_table_into_file(
             FLAG_TABLE_SESSION,
             ft_new,
@@ -740,36 +821,42 @@ def main() -> None:
 
     # ── 6-plot layout: 3 BEFORE, 3 AFTER ─────────────────────────────────────
     import matplotlib.pyplot as plt
+    _uv_before = _save(f'{_src}_clustering_uvdist_before.png')
+    _sp_before = _save(f'{_src}_clustering_spectrum_before.png')
+    _v_before = _save(f'{_src}_clustering_stokesV_before.png')
+    _uv_after = _save(f'{_src}_clustering_uvdist_after.png')
+    _sp_after = _save(f'{_src}_clustering_spectrum_after.png')
+    _v_after = _save(f'{_src}_clustering_stokesV_after.png')
 
     # — BEFORE (1/3): corrected amp vs UV-dist ————————————————————————————————
     print('== BEFORE clustering flags ==')
     q.plot_bandpass_corrected_vis_amp_vs_uvdist(
         _vis_plot, bandpass_sol,
-        title            = f'{SOURCE} corrected vis — amp vs UV dist  BEFORE clustering',
+        title            = f'{SOURCE} corrected vis — amp vs UV dist  BEFORE clustering{_table_note}',
         exclude_antennas = EXCLUDE_FOR_PLOTS,
         show_phase       = False,
         alpha            = 0.10,
-        save_path        = _save(f'{_src}_clustering_uvdist_before.png'),
+        save_path        = _uv_before,
     )
 
     # — BEFORE (2/3): vector-avg spectrum ————————————————————————————————————
     q.plot_corrected_vector_avg_spectrum(
         _vis_plot, bandpass_sol,
-        title              = f'{SOURCE} corrected spectrum  BEFORE clustering',
+        title              = f'{SOURCE} corrected spectrum  BEFORE clustering{_table_note}',
         exclude_antennas   = EXCLUDE_FOR_PLOTS,
         skip_edge_channels = SKIP_EDGE_CHANNELS,
-        save_path          = _save(f'{_src}_clustering_spectrum_before.png'),
+        save_path          = _sp_before,
     )
 
     # — BEFORE (3/3): Stokes-V amp vs UV-dist (threshold line) ───────────────
     q.plot_vis_amp_vs_uvdist(
         q.compute_stokes_vis(_vis_plot, bandpass_sol, output_stokes='V', signed=True),
-        title      = f'{SOURCE} Stokes-V corrected  BEFORE clustering',
+        title      = f'{SOURCE} Stokes-V corrected  BEFORE clustering{_table_note}',
         show_phase = False,
         alpha      = 0.10,
         hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, (int, float)) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
         signed     = True,
-        save_path  = _save(f'{_src}_clustering_stokesV_before.png'),
+        save_path  = _v_before,
     )
 
     # — AFTER (4/3): corrected amp vs UV-dist ————————————————————————————————
@@ -777,37 +864,43 @@ def main() -> None:
     q.plot_bandpass_corrected_vis_amp_vs_uvdist(
         _vis_plot_after, bandpass_sol_after,
         title            = (f'{SOURCE} corrected vis — amp vs UV dist  '
-                            f'AFTER clustering  [{_after_label}]'),
+                            f'AFTER clustering  [{_after_label}]{_table_note}'),
         exclude_antennas = EXCLUDE_FOR_PLOTS,
         show_phase       = False,
         alpha            = 0.10,
-        save_path        = _save(f'{_src}_clustering_uvdist_after.png'),
+        save_path        = _uv_after,
     )
 
     # — AFTER (5/3): vector-avg spectrum ─────────────────────────────────────
     q.plot_corrected_vector_avg_spectrum(
         _vis_plot_after, bandpass_sol_after,
         title              = (f'{SOURCE} corrected spectrum  '
-                              f'AFTER clustering  [{_after_label}]'),
+                              f'AFTER clustering  [{_after_label}]{_table_note}'),
         exclude_antennas   = EXCLUDE_FOR_PLOTS,
         skip_edge_channels = SKIP_EDGE_CHANNELS,
-        save_path          = _save(f'{_src}_clustering_spectrum_after.png'),
+        save_path          = _sp_after,
     )
 
     # — AFTER (6/3): Stokes-V amp vs UV-dist (threshold line) ────────────────
     q.plot_vis_amp_vs_uvdist(
         q.compute_stokes_vis(_vis_plot_after, bandpass_sol_after, output_stokes='V', signed=True),
         title      = (f'{SOURCE} Stokes-V corrected  '
-                      f'AFTER clustering  [{_after_label}]'),
+                      f'AFTER clustering  [{_after_label}]{_table_note}'),
         show_phase = False,
         alpha      = 0.10,
         hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, (int, float)) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
         signed     = True,
-        save_path  = _save(f'{_src}_clustering_stokesV_after.png'),
+        save_path  = _v_after,
     )
 
     if args.save_plots:
         log.info('Plots saved to %s/', WORK_DIR)
+        log.info('  %s | tables=%s', _uv_before, _table_note.strip())
+        log.info('  %s | tables=%s', _sp_before, _table_note.strip())
+        log.info('  %s | tables=%s', _v_before, _table_note.strip())
+        log.info('  %s | tables=%s', _uv_after, _table_note.strip())
+        log.info('  %s | tables=%s', _sp_after, _table_note.strip())
+        log.info('  %s | tables=%s', _v_after, _table_note.strip())
 
     plt.show()
     log.info('Done.')

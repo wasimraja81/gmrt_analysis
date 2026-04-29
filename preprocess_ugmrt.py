@@ -61,6 +61,17 @@ import logging
 import sys
 from pathlib import Path
 
+from workflow_common import (
+    add_common_config_set_arguments,
+    add_log_level_argument,
+    apply_overrides_to_globals,
+    bootstrap_config_from_cli,
+    derive_index_cache,
+    format_table_application_note,
+    load_config_into_globals,
+    resolve_versioned_path,
+)
+
 # Module-level logger – configured in main() once log level / paths are known.
 log = logging.getLogger('ugmrt.preprocess')
 
@@ -88,6 +99,33 @@ COMPARE_METRICS_FOR_CONVERGENCE  = ['V', 'Model']
 CONVERGENCE_COMBINE_STRATEGY     = 'any'
 RUN_ITER0_DIAGNOSTIC             = True
 LOG_LEVEL = 'INFO'
+DOCAL = 'on'
+DOFLAG = 'on'
+CALVER = 'latest'
+FLAGVER = 'latest'
+
+
+def _effective_flag_table_paths() -> list:
+    return list(globals().get('_FLAG_TABLE_PATHS_EFFECTIVE', FLAG_TABLE_PATHS or []))
+
+
+def _refresh_effective_flag_paths() -> None:
+    _flag_paths = [Path(p) for p in (FLAG_TABLE_PATHS or [])]
+    if str(globals().get('DOFLAG', 'on')).lower() == 'off':
+        _flag_paths = []
+    else:
+        _flagver = str(globals().get('FLAGVER', 'latest'))
+        if _flagver != 'latest':
+            _src = str(globals().get('SOURCE', 'src')).lower()
+            _cands = list(_flag_paths)
+            _cands.extend(Path(globals().get('WORK_DIR', '.')).glob(f'{_src}_flag_table*.json'))
+            _flag_paths = [resolve_versioned_path(
+                candidates=_cands,
+                version=_flagver,
+                default_path=(_flag_paths[-1] if _flag_paths else None),
+                label='flag table',
+            )]
+    globals()['_FLAG_TABLE_PATHS_EFFECTIVE'] = _flag_paths
 
 # ── Final clustering stage (post-convergence, optional) ───────────────────────
 # When RUN_FINAL_CLUSTERING=True the auto workflow runs one extra pass of the
@@ -178,16 +216,7 @@ def _load_config(config_path: str) -> None:
     Exec the config file and inject every public name into this module's globals.
     The config file is plain Python: Path(), tuples, dicts, booleans all work.
     """
-    path = Path(config_path).resolve()
-    if not path.exists():
-        sys.exit(f'ERROR: config file not found: {path}')
-    ns: dict = {}
-    with open(path) as fh:
-        exec(compile(fh.read(), str(path), 'exec'), ns)  # noqa: S102
-    g = globals()
-    for key, val in ns.items():
-        if not key.startswith('_'):
-            g[key] = val
+    load_config_into_globals(config_path, globals())
 
 
 def _apply_overrides(overrides: list) -> None:
@@ -202,23 +231,7 @@ def _apply_overrides(overrides: list) -> None:
         --set "CHAN_RANGE=(64,191)"
         --set "ANTENNA_FLAG_THRESHOLD_JY={'RR':180,'LL':180,'V':30}"
     """
-    if not overrides:
-        return
-    from pathlib import Path as _Path
-    g = globals()
-    for item in overrides:
-        if '=' not in item:
-            sys.exit(f'ERROR: --set requires KEY=VALUE format, got: {item!r}')
-        key, _, expr = item.partition('=')
-        key = key.strip()
-        if not key.isidentifier():
-            sys.exit(f'ERROR: --set key is not a valid Python identifier: {key!r}')
-        try:
-            val = eval(expr.strip(), {'Path': _Path, '__builtins__': __builtins__})  # noqa: S307
-        except Exception as exc:
-            sys.exit(f'ERROR: could not evaluate --set {key}={expr!r}: {exc}')
-        g[key] = val
-        log.debug('  --set %s = %r', key, val)
+    apply_overrides_to_globals(overrides, globals(), log=log)
 
 
 def _rederive_source_paths() -> None:
@@ -264,12 +277,7 @@ def _derive_index_cache() -> Path:
     Falls back to the same directory as CAL_FITS if WORK_DIR is not set.
     If INDEX_CACHE was set explicitly in the config file that value wins.
     """
-    # Explicit override in config always wins.
-    if INDEX_CACHE is not None:
-        return Path(INDEX_CACHE)
-    stem = Path(CAL_FITS).stem
-    base = Path(WORK_DIR) if WORK_DIR is not None else Path(CAL_FITS).parent
-    return base / f'{stem}.index.npz'
+    return derive_index_cache(INDEX_CACHE, CAL_FITS, WORK_DIR)
 
 
 def _setup_logging(work_dir: Path, iter_tag: str, log_level: str,
@@ -472,6 +480,7 @@ def step_1_index(q):
 def step_2_bandpass(q, index, iter_tag, dry_run, flag_tables_extra=None):
     """Derive bandpass solution."""
     log.info('── Step 2: bandpass')
+    _flag_paths = _effective_flag_table_paths()
     run = q.derive_bandpass_iteration(
         fits_path=CAL_FITS,
         index=index,
@@ -483,7 +492,7 @@ def step_2_bandpass(q, index, iter_tag, dry_run, flag_tables_extra=None):
         smooth_window=SMOOTH_WINDOW,
         min_baselines=MIN_BASELINES,
         ignore_autos=True,
-        flag_table_path=FLAG_TABLE_PATHS if FLAG_TABLE_PATHS else None,
+        flag_table_path=_flag_paths if _flag_paths else None,
         flag_table=flag_tables_extra if flag_tables_extra else None,
         flag_all_corrs_if_any_rawvis_flagged=FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
         iteration_tag=iter_tag,
@@ -492,31 +501,43 @@ def step_2_bandpass(q, index, iter_tag, dry_run, flag_tables_extra=None):
     sol = run['solution']
     log.info('  dry_run              : %s', run['dry_run'])
     log.info('  output path          : %s', run['bandpass_out'])
-    log.info('  on-disk flag tables  : %s', FLAG_TABLE_PATHS)
+    log.info('  on-disk flag tables  : %s', _flag_paths)
     log.info('  flag table count     : %s', sol.get('flag_table_count', 0))
     log.info('  rows dropped by flags: %s', sol.get('solve_dropped_rows_by_flag_table', 0))
     return run
 
 
-def step_3_diagnostics(q, index, bandpass_sol, iter_tag, flag_tables_extra=None):
+def step_3_diagnostics(q, index, bandpass_sol, iter_tag, flag_tables_extra=None, cal_path=None):
     """Run bandpass diagnostics and produce plots."""
     log.info('── Step 3: diagnostics')
+    _flag_paths = _effective_flag_table_paths()
+    _apply_corr = str(globals().get('DOCAL', 'on')).lower() == 'on'
+    _table_note = format_table_application_note(
+        docal=DOCAL,
+        doflag=DOFLAG,
+        calver=CALVER,
+        flagver=FLAGVER,
+        cal_path=cal_path,
+        flag_paths=_flag_paths,
+    )
+    _diag_solution = bandpass_sol if _apply_corr else None
     diag = q.run_bandpass_diagnostics(
         index,
-        bandpass_sol,
+        _diag_solution,
         source=SOURCE,
         chan_range=CHAN_RANGE,
         stokes=STOKES,
         max_rows=MAX_ROWS_DIAG,
         exclude_antennas=EXCLUDE_FOR_PLOTS,
-        apply_flag_tables=DIAG_APPLY_FLAGS_ON_THE_FLY,
-        flag_table_path=FLAG_TABLE_PATHS if FLAG_TABLE_PATHS else None,
+        apply_flag_tables=DIAG_APPLY_FLAGS_ON_THE_FLY and (str(globals().get('DOFLAG', 'on')).lower() == 'on'),
+        flag_table_path=_flag_paths if _flag_paths else None,
         flag_table=flag_tables_extra if flag_tables_extra else None,
+        apply_correction=_apply_corr,
         flag_all_corrs_if_any_rawvis_flagged=FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
         skip_edge_channels=SKIP_EDGE_CHANNELS,
         top_n=TOP_N,
         ranking_metric=OUTLIER_METRIC,
-        title=f'{SOURCE} diagnostics | {iter_tag}',
+        title=f'{SOURCE} diagnostics | {iter_tag}{_table_note}',
         save_path=DIAG_PLOT_BASE.with_name(
             f'{DIAG_PLOT_BASE.stem}_{iter_tag}{DIAG_PLOT_BASE.suffix}'
         ) if DIAG_PLOT_BASE is not None else None,
@@ -525,18 +546,30 @@ def step_3_diagnostics(q, index, bandpass_sol, iter_tag, flag_tables_extra=None)
     n_plotted = int(diag['chan_mask'].sum())
     expected  = CHAN_RANGE[1] - CHAN_RANGE[0] + 1
     log.info('  plot saved       : %s', diag['save_path'] or '(not saved)')
+    log.info('  tables applied   : %s', _table_note.strip())
     # Bandpass gain grid plot (amp + phase per antenna)
     if GAIN_PLOT_BASE is not None:
+        import numpy as np
         _gain_plot_path = GAIN_PLOT_BASE.with_name(
             f'{GAIN_PLOT_BASE.stem}_{iter_tag}{GAIN_PLOT_BASE.suffix}'
         )
+        _canon_ants = list(index.get('active_antennas', index.get('antennas', [])))
+        _canon_ids = [int(a['antenna_no']) for a in _canon_ants if a.get('antenna_no') is not None]
+        _canon_names = [str(a.get('name', f'Ant{int(a["antenna_no"])}')) for a in _canon_ants if a.get('antenna_no') is not None]
+        _sol_ids = {int(x) for x in np.asarray(bandpass_sol.get('antenna_ids', []), dtype=np.int32)}
+        _missing_slots = len([aid for aid in _canon_ids if aid not in _sol_ids])
+        log.info('  gains grid slots : %d canonical, %d placeholder(s) not in solution',
+                 len(_canon_ids), _missing_slots)
         q.plot_bandpass_solution_grid(
             bandpass_sol,
-            title=f'{SOURCE} bandpass gains | {iter_tag}',
+            title=f'{SOURCE} bandpass gains | {iter_tag}{_table_note}',
             skip_edge_channels=SKIP_EDGE_CHANNELS,
             save_path=_gain_plot_path,
+            canonical_antenna_ids=_canon_ids if _canon_ids else None,
+            canonical_antenna_names=_canon_names if _canon_names else None,
         )
         log.info('  gains plot saved  : %s', _gain_plot_path)
+        log.info('  tables applied    : %s', _table_note.strip())
     log.info('  CHAN_RANGE       : %s  (%d channels expected)', CHAN_RANGE, expected)
     log.info('  channels loaded  : %d', n_loaded)
     log.info('  channels plotted : %d  (SKIP_EDGE_CHANNELS=%s)', n_plotted, SKIP_EDGE_CHANNELS)
@@ -673,6 +706,7 @@ def run_manual(args):
         # updated by the previous iteration is automatically included in
         # the current solve without requiring a script restart.
         _rederive_source_paths()
+        _refresh_effective_flag_paths()
         if n_iters > 1:
             log.info('═' * 60)
             log.info('  Iteration %d / %d : %s', iter_num, n_iters, iter_tag)
@@ -698,14 +732,45 @@ def run_manual(args):
         if 3 in steps:
             if bandpass_run is None:
                 import numpy as np
-                log.info('  [step 3] loading bandpass from %s', BANDPASS_OUT)
-                raw = np.load(str(BANDPASS_OUT), allow_pickle=True)
-                bandpass_sol = dict(raw)
+                _bp_path = Path(BANDPASS_OUT)
+                if CALVER != 'latest':
+                    try:
+                        _cands = [_bp_path]
+                        _cands.extend(_bp_path.parent.glob(f'{_bp_path.stem}_*.npz'))
+                        _bp_path = resolve_versioned_path(
+                            candidates=_cands,
+                            version=CALVER,
+                            default_path=_bp_path,
+                            label='bandpass table',
+                        )
+                    except ValueError as exc:
+                        raise RuntimeError(str(exc)) from exc
+                log.info('  [step 3] loading bandpass from %s', _bp_path)
+                try:
+                    bandpass_sol = q.load_bandpass_solution(_bp_path)
+                except Exception:
+                    raw = np.load(str(_bp_path), allow_pickle=True)
+                    bandpass_sol = dict(raw)
+                    if 'antenna_names' in bandpass_sol:
+                        bandpass_sol['antenna_names'] = np.asarray(bandpass_sol['antenna_names']).astype(str).tolist()
+                    if 'stokes_labels' in bandpass_sol:
+                        bandpass_sol['stokes_labels'] = np.asarray(bandpass_sol['stokes_labels']).astype(str).tolist()
+                    if 'reference_antenna' not in bandpass_sol:
+                        _ant_ids = np.asarray(bandpass_sol.get('antenna_ids', []), dtype=np.int32)
+                        bandpass_sol['reference_antenna'] = int(_ant_ids[0]) if _ant_ids.size else 0
+                    bandpass_sol.setdefault('source_name', SOURCE)
+                    bandpass_sol.setdefault('source_file', str(CAL_FITS))
             else:
                 bandpass_sol = bandpass_run['solution']
+            _bp_for_note = None
+            if bandpass_run is not None:
+                _bp_for_note = bandpass_run.get('bandpass_out')
+            elif str(globals().get('DOCAL', 'on')).lower() == 'on':
+                _bp_for_note = _bp_path
             diag = step_3_diagnostics(
                 q, index, bandpass_sol, iter_tag,
                 flag_tables_extra=accepted_flags if accepted_flags else None,
+                cal_path=_bp_for_note,
             )
 
         if 4 in steps:
@@ -915,6 +980,14 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
         _plot_path = q.tagged_output_path(DIAG_PLOT_BASE, final_tag)
         log.info('[final-clustering] Final diagnostic plot → %s', _plot_path)
         import matplotlib.pyplot as _plt
+        _final_note = format_table_application_note(
+            docal='on',
+            doflag=DOFLAG,
+            calver='iterative-final',
+            flagver=FLAGVER,
+            cal_path=final_bp.get('bandpass_out'),
+            flag_paths=active_disk,
+        )
         _fig = q.run_bandpass_diagnostics(
             index,
             final_bp['solution'],
@@ -930,9 +1003,10 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
             flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
             skip_edge_channels = SKIP_EDGE_CHANNELS,
             top_n              = TOP_N,
-            title              = f'{SOURCE} FINAL — post-clustering | {final_tag}',
+            title              = f'{SOURCE} FINAL — post-clustering | {final_tag}{_final_note}',
             save_path          = _plot_path,
         )
+        log.info('[final-clustering] tables applied: %s', _final_note.strip())
         if _fig is not None:
             _plt.close(_fig)
 
@@ -944,6 +1018,10 @@ def run_auto(args):
     q = _import_ugmrt()
     dry_run_bp   = args.dry_run
     dry_run_flag = args.dry_run
+
+    if str(globals().get('DOCAL', 'on')).lower() == 'off':
+        log.warning('DOCAL=off requested, but auto workflow diagnostics currently use corrected vis; '
+                    'DOCAL is only honored in step_3_diagnostics/manual path.')
 
     log.info('── Auto workflow: %d iterations', args.n_iters)
     log.info('  dry_run_bandpass=%s  dry_run_flag_write=%s', dry_run_bp, dry_run_flag)
@@ -958,7 +1036,7 @@ def run_auto(args):
         diag_plot_unflagged_base=DIAG_PLOT_UNFLAGGED,
         gain_plot_base=GAIN_PLOT_BASE,
         flag_table_session_path=FLAG_TABLE_SESSION,
-        base_flag_table_paths=FLAG_TABLE_PATHS,
+        base_flag_table_paths=_effective_flag_table_paths(),
         pending_flag_tables=[],
         use_pending_flag_tables=True,
         start_iteration=AUTO_START_ITER,
@@ -998,6 +1076,14 @@ def run_auto(args):
         uvrange_m=SOLVE_UVRANGE_M,
         uvrange_klambda=SOLVE_UVRANGE_KLAMBDA,
         timerange=SOLVE_TIMERANGE,
+        table_note_suffix=format_table_application_note(
+            docal='on',
+            doflag=DOFLAG,
+            calver='iterative',
+            flagver=FLAGVER,
+            cal_path=None,
+            flag_paths=_effective_flag_table_paths(),
+        ),
     )
 
     _index = result.get('index', {})
@@ -1064,22 +1150,8 @@ def run_auto(args):
 
 def main():
     # Parse --config and --set first so overrides are available before full parse.
-    pre = argparse.ArgumentParser(add_help=False)
-    pre.add_argument(
-        '--config',
-        default=str(Path(__file__).resolve().parent / 'preprocess_ugmrt.cfg'),
-        metavar='FILE',
-    )
-    pre.add_argument(
-        '--set',
-        action='append',
-        dest='set_overrides',
-        metavar='KEY=VALUE',
-        default=[],
-    )
-    pre_args, _ = pre.parse_known_args()
-    _load_config(pre_args.config)
-    _apply_overrides(pre_args.set_overrides)
+    _default_cfg = str(Path(__file__).resolve().parent / 'preprocess_ugmrt.cfg')
+    pre_args = bootstrap_config_from_cli(_default_cfg, globals(), log=log)
     _rederive_source_paths()   # re-sync output paths if SOURCE was overridden
 
     parser = argparse.ArgumentParser(
@@ -1087,24 +1159,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument(
-        '--config',
-        default=pre_args.config,
-        metavar='FILE',
-        help='Path to config file (default: preprocess_ugmrt.cfg next to this script).',
-    )
-    parser.add_argument(
-        '--set',
-        action='append',
-        dest='set_overrides',
-        metavar='KEY=expr',
-        default=[],
-        help=(
+    add_common_config_set_arguments(
+        parser,
+        config_default=pre_args.config,
+        config_help='Path to config file (default: preprocess_ugmrt.cfg next to this script).',
+        set_help=(
             'Override a config key with a Python expression, e.g. '
             '--set "SOURCE=\'3C147\'" or --set "CHAN_RANGE=(64,191)". '
             'Path values: --set "CAL_FITS=Path(\'/data/file.FITS\')". '
             'Repeatable.  Applied after the config file is loaded.'
         ),
+        config_metavar='FILE',
+        set_metavar='KEY=expr',
     )
     parser.add_argument(
         '--step',
@@ -1179,13 +1245,30 @@ def main():
             'wrapper script that defaults to dry-run for safety).'
         ),
     )
-
     parser.add_argument(
-        '--log-level',
-        default=None,       # None → read from config LOG_LEVEL
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+        '--docal', choices=['on', 'off'], default=str(globals().get('DOCAL', 'on')),
+        help='Apply calibration table in diagnostics where applicable (AIPS-like DOCAL).',
+    )
+    parser.add_argument(
+        '--doflag', choices=['on', 'off'], default=str(globals().get('DOFLAG', 'on')),
+        help='Apply on-disk flag table(s) before solve/diagnostics (AIPS-like DOFLAG).',
+    )
+    parser.add_argument(
+        '--calver', default=str(globals().get('CALVER', 'latest')),
+        metavar='VER',
+        help='Calibration table selector for standalone diagnostics: latest | N | tag | /path/to/table.npz',
+    )
+    parser.add_argument(
+        '--flagver', default=str(globals().get('FLAGVER', 'latest')),
+        metavar='VER',
+        help='Flag table selector: latest | N | tag | /path/to/table.json',
+    )
+
+    add_log_level_argument(
+        parser,
+        default=None,  # None → read from config LOG_LEVEL
+        help_text='Logging level: DEBUG | INFO | WARNING | ERROR  (default from config)',
         metavar='LEVEL',
-        help='Logging level: DEBUG | INFO | WARNING | ERROR  (default from config)',
     )
 
     args = parser.parse_args()
@@ -1193,6 +1276,17 @@ def main():
     # Re-apply overrides in case full parser reset anything (it doesn't, but
     # this keeps the effective globals consistent with what was pre-parsed).
     _apply_overrides(args.set_overrides)
+
+    global DOCAL, DOFLAG, CALVER, FLAGVER
+    DOCAL = str(args.docal).lower()
+    DOFLAG = str(args.doflag).lower()
+    CALVER = str(args.calver)
+    FLAGVER = str(args.flagver)
+
+    try:
+        _refresh_effective_flag_paths()
+    except ValueError as exc:
+        sys.exit(f'ERROR: {exc}')
 
     # --auto: default n_iters to AUTO_N_ITERS from config if user didn't supply it.
     if args.auto and args.n_iters == 1:
@@ -1217,6 +1311,7 @@ def main():
     log_dir = _setup_logging(Path(WORK_DIR), first_tag, effective_log_level, timestamp)
     _save_config_snapshot(log_dir, timestamp, args.config, args.set_overrides)
     _log_run_parameters(args.config, args)
+    log.info('DOCAL/DOFLAG  : %s / %s   CALVER/FLAGVER: %s / %s', DOCAL, DOFLAG, CALVER, FLAGVER)
 
     if args.auto:
         if args.step != 'all':
