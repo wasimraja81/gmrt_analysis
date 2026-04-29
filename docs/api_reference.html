@@ -99,7 +99,8 @@
   /* ── Shell pill ── */
   .shell-block { position: relative; background: #0a0c12; border: 1px solid var(--border);
                  border-radius: var(--radius); padding: 14px 18px 14px 18px; margin: 14px 20px;
-                 font-family: monospace; font-size: 12.5px; line-height: 1.7; overflow-x: auto; }
+                 font-family: monospace; font-size: 12.5px; line-height: 1.7; overflow-x: auto;
+                 white-space: pre-wrap; }
   .prompt { color: #5b8dee; user-select: none; }
   .sh-comment { color: #4a5273; }
   .copy-btn { position: absolute; top: 8px; right: 10px; background: #1e2133;
@@ -162,6 +163,7 @@
 
   <div class="nav-section">Getting Started</div>
   <a class="nav-item" href="#overview">Overview</a>
+  <a class="nav-item" href="#pipeline-cli">pipeline_cli (Primary)</a>
   <a class="nav-item" href="#quickstart">Quick Start</a>
   <a class="nav-item" href="#pipeline">Workflow Diagram</a>
 
@@ -210,13 +212,15 @@
   <div class="nav-section">Clustering</div>
   <a class="nav-item" href="#run-clustering-detection">run_clustering_detection</a>
 
-  <div class="nav-section">Scripts &amp; Config</div>
+  <div class="nav-section">Commands &amp; Config</div>
+  <a class="nav-item" href="#pipeline-cli">pipeline_cli.py ★</a>
+  <a class="nav-item" href="#python-script-defaults">Python Script Defaults</a>
   <a class="nav-item" href="#config">preprocess_ugmrt.cfg</a>
-  <a class="nav-item" href="#scripts">Shell Scripts</a>
+  <a class="nav-item" href="#scripts">Compatibility Wrappers</a>
   <a class="nav-item sub" href="#script-run-preprocess">run_preprocess.sh</a>
   <a class="nav-item sub" href="#script-v-based">v-based-outlier-detection.sh</a>
   <a class="nav-item sub" href="#script-run-clustering">run_clustering.sh</a>
-  <a class="nav-item sub" href="#script-run-bandpass">run_bandpass.sh ✦</a>
+  <a class="nav-item sub" href="#script-run-bandpass">run_bandpass.sh</a>
 
   <div class="nav-section">Roadmap</div>
   <a class="nav-item" href="#todo">TODO</a>
@@ -228,9 +232,9 @@
 <!-- ── Hero ── -->
 <div class="page-hero" id="overview">
   <h1>uGMRT Analysis Pipeline</h1>
-  <p>Python library and shell scripts for uGMRT data quality assessment, bandpass
-     calibration, and outlier-based flagging. The pipeline reads FITS/UVFITS data
-     non-destructively and exports solutions separately.</p>
+  <p>Command-first uGMRT bandpass workflow with <code>pipeline_cli.py</code> as the
+     primary interface. Python APIs remain fully documented below for advanced users,
+     debugging, and notebook integration.</p>
   <div class="badges">
     <span class="badge badge-python">Python 3.9+</span>
     <span class="badge badge-phase">Phase: Data Diagnostics &amp; Preprocessing</span>
@@ -238,57 +242,111 @@
   </div>
 </div>
 
+<!-- ── Primary CLI ── -->
+<div class="section" id="pipeline-cli">
+  <div class="section-title">pipeline_cli.py (Primary User Interface)</div>
+  <div class="section-desc">Use this command first for all routine operations. Legacy shell scripts are compatibility wrappers over the same interface.</div>
+
+  <div class="fn-card" style="border-color:var(--accent2)">
+    <div class="fn-header">
+      <span class="fn-name">python pipeline_cli.py &lt;command&gt; [args]</span>
+      <span class="fn-kind function">primary entrypoint</span>
+    </div>
+    <div class="fn-desc">
+      <p><strong>Recommended command set:</strong> <code>bandpass</code>, <code>derive</code>, <code>audit</code>, <code>full</code>.</p>
+      <p><strong>Direct phase drivers:</strong> <code>preprocess</code> and <code>clustering</code> are still available for fine control.</p>
+    </div>
+    <div class="callout callout-info">
+      <strong>Default behavior (pipeline_cli).</strong>
+      <br>• <code>bandpass</code> requires explicit <code>--phase</code>.
+      <br>• If neither <code>--dry-run</code> nor <code>--no-dry-run</code> is given, default is <code>--dry-run</code>.
+      <br>• <code>derive</code>/<code>full</code> apply derive presets by default: <code>--step all</code>, <code>--n-iters 15</code>, <code>OUTLIER_METRIC='V'</code>, <code>COMPARE_METRICS_FOR_CONVERGENCE=['V','Model']</code>.
+      <br>• <code>audit</code> defaults to plot-only behavior unless <code>--no-dry-run</code> is passed.
+    </div>
+    <div class="shell-block">
+<span class="sh-comment"># End-to-end derive + audit (recommended)</span>
+<span class="prompt">$ </span>python pipeline_cli.py bandpass \
+    --phase=derive-and-audit \
+    --no-dry-run \
+    --auto --n-iters 100 \
+    --refit \
+    --set "SOURCE='3C48'" \
+    --set "CLUSTERING_THRESHOLD_JY=3.5"
+
+<span class="sh-comment"># Phase-1 only</span>
+<span class="prompt">$ </span>python pipeline_cli.py derive \
+  --no-dry-run \
+  --auto \
+  --n-iters 100
+
+<span class="sh-comment"># Phase-2 only (threshold tuning, dry-run by default)</span>
+<span class="prompt">$ </span>python pipeline_cli.py audit \
+  --set "CLUSTERING_THRESHOLD_JY=3.0"
+
+<span class="sh-comment"># Driver-level access (advanced)</span>
+<span class="prompt">$ </span>python pipeline_cli.py preprocess \
+  --step 3 \
+  --iter-tag iter01 \
+  --docal on \
+  --doflag on
+    </div>
+    <div class="param-table-wrap">
+    <table class="params">
+      <thead><tr><th>Command</th><th>Purpose</th><th>Typical use</th></tr></thead>
+      <tbody>
+        <tr><td class="p-name">bandpass --phase=derive|audit|derive-and-audit</td><td class="p-desc">Unified orchestrator for both phases.</td><td class="p-desc">Default for most users.</td></tr>
+        <tr><td class="p-name">derive</td><td class="p-desc">Alias for <code>bandpass --phase=derive</code>.</td><td class="p-desc">Run iterative V-based phase only.</td></tr>
+        <tr><td class="p-name">audit</td><td class="p-desc">Alias for <code>bandpass --phase=audit</code>.</td><td class="p-desc">Run clustering audit only.</td></tr>
+        <tr><td class="p-name">full</td><td class="p-desc">Alias for <code>bandpass --phase=derive-and-audit</code>.</td><td class="p-desc">One-command full pipeline.</td></tr>
+        <tr><td class="p-name">preprocess / clustering</td><td class="p-desc">Direct script interfaces.</td><td class="p-desc">Advanced debugging and targeted runs.</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
 <!-- ── Quick Start ── -->
 <div class="section" id="quickstart">
   <div class="section-title">Quick Start</div>
-  <div class="section-desc">Three lines to inspect a file and run the full flagging loop.</div>
+  <div class="section-desc">Command-first workflow using <code>pipeline_cli.py</code>.</div>
 
-  <pre><span class="kw">import</span> ugmrt_query <span class="kw">as</span> q
+  <div class="shell-block">
+<span class="sh-comment"># 1) Discover command surface</span>
+<span class="prompt">$ </span>python pipeline_cli.py -h
 
-<span class="comment"># 1. Build a row index (cached on first call, seconds on reload)</span>
-index = q.get_or_build_row_index(<span class="str">'/data/40_014_25jul2021_gsb.FITS'</span>)
+<span class="sh-comment"># 2) Run full derive + audit in dry-run mode (safe preview)</span>
+<span class="prompt">$ </span>python pipeline_cli.py full \
+    --auto --n-iters 20 \
+    --set "SOURCE='3C48'" \
+    --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
-<span class="comment"># 2. Inspect the observation</span>
-<span class="fn">print</span>(q.list_sources(index[<span class="str">'path'</span>]))
-<span class="fn">print</span>(q.get_source_observation_properties(index, <span class="str">'3C48'</span>))
-
-<span class="comment"># 3. Run the full iterative flagging workflow (saved to disk)</span>
-result = q.run_iterative_bandpass_workflow(
-    fits_path   = index[<span class="str">'path'</span>],
-    index       = index,
-    source      = <span class="str">'3C48'</span>,
-    chan_range   = (<span class="num">64</span>, <span class="num">191</span>),
-    n_iterations = <span class="num">20</span>,
-    dry_run_bandpass  = <span class="kw">False</span>,
-    dry_run_flag_write= <span class="kw">False</span>,
-    outlier_metric     = <span class="str">'V'</span>,
-    elevation_min_deg  = <span class="num">25.0</span>,
-)</pre>
+<span class="sh-comment"># 3) Commit outputs once thresholds look good</span>
+<span class="prompt">$ </span>python pipeline_cli.py full \
+  --no-dry-run \
+  --auto \
+  --n-iters 100 \
+  --refit \
+    --set "SOURCE='3C48'" \
+    --set "CLUSTERING_THRESHOLD_JY=3.5"
+  </div>
+  <div class="callout callout-info">
+    <strong>Where is the Python API?</strong> Keep scrolling — all low-level functions are still documented below under Data I/O, Bandpass Calibration, Diagnostics, and Flagging.
+  </div>
 </div>
 
 <!-- ── Pipeline ── -->
 <div class="section" id="pipeline">
   <div class="section-title">Workflow Diagram</div>
   <div class="pipeline">
-    <div class="pipeline-step">FITS file<br><small>on disk</small></div>
+    <div class="pipeline-step">pipeline_cli.py<br><small>single entrypoint</small></div>
     <div class="pipeline-arrow">→</div>
-    <div class="pipeline-step">Row Index<br><small>get_or_build_row_index</small></div>
+    <div class="pipeline-step">derive<br><small>phase-1 iterative loop</small></div>
     <div class="pipeline-arrow">→</div>
-    <div class="pipeline-step">Load Vis<br><small>load_vis_for_source</small></div>
+    <div class="pipeline-step">audit<br><small>phase-2 clustering pass</small></div>
     <div class="pipeline-arrow">→</div>
-    <div class="pipeline-step">Bandpass Solve<br><small>derive_point_source_bandpass</small></div>
-    <div class="pipeline-arrow">→</div>
-    <div class="pipeline-step">Diagnostics<br><small>run_bandpass_diagnostics</small></div>
-    <div class="pipeline-arrow">→</div>
-    <div class="pipeline-step">Flag Proposals<br><small>propose_flag_updates</small></div>
-    <div class="pipeline-arrow">→</div>
-    <div class="pipeline-step">Update Flags<br><small>update_flag_table</small></div>
-    <div class="pipeline-arrow">↺</div>
+    <div class="pipeline-step">outputs<br><small>bandpass + flags + plots</small></div>
   </div>
-  <p style="color:var(--text-dim);font-size:13px;padding:0 4px">The full loop is orchestrated by
-  <a href="#iterative-workflow">run_iterative_bandpass_workflow</a> or the shell scripts.
-  A second pass of <a href="#bp-phase2">clustering-based detection</a> removes transient bursts
-  the residual loop cannot see.</p>
+  <p style="color:var(--text-dim);font-size:13px;padding:0 4px">Under the hood, these commands call the Python APIs documented below (for example <a href="#iterative-workflow">run_iterative_bandpass_workflow</a> and <a href="#diagnostics">run_bandpass_diagnostics</a>). Use the CLI for routine operation and the API cards for detailed behavior.</p>
 </div>
 
 
@@ -330,9 +388,24 @@ result = q.run_iterative_bandpass_workflow(
     new flags → repeat until convergence (flag set unchanged, or &epsilon;-criteria met).
     At convergence the bandpass solution and cumulative flag table are written to disk.
   </p>
+  <div class="callout callout-info">
+    <strong>Model use in Phase-1 convergence (exactly where 3C48 enters).</strong>
+    Auto Phase-1 evaluates two epsilon criteria: <code>C3</code> uses model-free Stokes-V RMS,
+    while <code>C4</code> uses RR/LL residual RMS against the Perley-Butler flux model for the
+    selected source. With <code>SOURCE='3C48'</code> and
+    <code>COMPARE_METRICS_FOR_CONVERGENCE=['V','Model']</code>, convergence can be triggered
+    by this 3C48 model-based C4 check.
+  </div>
+  <div class="callout callout-info">
+    <strong>Phase-1 defaults when invoked as <code>python pipeline_cli.py derive</code>.</strong>
+    <br>• Runs in <code>--dry-run</code> mode unless <code>--no-dry-run</code> is set.
+    <br>• Uses derive preset <code>--n-iters 15</code> unless overridden.
+    <br>• Default scoring preset is <code>OUTLIER_METRIC='V'</code> (model-free for flag ranking).
+    <br>• Default convergence preset tracks both <code>V</code> and <code>Model</code> (C3 + C4).
+  </div>
   <div class="shell-block">
 <span class="sh-comment"># Typical Phase 1 invocation (3C48):</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+<span class="prompt">$ </span>python pipeline_cli.py derive \
     --no-dry-run \
     --auto \
     --n-iters 100 \
@@ -342,7 +415,7 @@ result = q.run_iterative_bandpass_workflow(
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Same for 3C286 (only SOURCE changes):</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+<span class="prompt">$ </span>python pipeline_cli.py derive \
     --no-dry-run \
     --auto \
     --n-iters 100 \
@@ -377,18 +450,18 @@ result = q.run_iterative_bandpass_workflow(
   </p>
   <div class="shell-block">
 <span class="sh-comment"># Explore threshold — interactive plots, nothing written:</span>
-<span class="prompt">$ </span>./run_clustering.sh \
+<span class="prompt">$ </span>python pipeline_cli.py audit \
     --set "SOURCE='3C48'" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Tighten threshold and re-run (fast, no re-solve):</span>
-<span class="prompt">$ </span>./run_clustering.sh \
+<span class="prompt">$ </span>python pipeline_cli.py audit \
     --set "SOURCE='3C48'" \
     --set "CLUSTERING_THRESHOLD_JY=3.5" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Happy with threshold → commit flags &amp; also re-fit the bandpass:</span>
-<span class="prompt">$ </span>./run_clustering.sh \
+<span class="prompt">$ </span>python pipeline_cli.py audit \
     --no-dry-run \
     --refit \
     --save-plots \
@@ -401,6 +474,12 @@ result = q.run_iterative_bandpass_workflow(
     loop does not repeat. Only <code>load_vis_for_source</code> +
     <code>apply_bandpass_solution</code> + <code>run_clustering_detection</code> are
     called each time, taking seconds.
+  </div>
+  <div class="callout callout-info">
+    <strong>Phase-2 defaults when invoked as <code>python pipeline_cli.py audit</code>.</strong>
+    <br>• Defaults to <code>--dry-run</code>: no flag-table writes.
+    <br>• <code>--refit</code> is off by default (AFTER plots reuse saved Phase-1 bandpass unless enabled).
+    <br>• <code>--save-plots</code> is off by default (interactive plots only unless enabled).
   </div>
 </div>
 
@@ -1155,6 +1234,7 @@ ft2 = q.load_flag_table(<span class="str">'/work/3c48_flag_table.json'</span>)</
       <p>Drives the full iterative loop. At each iteration:</p>
       <p>① Solve bandpass → ② Save solution → ③ Run diagnostics → ④ Propose flags → ⑤ Accept/reject (auto or interactive) → ⑥ Update flag table → ⑦ Next iteration</p>
       <p>Stops early if: flag set is unchanged from previous iteration (C1), or Stokes-V / model-residual RMS stops improving by &gt; epsilon (C3/C4).</p>
+      <p><strong>Convergence mapping:</strong> C3 = model-free V RMS; C4 = RR/LL residual RMS relative to the source flux model (e.g., 3C48 model when <code>source='3C48'</code>). C4 is active only when <code>'Model'</code> is included in <code>compare_metrics_for_convergence</code>.</p>
     </div>
     <div class="param-table-wrap">
     <table class="params">
@@ -1274,37 +1354,207 @@ result = q.run_iterative_bandpass_workflow(
 </div>
 
 
+<!-- ════════════════════  PYTHON SCRIPT DEFAULTS  ════════════════════ -->
+<div class="section" id="python-script-defaults">
+  <div class="section-title">Python Script Defaults &amp; Typical Use Cases</div>
+  <div class="section-desc">Runtime defaults for each Python script entrypoint, plus copy-ready examples for common workflows.</div>
+
+  <div class="fn-card" style="border-color:var(--accent2)">
+    <div class="fn-header">
+      <span class="fn-name">pipeline_cli.py (primary)</span>
+      <span class="fn-kind function">entrypoint</span>
+    </div>
+    <div class="param-table-wrap">
+    <table class="params">
+      <thead><tr><th>Command / Flag</th><th>Default</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="p-name">python pipeline_cli.py &lt;command&gt;</td><td class="p-default">required</td><td class="p-desc">Choose one: <code>preprocess</code>, <code>clustering</code>, <code>bandpass</code>, <code>derive</code>, <code>audit</code>, <code>full</code>.</td></tr>
+        <tr><td class="p-name">bandpass --phase</td><td class="p-default">required</td><td class="p-desc">Must be <code>derive</code>, <code>audit</code>, or <code>derive-and-audit</code>.</td></tr>
+        <tr><td class="p-name">--dry-run / --no-dry-run</td><td class="p-default">--dry-run</td><td class="p-desc">Applies to both phases unless overridden.</td></tr>
+        <tr><td class="p-name">derive preset --n-iters</td><td class="p-default">15</td><td class="p-desc">Applied internally by <code>bandpass --phase=derive*</code>; can be overridden via <code>--n-iters</code>.</td></tr>
+        <tr><td class="p-name">derive preset OUTLIER_METRIC</td><td class="p-default">V</td><td class="p-desc">Also sets convergence preset <code>COMPARE_METRICS_FOR_CONVERGENCE=['V','Model']</code>.</td></tr>
+        <tr><td class="p-name">audit log file</td><td class="p-default">/tmp/audit_clustering.log</td><td class="p-desc">Phase-2 stdout/stderr is tee'd here.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="shell-block">
+<span class="sh-comment"># Typical: full pipeline, committed run</span>
+<span class="prompt">$ </span>python pipeline_cli.py full \
+    --no-dry-run \
+    --auto \
+    --n-iters 100 \
+    --refit \
+    --set "SOURCE='3C48'" \
+    --set "CLUSTERING_THRESHOLD_JY=3.5"
+
+<span class="sh-comment"># Typical: phase-1 only (derive), keep dry-run safety</span>
+<span class="prompt">$ </span>python pipeline_cli.py derive \
+    --auto \
+    --n-iters 30
+
+<span class="sh-comment"># Typical: phase-2 only threshold tuning</span>
+<span class="prompt">$ </span>python pipeline_cli.py audit \
+    --set "CLUSTERING_THRESHOLD_JY=3.0"
+    </div>
+  </div>
+
+  <div class="fn-card">
+    <div class="fn-header">
+      <span class="fn-name">preprocess_ugmrt.py (phase-1 driver)</span>
+      <span class="fn-kind function">script</span>
+    </div>
+    <div class="param-table-wrap">
+    <table class="params">
+      <thead><tr><th>Flag</th><th>Default</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="p-name">--config FILE</td><td class="p-default">preprocess_ugmrt.cfg</td><td class="p-desc">Config is loaded first; <code>--set</code> overrides are applied after load.</td></tr>
+        <tr><td class="p-name">--step</td><td class="p-default">all</td><td class="p-desc">Steps: 1=index, 2=solve, 3=diagnostics, 4=flag proposal, all=workflow.</td></tr>
+        <tr><td class="p-name">--auto</td><td class="p-default">False</td><td class="p-desc">Interactive when omitted; unattended batch when enabled.</td></tr>
+        <tr><td class="p-name">--n-iters</td><td class="p-default">1</td><td class="p-desc">If <code>--auto</code> is enabled and <code>--n-iters</code> not supplied, it switches to config <code>AUTO_N_ITERS</code>.</td></tr>
+        <tr><td class="p-name">--start-iter</td><td class="p-default">AUTO_START_ITER (cfg)</td><td class="p-desc">Controls output tag numbering in multi-iter runs.</td></tr>
+        <tr><td class="p-name">--iter-tag</td><td class="p-default">ITER_TAG (cfg)</td><td class="p-desc">Used for single-pass/step runs.</td></tr>
+        <tr><td class="p-name">--dry-run</td><td class="p-default">False</td><td class="p-desc">No writes only when explicitly set (or when wrapper forwards <code>--dry-run</code>).</td></tr>
+        <tr><td class="p-name">--docal / --doflag</td><td class="p-default">from cfg (DOCAL/DOFLAG)</td><td class="p-desc">AIPS-like table-application toggles.</td></tr>
+        <tr><td class="p-name">--calver / --flagver</td><td class="p-default">from cfg (CALVER/FLAGVER)</td><td class="p-desc">Table version selectors: latest | N | tag | explicit path.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="shell-block">
+<span class="sh-comment"># Typical: one interactive pass</span>
+<span class="prompt">$ </span>python preprocess_ugmrt.py --step all
+
+<span class="sh-comment"># Typical: unattended phase-1 solve loop with committed outputs</span>
+<span class="prompt">$ </span>python preprocess_ugmrt.py \
+    --step all \
+    --auto \
+    --n-iters 20 \
+    --no-dry-run
+
+<span class="sh-comment"># Typical: diagnostics only for a saved iteration</span>
+<span class="prompt">$ </span>python preprocess_ugmrt.py \
+    --step 3 \
+    --iter-tag iter05 \
+    --docal on \
+    --doflag on
+    </div>
+  </div>
+
+  <div class="fn-card">
+    <div class="fn-header">
+      <span class="fn-name">run_clustering.py (phase-2 driver)</span>
+      <span class="fn-kind function">script</span>
+    </div>
+    <div class="param-table-wrap">
+    <table class="params">
+      <thead><tr><th>Flag</th><th>Default</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="p-name">--config FILE</td><td class="p-default">preprocess_ugmrt.cfg</td><td class="p-desc">Same config override model as phase-1 driver.</td></tr>
+        <tr><td class="p-name">--dry-run</td><td class="p-default">True</td><td class="p-desc">Plots only; no clustering flags written unless <code>--no-dry-run</code>.</td></tr>
+        <tr><td class="p-name">--refit</td><td class="p-default">False</td><td class="p-desc">If set, re-solves bandpass with clustering flags active for AFTER plots.</td></tr>
+        <tr><td class="p-name">--write-refit</td><td class="p-default">False</td><td class="p-desc">When refit is active, controls whether refitted solution is written to disk.</td></tr>
+        <tr><td class="p-name">--save-plots</td><td class="p-default">False</td><td class="p-desc">Writes six PNG audit plots to <code>WORK_DIR</code>.</td></tr>
+        <tr><td class="p-name">--docal / --doflag</td><td class="p-default">from cfg (DOCAL/DOFLAG)</td><td class="p-desc">Table-application toggles for detection and plots.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="shell-block">
+<span class="sh-comment"># Typical: tune threshold quickly (safe preview)</span>
+<span class="prompt">$ </span>python run_clustering.py \
+    --set "CLUSTERING_THRESHOLD_JY=3.2"
+
+<span class="sh-comment"># Typical: commit clustering flags</span>
+<span class="prompt">$ </span>python run_clustering.py \
+    --no-dry-run \
+    --set "CLUSTERING_THRESHOLD_JY=3.2"
+
+<span class="sh-comment"># Typical: commit + refit + save plots</span>
+<span class="prompt">$ </span>python run_clustering.py \
+    --no-dry-run \
+    --refit \
+    --write-refit \
+    --save-plots
+    </div>
+  </div>
+
+  <div class="fn-card">
+    <div class="fn-header">
+      <span class="fn-name">outlier_detection.py (legacy standalone detector)</span>
+      <span class="fn-kind function">script</span>
+    </div>
+    <div class="fn-desc">
+      <p>This script has its own internal CONFIG block defaults (paths, source, thresholds) and is not the primary pipeline path. Use it when you specifically want per-channel standalone outlier products.</p>
+    </div>
+    <div class="param-table-wrap">
+    <table class="params">
+      <thead><tr><th>Setting</th><th>Default in script</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="p-name">CALIBRATOR_SOURCE</td><td class="p-default">3C48</td><td class="p-desc">Used for detector scoring and optional transfer to targets.</td></tr>
+        <tr><td class="p-name">CHAN_RANGE</td><td class="p-default">(64, 191)</td><td class="p-desc">Inclusive FITS channel range for detection.</td></tr>
+        <tr><td class="p-name">DETECTION_CORR</td><td class="p-default">V</td><td class="p-desc">Test quantity; supports V, Q, I, RR/LL/XX/YY/RL/LR/XY/YX.</td></tr>
+        <tr><td class="p-name">DETECTION_THRESHOLD_JY</td><td class="p-default">5.0</td><td class="p-desc">Rows above threshold are considered bad before clustering logic.</td></tr>
+        <tr><td class="p-name">MIN_CLUSTER_FRACTION</td><td class="p-default">0.80</td><td class="p-desc">Wholesale flagging threshold for antenna/baseline persistence.</td></tr>
+        <tr><td class="p-name">ELEVATION_MIN_DEG</td><td class="p-default">25.0</td><td class="p-desc">Rows below this elevation are excluded.</td></tr>
+        <tr><td class="p-name">--dry-run</td><td class="p-default">True</td><td class="p-desc">Writes JSON/CASA files only with <code>--no-dry-run</code>.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="shell-block">
+<span class="sh-comment"># Typical: inspect data layout and suggested settings only</span>
+<span class="prompt">$ </span>python outlier_detection.py --inspect --cal 3C48
+
+<span class="sh-comment"># Typical: standalone detector run, committed outputs</span>
+<span class="prompt">$ </span>python outlier_detection.py \
+    --cal 3C48 \
+    --chans 64-191 \
+    --corr V \
+    --thr 5.0 \
+    --no-dry-run
+    </div>
+  </div>
+
+  <div class="callout callout-warn">
+    <strong>Other Python files in this repo.</strong>
+    Files such as <code>_patch_15f.py</code>, <code>patch_thresholds.py</code>,
+    <code>patch_notebook_interactive.py</code>, <code>rebuild_notebook.py</code>,
+    and <code>test_smooth_window.py</code> are developer utilities/tests, not
+    stable user-facing CLIs. Their behavior is intentionally file-specific and
+    does not have a guaranteed public default interface.
+  </div>
+</div>
+
+
 <!-- ════════════════════  SHELL SCRIPTS  ════════════════════ -->
 <div class="section" id="scripts">
-  <div class="section-title">Shell Scripts</div>
+  <div class="section-title">Compatibility Wrappers</div>
+  <div class="section-desc">These scripts are retained for backward compatibility and delegate to <code>pipeline_cli.py</code>. Prefer direct CLI usage for new workflows.</div>
 
   <div class="fn-card" id="script-run-preprocess">
     <div class="fn-header">
       <span class="fn-name">run_preprocess.sh</span>
       <span class="fn-kind function">script</span>
     </div>
-    <div class="fn-desc"><p>Thin wrapper that activates the venv and passes all arguments to <code>preprocess_ugmrt.py</code>. The base entry point for the entire pipeline.</p></div>
+    <div class="fn-desc"><p>Compatibility wrapper that forwards to <code>python pipeline_cli.py preprocess ...</code>. Keep using existing scripts if needed; for new usage prefer <code>pipeline_cli.py</code> directly.</p></div>
     <div class="shell-block">
 <span class="sh-comment"># Single iteration, dry-run (preview only)</span>
-<span class="prompt">$ </span>./run_preprocess.sh \
+<span class="prompt">$ </span>python pipeline_cli.py preprocess \
     --step all \
     --iter-tag iter01
 
 <span class="sh-comment"># 10-iteration automated batch, commit to disk</span>
-<span class="prompt">$ </span>./run_preprocess.sh \
+<span class="prompt">$ </span>python pipeline_cli.py preprocess \
     --step all \
     --auto \
     --n-iters 10 \
     --no-dry-run
 
 <span class="sh-comment"># Override config values on the fly</span>
-<span class="prompt">$ </span>./run_preprocess.sh \
+<span class="prompt">$ </span>python pipeline_cli.py preprocess \
     --set "SOURCE='3C147'" \
     --set "CHAN_RANGE=(50, 200)" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Restrict UV range</span>
-<span class="prompt">$ </span>./run_preprocess.sh \
+<span class="prompt">$ </span>python pipeline_cli.py preprocess \
     --set "SOLVE_UVRANGE_KLAMBDA=(2.0, 50.0)"
     </div>
     <div class="param-table-wrap">
@@ -1328,26 +1578,26 @@ result = q.run_iterative_bandpass_workflow(
       <span class="fn-name">v-based-outlier-detection.sh</span>
       <span class="fn-kind function">script &mdash; Phase 1</span>
     </div>
-    <div class="fn-desc"><p>Preset wrapper for Stokes-V based outlier flagging: model-free, works for any calibrator, uses <code>V</code> metric only. Runs 15 iterations by default with both antenna+baseline thresholds set to 5.0 Jy. Default mode is dry-run.</p></div>
+    <div class="fn-desc"><p>Preset compatibility wrapper for Stokes-V based outlier flagging. Equivalent to a pre-configured <code>pipeline_cli.py preprocess</code> invocation.</p></div>
     <div class="shell-block">
 <span class="sh-comment"># Default: dry-run, 15 iterations, interactive (popup plots)</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh
+<span class="prompt">$ </span>python pipeline_cli.py derive
 
 <span class="sh-comment"># Automated non-interactive run, flag baselines only</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+<span class="prompt">$ </span>python pipeline_cli.py derive \
     --auto \
     --n-iters 100 \
     --set "FLAG_WHAT_TO_FLAG='baselines'" \
     --set "CONVERGENCE_EPSILON=0.01"
 
 <span class="sh-comment"># Apply elevation and UV-range data selection</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+<span class="prompt">$ </span>python pipeline_cli.py derive \
     --auto \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0" \
     --set "SOLVE_UVRANGE_KLAMBDA=(2.0, 50.0)"
 
 <span class="sh-comment"># Loosen thresholds and flag antennas only</span>
-<span class="prompt">$ </span>./v-based-outlier-detection.sh \
+<span class="prompt">$ </span>python pipeline_cli.py derive \
     --set "FLAG_WHAT_TO_FLAG='antennas'" \
     --set "ANTENNA_FLAG_THRESHOLD_JY={'V': 8.0}"
     </div>
@@ -1364,7 +1614,7 @@ result = q.run_iterative_bandpass_workflow(
       <span class="fn-kind function">script &mdash; Phase 2</span>
     </div>
     <div class="fn-desc">
-      <p>Phase-2 clustering detection script. Loads the bandpass solution and
+      <p>Compatibility wrapper for phase-2 clustering detection. Loads the bandpass solution and
       cumulative flag table written by Phase-1, runs
       <a href="#clustering-detection-card">run_clustering_detection</a>
       with all <code>CLUSTERING_*</code> parameters from the config, then
@@ -1386,25 +1636,25 @@ result = q.run_iterative_bandpass_workflow(
     </div>
     <div class="shell-block">
 <span class="sh-comment"># Default: dry-run, interactive popup plots</span>
-<span class="prompt">$ </span>./run_clustering.sh \
+<span class="prompt">$ </span>python pipeline_cli.py clustering \
     --set "SOURCE='3C48'" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Tune threshold — repeat freely (no disk writes):</span>
-<span class="prompt">$ </span>./run_clustering.sh \
+<span class="prompt">$ </span>python pipeline_cli.py clustering \
     --set "SOURCE='3C48'" \
     --set "CLUSTERING_THRESHOLD_JY=3.5" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Commit clustering flags to FLAG_TABLE_SESSION:</span>
-<span class="prompt">$ </span>./run_clustering.sh \
+<span class="prompt">$ </span>python pipeline_cli.py clustering \
     --no-dry-run \
     --set "SOURCE='3C48'" \
     --set "CLUSTERING_THRESHOLD_JY=3.5" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Commit + re-fit bandpass + save all 6 plots as PNG:</span>
-<span class="prompt">$ </span>./run_clustering.sh \
+<span class="prompt">$ </span>python pipeline_cli.py clustering \
     --no-dry-run \
     --refit \
     --save-plots \
@@ -1420,7 +1670,7 @@ result = q.run_iterative_bandpass_workflow(
         <tr><td class="p-name">--refit</td><td class="p-desc">Re-solve the bandpass with clustering flags active and use that solution for the AFTER plots. Without this flag both BEFORE and AFTER use the same saved <code>BANDPASS_OUT</code> (faster for threshold tuning).</td></tr>
         <tr><td class="p-name">--save-plots</td><td class="p-desc">Save the six plots as PNG files to <code>WORK_DIR</code>.</td></tr>
         <tr><td class="p-name">--config FILE</td><td class="p-desc">Use a different config file (default: <code>preprocess_ugmrt.cfg</code>).</td></tr>
-        <tr><td class="p-name">--set KEY=expr</td><td class="p-desc">Override any config key. Identical syntax to <code>run_preprocess.sh --set</code>. All <code>CLUSTERING_*</code> and <code>SOLVE_*</code> keys are accepted.</td></tr>
+        <tr><td class="p-name">--set KEY=expr</td><td class="p-desc">Override any config key. Identical syntax to <code>pipeline_cli.py preprocess --set</code>. All <code>CLUSTERING_*</code> and <code>SOLVE_*</code> keys are accepted.</td></tr>
         <tr><td class="p-name">--log-level LEVEL</td><td class="p-desc"><code>DEBUG | INFO | WARNING | ERROR</code> (default from config).</td></tr>
       </tbody>
     </table>
@@ -1430,14 +1680,12 @@ result = q.run_iterative_bandpass_workflow(
   <!-- run_bandpass.sh — unified dispatcher -->
   <div class="fn-card" id="script-run-bandpass" style="border-color:var(--accent2)">
     <div class="fn-header">
-      <span class="fn-name">run_bandpass.sh &#9734; &nbsp;&mdash;&nbsp; Unified workflow</span>
+      <span class="fn-name">run_bandpass.sh &nbsp;&mdash;&nbsp; Wrapper over pipeline_cli.py bandpass</span>
       <span class="fn-kind function">script &mdash; Phase 1 + 2</span>
     </div>
     <div class="fn-desc">
-      <p>Single entry point for the complete bandpass derivation workflow.
-      Replaces <code>v-based-outlier-detection.sh</code> + <code>run_clustering.sh</code>
-      with a unified <code>--phase</code> flag. Internally delegates to the same
-      Python scripts — no new logic.</p>
+      <p>Legacy command wrapper. Forwards to <code>python pipeline_cli.py bandpass ...</code>.
+      Prefer direct <code>pipeline_cli.py</code> usage in new docs, automation, and user onboarding.</p>
       <table class="params" style="margin:.6em 0">
         <thead><tr><th>--phase</th><th>What it does</th><th>Requires</th></tr></thead>
         <tbody>
@@ -1454,7 +1702,7 @@ result = q.run_iterative_bandpass_workflow(
     </div>
     <div class="shell-block">
 <span class="sh-comment"># First-time full pipeline — derive + audit, commit everything:</span>
-<span class="prompt">$ </span>./run_bandpass.sh \
+<span class="prompt">$ </span>python pipeline_cli.py bandpass \
     --phase=derive-and-audit \
     --no-dry-run \
     --auto \
@@ -1467,14 +1715,14 @@ result = q.run_iterative_bandpass_workflow(
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Re-audit with a different threshold (Phase 1 not re-run):</span>
-<span class="prompt">$ </span>./run_bandpass.sh \
+<span class="prompt">$ </span>python pipeline_cli.py bandpass \
     --phase=audit \
     --set "SOURCE='3C48'" \
     --set "CLUSTERING_THRESHOLD_JY=2.5" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Commit clustering flags + re-fit bandpass:</span>
-<span class="prompt">$ </span>./run_bandpass.sh \
+<span class="prompt">$ </span>python pipeline_cli.py bandpass \
     --phase=audit \
     --no-dry-run \
     --refit \
@@ -1484,7 +1732,7 @@ result = q.run_iterative_bandpass_workflow(
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Derive only (decide threshold later):</span>
-<span class="prompt">$ </span>./run_bandpass.sh \
+<span class="prompt">$ </span>python pipeline_cli.py bandpass \
     --phase=derive \
     --no-dry-run \
     --auto \
