@@ -610,6 +610,73 @@ def _iter_tags(prefix: str, start: int, width: int, n: int):
         yield f'{prefix}{start + i:0{width}d}'
 
 
+def _iter_tag_explicit_on_cli() -> bool:
+    """Return True if the user explicitly passed --iter-tag on argv."""
+    return any(
+        a == '--iter-tag' or a.startswith('--iter-tag=')
+        for a in sys.argv[1:]
+    )
+
+
+def _tagged_path(base_path: Path, tag: str) -> Path:
+    """Insert ``_<tag>`` before suffixes (same convention as tagged_output_path)."""
+    suffix = ''.join(base_path.suffixes)
+    stem = base_path.name[:-len(suffix)] if suffix else base_path.name
+    return base_path.with_name(f'{stem}_{tag}{suffix}')
+
+
+def _iter_tag_has_existing_outputs(tag: str) -> bool:
+    """Return True if any tagged output for *tag* already exists on disk."""
+    candidates: list[Path] = []
+
+    if BANDPASS_OUT is not None:
+        candidates.append(_tagged_path(Path(BANDPASS_OUT), tag))
+    if DIAG_PLOT_BASE is not None:
+        candidates.append(_tagged_path(Path(DIAG_PLOT_BASE), tag))
+    if DIAG_PLOT_UNFLAGGED is not None:
+        candidates.append(_tagged_path(Path(DIAG_PLOT_UNFLAGGED), tag))
+    if GAIN_PLOT_BASE is not None:
+        candidates.append(_tagged_path(Path(GAIN_PLOT_BASE), tag))
+
+    return any(p.exists() for p in candidates)
+
+
+def _next_robust_iter_tag(tag: str) -> str:
+    """Return a non-colliding iteration tag based on existing outputs.
+
+    Behavior:
+    - if *tag* has no collisions, return it unchanged.
+    - if *tag* ends in digits (e.g. iter01), increment until free.
+    - otherwise append a timestamp suffix.
+    """
+    base = str(tag or 'iter01')
+    if not _iter_tag_has_existing_outputs(base):
+        return base
+
+    import re
+
+    m = re.match(r'^(.*?)(\d+)$', base)
+    if m:
+        prefix, digits = m.group(1), m.group(2)
+        width = len(digits)
+        num = int(digits)
+        for _ in range(2000):
+            num += 1
+            cand = f'{prefix}{num:0{width}d}'
+            if not _iter_tag_has_existing_outputs(cand):
+                return cand
+
+    ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    cand = f'{base}_{ts}'
+    if not _iter_tag_has_existing_outputs(cand):
+        return cand
+    for i in range(1, 1000):
+        cand_i = f'{cand}_{i:03d}'
+        if not _iter_tag_has_existing_outputs(cand_i):
+            return cand_i
+    return cand
+
+
 def _build_multipage_pdf_from_pngs(image_paths, pdf_path: Path, title_prefix: str = '') -> int:
     """Write a multi-page PDF from an ordered list of PNG files.
 
@@ -1367,6 +1434,16 @@ def main():
     # --auto: default n_iters to AUTO_N_ITERS from config if user didn't supply it.
     if args.auto and args.n_iters == 1:
         args.n_iters = AUTO_N_ITERS
+
+    # Robust default tag behavior for single-pass runs:
+    # if user did NOT explicitly pass --iter-tag and the default tag collides
+    # with existing outputs (e.g. iter01 already exists), auto-bump to next free.
+    if args.n_iters == 1 and not _iter_tag_explicit_on_cli():
+        _orig_tag = str(args.iter_tag)
+        _resolved = _next_robust_iter_tag(_orig_tag)
+        if _resolved != _orig_tag:
+            args.iter_tag = _resolved
+            print(f'[tag] default iter-tag "{_orig_tag}" already exists; using "{_resolved}"')
 
     # Derive index cache now that CAL_FITS and WORK_DIR are known.
     global INDEX_CACHE
