@@ -2564,6 +2564,35 @@ def save_flag_table(flag_table: dict, path: Union[str, Path]) -> Path:
     return path
 
 
+def _write_versioned_flag_snapshot(flag_table: dict, output_path: Union[str, Path]) -> Tuple[Path, int]:
+    """Write an immutable versioned snapshot next to *output_path*.
+
+    Snapshot naming scheme:
+      <stem>_vNNN<suffix>
+
+    where NNN is a monotonically increasing integer (1-based) discovered by
+    scanning existing snapshots in the same directory.
+    """
+    import re
+
+    output_path = Path(output_path)
+    parent = output_path.parent
+    suffix = ''.join(output_path.suffixes)
+    base_stem = output_path.name[:-len(suffix)] if suffix else output_path.name
+    patt = re.compile(rf'^{re.escape(base_stem)}_v(\d+){re.escape(suffix)}$')
+
+    max_ver = 0
+    for p in parent.glob(f'{base_stem}_v*{suffix}'):
+        m = patt.match(p.name)
+        if m:
+            max_ver = max(max_ver, int(m.group(1)))
+
+    ver = max_ver + 1
+    snap = parent / f'{base_stem}_v{ver:03d}{suffix}'
+    save_flag_table(flag_table, snap)
+    return snap, ver
+
+
 def load_flag_table(path: Union[str, Path]) -> dict:
     """Load a standalone JSON flag table used for calibration-time exclusions."""
     path = Path(path)
@@ -4914,14 +4943,21 @@ def update_flag_table(
         notes=' | '.join(merged_notes),
     )
 
+    snapshot_path = None
+    snapshot_version = None
     if not dry_run:
         save_flag_table(merged, output_path)
+        _snap, _ver = _write_versioned_flag_snapshot(merged, output_path)
+        snapshot_path = str(_snap)
+        snapshot_version = int(_ver)
 
     return {
         'flag_table': merged,
         'output_path': str(output_path),
         'dry_run': bool(dry_run),
         'written': bool(not dry_run),
+        'snapshot_path': snapshot_path,
+        'snapshot_version': snapshot_version,
         'added_antennas': list(add_antennas or []),
         'added_baselines': list(add_baselines or []),
     }
@@ -5018,14 +5054,21 @@ def merge_flag_table_into_file(
         'bad_burst_timeranges':    _merge_tr_list('bad_burst_timeranges'),
     }
 
+    snapshot_path = None
+    snapshot_version = None
     if not dry_run:
         save_flag_table(merged, output_path)
+        _snap, _ver = _write_versioned_flag_snapshot(merged, output_path)
+        snapshot_path = str(_snap)
+        snapshot_version = int(_ver)
 
     return {
         'flag_table':  merged,
         'output_path': str(output_path),
         'dry_run':     bool(dry_run),
         'written':     bool(not dry_run),
+        'snapshot_path': snapshot_path,
+        'snapshot_version': snapshot_version,
     }
 
 
