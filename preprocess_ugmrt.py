@@ -610,6 +610,48 @@ def _iter_tags(prefix: str, start: int, width: int, n: int):
         yield f'{prefix}{start + i:0{width}d}'
 
 
+def _build_multipage_pdf_from_pngs(image_paths, pdf_path: Path, title_prefix: str = '') -> int:
+    """Write a multi-page PDF from an ordered list of PNG files.
+
+    Returns the number of pages written.
+    """
+    from matplotlib import pyplot as _plt
+    from matplotlib.backends.backend_pdf import PdfPages as _PdfPages
+
+    valid_paths = []
+    for p in (image_paths or []):
+        if p is None:
+            continue
+        _p = Path(p)
+        if _p.exists():
+            valid_paths.append(_p)
+
+    if not valid_paths:
+        return 0
+
+    pdf_path = Path(pdf_path)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with _PdfPages(str(pdf_path)) as _pdf:
+        for img_path in valid_paths:
+            img = _plt.imread(str(img_path))
+            if hasattr(img, 'shape') and len(img.shape) >= 2:
+                h, w = int(img.shape[0]), int(img.shape[1])
+            else:
+                h, w = 900, 1400
+            fig_w = max(6.0, min(14.0, w / 160.0))
+            fig_h = max(4.0, min(10.0, h / 160.0))
+            fig, ax = _plt.subplots(figsize=(fig_w, fig_h))
+            ax.imshow(img)
+            ax.axis('off')
+            if title_prefix:
+                fig.suptitle(f'{title_prefix} | {img_path.stem}', fontsize=10)
+            _pdf.savefig(fig, bbox_inches='tight')
+            _plt.close(fig)
+
+    return len(valid_paths)
+
+
 def _prompt_accept_flags(proposal: dict, dry_run: bool) -> str:
     """Show flag proposals and ask the user to accept / skip / quit.
 
@@ -695,6 +737,7 @@ def run_manual(args):
     # Passed as flag_tables_extra to every subsequent solve so the solve sees
     # all accepted flags even in dry-run mode.
     accepted_flags: list = []
+    _diag_png_paths: list = []
 
     # Build the row index once — reused across all iterations.
     index = None
@@ -772,6 +815,9 @@ def run_manual(args):
                 flag_tables_extra=accepted_flags if accepted_flags else None,
                 cal_path=_bp_for_note,
             )
+            _sp = diag.get('save_path') if isinstance(diag, dict) else None
+            if _sp:
+                _diag_png_paths.append(Path(_sp))
 
         if 4 in steps:
             if diag is None:
@@ -810,6 +856,16 @@ def run_manual(args):
             else:
                 log.info('  Flags skipped for %s — next iteration uses same accumulated flags.',
                          iter_tag)
+
+    if DIAG_PLOT_BASE is not None and _diag_png_paths:
+        _diag_pdf = DIAG_PLOT_BASE.with_name(f'{DIAG_PLOT_BASE.stem}_all_iters.pdf')
+        _n_pages = _build_multipage_pdf_from_pngs(
+            _diag_png_paths,
+            _diag_pdf,
+            title_prefix=f'{SOURCE} diagnostics',
+        )
+        if _n_pages > 0:
+            log.info('  multipage diagnostics PDF: %s  (%d page(s))', _diag_pdf, _n_pages)
 
 
 def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
@@ -1109,6 +1165,26 @@ def run_auto(args):
         ))
     log.info('Iterations executed : %d  (of %d requested)', len(result['history']), args.n_iters)
     log.info('Stop reason         : %s', result.get('stop_reason', 'unknown'))
+
+    # Build one multi-page diagnostics PDF across all iterations.
+    if DIAG_PLOT_BASE is not None:
+        _diag_pngs = []
+        if RUN_ITER0_DIAGNOSTIC:
+            _iter0_tag = f'{AUTO_ITER_PREFIX}00'
+            _diag_pngs.append(q.tagged_output_path(DIAG_PLOT_BASE, _iter0_tag))
+        _diag_pngs.extend(
+            Path(h['diagnostics_plot_path'])
+            for h in result.get('history', [])
+            if h.get('diagnostics_plot_path')
+        )
+        _diag_pdf = DIAG_PLOT_BASE.with_name(f'{DIAG_PLOT_BASE.stem}_all_iters.pdf')
+        _n_pages = _build_multipage_pdf_from_pngs(
+            _diag_pngs,
+            _diag_pdf,
+            title_prefix=f'{SOURCE} diagnostics',
+        )
+        if _n_pages > 0:
+            log.info('Multipage diagnostics PDF: %s  (%d page(s))', _diag_pdf, _n_pages)
 
     # ── Persist final iteration bandpass to BANDPASS_OUT (no iter suffix) ────
     # run_iterative_bandpass_workflow writes <BASE>_iter01.npz, _iter02.npz, …

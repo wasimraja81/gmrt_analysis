@@ -263,6 +263,16 @@
       <br>• <code>derive</code>/<code>full</code> apply derive presets by default: <code>--step all</code>, <code>--n-iters 15</code>, <code>OUTLIER_METRIC='V'</code>, <code>COMPARE_METRICS_FOR_CONVERGENCE=['V','Model']</code>.
       <br>• <code>audit</code> defaults to plot-only behavior unless <code>--no-dry-run</code> is passed.
     </div>
+    <div class="callout callout-info">
+      <strong>Threshold families (important).</strong>
+      <br>• <code>CLUSTERING_THRESHOLD_JY</code> is <em>clustering-only</em> (Phase-2 audit, including optional final-clustering pass).
+      <br>• Phase-1 RR/LL/V flagging thresholds are controlled by
+      <code>OUTLIER_METRIC</code>, <code>ANTENNA_FLAG_THRESHOLD_JY</code>, and
+      <code>BASELINE_FLAG_THRESHOLD_JY</code>.
+      <br>• Clustering supports multi-corr mode: set <code>CLUSTERING_CORR</code> to a list
+      (e.g. <code>['V','RR','LL']</code>) and set <code>CLUSTERING_THRESHOLD_JY</code> as
+      a per-corr dict (e.g. <code>{'V':5.0,'RR':500.0,'LL':500.0}</code>).
+    </div>
     <div class="shell-block">
 <span class="sh-comment"># End-to-end derive + audit (recommended)</span>
 <span class="prompt">$ </span>python pipeline_cli.py bandpass \
@@ -279,9 +289,12 @@
   --auto \
   --n-iters 100
 
-<span class="sh-comment"># Phase-2 only (threshold tuning, dry-run by default)</span>
+<span class="sh-comment"># Phase-2 only (most useful threshold tuning pattern: multi-corr)</span>
 <span class="prompt">$ </span>python pipeline_cli.py audit \
-  --set "CLUSTERING_THRESHOLD_JY=3.0"
+  --set "SOURCE='3C48'" \
+  --set "CLUSTERING_CORR=['V','RR','LL']" \
+  --set "CLUSTERING_THRESHOLD_JY={'V':5.0,'RR':500.0,'LL':500.0}" \
+  --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':20.0,'LL':20.0}"
 
 <span class="sh-comment"># Driver-level access (advanced)</span>
 <span class="prompt">$ </span>python pipeline_cli.py preprocess \
@@ -414,6 +427,17 @@
     --set "CONVERGENCE_EPSILON=0.005" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
+  <span class="sh-comment"># Phase-1 with explicit RR/LL/V thresholds (per metric):</span>
+  <span class="prompt">$ </span>python pipeline_cli.py derive \
+    --no-dry-run \
+    --auto \
+    --n-iters 100 \
+    --set "SOURCE='3C48'" \
+    --set "OUTLIER_METRIC=('RR','LL','V')" \
+    --set "ANTENNA_FLAG_THRESHOLD_JY={'RR':180.0,'LL':180.0,'V':30.0}" \
+    --set "BASELINE_FLAG_THRESHOLD_JY={'RR':800.0,'LL':800.0,'V':150.0}" \
+    --set "OUTLIER_METRIC_MERGE_STRATEGY='union'"
+
 <span class="sh-comment"># Same for 3C286 (only SOURCE changes):</span>
 <span class="prompt">$ </span>python pipeline_cli.py derive \
     --no-dry-run \
@@ -449,15 +473,20 @@
     writes anything to disk.
   </p>
   <div class="shell-block">
-<span class="sh-comment"># Explore threshold — interactive plots, nothing written:</span>
+<span class="sh-comment"># Explore thresholds — interactive plots, nothing written:</span>
 <span class="prompt">$ </span>python pipeline_cli.py audit \
     --set "SOURCE='3C48'" \
+  --set "CLUSTERING_CORR=['V','RR','LL']" \
+  --set "CLUSTERING_THRESHOLD_JY={'V':5.0,'RR':500.0,'LL':500.0}" \
+  --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':20.0,'LL':20.0}" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
-<span class="sh-comment"># Tighten threshold and re-run (fast, no re-solve):</span>
+<span class="sh-comment"># Tighten one corr only and re-run (fast, no re-solve):</span>
 <span class="prompt">$ </span>python pipeline_cli.py audit \
     --set "SOURCE='3C48'" \
-    --set "CLUSTERING_THRESHOLD_JY=3.5" \
+  --set "CLUSTERING_CORR=['V','RR','LL']" \
+  --set "CLUSTERING_THRESHOLD_JY={'V':3.5,'RR':500.0,'LL':500.0}" \
+  --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':20.0,'LL':20.0}" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Happy with threshold → commit flags &amp; also re-fit the bandpass:</span>
@@ -466,7 +495,9 @@
     --refit \
     --save-plots \
     --set "SOURCE='3C48'" \
-    --set "CLUSTERING_THRESHOLD_JY=3.5" \
+  --set "CLUSTERING_CORR=['V','RR','LL']" \
+  --set "CLUSTERING_THRESHOLD_JY={'V':3.5,'RR':500.0,'LL':500.0}" \
+  --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':20.0,'LL':20.0}" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
   </div>
   <div class="callout callout-info">
@@ -1322,8 +1353,8 @@ result = q.run_iterative_bandpass_workflow(
       <tr><td class="p-name">SOLVE_TIMERANGE</td><td class="p-type">(str,str) | None</td><td class="p-default">None</td><td class="p-desc">UTC ISO string pair restricting data to a time window.</td></tr>
       <tr class="cfg-group"><td colspan="4">CLUSTERING DETECTION (Phase 2)</td></tr>
       <tr><td class="p-name">RUN_FINAL_CLUSTERING</td><td class="p-type">bool</td><td class="p-default">False</td><td class="p-desc">If <code>True</code>, run <code>_run_final_clustering_step()</code> automatically after convergence in <code>preprocess_ugmrt.py</code>. The standalone <code>run_clustering.sh</code> handles this manually.</td></tr>
-      <tr><td class="p-name">CLUSTERING_CORR</td><td class="p-type">str</td><td class="p-default">'V'</td><td class="p-desc">Stokes correlation used by the clustering algorithm. <code>'V'</code> (model-free) is recommended.</td></tr>
-      <tr><td class="p-name">CLUSTERING_THRESHOLD_JY</td><td class="p-type">float</td><td class="p-default">5.0</td><td class="p-desc">Amplitude threshold in Jy for clustering. Override via <code>--set "CLUSTERING_THRESHOLD_JY=3.5"</code> during Phase-2 tuning.</td></tr>
+      <tr><td class="p-name">CLUSTERING_CORR</td><td class="p-type">str | list[str]</td><td class="p-default">'V'</td><td class="p-desc">Correlation(s) used by clustering. Single value keeps classic behavior; list runs per-corr detection then unions flag tables (example: <code>['V','RR','LL']</code>).</td></tr>
+      <tr><td class="p-name">CLUSTERING_THRESHOLD_JY</td><td class="p-type">float | dict</td><td class="p-default">5.0</td><td class="p-desc">Upper threshold(s) in Jy for clustering. Scalar applies to all selected corrs; dict sets per-corr thresholds (example: <code>{'V':5.0,'RR':500.0,'LL':500.0}</code>).</td></tr>
       <tr><td class="p-name">CLUSTERING_MIN_CLUSTER_FRACTION</td><td class="p-type">float</td><td class="p-default">0.80</td><td class="p-desc">Fraction of samples within a time gap that must exceed threshold for cluster acceptance.</td></tr>
       <tr><td class="p-name">CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT</td><td class="p-type">int</td><td class="p-default">3</td><td class="p-desc">Min distinct baseline partners showing a burst before an antenna-level flag is raised.</td></tr>
       <tr><td class="p-name">CLUSTERING_MIN_BURST_BASELINE_FRACTION</td><td class="p-type">float</td><td class="p-default">0.50</td><td class="p-desc">Fraction of an antenna&apos;s baselines that must show the burst to classify it as an antenna event.</td></tr>
@@ -1458,14 +1489,18 @@ result = q.run_iterative_bandpass_workflow(
     </table>
     </div>
     <div class="shell-block">
-<span class="sh-comment"># Typical: tune threshold quickly (safe preview)</span>
+<span class="sh-comment"># Typical: tune thresholds quickly (safe preview, multi-corr)</span>
 <span class="prompt">$ </span>python run_clustering.py \
-    --set "CLUSTERING_THRESHOLD_JY=3.2"
+  --set "CLUSTERING_CORR=['V','RR','LL']" \
+  --set "CLUSTERING_THRESHOLD_JY={'V':5.0,'RR':500.0,'LL':500.0}" \
+  --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':20.0,'LL':20.0}"
 
 <span class="sh-comment"># Typical: commit clustering flags</span>
 <span class="prompt">$ </span>python run_clustering.py \
     --no-dry-run \
-    --set "CLUSTERING_THRESHOLD_JY=3.2"
+  --set "CLUSTERING_CORR=['V','RR','LL']" \
+  --set "CLUSTERING_THRESHOLD_JY={'V':5.0,'RR':500.0,'LL':500.0}" \
+  --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':20.0,'LL':20.0}"
 
 <span class="sh-comment"># Typical: commit + refit + save plots</span>
 <span class="prompt">$ </span>python run_clustering.py \
@@ -1640,17 +1675,21 @@ result = q.run_iterative_bandpass_workflow(
     --set "SOURCE='3C48'" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
-<span class="sh-comment"># Tune threshold — repeat freely (no disk writes):</span>
+<span class="sh-comment"># Tune thresholds — repeat freely (no disk writes, multi-corr):</span>
 <span class="prompt">$ </span>python pipeline_cli.py clustering \
     --set "SOURCE='3C48'" \
-    --set "CLUSTERING_THRESHOLD_JY=3.5" \
+  --set "CLUSTERING_CORR=['V','RR','LL']" \
+  --set "CLUSTERING_THRESHOLD_JY={'V':5.0,'RR':500.0,'LL':500.0}" \
+  --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':20.0,'LL':20.0}" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Commit clustering flags to FLAG_TABLE_SESSION:</span>
 <span class="prompt">$ </span>python pipeline_cli.py clustering \
     --no-dry-run \
     --set "SOURCE='3C48'" \
-    --set "CLUSTERING_THRESHOLD_JY=3.5" \
+  --set "CLUSTERING_CORR=['V','RR','LL']" \
+  --set "CLUSTERING_THRESHOLD_JY={'V':5.0,'RR':500.0,'LL':500.0}" \
+  --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':20.0,'LL':20.0}" \
     --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 
 <span class="sh-comment"># Commit + re-fit bandpass + save all 6 plots as PNG:</span>
