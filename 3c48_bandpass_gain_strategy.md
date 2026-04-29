@@ -1,5 +1,12 @@
 # 3C48-Based Complex Antenna Bandpass Gain Derivation for uGMRT
 
+## Documentation Changelog
+
+- **2026-04-29** — API reference defaults and usage guide expanded in `docs/api_reference.html` (commit `0aa6330`).
+   - Added explicit default behavior for `pipeline_cli.py` commands.
+   - Added clear C3 (model-free V) vs C4 (model-based RR/LL residual) convergence notes for phase-1.
+   - Added per-script defaults and typical use-case examples for `pipeline_cli.py`, `preprocess_ugmrt.py`, `run_clustering.py`, and `outlier_detection.py`.
+
 ## Objective
 Estimate per-antenna complex gains as a function of frequency,
 
