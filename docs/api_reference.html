@@ -1446,9 +1446,13 @@ result = q.run_iterative_bandpass_workflow(
         <tr><td class="p-name">--iter-tag</td><td class="p-default">ITER_TAG (cfg)</td><td class="p-desc">Used for single-pass/step runs.</td></tr>
         <tr><td class="p-name">--dry-run</td><td class="p-default">False</td><td class="p-desc">No writes only when explicitly set (or when wrapper forwards <code>--dry-run</code>).</td></tr>
         <tr><td class="p-name">--docal / --doflag</td><td class="p-default">from cfg (DOCAL/DOFLAG)</td><td class="p-desc">AIPS-like table-application toggles.</td></tr>
-        <tr><td class="p-name">--calver / --flagver</td><td class="p-default">from cfg (CALVER/FLAGVER)</td><td class="p-desc">Table version selectors: latest | N | tag | explicit path.</td></tr>
+        <tr><td class="p-name">--calver / --flagver</td><td class="p-default">from cfg (CALVER/FLAGVER)</td><td class="p-desc">Table selectors: <code>latest</code> | <code>N</code> | tag substring | explicit path. Flag writes also create immutable snapshots like <code>..._v003.json</code>.</td></tr>
       </tbody>
     </table>
+    </div>
+    <div class="callout callout-info">
+      <strong>Deterministic <code>flagver</code> selection (recommended).</strong>
+      Use versioned snapshot files (<code>..._vNNN.json</code>) for reproducible reruns, instead of relying only on file modification time.
     </div>
     <div class="shell-block">
 <span class="sh-comment"># Typical: one interactive pass</span>
@@ -1467,6 +1471,12 @@ result = q.run_iterative_bandpass_workflow(
     --iter-tag iter05 \
     --docal on \
     --doflag on
+
+<span class="sh-comment"># Typical: deterministic table selection by flagver</span>
+<span class="prompt">$ </span>python preprocess_ugmrt.py --step 3 --flagver latest
+<span class="prompt">$ </span>python preprocess_ugmrt.py --step 3 --flagver v003
+<span class="prompt">$ </span>python preprocess_ugmrt.py --step 3 --flagver 2
+<span class="prompt">$ </span>python preprocess_ugmrt.py --step 3 --flagver /abs/path/3c48_flag_table_session_v003.json
     </div>
   </div>
 
