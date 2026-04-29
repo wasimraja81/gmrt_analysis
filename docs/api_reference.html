@@ -273,6 +273,20 @@
       (e.g. <code>['V','RR','LL']</code>) and set <code>CLUSTERING_THRESHOLD_JY</code> as
       a per-corr dict (e.g. <code>{'V':5.0,'RR':500.0,'LL':500.0}</code>).
     </div>
+    <div class="callout callout-info">
+      <strong>Phase-1 stopping conditions (derive/full).</strong>
+      <br>• <code>C1</code> (always active): stop when cumulative flag set is unchanged vs previous iteration.
+      <br>• <code>C3</code>: Stokes-V epsilon criterion (model-free), active only when
+      <code>CONVERGENCE_EPSILON &gt; 0</code>, after <code>CONVERGENCE_MIN_ITERS</code>, and
+      <code>'V'</code> is in <code>COMPARE_METRICS_FOR_CONVERGENCE</code>.
+      <br>• <code>C4</code>: model-residual epsilon criterion (RR/LL vs source flux model), active only when
+      <code>CONVERGENCE_EPSILON &gt; 0</code>, after <code>CONVERGENCE_MIN_ITERS</code>, and
+      <code>'Model'</code> is in <code>COMPARE_METRICS_FOR_CONVERGENCE</code>.
+      <br>• For <code>SOURCE='3C48'</code>, C4 uses the registered 3C48 PB2017 model.
+      If no model exists for the chosen source, C4 is skipped.
+      <br>• If multiple epsilon criteria are active, <code>CONVERGENCE_COMBINE_STRATEGY='any'</code>
+      stops when any active criterion fires; <code>'all'</code> requires all active criteria.
+    </div>
     <div class="shell-block">
 <span class="sh-comment"># End-to-end derive + audit (recommended)</span>
 <span class="prompt">$ </span>python pipeline_cli.py bandpass \
@@ -281,13 +295,22 @@
     --auto --n-iters 100 \
     --refit \
     --set "SOURCE='3C48'" \
+    --set "CONVERGENCE_EPSILON=0.005" \
+    --set "CONVERGENCE_MIN_ITERS=3" \
+    --set "COMPARE_METRICS_FOR_CONVERGENCE=['V','Model']" \
+    --set "CONVERGENCE_COMBINE_STRATEGY='any'" \
     --set "CLUSTERING_THRESHOLD_JY=3.5"
 
 <span class="sh-comment"># Phase-1 only</span>
 <span class="prompt">$ </span>python pipeline_cli.py derive \
   --no-dry-run \
   --auto \
-  --n-iters 100
+  --n-iters 100 \
+  --set "SOURCE='3C48'" \
+  --set "CONVERGENCE_EPSILON=0.005" \
+  --set "CONVERGENCE_MIN_ITERS=3" \
+  --set "COMPARE_METRICS_FOR_CONVERGENCE=['V','Model']" \
+  --set "CONVERGENCE_COMBINE_STRATEGY='any'"
 
 <span class="sh-comment"># Phase-2 only (most useful threshold tuning pattern: multi-corr)</span>
 <span class="prompt">$ </span>python pipeline_cli.py audit \
@@ -402,12 +425,20 @@
     At convergence the bandpass solution and cumulative flag table are written to disk.
   </p>
   <div class="callout callout-info">
-    <strong>Model use in Phase-1 convergence (exactly where 3C48 enters).</strong>
-    Auto Phase-1 evaluates two epsilon criteria: <code>C3</code> uses model-free Stokes-V RMS,
-    while <code>C4</code> uses RR/LL residual RMS against the Perley-Butler flux model for the
-    selected source. With <code>SOURCE='3C48'</code> and
-    <code>COMPARE_METRICS_FOR_CONVERGENCE=['V','Model']</code>, convergence can be triggered
-    by this 3C48 model-based C4 check.
+    <strong>Phase-1 stopping criteria (complete list; exactly how 3C48 model is used).</strong>
+    <br>• <code>C1</code> (always active): stop when cumulative flag set is unchanged vs previous iteration.
+    <br>• <code>C3</code> (epsilon-based): model-free Stokes-V RMS convergence, active only if
+    <code>CONVERGENCE_EPSILON &gt; 0</code>, <code>iteration &gt;= CONVERGENCE_MIN_ITERS</code>, and
+    <code>'V'</code> is in <code>COMPARE_METRICS_FOR_CONVERGENCE</code>.
+    <br>• <code>C4</code> (epsilon-based): model-residual convergence in RR/LL, active only if
+    <code>CONVERGENCE_EPSILON &gt; 0</code>, <code>iteration &gt;= CONVERGENCE_MIN_ITERS</code>, and
+    <code>'Model'</code> is in <code>COMPARE_METRICS_FOR_CONVERGENCE</code>.
+    <br>• For <code>C4</code>, the flux model must exist for the selected source (e.g., 3C48 PB2017).
+    If no model is available, <code>C4</code> is disabled for that run.
+    <br>• <code>C4</code> is marked converged only when all available model residual pols (RR and/or LL)
+    satisfy <code>|RMS(i-1)-RMS(i)| / RMS(i-1) &lt; CONVERGENCE_EPSILON</code> in the same iteration.
+    <br>• If multiple epsilon criteria are active, <code>CONVERGENCE_COMBINE_STRATEGY='any'</code>
+    stops when any active criterion fires; <code>'all'</code> requires all active criteria to fire.
   </div>
   <div class="callout callout-info">
     <strong>Phase-1 defaults when invoked as <code>python pipeline_cli.py derive</code>.</strong>
@@ -1264,8 +1295,13 @@ ft2 = q.load_flag_table(<span class="str">'/work/3c48_flag_table.json'</span>)</
     <div class="fn-desc">
       <p>Drives the full iterative loop. At each iteration:</p>
       <p>① Solve bandpass → ② Save solution → ③ Run diagnostics → ④ Propose flags → ⑤ Accept/reject (auto or interactive) → ⑥ Update flag table → ⑦ Next iteration</p>
-      <p>Stops early if: flag set is unchanged from previous iteration (C1), or Stokes-V / model-residual RMS stops improving by &gt; epsilon (C3/C4).</p>
-      <p><strong>Convergence mapping:</strong> C3 = model-free V RMS; C4 = RR/LL residual RMS relative to the source flux model (e.g., 3C48 model when <code>source='3C48'</code>). C4 is active only when <code>'Model'</code> is included in <code>compare_metrics_for_convergence</code>.</p>
+      <p>Stops early using these rules:</p>
+      <p>• <strong>C1 (always on):</strong> cumulative flag set unchanged from previous iteration.<br>
+      • <strong>C3 (epsilon):</strong> coherent Stokes-V RMS fractional change falls below <code>convergence_epsilon</code>.<br>
+      • <strong>C4 (epsilon):</strong> RR/LL model-residual RMS fractional change falls below <code>convergence_epsilon</code> for all available model residual pols.</p>
+      <p><strong>Epsilon gates:</strong> C3/C4 are evaluated only when <code>convergence_epsilon &gt; 0</code> and after <code>convergence_min_iters</code> iterations.</p>
+      <p><strong>Metric selection:</strong> C3 requires <code>'V'</code> in <code>compare_metrics_for_convergence</code>; C4 requires <code>'Model'</code> there <em>and</em> a registered source flux model (e.g., 3C48/3C286 PB2017). If no model exists for the source, C4 is skipped.</p>
+      <p><strong>Combine strategy:</strong> <code>convergence_combine_strategy='any'</code> stops when any active epsilon criterion fires; <code>'all'</code> requires all active epsilon criteria to fire in the same iteration.</p>
     </div>
     <div class="param-table-wrap">
     <table class="params">
@@ -1370,7 +1406,7 @@ result = q.run_iterative_bandpass_workflow(
       <tr><td class="p-name">OUTLIER_METRIC_MERGE_STRATEGY</td><td class="p-type">str</td><td class="p-default">'union'</td><td class="p-desc">'union' flags if any metric exceeds its threshold.</td></tr>
       <tr><td class="p-name">ANTENNA_FLAG_THRESHOLD_JY</td><td class="p-type">float | dict</td><td class="p-default">{'RR':180,'LL':180,'V':30}</td><td class="p-desc">Per-metric antenna outlier threshold in Jy.</td></tr>
       <tr><td class="p-name">BASELINE_FLAG_THRESHOLD_JY</td><td class="p-type">float | dict</td><td class="p-default">{'RR':800,'LL':800,'V':150}</td><td class="p-desc">Per-metric baseline outlier threshold in Jy.</td></tr>
-      <tr><td class="p-name">FLAG_WHAT_TO_FLAG</td><td class="p-type">str</td><td class="p-default">'both'</td><td class="p-desc">'antennas', 'baselines', or 'both'.</td></tr>
+      <tr><td class="p-name">FLAG_WHAT_TO_FLAG</td><td class="p-type">str</td><td class="p-default">'baselines'</td><td class="p-desc">'antennas', 'baselines', or 'both'.</td></tr>
       <tr><td class="p-name">MAX_ANTENNAS_TO_FLAG</td><td class="p-type">int</td><td class="p-default">1</td><td class="p-desc">Max antennas flagged per iteration.</td></tr>
       <tr><td class="p-name">MAX_BASELINES_TO_FLAG</td><td class="p-type">int</td><td class="p-default">6</td><td class="p-desc">Max baselines flagged per iteration.</td></tr>
       <tr><td class="p-name">CONVERGENCE_EPSILON</td><td class="p-type">float</td><td class="p-default">0.01</td><td class="p-desc">Fractional RMS change threshold. 0.0 disables C3/C4 stopping.</td></tr>
