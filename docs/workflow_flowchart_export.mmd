@@ -1,0 +1,92 @@
+flowchart TD
+    A([Start]) --> B[Run pipeline_cli command]
+    B --> C{Command type}
+
+    C -->|bandpass| D{Phase}
+    C -->|derive| D1[Alias to derive phase]
+    C -->|audit| D2[Alias to audit phase]
+    C -->|full| D3[Alias to derive and audit]
+    C -->|preprocess| P0[Run preprocess driver directly]
+    C -->|clustering| Q0[Run clustering driver directly]
+
+    D1 --> MD[Mode derive only]
+    D2 --> R
+    D3 --> MF[Mode derive and audit]
+
+    D -->|derive| MD
+    D -->|audit| R
+    D -->|derive and audit| MF
+
+    MD --> E
+    MF --> E
+
+    subgraph PH1 [Phase 1 Derive]
+      direction TB
+      E[Load config and set overrides] --> E0[Resolve table selectors]
+      E0 --> E1[Build or load row index cache]
+      E1 --> E3[Iterative loop solve diagnose propose update]
+      E3 --> E31[Bandpass solve with source stokes channel selection]
+      E31 --> E32[Diagnostics V proxy and model residuals when available]
+      E32 --> E33[Propose flags from metrics and thresholds]
+      E33 --> E34{Dry run flag write}
+      E34 -->|yes| E35[Keep pending flags in memory]
+      E34 -->|no| E36[Write session flag table and version snapshot]
+      E35 --> E4
+      E36 --> E4
+
+      E4{Convergence checks} --> C1
+      C1[C1 unchanged cumulative flag set] --> S1{C1 true}
+      S1 -->|yes| STOP1([Stop Phase 1 with C1])
+      S1 -->|no| GATE
+
+      GATE{Epsilon active and minimum iterations met} -->|no| NEXT1[Next iteration]
+      GATE -->|yes| MSEL
+
+      MSEL{Tracked metrics} -->|V metric| C3
+      MSEL -->|Model metric| C4
+
+      C3[C3 fractional V rms change below epsilon] --> COMB
+      C4[C4 model residual convergence for RR and LL] --> C4A{Source model available}
+      C4A -->|no| C4SKIP[C4 disabled for this run]
+      C4A -->|yes| C4B[C4 requires all available model pols to converge]
+      C4SKIP --> COMB
+      C4B --> COMB
+
+      COMB{Combine strategy} -->|any| ANYCHK[Any active epsilon criterion can stop]
+      COMB -->|all| ALLCHK[All active epsilon criteria must stop]
+      ANYCHK --> EPSSTOP{Epsilon convergence true}
+      ALLCHK --> EPSSTOP
+      EPSSTOP -->|yes| STOP2([Stop Phase 1 with epsilon])
+      EPSSTOP -->|no| NEXT1
+      NEXT1 --> E3
+
+      STOP1 --> PH1OUT[Phase 1 outputs bandpass flags diagnostics]
+      STOP2 --> PH1OUT
+    end
+
+    PH1OUT --> J{Selected mode}
+    J -->|derive only| END1([End after Phase 1])
+    J -->|derive and audit| R
+
+    subgraph PH2 [Phase 2 Audit]
+      direction TB
+      R[Load saved bandpass and selected flags] --> R1[Run clustering detection]
+      R1 --> R2{No dry run}
+      R2 -->|no| R3[Plot only no clustering writes]
+      R2 -->|yes| R4[Write clustering flags and version snapshot]
+      R3 --> R5
+      R4 --> R5
+
+      R5{Refit enabled} -->|no| R6[After plots use saved phase 1 bandpass]
+      R5 -->|yes| R7[Re solve bandpass with clustering flags]
+      R7 --> R8{Write refit and not dry run}
+      R8 -->|yes| R9[Persist refitted bandpass]
+      R8 -->|no| R10[Use refit for after plots only]
+      R9 --> R11[Generate before and after diagnostics]
+      R10 --> R11
+      R6 --> R11
+    end
+
+    P0 --> END2([End])
+    Q0 --> END2
+    R11 --> END2([End])

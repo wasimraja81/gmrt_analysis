@@ -195,6 +195,7 @@
 
   <div class="nav-section">Diagnostics</div>
   <a class="nav-item" href="#diagnostics">run_bandpass_diagnostics</a>
+  <a class="nav-item sub" href="#plotvis-counter-guide">plotVis counter guide</a>
 
   <div class="nav-section">Flagging</div>
   <a class="nav-item" href="#flag-table">Flag Tables</a>
@@ -235,6 +236,9 @@
   <p>Command-first uGMRT bandpass workflow with <code>pipeline_cli.py</code> as the
      primary interface. Python APIs remain fully documented below for advanced users,
      debugging, and notebook integration.</p>
+  <p style="color:var(--text-dim);margin-top:10px;font-size:13px;">
+    Quick link: <a href="#plotvis-counter-guide">How to read plotVis sampling and flag counters</a>
+  </p>
   <div class="badges">
     <span class="badge badge-python">Python 3.9+</span>
     <span class="badge badge-phase">Phase: Data Diagnostics &amp; Preprocessing</span>
@@ -1195,6 +1199,40 @@ sol2 = q.load_bandpass_solution(<span class="str">'/work/3c48_bandpass_iter01.np
     skip_edge_channels = (<span class="num">10</span>, <span class="num">5</span>),
     save_path          = <span class="str">'/work/diagnostics_iter01.png'</span>,
 )</pre>
+  </div>
+
+  <div class="fn-card" id="plotvis-counter-guide">
+    <div class="fn-header">
+      <span class="fn-name">plotVis sampling and flag counters (plain-language guide)</span>
+      <span class="fn-kind function">reference</span>
+    </div>
+    <div class="fn-desc">
+      <p>This section explains the counter names used by the generalized <code>plotVis.py</code> quicklook utility.</p>
+      <p><strong>Cell</strong> means one visibility sample at one <code>(row, channel, correlation)</code> location in the selected data cube.</p>
+    </div>
+
+    <div class="callout callout-info">
+      <strong>Definitions</strong>
+      <p><strong>all</strong> = all selected cells in the cube.</p>
+      <p><strong>flag(mask)</strong> = cells marked flagged by the flag mask (raw + table + correction-propagated flags).</p>
+      <p><strong>good</strong> = cells that are both unflagged and finite (usable for normal scatter plotting).</p>
+      <p><strong>unflagged_nonfinite</strong> = cells not flagged but not finite (e.g. NaN/Inf).</p>
+      <p>These satisfy: <code>all = good + flag(mask) + unflagged_nonfinite</code>.</p>
+    </div>
+
+    <div class="callout callout-info">
+      <strong>Sampling meaning</strong>
+      <p><code>--sample-frac 0.02</code> means ~2% random Bernoulli sampling at cell level for point clouds.</p>
+      <p>The red <strong>flag-fraction curve</strong> in <code>*_time</code>, <code>*_freq</code>, <code>*_uvdist</code> panels uses the <strong>full unsampled 3D mask</strong> (not the sampled subset).</p>
+    </div>
+
+    <div class="callout callout-info">
+      <strong>Worked example</strong>
+      <p>If you see <code>good=2,224,444</code> and <code>flag(mask)=392,388</code>, then:</p>
+      <p><code>all = 2,224,444 + 392,388 + unflagged_nonfinite</code>.</p>
+      <p>If <code>unflagged_nonfinite=0</code>, then <code>all=2,616,832</code> and the flagged fraction is <code>392,388 / 2,616,832 ≈ 15.0%</code>.</p>
+      <p>With <code>--sample-frac=0.02</code>, you would expect roughly <code>~44k</code> sampled good points and <code>~7.8k</code> sampled flagged points for point overlays.</p>
+    </div>
   </div>
 </div>
 

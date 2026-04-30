@@ -56,9 +56,12 @@ Description of the six plots
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib.util
 import logging
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Union
 
@@ -125,6 +128,7 @@ CLUSTERING_CORR:                           Union[str, List]   = 'V'
 CLUSTERING_THRESHOLD_JY:                   Union[float, dict] = 5.0
 CLUSTERING_THRESHOLD_LOW_JY:              Union[float, dict, None] = None
 CLUSTERING_MIN_CLUSTER_FRACTION:           float = 0.80
+CLUSTERING_GLOBAL_ANT_FLAG_FRACTION:      float | None = None
 CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT: int   = 3
 CLUSTERING_MIN_BURST_BASELINE_FRACTION:    float = 0.50
 CLUSTERING_WHOLE_SCAN_BAD_FRACTION:        float = 0.70
@@ -198,6 +202,78 @@ def _build_identity_bandpass(vis_raw: dict, index: dict, source_name: str) -> di
     }
 
 
+def _build_multipage_pdf_from_pngs(image_paths, pdf_path: Path, title_prefix: str = '') -> int:
+    """Write a multi-page PDF from an ordered list of PNG files.
+
+    Returns the number of pages written.
+    """
+    from matplotlib import pyplot as _plt
+    from matplotlib.backends.backend_pdf import PdfPages as _PdfPages
+
+    valid_paths = []
+    for p in (image_paths or []):
+        if p is None:
+            continue
+        _p = Path(p)
+        if _p.exists():
+            valid_paths.append(_p)
+
+    if not valid_paths:
+        return 0
+
+    pdf_path = Path(pdf_path)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with _PdfPages(str(pdf_path)) as _pdf:
+        for img_path in valid_paths:
+            img = _plt.imread(str(img_path))
+            if hasattr(img, 'shape') and len(img.shape) >= 2:
+                h, w = int(img.shape[0]), int(img.shape[1])
+            else:
+                h, w = 900, 1400
+            fig_w = max(6.0, min(14.0, w / 160.0))
+            fig_h = max(4.0, min(10.0, h / 160.0))
+            fig, ax = _plt.subplots(figsize=(fig_w, fig_h))
+            ax.imshow(img)
+            ax.axis('off')
+            if title_prefix:
+                fig.suptitle(f'{title_prefix} | {img_path.stem}', fontsize=10)
+            _pdf.savefig(fig, bbox_inches='tight')
+            _plt.close(fig)
+
+    return len(valid_paths)
+
+
+def _critical_run_note(*,
+                       corr,
+                       threshold,
+                       threshold_low,
+                       refit: bool,
+                       dry_run: bool,
+                       elevation_min_deg,
+                       uvrange_klambda,
+                       timerange,
+                       plot_chan_range):
+    """Return a concise annotation string with high-impact audit parameters."""
+    parts = [
+        f'corr={corr}',
+        f'thr={threshold}',
+        f'refit={"on" if refit else "off"}',
+        f'write={"off" if dry_run else "on"}',
+    ]
+    if threshold_low is not None:
+        parts.append(f'thr_low={threshold_low}')
+    if elevation_min_deg is not None:
+        parts.append(f'el>={float(elevation_min_deg):g}°')
+    if uvrange_klambda is not None:
+        parts.append(f'uvk={uvrange_klambda}')
+    if timerange is not None:
+        parts.append('timerange=set')
+    if plot_chan_range is not None:
+        parts.append(f'plot_ch={plot_chan_range}')
+    return ' | '.join(parts)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -258,6 +334,15 @@ def main() -> None:
     parser.add_argument(
         '--save-plots', action='store_true', default=False,
         help='Save the six plots as PNGs to WORK_DIR.',
+    )
+    parser.add_argument(
+        '--summary-pdf',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            'Write a compact multi-page Phase-2 summary PDF (BEFORE→AFTER sequence). '
+            'Default: True. If --save-plots is off, temporary PNGs are used and cleaned up.'
+        ),
     )
     parser.add_argument(
         '--docal', choices=['on', 'off'], default=str(globals().get('DOCAL', 'on')),
@@ -442,20 +527,23 @@ def main() -> None:
     # as a fresh outlier, grossly inflating ft_new.
     # Lesson from design notes: apply_flag_tables_to_vis is row-only;
     # expand_flag_table_to_mask is the 2-D layer for chanrange entries.
+    _prior_mask_full = _np_rc.zeros(
+        vis_corr['vis_complex_corrected'].shape[:2],
+        dtype=bool,
+    )
     if active_disk:
         import json as _json
         _nrows_vc, _nchans_vc = vis_corr['vis_complex_corrected'].shape[:2]
-        _prior_mask = _np_rc.zeros((_nrows_vc, _nchans_vc), dtype=bool)
         for _ft_path in active_disk:
             _ft = _json.load(open(_ft_path))
-            _prior_mask |= q.expand_flag_table_to_mask(vis_raw, _ft, ant_name_map)
-        _n_prior    = int(_prior_mask.sum())
+            _prior_mask_full |= q.expand_flag_table_to_mask(vis_raw, _ft, ant_name_map)
+        _n_prior    = int(_prior_mask_full.sum())
         _n_total_vc = _nrows_vc * _nchans_vc
         if _n_prior:
-            vis_corr['vis_complex_corrected'][_prior_mask] = _np_rc.nan + 1j * _np_rc.nan
-            vis_corr['amp_corrected'][_prior_mask]         = _np_rc.nan
-            vis_corr['phase_deg_corrected'][_prior_mask]   = _np_rc.nan
-            vis_corr['flagged_corrected'][_prior_mask]     = True
+            vis_corr['vis_complex_corrected'][_prior_mask_full] = _np_rc.nan + 1j * _np_rc.nan
+            vis_corr['amp_corrected'][_prior_mask_full]         = _np_rc.nan
+            vis_corr['phase_deg_corrected'][_prior_mask_full]   = _np_rc.nan
+            vis_corr['flagged_corrected'][_prior_mask_full]     = True
         log.info(
             '  Prior cell flags masked in vis_corr: %d / %d cells (%.1f%%) — '
             '%d cells (%0.1f%%) remain clean for clustering',
@@ -473,6 +561,7 @@ def main() -> None:
         threshold_jy                    = CLUSTERING_THRESHOLD_JY,
         threshold_low_jy                = CLUSTERING_THRESHOLD_LOW_JY,
         min_cluster_fraction            = CLUSTERING_MIN_CLUSTER_FRACTION,
+        global_ant_flag_fraction        = CLUSTERING_GLOBAL_ANT_FLAG_FRACTION,
         min_distinct_baselines_for_ant  = CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT,
         min_burst_baseline_fraction     = CLUSTERING_MIN_BURST_BASELINE_FRACTION,
         whole_scan_bad_fraction         = CLUSTERING_WHOLE_SCAN_BAD_FRACTION,
@@ -686,7 +775,21 @@ def main() -> None:
     # ─────────────────────────────────────────────────────────────────────────
 
     # Slice to plot-channel window for the diagnostic plots.
+    _prior_mask_2d = _prior_mask_full[:, _c0:_c1]
     _flag_mask_2d = _flag_mask_full[:, _c0:_c1]
+
+    _vis_plot_before = {**_vis_plot}
+    _vis_plot_before['amp'] = _np.where(
+        _prior_mask_2d[:, :, _np.newaxis], _np.nan, _vis_plot['amp'],
+    )
+    if 'vis_complex' in _vis_plot:
+        _vis_plot_before['vis_complex'] = _np.where(
+            _prior_mask_2d[:, :, _np.newaxis], _np.nan + 0j, _vis_plot['vis_complex'],
+        )
+    if 'phase_deg' in _vis_plot:
+        _vis_plot_before['phase_deg'] = _np.where(
+            _prior_mask_2d[:, :, _np.newaxis], _np.nan, _vis_plot['phase_deg'],
+        )
 
     _vis_plot_after = {**_vis_plot}
     _vis_plot_after['amp'] = _np.where(
@@ -814,7 +917,27 @@ def main() -> None:
 
     # ── save-path helpers ─────────────────────────────────────────────────────
     _src = SOURCE.lower()
+    _run_note = _critical_run_note(
+        corr=CLUSTERING_CORR,
+        threshold=CLUSTERING_THRESHOLD_JY,
+        threshold_low=CLUSTERING_THRESHOLD_LOW_JY,
+        refit=bool(args.refit),
+        dry_run=bool(dry_run),
+        elevation_min_deg=SOLVE_ELEVATION_MIN_DEG,
+        uvrange_klambda=SOLVE_UVRANGE_KLAMBDA,
+        timerange=SOLVE_TIMERANGE,
+        plot_chan_range=PLOT_CHAN_RANGE,
+    )
+
+    _tmp_plot_dir: Path | None = None
+    if args.summary_pdf and not args.save_plots:
+        _tmp_plot_dir = Path(tempfile.mkdtemp(prefix='clustering_plots_', dir=str(WORK_DIR)))
+
     def _save(stem: str) -> Path | None:
+        if args.save_plots:
+            return Path(WORK_DIR) / stem
+        if args.summary_pdf and _tmp_plot_dir is not None:
+            return _tmp_plot_dir / stem
         if not args.save_plots:
             return None
         return Path(WORK_DIR) / stem
@@ -831,8 +954,11 @@ def main() -> None:
     # — BEFORE (1/3): corrected amp vs UV-dist ————————————————————————————————
     print('== BEFORE clustering flags ==')
     q.plot_bandpass_corrected_vis_amp_vs_uvdist(
-        _vis_plot, bandpass_sol,
-        title            = f'{SOURCE} corrected vis — amp vs UV dist  BEFORE clustering{_table_note}',
+        _vis_plot_before, bandpass_sol,
+        title            = (
+            f'{SOURCE} corrected vis — amp vs UV dist  BEFORE clustering\n'
+            f'[{_run_note}]{_table_note}'
+        ),
         exclude_antennas = EXCLUDE_FOR_PLOTS,
         show_phase       = False,
         alpha            = 0.10,
@@ -841,8 +967,11 @@ def main() -> None:
 
     # — BEFORE (2/3): vector-avg spectrum ————————————————————————————————————
     q.plot_corrected_vector_avg_spectrum(
-        _vis_plot, bandpass_sol,
-        title              = f'{SOURCE} corrected spectrum  BEFORE clustering{_table_note}',
+        _vis_plot_before, bandpass_sol,
+        title              = (
+            f'{SOURCE} corrected spectrum  BEFORE clustering\n'
+            f'[{_run_note}]{_table_note}'
+        ),
         exclude_antennas   = EXCLUDE_FOR_PLOTS,
         skip_edge_channels = SKIP_EDGE_CHANNELS,
         save_path          = _sp_before,
@@ -850,8 +979,11 @@ def main() -> None:
 
     # — BEFORE (3/3): Stokes-V amp vs UV-dist (threshold line) ───────────────
     q.plot_vis_amp_vs_uvdist(
-        q.compute_stokes_vis(_vis_plot, bandpass_sol, output_stokes='V', signed=True),
-        title      = f'{SOURCE} Stokes-V corrected  BEFORE clustering{_table_note}',
+        q.compute_stokes_vis(_vis_plot_before, bandpass_sol, output_stokes='V', signed=True),
+        title      = (
+            f'{SOURCE} Stokes-V corrected  BEFORE clustering\n'
+            f'[{_run_note}]{_table_note}'
+        ),
         show_phase = False,
         alpha      = 0.10,
         hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, (int, float)) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
@@ -864,7 +996,8 @@ def main() -> None:
     q.plot_bandpass_corrected_vis_amp_vs_uvdist(
         _vis_plot_after, bandpass_sol_after,
         title            = (f'{SOURCE} corrected vis — amp vs UV dist  '
-                            f'AFTER clustering  [{_after_label}]{_table_note}'),
+                            f'AFTER clustering  [{_after_label}]\n'
+                            f'[{_run_note}]{_table_note}'),
         exclude_antennas = EXCLUDE_FOR_PLOTS,
         show_phase       = False,
         alpha            = 0.10,
@@ -875,7 +1008,8 @@ def main() -> None:
     q.plot_corrected_vector_avg_spectrum(
         _vis_plot_after, bandpass_sol_after,
         title              = (f'{SOURCE} corrected spectrum  '
-                              f'AFTER clustering  [{_after_label}]{_table_note}'),
+                              f'AFTER clustering  [{_after_label}]\n'
+                              f'[{_run_note}]{_table_note}'),
         exclude_antennas   = EXCLUDE_FOR_PLOTS,
         skip_edge_channels = SKIP_EDGE_CHANNELS,
         save_path          = _sp_after,
@@ -885,13 +1019,28 @@ def main() -> None:
     q.plot_vis_amp_vs_uvdist(
         q.compute_stokes_vis(_vis_plot_after, bandpass_sol_after, output_stokes='V', signed=True),
         title      = (f'{SOURCE} Stokes-V corrected  '
-                      f'AFTER clustering  [{_after_label}]{_table_note}'),
+                      f'AFTER clustering  [{_after_label}]\n'
+                      f'[{_run_note}]{_table_note}'),
         show_phase = False,
         alpha      = 0.10,
         hline_jy   = CLUSTERING_THRESHOLD_JY if isinstance(CLUSTERING_THRESHOLD_JY, (int, float)) else CLUSTERING_THRESHOLD_JY.get('V', 5.0),
         signed     = True,
         save_path  = _v_after,
     )
+
+    if args.summary_pdf:
+        _png_sequence = [_uv_before, _sp_before, _v_before, _uv_after, _sp_after, _v_after]
+        _ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        _pdf_path = Path(WORK_DIR) / f'{_src}_clustering_summary_{_ts}.pdf'
+        _n_pages = _build_multipage_pdf_from_pngs(
+            _png_sequence,
+            _pdf_path,
+            title_prefix=f'{SOURCE} clustering audit',
+        )
+        if _n_pages > 0:
+            log.info('Multipage audit PDF: %s  (%d page(s))', _pdf_path, _n_pages)
+        else:
+            log.warning('Summary PDF requested but no plot images were available to include.')
 
     if args.save_plots:
         log.info('Plots saved to %s/', WORK_DIR)
@@ -901,6 +1050,9 @@ def main() -> None:
         log.info('  %s | tables=%s', _uv_after, _table_note.strip())
         log.info('  %s | tables=%s', _sp_after, _table_note.strip())
         log.info('  %s | tables=%s', _v_after, _table_note.strip())
+
+    if _tmp_plot_dir is not None:
+        shutil.rmtree(_tmp_plot_dir, ignore_errors=True)
 
     plt.show()
     log.info('Done.')

@@ -1,0 +1,101 @@
+flowchart TD
+    A([Start]) --> B[python pipeline_cli.py command args]
+    B --> C{Command}
+
+    C -->|bandpass| D{--phase}
+    C -->|derive| D1[Alias to --phase=derive]
+    C -->|audit| D2[Alias to --phase=audit]
+    C -->|full| D3[Alias to --phase=derive-and-audit]
+    C -->|preprocess| P0[Direct preprocess_ugmrt.py]
+    C -->|clustering| Q0[Direct run_clustering.py]
+
+    D1 --> MD[Mode derive only]
+    D2 --> R
+    D3 --> MF[Mode derive and audit]
+
+    D -->|derive| MD
+    D -->|audit| R
+    D -->|derive-and-audit| MF
+
+    MD --> E
+    MF --> E
+
+    subgraph PH1 [Phase-1 Derive preprocess ugmrt]
+      direction TB
+      E[Load config + CLI --set overrides] --> E0[Resolve CALVER/FLAGVER + table selectors]
+      E0 --> E1[Step 1: Build/Load row index cache]
+      E1 --> E2{Loop mode}
+      E2 -->|auto/manual| E3[Iterative loop: solve -> diagnostics -> propose flags -> update flag table]
+      E3 --> E31[Bandpass solve on selected data\nSOURCE/STOKES/CHAN_RANGE + selection gates]
+      E31 --> E32[Diagnostics:\nV proxy + RR/LL residuals vs model if available]
+      E32 --> E33[Propose flags using OUTLIER_METRIC + thresholds]
+      E33 --> E34{dry_run_flag_write?}
+      E34 -->|yes| E35[Keep pending in memory]
+      E34 -->|no| E36[Write session flag table + immutable _vNNN snapshot]
+      E35 --> E4
+      E36 --> E4
+
+      E4{Convergence checks} --> C1
+      C1[C1: flag set unchanged vs previous iteration] --> S1{C1 true?}
+      S1 -->|yes| STOP1([Stop Phase-1: C1])
+      S1 -->|no| GATE
+
+      GATE{epsilon enabled and min iters met?\nCONVERGENCE_EPSILON positive and iter at least CONVERGENCE_MIN_ITERS} -->|no| NEXT1[Next iteration]
+      GATE -->|yes| MSEL
+
+      MSEL{COMPARE_METRICS_FOR_CONVERGENCE} -->|contains V| C3
+      MSEL -->|contains Model| C4
+
+      C3[C3: fractional V rms change below epsilon\n(model free)] --> COMB
+      C4[C4: RR/LL residual rms vs source flux model\nrequires model for SOURCE e.g. 3C48 PB2017] --> C4A{model exists?}
+      C4A -->|no| C4SKIP[C4 disabled for this run]
+      C4A -->|yes| C4B[C4 fires only if all available model pols converge\n(RR and/or LL)]
+      C4SKIP --> COMB
+      C4B --> COMB
+
+      COMB{CONVERGENCE_COMBINE_STRATEGY} -->|any| ANYCHK[Stop if any active epsilon criterion fires]
+      COMB -->|all| ALLCHK[Stop only if all active epsilon criteria fire]
+      ANYCHK --> EPSSTOP{epsilon converged?}
+      ALLCHK --> EPSSTOP
+      EPSSTOP -->|yes| STOP2([Stop Phase-1: Epsilon convergence])
+      EPSSTOP -->|no| NEXT1
+      NEXT1 --> E3
+
+      STOP1 --> PH1OUT[Converged Phase-1 outputs:\nbandpass + flag tables + diagnostics (PNG/PDF)]
+      STOP2 --> PH1OUT
+    end
+
+    PH1OUT --> J{Selected mode}
+    J -->|derive only| END1([End after Phase-1])
+    J -->|derive and audit| R
+
+    subgraph PH2 [Phase-2 Audit run clustering]
+      direction TB
+      R[Load saved Phase-1 bandpass + selected flag tables] --> R1[Run clustering detection\n(CLUSTERING_CORR, thresholds, scan/burst rules)]
+      R1 --> R2{--no-dry-run?}
+      R2 -->|no| R3[Plot-only audit; no new flags written]
+      R2 -->|yes| R4[Write clustering flags to session table + _vNNN snapshot]
+      R3 --> R5
+      R4 --> R5
+
+      R5{--refit?} -->|no| R6[AFTER plots use saved Phase-1 bandpass]
+      R5 -->|yes| R7[Re-solve bandpass with clustering flags active]
+      R7 --> R8{--write-refit and not dry-run?}
+      R8 -->|yes| R9[Persist refitted bandpass to BANDPASS_OUT]
+      R8 -->|no| R10[Use refit for AFTER plots only (in-memory)]
+      R9 --> R11[Generate BEFORE/AFTER diagnostics]
+      R10 --> R11
+      R6 --> R11
+    end
+
+    P0 --> END2([End])
+    Q0 --> END2
+    R11 --> END2([End])
+
+    classDef phase fill:#1f2a44,stroke:#7aa2ff,stroke-width:1px,color:#fff;
+    classDef stop fill:#3c1f2f,stroke:#ff7aa2,stroke-width:1px,color:#fff;
+    classDef io fill:#1f3c2f,stroke:#5fd4a3,stroke-width:1px,color:#fff;
+
+    class PH1,PH2 phase;
+    class STOP1,STOP2 stop;
+    class PH1OUT,R4,E36,R9 io;

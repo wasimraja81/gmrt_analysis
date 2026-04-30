@@ -60,6 +60,7 @@ import datetime
 import logging
 import sys
 from pathlib import Path
+import numpy as np
 
 from workflow_common import (
     add_common_config_set_arguments,
@@ -137,6 +138,7 @@ CLUSTERING_CORR                          = 'V'
 CLUSTERING_THRESHOLD_JY                  = 5.0
 CLUSTERING_THRESHOLD_LOW_JY              = None   # e.g. {'RR': 0.5, 'LL': 0.5} to catch dead antennas
 CLUSTERING_MIN_CLUSTER_FRACTION          = 0.80
+CLUSTERING_GLOBAL_ANT_FLAG_FRACTION      = None
 CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT = 3
 CLUSTERING_MIN_BURST_BASELINE_FRACTION   = 0.50
 CLUSTERING_WHOLE_SCAN_BAD_FRACTION       = 0.70
@@ -169,7 +171,8 @@ _CONFIG_KEYS = (
     'LOG_LEVEL',
     'RUN_FINAL_CLUSTERING', 'CLUSTERING_CORR', 'CLUSTERING_THRESHOLD_JY',
     'CLUSTERING_THRESHOLD_LOW_JY',
-    'CLUSTERING_MIN_CLUSTER_FRACTION', 'CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT',
+    'CLUSTERING_MIN_CLUSTER_FRACTION', 'CLUSTERING_GLOBAL_ANT_FLAG_FRACTION',
+    'CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT',
     'CLUSTERING_MIN_BURST_BASELINE_FRACTION', 'CLUSTERING_WHOLE_SCAN_BAD_FRACTION',
     'CLUSTERING_PER_SCAN_ANT_FRACTION', 'CLUSTERING_PER_SCAN_ANT_BL_FRACTION',
     'CLUSTERING_BASELINE_MAX_BAD_SAMPLES', 'CLUSTERING_MAX_GAP_SAMPLES',
@@ -990,6 +993,8 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
         flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
         elevation_min_deg = SOLVE_ELEVATION_MIN_DEG,
     )
+    # Keep an unfiltered copy for final 3D flag-fraction assessment.
+    vis_for_final_3d = vis_raw
     if active_disk or pending:
         vis_raw, _flag_stats = q.apply_flag_tables_to_vis(
             vis_raw, ant_name_map,
@@ -1011,6 +1016,7 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
         threshold_jy                    = CLUSTERING_THRESHOLD_JY,
         threshold_low_jy                = CLUSTERING_THRESHOLD_LOW_JY,
         min_cluster_fraction            = CLUSTERING_MIN_CLUSTER_FRACTION,
+        global_ant_flag_fraction        = CLUSTERING_GLOBAL_ANT_FLAG_FRACTION,
         min_distinct_baselines_for_ant  = CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT,
         min_burst_baseline_fraction     = CLUSTERING_MIN_BURST_BASELINE_FRACTION,
         whole_scan_bad_fraction         = CLUSTERING_WHOLE_SCAN_BAD_FRACTION,
@@ -1027,6 +1033,75 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
         verbose                         = True,
     )
     ft = cluster_result['flag_table']
+
+    # ── Final 3D antenna assessment (post-merge mask) ─────────────────────
+    # Evaluate CLUSTERING_GLOBAL_ANT_FLAG_FRACTION on the FINAL merged 3D
+    # flag mask (rows × channels) over this step's selected vis slice, then
+    # promote qualifying antennas to wholesale bad_antennas.
+    if CLUSTERING_GLOBAL_ANT_FLAG_FRACTION is not None:
+        _thr_global = float(CLUSTERING_GLOBAL_ANT_FLAG_FRACTION)
+        _merged_for_eval = {
+            'kind': 'ugmrt_flag_table',
+            'version': 2,
+            'source': SOURCE,
+            'notes': '',
+            'bad_antennas': [],
+            'bad_baselines': [],
+            'bad_antenna_timeranges': {},
+            'bad_baseline_timeranges': {},
+            'bad_scan_timeranges': [],
+            'bad_burst_timeranges': [],
+        }
+        # Include all active on-disk tables, in-memory pending tables, then
+        # this run's newly proposed final-clustering table.
+        for _p in active_disk:
+            _merged_for_eval = od._merge_flag_tables_in_memory(_merged_for_eval, q.load_flag_table(_p))
+        for _t in pending:
+            _merged_for_eval = od._merge_flag_tables_in_memory(_merged_for_eval, _t)
+        _merged_for_eval = od._merge_flag_tables_in_memory(_merged_for_eval, ft)
+
+        _mask = q.expand_flag_table_to_mask(
+            vis_for_final_3d,
+            _merged_for_eval,
+            ant_name_map,
+            strict=False,
+            context='final-clustering-3d-assessment',
+        )
+        _ant1 = np.asarray(vis_for_final_3d['ant1'], dtype=np.int32)
+        _ant2 = np.asarray(vis_for_final_3d['ant2'], dtype=np.int32)
+        _nchan = int(_mask.shape[1])
+        _all_ids = sorted(set(_ant1.tolist()) | set(_ant2.tolist()))
+
+        _forced = []
+        _forced_log = []
+        for _aid in _all_ids:
+            _rows = (_ant1 == int(_aid)) | (_ant2 == int(_aid))
+            _nrows = int(_rows.sum())
+            if _nrows == 0:
+                continue
+            _total_cells = _nrows * _nchan
+            _bad_cells = int(_mask[_rows, :].sum())
+            _frac = (_bad_cells / _total_cells) if _total_cells else 0.0
+            if _frac >= _thr_global:
+                _name = ant_name_map.get(int(_aid), str(int(_aid)))
+                _forced.append(str(_name))
+                _forced_log.append(f'{_name}:{_frac:.1%}')
+
+        if _forced:
+            _existing = list(ft.get('bad_antennas', []))
+            _seen = {str(a).strip().upper() for a in _existing}
+            for _an in _forced:
+                _k = str(_an).strip().upper()
+                if _k not in _seen:
+                    _existing.append(_an)
+                    _seen.add(_k)
+            ft['bad_antennas'] = _existing
+            log.info(
+                '[final-clustering] final 3D global antenna wholesale (bad-cell fraction >= %.3f): %s',
+                _thr_global,
+                ', '.join(_forced_log),
+            )
+
     new_ants  = ft.get('bad_antennas', [])
     new_bases = ft.get('bad_baselines', [])
     log.info('[final-clustering] New flags — antennas: %s  baselines: %s',
@@ -1111,7 +1186,7 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
             cal_path=final_bp.get('bandpass_out'),
             flag_paths=active_disk,
         )
-        _fig = q.run_bandpass_diagnostics(
+        _diag = q.run_bandpass_diagnostics(
             index,
             final_bp['solution'],
             source           = SOURCE,
@@ -1130,8 +1205,10 @@ def _run_final_clustering_step(q, workflow_result: dict, dry_run: bool) -> dict:
             save_path          = _plot_path,
         )
         log.info('[final-clustering] tables applied: %s', _final_note.strip())
-        if _fig is not None:
-            _plt.close(_fig)
+        _fig_obj = _diag.get('figure') if isinstance(_diag, dict) else _diag
+        if _fig_obj is not None:
+            _plt.close(_fig_obj)
+        cluster_result['final_diagnostics_plot_path'] = str(_plot_path)
 
     return cluster_result
 
@@ -1233,26 +1310,6 @@ def run_auto(args):
     log.info('Iterations executed : %d  (of %d requested)', len(result['history']), args.n_iters)
     log.info('Stop reason         : %s', result.get('stop_reason', 'unknown'))
 
-    # Build one multi-page diagnostics PDF across all iterations.
-    if DIAG_PLOT_BASE is not None:
-        _diag_pngs = []
-        if RUN_ITER0_DIAGNOSTIC:
-            _iter0_tag = f'{AUTO_ITER_PREFIX}00'
-            _diag_pngs.append(q.tagged_output_path(DIAG_PLOT_BASE, _iter0_tag))
-        _diag_pngs.extend(
-            Path(h['diagnostics_plot_path'])
-            for h in result.get('history', [])
-            if h.get('diagnostics_plot_path')
-        )
-        _diag_pdf = DIAG_PLOT_BASE.with_name(f'{DIAG_PLOT_BASE.stem}_all_iters.pdf')
-        _n_pages = _build_multipage_pdf_from_pngs(
-            _diag_pngs,
-            _diag_pdf,
-            title_prefix=f'{SOURCE} diagnostics',
-        )
-        if _n_pages > 0:
-            log.info('Multipage diagnostics PDF: %s  (%d page(s))', _diag_pdf, _n_pages)
-
     # ── Persist final iteration bandpass to BANDPASS_OUT (no iter suffix) ────
     # run_iterative_bandpass_workflow writes <BASE>_iter01.npz, _iter02.npz, …
     # but never the base path itself.  Copy the last iteration's file to
@@ -1277,18 +1334,43 @@ def run_auto(args):
             )
 
     # ── Optional post-convergence clustering step ────────────────────────────
+    _final_cluster_plot = None
     if RUN_FINAL_CLUSTERING:
         _stop = result.get('stop_reason', '')
         _converged = 'C1 —' in _stop or 'Epsilon convergence' in _stop
         if _converged:
             log.info('[final-clustering] Convergence confirmed — starting clustering stage.')
-            _run_final_clustering_step(q, result, args.dry_run)
+            _cluster_out = _run_final_clustering_step(q, result, args.dry_run)
+            if isinstance(_cluster_out, dict):
+                _final_cluster_plot = _cluster_out.get('final_diagnostics_plot_path')
         else:
             log.warning(
                 '[final-clustering] RUN_FINAL_CLUSTERING=True but loop ended without '
                 'convergence ("%s"). Clustering step skipped. '
                 'Increase AUTO_N_ITERS or CONVERGENCE_EPSILON and re-run.', _stop
             )
+
+    # Build one multi-page diagnostics PDF across all iterations.
+    if DIAG_PLOT_BASE is not None:
+        _diag_pngs = []
+        if RUN_ITER0_DIAGNOSTIC:
+            _iter0_tag = f'{AUTO_ITER_PREFIX}00'
+            _diag_pngs.append(q.tagged_output_path(DIAG_PLOT_BASE, _iter0_tag))
+        _diag_pngs.extend(
+            Path(h['diagnostics_plot_path'])
+            for h in result.get('history', [])
+            if h.get('diagnostics_plot_path')
+        )
+        if _final_cluster_plot:
+            _diag_pngs.append(Path(_final_cluster_plot))
+        _diag_pdf = DIAG_PLOT_BASE.with_name(f'{DIAG_PLOT_BASE.stem}_all_iters.pdf')
+        _n_pages = _build_multipage_pdf_from_pngs(
+            _diag_pngs,
+            _diag_pdf,
+            title_prefix=f'{SOURCE} diagnostics',
+        )
+        if _n_pages > 0:
+            log.info('Multipage diagnostics PDF: %s  (%d page(s))', _diag_pdf, _n_pages)
 
 
 def main():

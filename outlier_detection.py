@@ -406,6 +406,8 @@ def cluster_flags(
     bad_mask: np.ndarray,
     antenna_name_map: Dict[int, str],
     min_cluster_fraction: float,
+    global_ant_flag_fraction: Optional[float],
+    forced_bad_antennas: Optional[Set[str]],
     min_distinct_baselines_for_ant: int,
     min_burst_baseline_fraction: float,
     max_gap_minutes: float,
@@ -501,13 +503,33 @@ def cluster_flags(
     bad_antennas: List[str] = []
     ant_explained: set = set()   # antenna ids fully covered by antenna flags
 
+    if forced_bad_antennas:
+        _forced = set(forced_bad_antennas)
+        for a in all_ant_ids:
+            _name = name_of[a]
+            if _name in _forced:
+                bad_antennas.append(_name)
+                ant_explained.add(a)
+
+    _global_ant_thr = (
+        float(global_ant_flag_fraction)
+        if global_ant_flag_fraction is not None else None
+    )
+
     for a in all_ant_ids:
+        if a in ant_explained:
+            continue
         rows_for_a = (ant1 == a) | (ant2 == a)
         total = int(rows_for_a.sum())
         if total == 0:
             continue
         bad   = int((bad_mask & rows_for_a).sum())
         frac  = bad / total
+
+        if _global_ant_thr is not None and frac >= _global_ant_thr:
+            bad_antennas.append(name_of[a])
+            ant_explained.add(a)
+            continue
 
         if frac < min_cluster_fraction:
             continue
@@ -1631,6 +1653,7 @@ def run_clustering_detection(
     threshold_jy:                    Union[float, Dict[str, float]]          = 5.0,
     threshold_low_jy:                Union[float, Dict[str, float], None]   = None,
     min_cluster_fraction:            float          = 0.80,
+    global_ant_flag_fraction:        Optional[float] = None,
     min_distinct_baselines_for_ant:  int            = 3,
     min_burst_baseline_fraction:     float          = 0.50,
     whole_scan_bad_fraction:         float          = 0.70,
@@ -1756,6 +1779,39 @@ def run_clustering_detection(
                   f'{nrows:,} rows')
 
         per_chan_proposals: List[dict] = []
+
+        _forced_bad_antennas: Set[str] = set()
+        if global_ant_flag_fraction is not None:
+            _thr_global = float(global_ant_flag_fraction)
+            _cell_bad = (tq_arr > _thr_h)
+            if _thr_l is not None:
+                _cell_bad = _cell_bad | (tq_arr < _thr_l)
+            _cell_valid = np.isfinite(tq_arr)
+            _cell_bad = _cell_bad & _cell_valid
+
+            ant1 = np.asarray(vis_corr['ant1'], dtype=np.int32)
+            ant2 = np.asarray(vis_corr['ant2'], dtype=np.int32)
+            _all_ant_ids = sorted(set(ant1.tolist()) | set(ant2.tolist()))
+            for _aid in _all_ant_ids:
+                _aname = ant_name_map.get(int(_aid), str(int(_aid)))
+                _rows = (ant1 == int(_aid)) | (ant2 == int(_aid))
+                _n_rows = int(_rows.sum())
+                if _n_rows == 0:
+                    continue
+                _total_cells = int(_cell_valid[_rows, :].sum())
+                if _total_cells == 0:
+                    continue
+                _bad_cells = int(_cell_bad[_rows, :].sum())
+                if (_bad_cells / _total_cells) >= _thr_global:
+                    _forced_bad_antennas.add(str(_aname))
+
+            if verbose and _forced_bad_antennas:
+                _forced_sorted = sorted(_forced_bad_antennas)
+                print(
+                    f'[clustering] global antenna wholesale (bad-cell fraction >= '
+                    f'{_thr_global:g}): {", ".join(_forced_sorted)}'
+                )
+
         for c_local in range(nchans):
             tq_chan  = tq_arr[:, c_local:c_local + 1]
             bad_mask = build_bad_mask(tq_chan, _thr_h, threshold_low=_thr_l)
@@ -1765,6 +1821,8 @@ def run_clustering_detection(
                 bad_mask,
                 ant_name_map,
                 min_cluster_fraction,
+                global_ant_flag_fraction,
+                _forced_bad_antennas,
                 min_distinct_baselines_for_ant,
                 min_burst_baseline_fraction,
                 max_gap_minutes,
@@ -2113,6 +2171,8 @@ def main() -> None:
             bad_mask,
             ant_name_map,
             MIN_CLUSTER_FRACTION,
+            None,
+            None,
             MIN_DISTINCT_BASELINES_FOR_ANT,
             MIN_BURST_BASELINE_FRACTION,
             MAX_GAP_MINUTES,
