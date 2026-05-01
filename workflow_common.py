@@ -35,7 +35,12 @@ def apply_overrides_to_globals(overrides: list, target_globals: dict, log=None) 
         if not key.isidentifier():
             sys.exit(f'ERROR: --set key is not a valid Python identifier: {key!r}')
         try:
-            val = eval(expr.strip(), {'Path': _Path, '__builtins__': __builtins__})  # noqa: S307
+            # Evaluate override expressions in a namespace that includes the
+            # currently loaded config globals so references like WORK_DIR,
+            # DATA_DIR, etc. resolve correctly.
+            eval_globals = dict(target_globals)
+            eval_globals.update({'Path': _Path, '__builtins__': __builtins__})
+            val = eval(expr.strip(), eval_globals, {})  # noqa: S307
         except Exception as exc:
             sys.exit(f'ERROR: could not evaluate --set {key}={expr!r}: {exc}')
         target_globals[key] = val

@@ -481,6 +481,7 @@ def main() -> None:
         flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
         elevation_min_deg  = SOLVE_ELEVATION_MIN_DEG,
     )
+    vis_raw['source_name'] = str(SOURCE)
     if active_disk:
         _active_disk_paths = tuple(str(p) for p in active_disk)
         vis_raw, _flag_stats = q.apply_flag_tables_to_vis(
@@ -489,6 +490,7 @@ def main() -> None:
         log.info('  Phase-1 flags applied: dropped %d rows (%d kept)',
                  _flag_stats['dropped_rows'], _flag_stats['kept_rows'])
         vis_raw['n_rows_dropped_phase1'] = _flag_stats['dropped_rows']
+        vis_raw['n_vis_cells_dropped_phase1_rows'] = int(_flag_stats['dropped_rows']) * int(vis_raw['amp'].shape[1])
 
     # Observed counts from the vis that will actually drive clustering — after
     # elevation filter + Phase-1 row drops, before chanrange masking.
@@ -531,13 +533,27 @@ def main() -> None:
         vis_corr['vis_complex_corrected'].shape[:2],
         dtype=bool,
     )
+    _prior_mask_full_3d = _np_rc.zeros(
+        vis_corr['vis_complex_corrected'].shape[:2],
+        dtype=bool,
+    )
     if active_disk:
         import json as _json
         _nrows_vc, _nchans_vc = vis_corr['vis_complex_corrected'].shape[:2]
         for _ft_path in active_disk:
             _ft = _json.load(open(_ft_path))
             _prior_mask_full |= q.expand_flag_table_to_mask(vis_raw, _ft, ant_name_map)
+            _ft_3d_only = {
+                'bad_antenna_timeranges': _ft.get('bad_antenna_timeranges', {}),
+                'bad_baseline_timeranges': _ft.get('bad_baseline_timeranges', {}),
+                'bad_scan_timeranges': _ft.get('bad_scan_timeranges', []),
+                'bad_burst_timeranges': _ft.get('bad_burst_timeranges', []),
+            }
+            _prior_mask_full_3d |= q.expand_flag_table_to_mask(vis_raw, _ft_3d_only, ant_name_map)
         _n_prior    = int(_prior_mask_full.sum())
+        _n_prior_3d = int(_prior_mask_full_3d.sum())
+        vis_raw['n_vis_cells_masked_phase1'] = _n_prior
+        vis_raw['n_vis_cells_masked_phase1_3d'] = _n_prior_3d
         _n_total_vc = _nrows_vc * _nchans_vc
         if _n_prior:
             vis_corr['vis_complex_corrected'][_prior_mask_full] = _np_rc.nan + 1j * _np_rc.nan
@@ -549,6 +565,13 @@ def main() -> None:
             '%d cells (%0.1f%%) remain clean for clustering',
             _n_prior, _n_total_vc, 100.0 * _n_prior / max(_n_total_vc, 1),
             _n_total_vc - _n_prior, 100.0 * (_n_total_vc - _n_prior) / max(_n_total_vc, 1),
+        )
+        log.info(
+            '  Phase-1 3D (timerange/chanrange) intersection on %s: %d / %d cells (%.1f%%)',
+            SOURCE,
+            _n_prior_3d,
+            _n_total_vc,
+            100.0 * _n_prior_3d / max(_n_total_vc, 1),
         )
 
     # ── run clustering detection ──────────────────────────────────────────────
@@ -776,7 +799,10 @@ def main() -> None:
 
     # Slice to plot-channel window for the diagnostic plots.
     _prior_mask_2d = _prior_mask_full[:, _c0:_c1]
+    _prior_mask_2d_3d = _prior_mask_full_3d[:, _c0:_c1]
+    _vis_plot['n_vis_cells_dropped_phase1_rows'] = int(_prior_mask_2d_3d.sum())
     _flag_mask_2d = _flag_mask_full[:, _c0:_c1]
+    _vis_plot['n_vis_cells_masked_phase1'] = int(_prior_mask_2d.sum())
 
     _vis_plot_before = {**_vis_plot}
     _vis_plot_before['amp'] = _np.where(

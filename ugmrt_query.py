@@ -2505,6 +2505,7 @@ def load_vis_for_source(
         'jd': jd,
         'ant1': a1.astype(int),
         'ant2': a2.astype(int),
+        'source_name': str(source),
         'uu_sec': uu,
         'vv_sec': vv,
         'uvdist_klambda': uvdist_klambda,
@@ -6107,29 +6108,26 @@ def plot_corrected_vector_avg_spectrum(
     skip_edge_channels: Union[int, Tuple[int, int]] = (10, 5),
     save_path: Optional[Union[str, Path]] = None,
 ):
-    """Plot corrected vector-averaged real spectrum vs the Perley-Butler flux model.
+    """Plot corrected vector-averaged real spectrum, with residuals when a model exists.
 
-    The flux model is looked up from ``_FLUX_MODEL_REGISTRY`` using
-    ``solution['source_name']`` so the correct model is used regardless of
-    whether the solution was derived from 3C48, 3C286, or any other registered
-    calibrator.
+    Model selection is source-aware and prioritises the loaded visibility source
+    (``vis['source_name']``).  This avoids accidentally plotting the bandpass
+    calibrator model (e.g. 3C48) against a different source (e.g. 3C468.1).
 
-    Top panel: per-pol vector-averaged real(vis) and PB2017 model.
-    Bottom panel: residual (data - model) per pol.
+    Top panel: per-pol vector-averaged real(vis), plus PB2017 model if available.
+    Bottom panel: residual (data - model) per pol when model exists, otherwise a
+    clear note that no model is available.
     """
     vis_use = _filter_vis_excluded_antennas(vis, solution, exclude_antennas=exclude_antennas)
     corrected = apply_bandpass_solution(vis_use, solution)
 
     freqs_hz = np.asarray(corrected['freqs_hz'], dtype=np.float64)
     freqs_mhz = freqs_hz / 1e6
-    _sol_source = (solution.get('source_name') or '').upper()
-    _model_fn = _FLUX_MODEL_REGISTRY.get(_sol_source)
-    if _model_fn is None:
-        raise ValueError(
-            f'plot_corrected_vector_avg_spectrum: no flux model registered for '
-            f'source "{_sol_source}". Registered: {sorted(_FLUX_MODEL_REGISTRY)}'
-        )
-    model = _model_fn(freqs_hz)
+    _vis_source = str(vis.get('source_name') or '').strip()
+    _sol_source = str(solution.get('source_name') or '').strip()
+    _model_source = (_vis_source or _sol_source).upper()
+    _model_fn = _FLUX_MODEL_REGISTRY.get(_model_source)
+    model = _model_fn(freqs_hz) if _model_fn is not None else None
 
     if isinstance(skip_edge_channels, tuple):
         if len(skip_edge_channels) != 2:
@@ -6156,8 +6154,9 @@ def plot_corrected_vector_avg_spectrum(
         gridspec_kw={'height_ratios': [3, 1], 'hspace': 0.06}
     )
 
-    model_plot = np.where(chan_mask, model, np.nan)
-    ax_top.plot(freqs_mhz, model_plot, color='k', lw=2.0, label=f'Perley-Butler 2017 ({_sol_source})')
+    if model is not None:
+        model_plot = np.where(chan_mask, model, np.nan)
+        ax_top.plot(freqs_mhz, model_plot, color='k', lw=2.0, label=f'Perley-Butler 2017 ({_model_source})')
 
     for pol_idx, pol in enumerate(stokes_labels):
         z = vis_corr[:, :, pol_idx]
@@ -6172,22 +6171,46 @@ def plot_corrected_vector_avg_spectrum(
 
         real_spec = np.real(vec)
         real_plot = np.where(chan_mask, real_spec, np.nan)
-        resid_plot = np.where(chan_mask, real_spec - model, np.nan)
 
         ax_top.plot(freqs_mhz, real_plot, lw=1.4, label=f'{pol} vector-avg Re(V)')
-        ax_bot.plot(freqs_mhz, resid_plot, lw=1.2, label=f'{pol} residual')
+        if model is not None:
+            resid_plot = np.where(chan_mask, real_spec - model, np.nan)
+            ax_bot.plot(freqs_mhz, resid_plot, lw=1.2, label=f'{pol} residual')
 
     ax_top.set_ylabel('Flux Density (Jy)')
     ax_top.grid(True, alpha=0.3)
     ax_top.legend(fontsize=9, loc='best')
 
-    ax_bot.axhline(0.0, color='k', lw=1.0, ls='--')
-    ax_bot.set_ylabel('Data - Model (Jy)')
+    if model is not None:
+        ax_bot.axhline(0.0, color='k', lw=1.0, ls='--')
+        ax_bot.set_ylabel('Data - Model (Jy)')
+    else:
+        _display_source = _vis_source or _sol_source or 'unknown'
+        print(
+            f'[plot] No Perley-Butler model registered for source "{_display_source}"; '
+            f'skipping residual (data-model) panel.'
+        )
+        ax_bot.set_ylabel('Residual')
+        ax_bot.text(
+            0.01, 0.80,
+            f'No Perley-Butler model available for source "{_display_source}".\n'
+            f'Showing corrected data only; residuals are not computed.',
+            transform=ax_bot.transAxes,
+            fontsize=9,
+            va='top', ha='left',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
+        )
     ax_bot.set_xlabel('Frequency (MHz)')
     ax_bot.grid(True, alpha=0.3)
-    ax_bot.legend(fontsize=8, loc='best')
+    if model is not None:
+        ax_bot.legend(fontsize=8, loc='best')
 
-    fig.suptitle(title or f'{_sol_source} corrected vector-averaged spectrum vs PB2017 model', fontsize=12)
+    _display_source = _vis_source or _sol_source or _model_source or 'SOURCE'
+    if model is not None:
+        _default_title = f'{_display_source} corrected vector-averaged spectrum vs PB2017 model'
+    else:
+        _default_title = f'{_display_source} corrected vector-averaged spectrum (no PB2017 model; residuals unavailable)'
+    fig.suptitle(title or _default_title, fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
 
     if save_path is not None:
@@ -6244,13 +6267,16 @@ def plot_vis_amp_vs_time(
         _n_bad  = int(np.count_nonzero(~np.isfinite(amp_flat)))
         _n_good = _n_tot - _n_bad
         _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
-        _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
+        _n_p1   = vis.get('n_vis_cells_dropped_phase1_rows', vis.get('n_rows_dropped_phase1', 0) * amp.shape[1])
+        _n_p1_mask = vis.get('n_vis_cells_masked_phase1', 0)
         _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
         _lines  = [f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)']
         if _n_el:
             _lines.append(f'el-skipped: {_n_el:,} (not counted)')
         if _n_p1:
             _lines.append(f'Phase-1 dropped: {_n_p1:,} (not counted)')
+        if _n_p1_mask:
+            _lines.append(f'Phase-1 masked cells: {_n_p1_mask:,}')
         ax_amp.text(
             0.01, 0.98, '\n'.join(_lines),
             transform=ax_amp.transAxes, fontsize=7,
@@ -6304,13 +6330,16 @@ def plot_vis_amp_vs_channel(
         _n_bad  = int(np.count_nonzero(~np.isfinite(amp_flat)))
         _n_good = _n_tot - _n_bad
         _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
-        _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
+        _n_p1   = vis.get('n_vis_cells_dropped_phase1_rows', vis.get('n_rows_dropped_phase1', 0) * amp.shape[1])
+        _n_p1_mask = vis.get('n_vis_cells_masked_phase1', 0)
         _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
         _lines  = [f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)']
         if _n_el:
             _lines.append(f'el-skipped: {_n_el:,} (not counted)')
         if _n_p1:
             _lines.append(f'Phase-1 dropped: {_n_p1:,} (not counted)')
+        if _n_p1_mask:
+            _lines.append(f'Phase-1 masked cells: {_n_p1_mask:,}')
         ax_amp.text(
             0.01, 0.98, '\n'.join(_lines),
             transform=ax_amp.transAxes, fontsize=7,
@@ -6443,13 +6472,16 @@ def plot_vis_amp_vs_uvdist(
         _n_bad  = int(np.count_nonzero(~np.isfinite(amp_flat)))
         _n_good = _n_tot - _n_bad
         _n_el   = vis.get('n_rows_skipped_elevation', 0) * amp.shape[1]
-        _n_p1   = vis.get('n_rows_dropped_phase1',    0) * amp.shape[1]
+        _n_p1   = vis.get('n_vis_cells_dropped_phase1_rows', vis.get('n_rows_dropped_phase1', 0) * amp.shape[1])
+        _n_p1_mask = vis.get('n_vis_cells_masked_phase1', 0)
         _pct    = 100.0 * _n_bad / _n_tot if _n_tot else 0.0
         _lines  = [f'{_n_good:,} of {_n_tot:,} plotted, {_n_bad:,} flagged ({_pct:.1f}%)']
         if _n_el:
             _lines.append(f'el-skipped: {_n_el:,} (not counted)')
         if _n_p1:
             _lines.append(f'Phase-1 dropped: {_n_p1:,} (not counted)')
+        if _n_p1_mask:
+            _lines.append(f'Phase-1 masked cells: {_n_p1_mask:,}')
         ax_amp.text(
             0.01, 0.98, '\n'.join(_lines),
             transform=ax_amp.transAxes, fontsize=7,

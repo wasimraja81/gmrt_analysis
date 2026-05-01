@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clustering Mode Config Matrix</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: #2e3350; --accent: #5b8dee; --accent2: #7ecfb2;
+    --text: #d4d8ee; --text-dim: #8b92b7;
+    --yes: #1e8e5a; --cond: #c4901f; --ind: #5b8dee; --no: #8b92b7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, Segoe UI, system-ui, sans-serif; }
+  .wrap { max-width: 1300px; margin: 0 auto; padding: 28px 24px 50px; }
+  h1 { margin: 0 0 8px; font-size: 28px; color: #fff; }
+  h2 { margin: 30px 0 10px; font-size: 18px; color: #fff; }
+  p { color: var(--text-dim); line-height: 1.6; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin: 14px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .chip { border-radius: 16px; padding: 3px 10px; font-size: 12px; font-weight: 700; border: 1px solid transparent; }
+  .yes  { color: #b7f2d8; background: rgba(30,142,90,.25); border-color: rgba(30,142,90,.4); }
+  .cond { color: #ffe3a3; background: rgba(196,144,31,.22); border-color: rgba(196,144,31,.4); }
+  .ind  { color: #b8d0ff; background: rgba(91,141,238,.2); border-color: rgba(91,141,238,.35); }
+  .no   { color: #c1c6df; background: rgba(139,146,183,.15); border-color: rgba(139,146,183,.35); }
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: var(--surface2); color: var(--text-dim); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 11px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; white-space: nowrap; }
+  .default { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #bcd2ff; white-space: nowrap; }
+  .status { font-weight: 700; }
+  .status.yes { color: #90e4bf; }
+  .status.cond { color: #ffd88a; }
+  .status.ind { color: #9fc2ff; }
+  .status.no { color: #b2b8d4; }
+  .small { font-size: 12px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Standalone Clustering Mode: Config Usage Matrix</h1>
+  <p>
+    Scope: <strong>pipeline_cli.py clustering</strong> (delegates to <strong>run_clustering.py</strong> only).
+    This page audits every top-level variable in <strong>preprocess_ugmrt.cfg</strong> and marks whether it is used by standalone clustering mode.
+  </p>
+  <p class="small">Back to main docs: <a href="api_reference.html#config">api_reference.html → Configuration</a></p>
+
+  <div class="card">
+    <strong>Legend (how usage is classified)</strong>
+    <div class="chips">
+      <span class="chip yes">YES = read in normal standalone clustering flow (no --refit required)</span>
+      <span class="chip cond">CONDITIONAL = read only when an optional branch is enabled (mainly --refit)</span>
+      <span class="chip ind">INDIRECT = not read directly by run_clustering.py, but influences a derived value/path</span>
+      <span class="chip no">NO = not used by standalone clustering mode</span>
+    </div>
+    <p class="small" style="margin-top:10px;">
+      Your elevation example: <strong>SOLVE_ELEVATION_MIN_DEG = YES</strong> because it is used in the core load/detection path;
+      <strong>SOLVE_ELEVATION_MAX_DEG = CONDITIONAL</strong> because it is only used in the optional <strong>--refit</strong> solve branch.
+    </p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Parameter</th>
+          <th>Default in cfg</th>
+          <th>Standalone clustering usage</th>
+          <th>Where / why</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="name">BASE_DIR</td><td class="default">Path('/Users/raj030/DATA/gmrt_40_014')</td><td class="status ind">INDIRECT</td><td>Feeds derived paths like WORK_DIR/DATA_DIR; not read directly.</td></tr>
+        <tr><td class="name">WORK_DIR</td><td class="default">BASE_DIR / 'work'</td><td class="status yes">YES</td><td>Used for flag candidate discovery, summary PDF/temp paths, saved plots.</td></tr>
+        <tr><td class="name">DATA_DIR</td><td class="default">BASE_DIR / 'data'</td><td class="status ind">INDIRECT</td><td>Only influences CAL_FITS construction in config.</td></tr>
+        <tr><td class="name">CAL_FITS</td><td class="default">DATA_DIR / '40_014_25jul2021_gsb.FITS'</td><td class="status yes">YES</td><td>Required for row index and visibility loading.</td></tr>
+        <tr><td class="name">SOURCE</td><td class="default">'3C48'</td><td class="status yes">YES</td><td>Primary source selector for standalone clustering run.</td></tr>
+        <tr><td class="name">_src</td><td class="default">SOURCE.lower()</td><td class="status no">NO</td><td>Config-local helper only; run_clustering computes its own local _src.</td></tr>
+        <tr><td class="name">BANDPASS_OUT</td><td class="default">WORK_DIR / f'{_src}_bandpass_25jul_gsb.npz'</td><td class="status yes">YES</td><td>Used when DOCAL is on (default) and in optional refit write path.</td></tr>
+        <tr><td class="name">DIAG_PLOT_BASE</td><td class="default">WORK_DIR / f'{_src}_bandpass_diagnostics.png'</td><td class="status no">NO</td><td>Not used in standalone clustering mode.</td></tr>
+        <tr><td class="name">DIAG_PLOT_UNFLAGGED</td><td class="default">WORK_DIR / f'{_src}_bandpass_diagnostics_unflagged.png'</td><td class="status no">NO</td><td>Not used in standalone clustering mode.</td></tr>
+        <tr><td class="name">INDEX_VALIDATION_MODE</td><td class="default">'fast+sha'</td><td class="status yes">YES</td><td>Passed to row-index build/load validation.</td></tr>
+        <tr><td class="name">DUD_ANTENNA_NAMES</td><td class="default">['C07', 'S05']</td><td class="status yes">YES</td><td>Applied via override_dud_names while building/loading index.</td></tr>
+        <tr><td class="name">FLAG_TABLE_BASE</td><td class="default">WORK_DIR / f'{_src}_flag_table.json'</td><td class="status ind">INDIRECT</td><td>Used only through FLAG_TABLE_PATHS expression.</td></tr>
+        <tr><td class="name">FLAG_TABLE_SESSION</td><td class="default">WORK_DIR / f'{_src}_flag_table_session.json'</td><td class="status yes">YES</td><td>Used as active input candidate and write destination for new clustering flags.</td></tr>
+        <tr><td class="name">FLAG_TABLE_PATHS</td><td class="default">[p for p in [FLAG_TABLE_BASE, FLAG_TABLE_SESSION] if p.exists()]</td><td class="status yes">YES</td><td>Primary on-disk flag table list applied before detection.</td></tr>
+        <tr><td class="name">STOKES</td><td class="default">('RR', 'LL')</td><td class="status cond">CONDITIONAL</td><td>Used only in optional --refit solve call.</td></tr>
+        <tr><td class="name">CHAN_RANGE</td><td class="default">(64, 191)</td><td class="status yes">YES</td><td>Core channel range for load, detection, and plots.</td></tr>
+        <tr><td class="name">MAX_ROWS_SOLVE</td><td class="default">150000</td><td class="status yes">YES</td><td>Used in core vis loading (and refit branch too).</td></tr>
+        <tr><td class="name">SMOOTH_WINDOW</td><td class="default">5</td><td class="status cond">CONDITIONAL</td><td>Used only in optional --refit solve.</td></tr>
+        <tr><td class="name">MIN_BASELINES</td><td class="default">20</td><td class="status cond">CONDITIONAL</td><td>Used only in optional --refit solve.</td></tr>
+        <tr><td class="name">ITER_TAG</td><td class="default">'iter00'</td><td class="status no">NO</td><td>Not used by standalone clustering.</td></tr>
+        <tr><td class="name">FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED</td><td class="default">True</td><td class="status yes">YES</td><td>Applied in vis load and refit solve call.</td></tr>
+        <tr><td class="name">SOLVE_ELEVATION_MIN_DEG</td><td class="default">None</td><td class="status yes">YES</td><td>Used in core vis load and passed to detection metadata.</td></tr>
+        <tr><td class="name">SOLVE_ELEVATION_MAX_DEG</td><td class="default">None</td><td class="status cond">CONDITIONAL</td><td>Used only in optional --refit solve.</td></tr>
+        <tr><td class="name">SOLVE_UVRANGE_M</td><td class="default">None</td><td class="status cond">CONDITIONAL</td><td>Used only in optional --refit solve.</td></tr>
+        <tr><td class="name">SOLVE_UVRANGE_KLAMBDA</td><td class="default">None</td><td class="status cond">CONDITIONAL</td><td>Used in run-note text; also in optional --refit solve.</td></tr>
+        <tr><td class="name">SOLVE_TIMERANGE</td><td class="default">None</td><td class="status cond">CONDITIONAL</td><td>Used in run-note text; also in optional --refit solve.</td></tr>
+        <tr><td class="name">DIAG_APPLY_FLAGS_ON_THE_FLY</td><td class="default">True</td><td class="status no">NO</td><td>Not used in standalone clustering.</td></tr>
+        <tr><td class="name">DIAG_SAVE_UNFLAGGED_COMPARISON</td><td class="default">False</td><td class="status no">NO</td><td>Not used in standalone clustering.</td></tr>
+        <tr><td class="name">EXCLUDE_FOR_PLOTS</td><td class="default">[]</td><td class="status yes">YES</td><td>Used in before/after plotting calls.</td></tr>
+        <tr><td class="name">SKIP_EDGE_CHANNELS</td><td class="default">(0, 0)</td><td class="status yes">YES</td><td>Used in vector-avg spectrum plots.</td></tr>
+        <tr><td class="name">TOP_N</td><td class="default">12</td><td class="status no">NO</td><td>Not used in standalone clustering.</td></tr>
+        <tr><td class="name">MAX_ROWS_DIAG</td><td class="default">60000</td><td class="status no">NO</td><td>Declared but not consumed in standalone clustering path.</td></tr>
+        <tr><td class="name">OUTLIER_METRIC</td><td class="default">('RR', 'LL', 'V')</td><td class="status no">NO</td><td>Phase-1 iterative outlier scoring only.</td></tr>
+        <tr><td class="name">OUTLIER_METRIC_MERGE_STRATEGY</td><td class="default">'union'</td><td class="status no">NO</td><td>Phase-1 setting only.</td></tr>
+        <tr><td class="name">ANTENNA_FLAG_THRESHOLD_JY</td><td class="default">{'RR': 180.0, 'LL': 180.0, 'V': 30.0}</td><td class="status no">NO</td><td>Phase-1 proposal threshold only.</td></tr>
+        <tr><td class="name">BASELINE_FLAG_THRESHOLD_JY</td><td class="default">{'RR': 800.0, 'LL': 800.0, 'V': 150.0}</td><td class="status no">NO</td><td>Phase-1 proposal threshold only.</td></tr>
+        <tr><td class="name">FLAG_WHAT_TO_FLAG</td><td class="default">'baselines'</td><td class="status no">NO</td><td>Phase-1 proposal mode only.</td></tr>
+        <tr><td class="name">MAX_ANTENNAS_TO_FLAG</td><td class="default">1</td><td class="status no">NO</td><td>Phase-1 proposal control only.</td></tr>
+        <tr><td class="name">MAX_BASELINES_TO_FLAG</td><td class="default">6</td><td class="status no">NO</td><td>Phase-1 proposal control only.</td></tr>
+        <tr><td class="name">AUTO_N_ITERS</td><td class="default">10</td><td class="status no">NO</td><td>Preprocess auto-iteration only.</td></tr>
+        <tr><td class="name">AUTO_START_ITER</td><td class="default">1</td><td class="status no">NO</td><td>Preprocess auto-iteration only.</td></tr>
+        <tr><td class="name">AUTO_ITER_PREFIX</td><td class="default">'iter'</td><td class="status cond">CONDITIONAL</td><td>Used to build refit tag only when --refit is enabled.</td></tr>
+        <tr><td class="name">AUTO_ITER_WIDTH</td><td class="default">2</td><td class="status no">NO</td><td>Preprocess auto-iteration formatting only.</td></tr>
+        <tr><td class="name">CONVERGENCE_EPSILON</td><td class="default">0.01</td><td class="status no">NO</td><td>Preprocess convergence logic only.</td></tr>
+        <tr><td class="name">CONVERGENCE_MIN_ITERS</td><td class="default">3</td><td class="status no">NO</td><td>Preprocess convergence logic only.</td></tr>
+        <tr><td class="name">COMPARE_METRICS_FOR_CONVERGENCE</td><td class="default">['V', 'Model']</td><td class="status no">NO</td><td>Preprocess convergence logic only.</td></tr>
+        <tr><td class="name">CONVERGENCE_COMBINE_STRATEGY</td><td class="default">'any'</td><td class="status no">NO</td><td>Preprocess convergence logic only.</td></tr>
+        <tr><td class="name">RUN_ITER0_DIAGNOSTIC</td><td class="default">True</td><td class="status no">NO</td><td>Preprocess-only behavior.</td></tr>
+        <tr><td class="name">GAIN_PLOT_BASE</td><td class="default">WORK_DIR / f'{_src}_bandpass_gains.png'</td><td class="status no">NO</td><td>Preprocess gain-grid output path only.</td></tr>
+        <tr><td class="name">LOG_LEVEL</td><td class="default">'INFO'</td><td class="status yes">YES</td><td>Fallback logging level when --log-level is not passed.</td></tr>
+        <tr><td class="name">DRY_RUN_BANDPASS</td><td class="default">True</td><td class="status no">NO</td><td>Preprocess default only; standalone clustering has its own --dry-run default.</td></tr>
+        <tr><td class="name">DRY_RUN_FLAG_WRITE</td><td class="default">True</td><td class="status no">NO</td><td>Preprocess default only; standalone clustering uses --dry-run/--no-dry-run.</td></tr>
+        <tr><td class="name">RUN_FINAL_CLUSTERING</td><td class="default">False</td><td class="status no">NO</td><td>Used by preprocess post-convergence flow; not used by pipeline_cli.py clustering.</td></tr>
+        <tr><td class="name">CLUSTERING_CORR</td><td class="default">'V'</td><td class="status yes">YES</td><td>Core detector correlation selector.</td></tr>
+        <tr><td class="name">CLUSTERING_THRESHOLD_JY</td><td class="default">5.0</td><td class="status yes">YES</td><td>Core high-threshold for clustering detection.</td></tr>
+        <tr><td class="name">CLUSTERING_THRESHOLD_LOW_JY</td><td class="default">None</td><td class="status yes">YES</td><td>Optional low-threshold passed in core detection call.</td></tr>
+        <tr><td class="name">CLUSTERING_MIN_CLUSTER_FRACTION</td><td class="default">0.8</td><td class="status yes">YES</td><td>Core clustering geometry threshold.</td></tr>
+        <tr><td class="name">CLUSTERING_GLOBAL_ANT_FLAG_FRACTION</td><td class="default">None</td><td class="status yes">YES</td><td>Core global-antenna wholesale criterion.</td></tr>
+        <tr><td class="name">CLUSTERING_MIN_DISTINCT_BASELINES_FOR_ANT</td><td class="default">3</td><td class="status yes">YES</td><td>Core detector criterion.</td></tr>
+        <tr><td class="name">CLUSTERING_MIN_BURST_BASELINE_FRACTION</td><td class="default">0.5</td><td class="status yes">YES</td><td>Core detector burst criterion.</td></tr>
+        <tr><td class="name">CLUSTERING_WHOLE_SCAN_BAD_FRACTION</td><td class="default">0.7</td><td class="status yes">YES</td><td>Core tier-0 whole-scan criterion.</td></tr>
+        <tr><td class="name">CLUSTERING_PER_SCAN_ANT_FRACTION</td><td class="default">0.6</td><td class="status yes">YES</td><td>Core per-scan antenna criterion.</td></tr>
+        <tr><td class="name">CLUSTERING_PER_SCAN_ANT_BL_FRACTION</td><td class="default">0.5</td><td class="status yes">YES</td><td>Core per-scan antenna-baseline criterion.</td></tr>
+        <tr><td class="name">CLUSTERING_BASELINE_MAX_BAD_SAMPLES</td><td class="default">100</td><td class="status yes">YES</td><td>Core detector absolute-count backstop.</td></tr>
+        <tr><td class="name">CLUSTERING_MAX_GAP_SAMPLES</td><td class="default">2</td><td class="status yes">YES</td><td>Core interval-merging behavior.</td></tr>
+        <tr><td class="name">CLUSTERING_MAX_GAP_MINUTES</td><td class="default">30.0</td><td class="status yes">YES</td><td>Core interval-merging calendar floor.</td></tr>
+        <tr><td class="name">CLUSTERING_SCAN_GAP_MINUTES</td><td class="default">2.0</td><td class="status yes">YES</td><td>Core scan segmentation threshold.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Classification note</h2>
+  <p>
+    The <strong>YES vs CONDITIONAL</strong> split is based on whether a parameter is read in the default standalone clustering path itself,
+    or only in optional branches. Optional branches are primarily <strong>--refit</strong> (post-clustering re-solve) and certain non-default
+    mode toggles. This is why elevation min is YES, while elevation max is CONDITIONAL.
+  </p>
+</div>
+</body>
+</html>
