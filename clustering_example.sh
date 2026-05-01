@@ -8,7 +8,7 @@
 
 python pipeline_cli.py clustering \
 --config preprocess_ugmrt.cfg \
---dry-run \
+--no-dry-run \
 --docal on \
 --doflag on \
 --set "SOURCE='3C468.1'" \
