@@ -3930,6 +3930,25 @@ def save_bandpass_solution(solution, path: Union[str, Path]):
         'solve_dropped_rows_by_flag_table': int(solution.get('solve_dropped_rows_by_flag_table', 0)),
         'bad_data_policy': solution['bad_data_policy'],
         'notes': solution['notes'],
+        'solution_time_start_jd': (
+            float(solution.get('solution_time_start_jd'))
+            if solution.get('solution_time_start_jd') is not None
+            else None
+        ),
+        'solution_time_end_jd': (
+            float(solution.get('solution_time_end_jd'))
+            if solution.get('solution_time_end_jd') is not None
+            else None
+        ),
+        'solution_time_center_jd': (
+            float(solution.get('solution_time_center_jd'))
+            if solution.get('solution_time_center_jd') is not None
+            else None
+        ),
+        'solution_time_start_utc': solution.get('solution_time_start_utc'),
+        'solution_time_end_utc': solution.get('solution_time_end_utc'),
+        'solution_time_center_utc': solution.get('solution_time_center_utc'),
+        'solution_interval_label': solution.get('solution_interval_label'),
     }
 
     np.savez_compressed(
@@ -3978,6 +3997,13 @@ def load_bandpass_solution(path: Union[str, Path]) -> dict:
             'solve_dropped_rows_by_flag_table': int(metadata.get('solve_dropped_rows_by_flag_table', 0)),
             'bad_data_policy': metadata['bad_data_policy'],
             'notes': metadata['notes'],
+            'solution_time_start_jd': metadata.get('solution_time_start_jd', None),
+            'solution_time_end_jd': metadata.get('solution_time_end_jd', None),
+            'solution_time_center_jd': metadata.get('solution_time_center_jd', None),
+            'solution_time_start_utc': metadata.get('solution_time_start_utc', None),
+            'solution_time_end_utc': metadata.get('solution_time_end_utc', None),
+            'solution_time_center_utc': metadata.get('solution_time_center_utc', None),
+            'solution_interval_label': metadata.get('solution_interval_label', None),
             'freqs_hz': np.asarray(npz['freqs_hz'], dtype=np.float64),
             'chan_indices': np.asarray(npz['chan_indices'], dtype=np.int32),
             'antenna_ids': np.asarray(npz['antenna_ids'], dtype=np.int32),

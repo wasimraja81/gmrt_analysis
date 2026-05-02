@@ -12,6 +12,12 @@ preprocess
 clustering
     Delegate to run_clustering.py (legacy run_clustering.sh target).
 
+secondary
+    Delegate to cal_solver.py (secondary calibration solve entrypoint).
+
+solplot
+    Delegate to gainPlots.py (gain-table visualization).
+
 bandpass
     Unified Phase-1/Phase-2 orchestration (derive / audit / derive-and-audit).
 """
@@ -26,13 +32,15 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-_TOP_HELP = """usage: pipeline_cli.py {preprocess,clustering,bandpass,derive,audit,full} [args ...]
+_TOP_HELP = """usage: pipeline_cli.py {preprocess,clustering,secondary,solplot,bandpass,derive,audit,full} [args ...]
 
 Unified pipeline entrypoint.
 
 Commands
     preprocess   Run preprocess_ugmrt.py directly (Phase-1 driver interface)
     clustering   Run run_clustering.py directly (Phase-2 driver interface)
+    secondary    Run cal_solver.py directly (secondary solve interface)
+    solplot      Run gainPlots.py (primary/secondary gain solution plots)
     bandpass     Unified Phase-1/Phase-2 orchestration (preferred)
     derive       Alias for: bandpass --phase=derive
     audit        Alias for: bandpass --phase=audit
@@ -86,6 +94,8 @@ Compatibility wrappers
     ./run_bandpass.sh ...   -> pipeline_cli.py bandpass ...
     ./run_preprocess.sh ... -> pipeline_cli.py preprocess ...
     ./run_clustering.sh ... -> pipeline_cli.py clustering ...
+    ./secondaryCalibration_example.sh -> pipeline_cli.py secondary ...
+    ./plotSecondarySolutions_example.sh -> pipeline_cli.py solplot ...
 """
 
 
@@ -244,6 +254,10 @@ def main() -> int:
         return _run([py, str(SCRIPT_DIR / 'preprocess_ugmrt.py'), *extra])
     if command == 'clustering':
         return _run([py, str(SCRIPT_DIR / 'run_clustering.py'), *extra])
+    if command == 'secondary':
+        return _run([py, str(SCRIPT_DIR / 'cal_solver.py'), *extra])
+    if command == 'solplot':
+        return _run([py, str(SCRIPT_DIR / 'gainPlots.py'), *extra])
     if command == 'bandpass':
         return _run_bandpass(extra)
     if command == 'derive':
