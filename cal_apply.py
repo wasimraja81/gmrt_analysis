@@ -408,6 +408,7 @@ def _apply_group_inplace(
     jd: np.ndarray,
     ant1: np.ndarray,
     ant2: np.ndarray,
+    vis_chan_indices: np.ndarray,
     vis_labels: list[str],
     group: list[dict],
     scheme: str,
@@ -451,9 +452,14 @@ def _apply_group_inplace(
         nrows = corrected.shape[0]
         chan_map = {int(c): i for i, c in enumerate(chan_common.tolist())}
         nchan = corrected.shape[1]
+        vis_chan = np.asarray(vis_chan_indices, dtype=np.int32)
+        if vis_chan.size != nchan:
+            raise ValueError(
+                f'vis_chan_indices length {vis_chan.size} does not match vis channel axis {nchan}.'
+            )
         chan_sel_idx = np.full(nchan, -1, dtype=np.int32)
         for vc in range(nchan):
-            chan_sel_idx[vc] = chan_map.get(vc, -1)
+            chan_sel_idx[vc] = chan_map.get(int(vis_chan[vc]), -1)
 
         if np.any(chan_sel_idx < 0):
             raise ValueError('Solution group does not cover all selected visibility channels.')
@@ -611,6 +617,7 @@ def main() -> int:
             jd=np.asarray(vis['jd'], dtype=np.float64),
             ant1=np.asarray(vis['ant1'], dtype=np.int32),
             ant2=np.asarray(vis['ant2'], dtype=np.int32),
+            vis_chan_indices=np.asarray(vis['chan_indices'], dtype=np.int32),
             vis_labels=vis_labels,
             group=group,
             scheme=args.time_interp_scheme,

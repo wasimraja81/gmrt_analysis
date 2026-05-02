@@ -6,8 +6,8 @@ Single multi-panel figure with selectable products and selectors.
 """
 
 import argparse
-import ast
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -17,7 +17,22 @@ import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
+import cal_apply as ca
 import ugmrt_query as q
+from workflow_common import apply_overrides_to_globals, load_config_into_globals
+
+
+# Optional config-backed defaults (only used when --config is provided)
+CAL_FITS = None
+INDEX_CACHE = None
+SOURCE = None
+CHAN_RANGE = None
+SOLVE_TIMERANGE = None
+SOLVE_ELEVATION_MIN_DEG = None
+SOLVE_ELEVATION_MAX_DEG = None
+SOLVE_UVRANGE_M = None
+SOLVE_UVRANGE_KLAMBDA = None
+EXCLUDE_FOR_PLOTS = []
 
 
 def _parse_csv_list(text):
@@ -118,6 +133,107 @@ def _load_solution(bpcal_path, source_name, index):
         return solution
 
 
+def _safe_float(value):
+    try:
+        if value is None:
+            return None
+        out = float(value)
+        return out if np.isfinite(out) else None
+    except Exception:
+        return None
+
+
+def _solution_time_info(solution):
+    center = _safe_float(solution.get('solution_time_center_jd', None))
+    start = _safe_float(solution.get('solution_time_start_jd', None))
+    end = _safe_float(solution.get('solution_time_end_jd', None))
+    return center, start, end
+
+
+def _solution_center_or_inf(solution):
+    center = _solution_time_info(solution)[0]
+    return float(center) if center is not None else float('inf')
+
+
+def _apply_solutions_by_time(vis, solutions, time_interp_scheme='nearest', time_extrapolation='hold'):
+    if not solutions:
+        return None
+    groups = ca._group_tables_in_order(solutions)
+
+    n_tables = len(solutions)
+    n_timed = sum(1 for s in solutions if _solution_time_info(s)[0] is not None)
+    n_untimed = n_tables - n_timed
+    table_names = [Path(str(s.get('_path', f'table_{i+1}'))).name for i, s in enumerate(solutions)]
+    print(
+        f'[plotVis] calibration apply: tables={n_tables} '
+        f'(untimed={n_untimed}, timed={n_timed}) groups={len(groups)} '
+        f'interp={time_interp_scheme} extrap={time_extrapolation}'
+    )
+    if table_names:
+        print(f"[plotVis] calibration tables: {', '.join(table_names)}")
+
+    corrected = np.asarray(vis['vis_complex'], dtype=np.complex128).copy()
+    corrected_flagged = np.asarray(vis.get('flagged', np.zeros_like(vis['weight'], dtype=bool)), dtype=bool).copy()
+    vis_labels = [str(x) for x in vis['stokes_labels']]
+
+    for gi, group in enumerate(groups, 1):
+        g_timed = sum(1 for s in group if _solution_time_info(s)[0] is not None)
+        g_untimed = len(group) - g_timed
+        print(f'[plotVis] applying group {gi}/{len(groups)}: n_tables={len(group)} (untimed={g_untimed}, timed={g_timed})')
+        ca._check_timed_tables(group, strict=False)
+        corrected, corrected_flagged = ca._apply_group_inplace(
+            corrected,
+            corrected_flagged,
+            jd=np.asarray(vis['jd'], dtype=np.float64),
+            ant1=np.asarray(vis['ant1'], dtype=np.int32),
+            ant2=np.asarray(vis['ant2'], dtype=np.int32),
+            vis_chan_indices=np.asarray(vis['chan_indices'], dtype=np.int32),
+            vis_labels=vis_labels,
+            group=group,
+            scheme=str(time_interp_scheme),
+            extrapolation=str(time_extrapolation),
+        )
+
+    raw = np.asarray(vis['vis_complex'], dtype=np.complex128)
+    raw_flagged = np.asarray(vis.get('flagged', np.zeros_like(vis['weight'], dtype=bool)), dtype=bool)
+    finite_raw = np.isfinite(raw.real) & np.isfinite(raw.imag)
+    finite_corr = np.isfinite(np.real(corrected)) & np.isfinite(np.imag(corrected))
+    valid = (~raw_flagged) & (~corrected_flagged) & finite_raw & finite_corr
+    n_valid = int(np.count_nonzero(valid))
+    if n_valid > 0:
+        raw_v = raw[valid]
+        corr_v = corrected[valid]
+        nz = np.abs(raw_v) > 1e-12
+        if np.any(nz):
+            amp_ratio = np.abs(corr_v[nz]) / np.abs(raw_v[nz])
+            phase_shift_deg = np.degrees(np.angle(corr_v[nz] * np.conj(raw_v[nz])))
+            print(
+                '[plotVis] correction summary: '
+                f'valid_cells={n_valid:,} '
+                f'median_amp_ratio={float(np.nanmedian(amp_ratio)):.4f} '
+                f'median_abs_phase_shift_deg={float(np.nanmedian(np.abs(phase_shift_deg))):.3f}'
+            )
+        else:
+            print(f'[plotVis] correction summary: valid_cells={n_valid:,} (all raw valid cells have near-zero amplitude)')
+    else:
+        print('[plotVis] correction summary: no valid overlapping raw/corrected cells for delta statistics')
+
+    amp = np.abs(corrected)
+    phase = np.degrees(np.angle(corrected)).astype(np.float32)
+    amp[corrected_flagged] = np.nan
+    phase[corrected_flagged] = np.nan
+    corrected[corrected_flagged] = np.nan + 1j * np.nan
+
+    out = dict(vis)
+    out['vis_complex_corrected'] = corrected
+    out['amp_corrected'] = amp
+    out['phase_deg_corrected'] = phase
+    out['flagged_corrected'] = corrected_flagged
+    out['applied_bandpass_reference_antenna'] = int(solutions[0].get('reference_antenna', -1))
+    out['applied_bandpass_source'] = str(solutions[0].get('source_name', 'unknown'))
+    return out
+
+
 def _get_product_data(product, vis, corrected_cache, solution):
     labels = list(vis.get('stokes_labels', []))
 
@@ -132,11 +248,99 @@ def _get_product_data(product, vis, corrected_cache, solution):
         return z, f
 
     if product in ('I', 'Q', 'U', 'V'):
-        if solution is None:
-            raise ValueError(f'Product {product} requires --bpcal / calibration solution.')
-        st = q.compute_stokes_vis(vis, solution, output_stokes=product, signed=False)
-        z = np.asarray(st['vis_complex'][:, :, 0], dtype=np.complex128)
-        f = np.asarray(st.get('flagged', np.zeros_like(st['amp'], dtype=bool))[:, :, 0], dtype=bool)
+        if corrected_cache is None:
+            raise ValueError(
+                f'Product {product} requires calibrated correlations; provide --bpcal table(s) '
+                'so Stokes is formed from corrected visibilities.'
+            )
+
+        vc = np.asarray(corrected_cache['vis_complex_corrected'], dtype=np.complex128)
+        fc = np.asarray(corrected_cache.get('flagged_corrected', corrected_cache.get('flagged')), dtype=bool)
+
+        def _corr(pol: str):
+            if pol not in labels:
+                return None, None
+            idx = labels.index(pol)
+            return vc[:, :, idx], fc[:, :, idx]
+
+        circ_present = {p for p in ('RR', 'LL', 'RL', 'LR') if p in labels}
+        lin_present = {p for p in ('XX', 'YY', 'XY', 'YX') if p in labels}
+
+        if circ_present:
+            RR, fRR = _corr('RR')
+            LL, fLL = _corr('LL')
+            RL, fRL = _corr('RL')
+            LR, fLR = _corr('LR')
+
+            if product == 'I':
+                if RR is None or LL is None:
+                    raise ValueError(f'Stokes I (circular basis) requires RR+LL; available correlations: {labels}')
+                z = (RR + LL) / 2.0
+                f = np.asarray(fRR, dtype=bool) | np.asarray(fLL, dtype=bool)
+            elif product == 'V':
+                if RR is None or LL is None:
+                    raise ValueError(f'Stokes V (circular basis) requires RR+LL; available correlations: {labels}')
+                z = (RR - LL) / 2.0
+                f = np.asarray(fRR, dtype=bool) | np.asarray(fLL, dtype=bool)
+            elif product == 'Q':
+                if RL is None or LR is None:
+                    raise ValueError(
+                        f'Stokes Q (circular basis) requires RL+LR; available correlations: {labels} '
+                        '(dual-circ RR+LL only cannot produce Q/U)'
+                    )
+                z = (RL + LR) / 2.0
+                f = np.asarray(fRL, dtype=bool) | np.asarray(fLR, dtype=bool)
+            else:  # U
+                if RL is None or LR is None:
+                    raise ValueError(
+                        f'Stokes U (circular basis) requires RL+LR; available correlations: {labels} '
+                        '(dual-circ RR+LL only cannot produce Q/U)'
+                    )
+                z = 1j * (RL - LR) / 2.0
+                f = np.asarray(fRL, dtype=bool) | np.asarray(fLR, dtype=bool)
+
+        elif lin_present:
+            XX, fXX = _corr('XX')
+            YY, fYY = _corr('YY')
+            XY, fXY = _corr('XY')
+            YX, fYX = _corr('YX')
+
+            if product == 'I':
+                if XX is None or YY is None:
+                    raise ValueError(f'Stokes I (linear basis) requires XX+YY; available correlations: {labels}')
+                z = (XX + YY) / 2.0
+                f = np.asarray(fXX, dtype=bool) | np.asarray(fYY, dtype=bool)
+            elif product == 'Q':
+                if XX is None or YY is None:
+                    raise ValueError(f'Stokes Q (linear basis) requires XX+YY; available correlations: {labels}')
+                z = (XX - YY) / 2.0
+                f = np.asarray(fXX, dtype=bool) | np.asarray(fYY, dtype=bool)
+            elif product == 'U':
+                if XY is None or YX is None:
+                    raise ValueError(
+                        f'Stokes U (linear basis) requires XY+YX; available correlations: {labels} '
+                        '(dual-lin XX+YY only cannot produce U/V)'
+                    )
+                z = (XY + YX) / 2.0
+                f = np.asarray(fXY, dtype=bool) | np.asarray(fYX, dtype=bool)
+            else:  # V
+                if XY is None or YX is None:
+                    raise ValueError(
+                        f'Stokes V (linear basis) requires XY+YX; available correlations: {labels} '
+                        '(dual-lin XX+YY only cannot produce U/V)'
+                    )
+                z = 1j * (YX - XY) / 2.0
+                f = np.asarray(fXY, dtype=bool) | np.asarray(fYX, dtype=bool)
+        else:
+            raise ValueError(
+                f'Cannot determine polarization basis from correlations {labels}; '
+                'expected circular (RR/LL/RL/LR) or linear (XX/YY/XY/YX).'
+            )
+
+        finite = np.isfinite(z.real) & np.isfinite(z.imag)
+        f = np.asarray(f, dtype=bool) | (~finite)
+        z = np.asarray(z, dtype=np.complex128)
+        z[f] = np.nan + 1j * np.nan
         return z, f
 
     raise ValueError(f'Unsupported product: {product}. Use corr labels in vis or I,Q,U,V.')
@@ -346,6 +550,7 @@ def _compute_sampling_stats(products, vis, corrected_cache, solution, sample_fra
 
 
 def _plot_panel(ax, panel, products, vis, corrected_cache, solution, args, time_axis_row, uvd, freq_mhz, chan_numbers, product_colors, shared_sample_mask):
+    panel = '' if panel is None else str(panel)
     panel_alias = {
         'uvdist': 'amp_uvdist',
         'real_time': 'real_time',
@@ -494,8 +699,13 @@ def _plot_panel(ax, panel, products, vis, corrected_cache, solution, args, time_
 
 def main():
     parser = argparse.ArgumentParser(description='Generalized uGMRT plotVis utility')
-    parser.add_argument('--fits', required=True)
-    parser.add_argument('--bpcal', default=None)
+    parser.add_argument('--config', default=None, help='Optional config file path (no default hardcoded).')
+    parser.add_argument('--fits', default=None)
+    parser.add_argument('--bpcal', nargs='+', default=None, help='One or more calibration table paths (time-aware if multiple).')
+    parser.add_argument('--time-interp-scheme', choices=ca.TIME_INTERP_SCHEMES, default='nearest',
+                        help='Time interpolation for multi-table apply (same schemes as cal_apply.py).')
+    parser.add_argument('--time-extrapolation', choices=['hold', 'nearest', 'none'], default='hold',
+                        help='Extrapolation outside timed-table coverage for plotVis multi-table apply.')
     parser.add_argument('--flag', default=None)
     parser.add_argument('--outdir', default='./diagnostics_out')
     parser.add_argument('--outfile', default=None, help='Output filename. Default: plotvis_<source>.png')
@@ -505,7 +715,8 @@ def main():
 
     parser.add_argument('--source', type=str, default=None)
     parser.add_argument('--time-range', nargs=2, default=None, metavar=('START', 'END'))
-    parser.add_argument('--chan-range', nargs=2, type=int, metavar=('START', 'END'), default=[64, 191])
+    parser.add_argument('--chan-range', nargs=2, type=int, metavar=('START', 'END'), default=None,
+                        help='Inclusive original FITS channel range. Default: all channels.')
     parser.add_argument('--antennas', type=str, default=None, help='Comma list of antennas (name/id)')
     parser.add_argument('--baselines', type=str, default=None, help='Comma list like E03-W04,C01-C02')
     parser.add_argument('--elevation-min', type=float, default=None)
@@ -540,30 +751,45 @@ def main():
     parser.add_argument('--flag-bins', type=int, default=80, help='Number of bins for flag-fraction overlays on 1D-x panels')
 
     parser.add_argument('--exclude-for-plots', action='append', default=[])
-    parser.add_argument('--set', action='append', default=[], help='Backward-compatible, e.g. --set "EXCLUDE_FOR_PLOTS=[\'E03\']"')
+    parser.add_argument('--set', action='append', default=[], help='Override any config/global key: --set "KEY=expr"')
 
     args = parser.parse_args()
+
+    if args.config:
+        load_config_into_globals(args.config, globals())
+    apply_overrides_to_globals(args.set, globals())
+
+    fits_path = args.fits if args.fits is not None else globals().get('CAL_FITS', None)
+    if fits_path is None:
+        sys.exit('ERROR: no input vis provided. Pass --fits or provide CAL_FITS via --config.')
+
+    index_cache = args.index_cache if args.index_cache is not None else globals().get('INDEX_CACHE', None)
+    source_name_cli = args.source if args.source is not None else globals().get('SOURCE', None)
+    cfg_chan_range = globals().get('CHAN_RANGE', None)
+    chan_range = tuple(args.chan_range) if args.chan_range else (
+        tuple(cfg_chan_range) if cfg_chan_range is not None else None
+    )
+    timerange = tuple(args.time_range) if args.time_range else globals().get('SOLVE_TIMERANGE', None)
+    elevation_min = args.elevation_min if args.elevation_min is not None else globals().get('SOLVE_ELEVATION_MIN_DEG', None)
+    elevation_max = args.elevation_max if args.elevation_max is not None else globals().get('SOLVE_ELEVATION_MAX_DEG', None)
+    uvrange_m = tuple(args.uvrange_m) if args.uvrange_m else globals().get('SOLVE_UVRANGE_M', None)
+    uvrange_klambda = tuple(args.uvrange_klambda) if args.uvrange_klambda else globals().get('SOLVE_UVRANGE_KLAMBDA', None)
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    exclude_for_plots = list(args.exclude_for_plots or [])
-    for raw in (args.set or []):
-        if '=' not in raw:
-            continue
-        key, value = raw.split('=', 1)
-        if key.strip() == 'EXCLUDE_FOR_PLOTS':
-            parsed = ast.literal_eval(value.strip())
-            if isinstance(parsed, (list, tuple)):
-                exclude_for_plots = list(parsed)
-            elif parsed is None:
-                exclude_for_plots = []
-            else:
-                exclude_for_plots = [parsed]
+    cfg_exclude = globals().get('EXCLUDE_FOR_PLOTS', [])
+    if cfg_exclude is None:
+        cfg_exclude_list = []
+    elif isinstance(cfg_exclude, (list, tuple)):
+        cfg_exclude_list = list(cfg_exclude)
+    else:
+        cfg_exclude_list = [cfg_exclude]
+    exclude_for_plots = cfg_exclude_list + list(args.exclude_for_plots or [])
 
     index = q.get_or_build_row_index(
-        args.fits,
-        cache_path=args.index_cache,
+        fits_path,
+        cache_path=index_cache,
         force_rebuild=False,
         validation_mode=args.index_validation,
         write_cache=True,
@@ -571,7 +797,7 @@ def main():
     )
     ant_name_map, name_to_id = _build_ant_maps(index)
 
-    source_name = args.source
+    source_name = source_name_cli
     if not source_name:
         if index.get('id_to_name'):
             source_name = sorted(index['id_to_name'].values())[0]
@@ -592,12 +818,12 @@ def main():
         source=source_name,
         stokes=('RR', 'LL'),
         ant_list=ant_list if ant_list else None,
-        chan_range=tuple(args.chan_range),
-        timerange=tuple(args.time_range) if args.time_range else None,
-        uvrange_m=tuple(args.uvrange_m) if args.uvrange_m else None,
-        uvrange_klambda=tuple(args.uvrange_klambda) if args.uvrange_klambda else None,
-        elevation_min_deg=args.elevation_min,
-        elevation_max_deg=args.elevation_max,
+        chan_range=chan_range,
+        timerange=timerange,
+        uvrange_m=uvrange_m,
+        uvrange_klambda=uvrange_klambda,
+        elevation_min_deg=elevation_min,
+        elevation_max_deg=elevation_max,
         flag_all_corrs_if_any_rawvis_flagged=True,
     )
 
@@ -608,12 +834,23 @@ def main():
         pairs = _parse_baselines(args.baselines, ant_name_map, name_to_id)
         vis = _slice_rows(vis, _row_filter_by_baselines(vis, pairs))
 
-    solution = _load_solution(args.bpcal, source_name, index) if args.bpcal else None
+    solutions = []
+    if args.bpcal:
+        for bp in args.bpcal:
+            sol = _load_solution(bp, source_name, index)
+            sol['_path'] = str(bp)
+            solutions.append(sol)
+    solution = solutions[0] if solutions else None
 
     if solution is not None and exclude_for_plots:
         vis = q._filter_vis_excluded_antennas(vis, solution, exclude_antennas=exclude_for_plots)
 
-    corrected_cache = q.apply_bandpass_solution(vis, solution) if solution is not None else None
+    corrected_cache = _apply_solutions_by_time(
+        vis,
+        solutions,
+        time_interp_scheme=args.time_interp_scheme,
+        time_extrapolation=args.time_extrapolation,
+    ) if solutions else None
 
     products = _parse_csv_list(args.products)
     panels = _parse_csv_list(args.panels)
