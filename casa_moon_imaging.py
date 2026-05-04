@@ -49,6 +49,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument('--cycles-per-report', type=int, default=1, help='Major cycles per progress report chunk (default: 1)')
     p.add_argument('--threshold', default='0mJy', help='CLEAN threshold, e.g. 5mJy (default: 0mJy)')
     p.add_argument('--scales', default='0,5,15,45,135', help='CASA multiscale scales in pixels (default: 0,5,15,45,135)')
+    p.add_argument('--smallscalebias', type=float, default=0.0,
+                   help='CASA smallscalebias for multiscale CLEAN (default: 0.0)')
     p.add_argument('--deconvolver', default='multiscale', choices=['multiscale', 'hogbom', 'clark'],
                    help='CASA deconvolver (default: multiscale)')
     p.add_argument('--uvmin-m', type=float, default=None,
@@ -449,6 +451,7 @@ def _image_moon_per_integration(
             specmode='mfs',
             deconvolver=args.deconvolver,
             scales=_parse_scales(args.scales),
+            smallscalebias=float(args.smallscalebias),
             weighting=args.weighting,
             robust=args.robust,
             niter=int(args.integration_niter),
@@ -741,6 +744,7 @@ def main() -> int:
                 specmode='mfs',
                 deconvolver=args.deconvolver,
                 scales=scales,
+                smallscalebias=float(args.smallscalebias),
                 weighting=args.weighting,
                 robust=args.robust,
                 threshold=args.threshold,

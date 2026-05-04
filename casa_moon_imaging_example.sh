@@ -39,6 +39,7 @@ IMSIZE=4096
 NITER=6000
 THRESHOLD=5mJy
 SCALES=0,5,20,80,300,900
+SMALLSCALEBIAS=0.0
 WEIGHTING=briggs
 ROBUST=0.5
 # Moon-tracking is the default (--moon-track-per-integration is True by
@@ -67,6 +68,7 @@ CMD=(
   --cycles-per-report "$CYCLES_PER_REPORT"
   --threshold "$THRESHOLD"
   --scales "$SCALES"
+  --smallscalebias "$SMALLSCALEBIAS"
   --weighting "$WEIGHTING"
   --robust "$ROBUST"
   --stokes "$STOKES"
