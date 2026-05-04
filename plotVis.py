@@ -8,7 +8,7 @@ Single multi-panel figure with selectable products and selectors.
 import argparse
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib.dates as mdates
@@ -236,6 +236,11 @@ def _apply_solutions_by_time(vis, solutions, time_interp_scheme='nearest', time_
 
 def _get_product_data(product, vis, corrected_cache, solution):
     labels = list(vis.get('stokes_labels', []))
+    # Normalise case so that e.g. 'rr' matches stored label 'RR'
+    if product not in labels and product.upper() in labels:
+        product = product.upper()
+    if str(product).upper() in ('I', 'Q', 'U', 'V'):
+        product = str(product).upper()
 
     if product in labels:
         idx = labels.index(product)
@@ -248,14 +253,17 @@ def _get_product_data(product, vis, corrected_cache, solution):
         return z, f
 
     if product in ('I', 'Q', 'U', 'V'):
-        if corrected_cache is None:
-            raise ValueError(
-                f'Product {product} requires calibrated correlations; provide --bpcal table(s) '
-                'so Stokes is formed from corrected visibilities.'
-            )
-
-        vc = np.asarray(corrected_cache['vis_complex_corrected'], dtype=np.complex128)
-        fc = np.asarray(corrected_cache.get('flagged_corrected', corrected_cache.get('flagged')), dtype=bool)
+        if corrected_cache is not None:
+            vc = np.asarray(corrected_cache['vis_complex_corrected'], dtype=np.complex128)
+            fc = np.asarray(corrected_cache.get('flagged_corrected', corrected_cache.get('flagged')), dtype=bool)
+        else:
+            # No bpcal supplied — assume the loaded visibilities are already calibrated
+            # (e.g. a pre-split calibrated UVFITS).  Only I and V are well-defined
+            # without cross-correlations; Q and U will still fail below if RL/LR absent.
+            vc = np.asarray(vis['vis_complex'], dtype=np.complex128)
+            fc = np.asarray(vis.get('flagged', np.zeros(vc.shape[:2], dtype=bool)), dtype=bool)
+            if fc.ndim == 2:
+                fc = fc[:, :, np.newaxis] * np.ones((1, 1, vc.shape[2]), dtype=bool)
 
         def _corr(pol: str):
             if pol not in labels:
@@ -458,7 +466,7 @@ def _add_channel_top_axis(ax, freq_mhz, chan_numbers, nbins=7):
 
     top = ax.secondary_xaxis('top', functions=(mhz_to_chan, chan_to_mhz))
     top.set_xlabel('Channel')
-    top.xaxis.set_major_locator(MaxNLocator(nbins=max(3, int(nbins)), integer=True))
+    top.xaxis.set_major_locator(MaxNLocator(nbins=max(3, int(nbins)), integer=True, prune='both'))
 
 
 def _infer_original_chan_numbers(index, vis_freqs_hz):
@@ -555,6 +563,8 @@ def _plot_panel(ax, panel, products, vis, corrected_cache, solution, args, time_
         'uvdist': 'amp_uvdist',
         'real_time': 'real_time',
         'imag_freq': 'imag_freq',
+        'uv': 'uv_sampling',
+        'uvcov': 'uv_sampling',
     }
     panel = panel_alias.get(panel, panel)
 
@@ -577,6 +587,161 @@ def _plot_panel(ax, panel, products, vis, corrected_cache, solution, args, time_
     for ci, prod in enumerate(products):
         z, f = _get_product_data(prod, vis, corrected_cache, solution)
         product_payload.append((ci, prod, z, f))
+
+    if panel == 'uv_sampling':
+        uv_good_marker_size = 0.075
+        uv_flag_marker_size = 0.03
+        good_cell_masks = []
+        flag_cell_masks = []
+        prod_labels = []
+
+        uu_sec = np.asarray(vis['uu_sec'], dtype=np.float64)
+        vv_sec = np.asarray(vis['vv_sec'], dtype=np.float64)
+        freqs_hz = np.asarray(vis['freqs_hz'], dtype=np.float64)
+        uu_kl_cell = (uu_sec[:, np.newaxis] * freqs_hz[np.newaxis, :]) / 1e3
+        vv_kl_cell = (vv_sec[:, np.newaxis] * freqs_hz[np.newaxis, :]) / 1e3
+
+        sampled_total = 0
+        ntotal_cells = 0
+        flagged_total = 0
+        flagged_by_prod = {}
+
+        for _, prod, z, f in product_payload:
+            good = (~f) & np.isfinite(z.real) & np.isfinite(z.imag)
+            if shared_sample_mask is not None and shared_sample_mask.shape == z.shape:
+                sm = shared_sample_mask
+            else:
+                sm = _sample_mask(z.shape, args.sample_frac, seed=100)
+
+            use = good & sm
+            bad = f & sm
+            good_cell_masks.append(use)
+            flag_cell_masks.append(bad)
+            prod_labels.append(str(prod))
+
+            n_sampled = int(np.count_nonzero(sm))
+            n_flag_sampled = int(np.count_nonzero(bad))
+            ntotal_cells += int(z.size)
+            flagged_total += int(np.count_nonzero(f))
+            sampled_total += n_sampled
+            flagged_by_prod[str(prod)] = (n_flag_sampled, n_sampled)
+
+        if good_cell_masks:
+            good_stack = np.stack(good_cell_masks, axis=0)
+            good_counts = np.sum(good_stack, axis=0)
+        else:
+            good_counts = np.zeros(uu_kl_cell.shape, dtype=np.int32)
+
+        if flag_cell_masks:
+            flag_stack = np.stack(flag_cell_masks, axis=0)
+            flag_counts = np.sum(flag_stack, axis=0)
+        else:
+            flag_counts = np.zeros(uu_kl_cell.shape, dtype=np.int32)
+
+        sampled_good_cells = good_counts > 0
+        shared_good_cells = good_counts > 1
+        sampled_flag_cells = flag_counts > 0
+        shared_flag_cells = flag_counts > 1
+
+        same_good = len(good_cell_masks) <= 1 or all(np.array_equal(good_cell_masks[0], m) for m in good_cell_masks[1:])
+        same_flag = len(flag_cell_masks) <= 1 or all(np.array_equal(flag_cell_masks[0], m) for m in flag_cell_masks[1:])
+
+        legend_handles = []
+
+        if same_good:
+            ug = uu_kl_cell[sampled_good_cells]
+            vg = vv_kl_cell[sampled_good_cells]
+            ax.scatter(ug, vg, s=uv_good_marker_size, alpha=0.52, c='tab:blue', linewidths=0)
+            ax.scatter(-ug, -vg, s=uv_good_marker_size, alpha=0.28, c='tab:blue', linewidths=0)
+        else:
+            for prod, cell_mask in zip(prod_labels, good_cell_masks):
+                unique_cells = cell_mask & (good_counts == 1)
+                if np.any(unique_cells):
+                    color = product_colors.get(prod, None)
+                    u = uu_kl_cell[unique_cells]
+                    v = vv_kl_cell[unique_cells]
+                    ax.scatter(u, v, s=uv_good_marker_size, alpha=0.62, c=color, linewidths=0)
+                    ax.scatter(-u, -v, s=uv_good_marker_size, alpha=0.34, c=color, linewidths=0)
+                    legend_handles.append(
+                        Line2D([0], [0], marker='o', linestyle='None', markersize=4,
+                               markerfacecolor=color, markeredgecolor=color, label=f'{prod} unique')
+                    )
+
+            if np.any(shared_good_cells):
+                us = uu_kl_cell[shared_good_cells]
+                vs = vv_kl_cell[shared_good_cells]
+                ax.scatter(us, vs, s=uv_good_marker_size, alpha=0.42, c='0.35', linewidths=0)
+                ax.scatter(-us, -vs, s=uv_good_marker_size, alpha=0.22, c='0.35', linewidths=0)
+                legend_handles.append(
+                    Line2D([0], [0], marker='o', linestyle='None', markersize=4,
+                           markerfacecolor='0.35', markeredgecolor='0.35', label='shared (multi-product)')
+                )
+
+        if args.overlay_flags and args.flag_overlay_mode in ('points', 'both'):
+            if same_flag:
+                if np.any(sampled_flag_cells):
+                    uf = uu_kl_cell[sampled_flag_cells]
+                    vf = vv_kl_cell[sampled_flag_cells]
+                    ax.scatter(uf, vf, s=uv_flag_marker_size, alpha=0.34, c='red', linewidths=0)
+                    ax.scatter(-uf, -vf, s=uv_flag_marker_size, alpha=0.18, c='red', linewidths=0)
+            else:
+                for prod, cell_mask in zip(prod_labels, flag_cell_masks):
+                    unique_cells = cell_mask & (flag_counts == 1)
+                    if np.any(unique_cells):
+                        color = product_colors.get(prod, None)
+                        uf = uu_kl_cell[unique_cells]
+                        vf = vv_kl_cell[unique_cells]
+                        ax.scatter(uf, vf, s=uv_flag_marker_size, alpha=0.26, c=color, linewidths=0)
+                        ax.scatter(-uf, -vf, s=uv_flag_marker_size, alpha=0.14, c=color, linewidths=0)
+                if np.any(shared_flag_cells):
+                    uf = uu_kl_cell[shared_flag_cells]
+                    vf = vv_kl_cell[shared_flag_cells]
+                    ax.scatter(uf, vf, s=uv_flag_marker_size, alpha=0.34, c='red', linewidths=0)
+                    ax.scatter(-uf, -vf, s=uv_flag_marker_size, alpha=0.18, c='red', linewidths=0)
+
+        sampled_points = int(np.count_nonzero(sampled_good_cells))
+        total_points = int(good_counts.size)
+        stats_lines = [
+            f'Plotting {sampled_points:,} out of {total_points:,} sampled uv-points',
+        ]
+        if prod_labels:
+            stats_lines.extend([
+                f'% flagged_{p}={((100.0 * nf / nt) if nt > 0 else 0.0):.2f}%'
+                for p, (nf, nt) in flagged_by_prod.items()
+            ])
+        ax.text(
+            0.01, 0.99, '\n'.join(stats_lines),
+            transform=ax.transAxes, fontsize=7,
+            va='top', ha='left', linespacing=1.3,
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
+        )
+
+        if legend_handles:
+            ax.legend(handles=legend_handles, loc='upper right', fontsize=7, frameon=True)
+
+        uv_for_limits = []
+        if np.any(sampled_good_cells):
+            uv_for_limits.append(np.abs(uu_kl_cell[sampled_good_cells]))
+            uv_for_limits.append(np.abs(vv_kl_cell[sampled_good_cells]))
+        if np.any(sampled_flag_cells):
+            uv_for_limits.append(np.abs(uu_kl_cell[sampled_flag_cells]))
+            uv_for_limits.append(np.abs(vv_kl_cell[sampled_flag_cells]))
+        if not uv_for_limits:
+            uv_for_limits = [np.abs(uu_kl_cell), np.abs(vv_kl_cell)]
+
+        uv_max = max(float(np.nanmax(arr)) for arr in uv_for_limits if arr.size)
+        if not np.isfinite(uv_max) or uv_max <= 0:
+            uv_max = 1.0
+        uv_lim = 1.02 * uv_max
+
+        ax.set_xlabel('u (kλ)')
+        ax.set_ylabel('v (kλ)')
+        ax.set_aspect('equal', adjustable='box')
+        ax.set_xlim(-uv_lim, uv_lim)
+        ax.set_ylim(-uv_lim, uv_lim)
+        ax.grid(True, alpha=0.25)
+        ax.set_title('uv sampling (sampled cells)')
+        return
 
     # Fraction overlay is meaningful for 1D-x panels only.
     if args.overlay_flags and quantity is not None and axis in ('time', 'freq', 'uvdist') and args.flag_overlay_mode in ('fraction', 'both'):
@@ -693,65 +858,71 @@ def _plot_panel(ax, panel, products, vis, corrected_cache, solution, args, time_
         ax.legend(handles=style_handles, loc='upper right', fontsize=7, frameon=True)
     title_map = {
         'vector_avg': 'baseline averaged',
+        'uv_sampling': 'uv sampling (sampled)',
     }
     ax.set_title(title_map.get(panel, panel))
 
 
 def main():
     parser = argparse.ArgumentParser(description='Generalized uGMRT plotVis utility')
-    parser.add_argument('--config', default=None, help='Optional config file path (no default hardcoded).')
-    parser.add_argument('--fits', default=None)
-    parser.add_argument('--bpcal', nargs='+', default=None, help='One or more calibration table paths (time-aware if multiple).')
-    parser.add_argument('--time-interp-scheme', choices=ca.TIME_INTERP_SCHEMES, default='nearest',
-                        help='Time interpolation for multi-table apply (same schemes as cal_apply.py).')
-    parser.add_argument('--time-extrapolation', choices=['hold', 'nearest', 'none'], default='hold',
-                        help='Extrapolation outside timed-table coverage for plotVis multi-table apply.')
-    parser.add_argument('--flag', default=None)
-    parser.add_argument('--outdir', default='./diagnostics_out')
-    parser.add_argument('--outfile', default=None, help='Output filename. Default: plotvis_<source>.png')
+    cfg = parser.add_argument_group('Config and Inputs')
+    cfg.add_argument('--config', default=None, help='Optional config file path (no default hardcoded).')
+    cfg.add_argument('--fits', default=None)
+    cfg.add_argument('--index-cache', type=str, default=None)
+    cfg.add_argument('--index-validation', type=str, default='fast')
+    cfg.add_argument('--set', action='append', default=[], help='Override any config/global key: --set "KEY=expr"')
 
-    parser.add_argument('--index-cache', type=str, default=None)
-    parser.add_argument('--index-validation', type=str, default='fast')
-
-    parser.add_argument('--source', type=str, default=None)
-    parser.add_argument('--time-range', nargs=2, default=None, metavar=('START', 'END'))
-    parser.add_argument('--chan-range', nargs=2, type=int, metavar=('START', 'END'), default=None,
+    sel = parser.add_argument_group('Selection')
+    sel.add_argument('--source', type=str, default=None)
+    sel.add_argument('--time-range', nargs=2, default=None, metavar=('START', 'END'))
+    sel.add_argument('--chan-range', nargs=2, type=int, metavar=('START', 'END'), default=None,
                         help='Inclusive original FITS channel range. Default: all channels.')
-    parser.add_argument('--antennas', type=str, default=None, help='Comma list of antennas (name/id)')
-    parser.add_argument('--baselines', type=str, default=None, help='Comma list like E03-W04,C01-C02')
-    parser.add_argument('--elevation-min', type=float, default=None)
-    parser.add_argument('--elevation-max', type=float, default=None)
-    parser.add_argument('--uvrange-m', nargs=2, type=float, default=None, metavar=('MIN_M', 'MAX_M'))
-    parser.add_argument('--uvrange-klambda', nargs=2, type=float, default=None, metavar=('MIN_KL', 'MAX_KL'))
+    sel.add_argument('--antennas', type=str, default=None, help='Comma list of antennas (name/id)')
+    sel.add_argument('--baselines', type=str, default=None, help='Comma list like E03-W04,C01-C02')
+    sel.add_argument('--elevation-min', type=float, default=None)
+    sel.add_argument('--elevation-max', type=float, default=None)
+    sel.add_argument('--uvrange-m', nargs=2, type=float, default=None, metavar=('MIN_M', 'MAX_M'))
+    sel.add_argument('--uvrange-klambda', nargs=2, type=float, default=None, metavar=('MIN_KL', 'MAX_KL'))
 
-    parser.add_argument('--products', type=str, default='RR,LL,V', help='Comma list of products (corr labels and/or I,Q,U,V)')
-    parser.add_argument(
+    cal = parser.add_argument_group('Flagging and Gain Application')
+    cal.add_argument('--bpcal', nargs='+', default=None, help='One or more gain calibration table paths (time-aware if multiple).')
+    cal.add_argument('--flag', default=None)
+    cal.add_argument('--time-interp-scheme', choices=ca.TIME_INTERP_SCHEMES, default='nearest',
+                     help='Time interpolation for gain-table application only (used when --bpcal is provided).')
+    cal.add_argument('--time-extrapolation', choices=['hold', 'nearest', 'none'], default='hold',
+                     help='Time extrapolation for gain-table application only (used when --bpcal is provided).')
+
+    plotgrp = parser.add_argument_group('Plot Controls')
+    plotgrp.add_argument('--products', type=str, default='RR,LL,V', help='Comma list of products (corr labels and/or I,Q,U,V)')
+    plotgrp.add_argument(
         '--panels',
         nargs='+',
         type=str,
         default='amp_uvdist,real_time,imag_freq,ri_scatter,vector_avg',
         help=(
             'Comma list of panels. Scalar families: amp|real|imag|phase with axis time|freq|uvdist '
-            '(e.g. amp_time, real_freq, imag_uvdist, phase_time). Also supports ri_scatter, vector_avg. '
+            '(e.g. amp_time, real_freq, imag_uvdist, phase_time). Also supports ri_scatter, vector_avg, uv_sampling. '
             'Legacy aliases: uvdist->amp_uvdist, real_time, imag_freq.'
         ),
     )
-    parser.add_argument('--panels-per-page', type=str, default='3x2', help='Grid per page, e.g. 3x2 (default), 2x2, 6')
-    parser.add_argument('--multipage', choices=['auto', 'pdf', 'png', 'both'], default='auto', help='Output mode when panel count exceeds one page')
-    parser.add_argument('--sample-frac', type=float, default=0.03, help='Sparse sample fraction for scatter quicklook')
-    parser.add_argument(
+    plotgrp.add_argument('--panels-per-page', type=str, default='3x2', help='Grid per page, e.g. 3x2 (default), 2x2, 6')
+    plotgrp.add_argument('--multipage', choices=['auto', 'pdf', 'png', 'both'], default='auto', help='Output mode when panel count exceeds one page')
+    plotgrp.add_argument('--sample-frac', type=float, default=0.03, help='Sparse sample fraction for scatter quicklook')
+    plotgrp.add_argument(
         '--time-format',
         choices=['isot_concise', 'isot_full', 'minutes'],
         default='isot_concise',
         help='Time axis format for *_time panels (default: isot_concise)',
     )
-    parser.add_argument('--channel-ticks', type=int, default=7, help='Approximate number of top-axis channel tick labels on freq panels')
-    parser.add_argument('--overlay-flags', action='store_true', help='Overlay flagged cells in red')
-    parser.add_argument('--flag-overlay-mode', choices=['fraction', 'points', 'both'], default='fraction', help='Flag overlay style: binned fraction (recommended), raw points, or both')
-    parser.add_argument('--flag-bins', type=int, default=80, help='Number of bins for flag-fraction overlays on 1D-x panels')
+    plotgrp.add_argument('--channel-ticks', type=int, default=7, help='Approximate number of top-axis channel tick labels on freq panels')
+    plotgrp.add_argument('--overlay-flags', action='store_true', help='Overlay flagged cells in red')
+    plotgrp.add_argument('--flag-overlay-mode', choices=['fraction', 'points', 'both'], default='fraction', help='Flag overlay style: binned fraction (recommended), raw points, or both')
+    plotgrp.add_argument('--flag-bins', type=int, default=80, help='Number of bins for flag-fraction overlays on 1D-x panels')
+    plotgrp.add_argument('--exclude-for-plots', action='append', default=[])
 
-    parser.add_argument('--exclude-for-plots', action='append', default=[])
-    parser.add_argument('--set', action='append', default=[], help='Override any config/global key: --set "KEY=expr"')
+    out = parser.add_argument_group('Output')
+    out.add_argument('--outdir', default='./diagnostics_out')
+    out.add_argument('--outfile', default=None, help='Output filename. Default: plotvis_<source>.png')
 
     args = parser.parse_args()
 
@@ -869,13 +1040,22 @@ def main():
     freqs_hz = np.asarray(vis['freqs_hz'], dtype=np.float64)
     freq_mhz = freqs_hz / 1e6
     chan_numbers = _infer_original_chan_numbers(index, freqs_hz)
+    if chan_numbers.size > 0:
+        eff_c0 = int(np.nanmin(chan_numbers))
+        eff_c1 = int(np.nanmax(chan_numbers))
+        print(f'[plotVis] channels selected: nchan={chan_numbers.size} file_chan_range=[{eff_c0},{eff_c1}]')
+    else:
+        print('[plotVis] channels selected: nchan=0')
+    if chan_range is not None:
+        req_c0, req_c1 = int(chan_range[0]), int(chan_range[1])
+        print(f'[plotVis] requested --chan-range=[{req_c0},{req_c1}]')
 
     jd = np.asarray(vis['jd'], dtype=np.float64)
     if args.time_format in ('isot_concise', 'isot_full'):
         unix_sec = (jd - 2440587.5) * 86400.0
         base = mdates.date2num(datetime(1970, 1, 1))
         time_axis_row = (unix_sec / 86400.0) + base
-        dt0 = datetime.utcfromtimestamp(float(np.nanmin(unix_sec)))
+        dt0 = datetime.fromtimestamp(float(np.nanmin(unix_sec)), tz=timezone.utc)
         time_context = f'UTC date context: {dt0.strftime("%Y-%m-%d")} (from filtered subset)'
     else:
         tmin = jd.min()
@@ -916,7 +1096,7 @@ def main():
             axs[j].set_axis_off()
 
         summary = (
-            f"source={source_name} | chan={tuple(args.chan_range)} | el=[{args.elevation_min},{args.elevation_max}] "
+            f"source={source_name} | chan={tuple(chan_range) if chan_range is not None else 'all'} | el=[{args.elevation_min},{args.elevation_max}] "
             f"| products={products} | page {page_idx}/{len(panel_pages)} | {time_context}"
         )
         fig.suptitle(f'plotVis quicklook\n{summary}', fontsize=11)
