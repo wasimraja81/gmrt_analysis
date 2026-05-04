@@ -46,6 +46,7 @@ ROBUST=0.5
 # Add --wproject to enable W-projection gridder (slow, rarely needed for Moon).
 STOKES=I
 EXPORT_FITS=1   # 1 => add --export-fits, 0 => skip FITS export
+INTEGRATION_NMAJOR=5   # major cycles per snapshot (default was 2)
 CYCLENITER=250
 CYCLES_PER_REPORT=1
 
@@ -61,6 +62,7 @@ CMD=(
   --cell "$CELL"
   --imsize "$IMSIZE"
   --niter "$NITER"
+  --integration-nmajor "$INTEGRATION_NMAJOR"\
   --cycleniter "$CYCLENITER"
   --cycles-per-report "$CYCLES_PER_REPORT"
   --threshold "$THRESHOLD"
