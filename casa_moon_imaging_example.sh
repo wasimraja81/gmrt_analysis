@@ -33,7 +33,7 @@ MOON_FITS=(
 # ── Imaging controls ──────────────────────────────────────────────────────────
 OUTDIR=./casa_out/moon
 UVMIN_KL=0.0
-UVMAX_KL=10.0
+# UVMAX_KL unset => no upper uv cut (all baselines included)
 CELL=4arcsec
 IMSIZE=2048
 NITER=6000
@@ -58,7 +58,6 @@ CMD=(
   --fits "${MOON_FITS[@]}"
   --outdir "$OUTDIR"
   --uvmin-klambda "$UVMIN_KL"
-  --uvmax-klambda "$UVMAX_KL"
   --cell "$CELL"
   --imsize "$IMSIZE"
   --niter "$NITER"
