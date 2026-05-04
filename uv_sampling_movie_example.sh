@@ -2,9 +2,14 @@
 
 set -euo pipefail
 
-FITS_DIR=~/DATA/gmrt_40_014/work/split
-#PATTERN="moon*_calibrated.uvfits"  # change to any glob, e.g. "3c468*_calibrated.uvfits"
-PATTERN="3c468.1*_calibrated.uvfits"  # change to any glob, e.g. "3c468*_calibrated.uvfits"
+# ── Only change this ──────────────────────────────────────────────────────────
+SOURCE="moon"          # e.g. "moon", "3c468.1", "3c48"
+DATA_ROOT=~/DATA/gmrt_40_014/work/split
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Derived automatically from SOURCE
+FITS_DIR="${DATA_ROOT}/${SOURCE}"
+PATTERN="${SOURCE}*_calibrated.uvfits"
 
 OUTDIR=./diagnostics_out/uv_sampling_from_scratch
 PRODUCTS=RR,LL
@@ -14,7 +19,7 @@ TIME_STEP=1
 UV_GOOD_MARKER_SIZE=1.35
 UV_FLAG_MARKER_SIZE=0.06
 
-# Use all channels in this split Moon file (central 128 channels): 0..127.
+# Channel range to process (0-indexed). Adjust to match your data.
 CHAN_START=0
 CHAN_END=127
 

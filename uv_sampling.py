@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,6 +57,15 @@ def _source_group_tag(source_names: list[str]) -> str:
 		return 'sources'
 	if len(uniq) == 1:
 		return uniq[0]
+	# If all names share a common alphabetic prefix (e.g. "moon0520", "moon0545"
+	# are all UVFITS source-name entries for successive Moon scans), collapse to
+	# "{prefix}_{N}scans" rather than the verbose "moon0520_moon0545_plus3" form.
+	prefixes = [re.match(r'^([a-zA-Z]+)', s) for s in uniq]
+	if all(m for m in prefixes):  # every name must start with letters
+		common_prefixes = {m.group(1).lower() for m in prefixes}
+		if len(common_prefixes) == 1:
+			prefix = common_prefixes.pop()
+			return f'{prefix}_{len(uniq)}scans'
 	if len(uniq) <= 3:
 		return '_'.join(uniq)
 	return '_'.join(uniq[:3]) + f'_plus{len(uniq) - 3}'
