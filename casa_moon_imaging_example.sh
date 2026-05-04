@@ -38,7 +38,7 @@ CELL=2arcsec
 IMSIZE=4096
 NITER=6000
 THRESHOLD=5mJy
-SCALES=0,10,30,60,120
+SCALES=0,5,20,80,300,900
 WEIGHTING=briggs
 ROBUST=0.5
 # Moon-tracking is the default (--moon-track-per-integration is True by
