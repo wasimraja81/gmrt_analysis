@@ -51,10 +51,18 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument('--scales', default='0,5,15,45,135', help='CASA multiscale scales in pixels (default: 0,5,15,45,135)')
     p.add_argument('--deconvolver', default='multiscale', choices=['multiscale', 'hogbom', 'clark'],
                    help='CASA deconvolver (default: multiscale)')
+    p.add_argument('--uvmin-m', type=float, default=None,
+                   help='Minimum uv cut in metres (overrides --uvmin-klambda when set)')
+    p.add_argument('--uvmax-m', type=float, default=None,
+                   help='Maximum uv cut in metres (overrides --uvmax-klambda when set)')
+    p.add_argument('--wproject', action='store_true', default=False,
+                   help='Enable W-projection gridder (default: off; standard gridder is faster and sufficient when imaging near the phase centre)')
     p.add_argument('--wprojplanes', type=int, default=64,
-                   help='Number of W-projection planes (default: 64).')
-    p.add_argument('--moon-track-per-integration', action='store_true',
-                   help='Image each integration separately after phasing visibilities to per-integration Moon position, then stack.')
+                   help='W-projection planes, only relevant when --wproject is set (default: 64)')
+    p.add_argument('--moon-track-per-integration',
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help='Phase visibilities to per-integration Moon position and image each separately, then stack '
+                        '(default: True). Disable with --no-moon-track-per-integration.')
     p.add_argument('--integration-step', type=int, default=1,
                    help='Use every Nth integration in moon-track mode (default: 1, i.e. all).')
     p.add_argument('--integration-niter', type=int, default=300,
@@ -222,6 +230,18 @@ def _uvrange_expr(uvmin_klambda: float, uvmax_klambda: float | None) -> str:
     if uvmax_klambda is None:
         return f'>{uvmin_klambda:.3f}klambda'
     return f'{uvmin_klambda:.3f}~{uvmax_klambda:.3f}klambda'
+
+
+def _uvrange_from_args(args: argparse.Namespace) -> str:
+    """Build CASA uvrange string; metres take priority over klambda."""
+    lo_m = getattr(args, 'uvmin_m', None)
+    hi_m = getattr(args, 'uvmax_m', None)
+    if lo_m is not None or hi_m is not None:
+        lo = lo_m or 0.0
+        if hi_m is None:
+            return f'>{lo:.1f}m'
+        return f'{lo:.1f}~{hi_m:.1f}m'
+    return _uvrange_expr(args.uvmin_klambda, args.uvmax_klambda)
 
 
 def _remove_path(path: Path) -> None:
@@ -397,6 +417,9 @@ def _image_moon_per_integration(
         if not int_ms.exists():
             continue
 
+        # Both phaseshift and fixvis (when given a new phasecenter) apply the
+        # e^{2pi i (u*dl + v*dm)} phase rotation to the DATA column and recompute
+        # UVW. phaseshift is the preferred modern task; fixvis is the fallback.
         if phaseshift_task is not None:
             phaseshift_task(
                 vis=str(int_ms),
@@ -428,9 +451,9 @@ def _image_moon_per_integration(
             cycleniter=int(args.integration_cycleniter),
             threshold=args.threshold,
             stokes=args.stokes,
-            uvrange=_uvrange_expr(args.uvmin_klambda, args.uvmax_klambda),
-            gridder='wproject',
-            wprojplanes=int(args.wprojplanes),
+            uvrange=_uvrange_from_args(args),
+            gridder='wproject' if args.wproject else 'standard',
+            wprojplanes=int(args.wprojplanes) if args.wproject else -1,
             interactive=False,
             nmajor=int(args.integration_nmajor),
             pbcor=False,
@@ -513,7 +536,7 @@ def main() -> int:
 
     imsize = _normalize_imsize(args.imsize)
     scales = _parse_scales(args.scales)
-    uvrange = _uvrange_expr(args.uvmin_klambda, args.uvmax_klambda)
+    uvrange = _uvrange_from_args(args)
     spw_sel = str(args.spw or '').strip()
     spw_label = spw_sel if spw_sel else 'all'
 
@@ -594,8 +617,8 @@ def main() -> int:
                 threshold=args.threshold,
                 stokes=args.stokes,
                 uvrange=uvrange,
-                gridder='wproject',
-                wprojplanes=int(args.wprojplanes),
+                gridder='wproject' if args.wproject else 'standard',
+                wprojplanes=int(args.wprojplanes) if args.wproject else -1,
                 interactive=False,
                 pbcor=False,
                 savemodel='none',

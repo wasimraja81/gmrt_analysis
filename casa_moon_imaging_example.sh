@@ -20,18 +20,20 @@ fi
 CASA_CMD=${CASA_CMD:-python}
 
 # ── Input UVFITS files ────────────────────────────────────────────────────────
+# Per-source subdirectory: split/<sourceName>/<sourceName>*_calibrated.uvfits
+MOON_DIR=~/DATA/gmrt_40_014/work/split/moon
 MOON_FITS=(
-  ~/DATA/gmrt_40_014/work/split/moon/moon0520_calibrated.uvfits
-  ~/DATA/gmrt_40_014/work/split/moon/moon0545_calibrated.uvfits
-  ~/DATA/gmrt_40_014/work/split/moon/moon0605_calibrated.uvfits
-  ~/DATA/gmrt_40_014/work/split/moon/moon0625_calibrated.uvfits
-  ~/DATA/gmrt_40_014/work/split/moon/moon0635_calibrated.uvfits
+  ${MOON_DIR}/moon0520_calibrated.uvfits
+  ${MOON_DIR}/moon0545_calibrated.uvfits
+  ${MOON_DIR}/moon0605_calibrated.uvfits
+  ${MOON_DIR}/moon0625_calibrated.uvfits
+  ${MOON_DIR}/moon0635_calibrated.uvfits
 )
 
 # ── Imaging controls ──────────────────────────────────────────────────────────
 OUTDIR=./casa_out/moon
 UVMIN_KL=0.0
-UVMAX_KL=1.5
+UVMAX_KL=10.0
 CELL=4arcsec
 IMSIZE=2048
 NITER=6000
@@ -39,6 +41,9 @@ THRESHOLD=5mJy
 SCALES=0,10,30,60,120
 WEIGHTING=briggs
 ROBUST=0.5
+# Moon-tracking is the default (--moon-track-per-integration is True by
+# default). Add --no-moon-track-per-integration to image as a static pointing.
+# Add --wproject to enable W-projection gridder (slow, rarely needed for Moon).
 STOKES=I
 EXPORT_FITS=1   # 1 => add --export-fits, 0 => skip FITS export
 CYCLENITER=250
