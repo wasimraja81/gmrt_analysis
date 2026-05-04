@@ -77,6 +77,10 @@ def _parse_args() -> argparse.Namespace:
                    help='Stacking method for per-integration FITS images (default: mean).')
     p.add_argument('--keep-integration-products', action='store_true',
                    help='Keep per-integration image products in moon-track mode (default: delete after stacking).')
+    p.add_argument('--keep-integration-fits', action=argparse.BooleanOptionalAction, default=False,
+                   help='Keep per-integration exported FITS images in moon-track mode (default: False; keep cube only).')
+    p.add_argument('--write-moontrack-cube', action=argparse.BooleanOptionalAction, default=True,
+                   help='Write per-scan time cube FITS (NAXIS3=time) in moon-track mode (default: True).')
     p.add_argument('--overwrite', action='store_true', help='Remove existing MS/image products before re-running')
     p.add_argument('--keep-ms', action='store_true', help='Keep imported MeasurementSets after imaging')
     p.add_argument('--export-fits', action='store_true', help='Export CASA .image products to FITS')
@@ -259,8 +263,10 @@ def _remove_path(path: Path) -> None:
         path.unlink()
 
 
-def _remove_imagename_products(imagename: Path) -> None:
+def _remove_imagename_products(imagename: Path, keep_image_fits: bool = False) -> None:
     for p in imagename.parent.glob(imagename.name + '.*'):
+        if keep_image_fits and p.name.endswith('.image.fits'):
+            continue
         _remove_path(p)
 
 
@@ -397,9 +403,20 @@ def _image_moon_per_integration(
         f'nmajor/int={int(args.integration_nmajor)}, wprojplanes={int(args.wprojplanes)}'
     )
 
-    fits_paths: list[Path] = []
-    cube: list[np.ndarray] = []
+    cube_times_mjd: list[float] = [float(mjd) for mjd in selected]
+    cube_tmp = imagename_base.parent / f'{imagename_base.name}_moontrack_cube.tmp.dat'
+    if cube_tmp.exists():
+        _remove_path(cube_tmp)
+
+    cube_mm = None
     header0 = None
+    shape2d = None
+    count = None
+    sum_data = None
+    sum_sq = None
+    max_data = None
+    n_valid_planes = 0
+
     for idx, mjd in enumerate(selected, start=1):
         timerange = _to_casa_timerange(float(mjd), half_width_sec)
         phasecenter = _moon_phasecenter_j2000(float(mjd))
@@ -472,22 +489,52 @@ def _image_moon_per_integration(
         image_path = Path(str(int_imagename) + '.image')
         fits_out = Path(str(int_imagename) + '.image.fits')
         if image_path.exists():
+            if fits_out.exists():
+                _remove_path(fits_out)
             try:
                 exportfits_task(imagename=str(image_path), fitsimage=str(fits_out), overwrite=True)
             except Exception as exc:
                 print(f'[CASA] warning: exportfits failed for integration {idx}: {exc}')
             if fits_out.exists():
-                fits_paths.append(fits_out)
-                with fits.open(fits_out) as hdul:
-                    primary = cast(Any, hdul[0])
-                    data = np.asarray(primary.data, dtype=np.float32)
-                    if data.ndim == 4:
-                        data = data[0, 0, :, :]
-                    elif data.ndim != 2:
-                        data = np.squeeze(data)
-                    if header0 is None:
-                        header0 = primary.header.copy()
-                    cube.append(data)
+                try:
+                    with fits.open(fits_out) as hdul:
+                        primary = cast(Any, hdul[0])
+                        image = np.asarray(primary.data, dtype=np.float32)
+                        if image.ndim == 4:
+                            image = image[0, 0, :, :]
+                        elif image.ndim != 2:
+                            image = np.squeeze(image)
+
+                        if image.ndim != 2:
+                            print(f'[CASA] warning: unexpected dimensionality in {fits_out.name}, leaving cube plane as NaN')
+                        else:
+                            if cube_mm is None:
+                                header0 = primary.header.copy()
+                                shape2d = image.shape
+                                ny, nx = shape2d
+                                cube_mm = np.memmap(cube_tmp, mode='w+', dtype=np.float32, shape=(total, ny, nx))
+                                cube_mm[:] = np.nan
+                                count = np.zeros((ny, nx), dtype=np.uint32)
+                                sum_data = np.zeros((ny, nx), dtype=np.float64)
+                                sum_sq = np.zeros((ny, nx), dtype=np.float64)
+                                max_data = np.full((ny, nx), -np.inf, dtype=np.float32)
+
+                            if shape2d is None or image.shape != shape2d:
+                                print(f'[CASA] warning: shape mismatch in {fits_out.name}, leaving cube plane as NaN')
+                            else:
+                                cube_mm[idx - 1, :, :] = image
+                                n_valid_planes += 1
+
+                                if count is not None and sum_data is not None and sum_sq is not None and max_data is not None:
+                                    finite = np.isfinite(image)
+                                    count[finite] += 1
+                                    image64 = image.astype(np.float64, copy=False)
+                                    sum_data[finite] += image64[finite]
+                                    sum_sq[finite] += image64[finite] ** 2
+                                    max_data = np.where(finite, np.maximum(max_data, image), max_data)
+                finally:
+                    if not bool(args.keep_integration_fits):
+                        _remove_path(fits_out)
             else:
                 print(f'[CASA] warning: no FITS image for integration {idx}, skipping in stack')
         else:
@@ -499,45 +546,82 @@ def _image_moon_per_integration(
         _remove_path(int_ms)
         _remove_path(phased_ms)
         if not bool(args.keep_integration_products):
-            _remove_imagename_products(int_imagename)
+            _remove_imagename_products(
+                int_imagename,
+                keep_image_fits=bool(args.keep_integration_fits),
+            )
 
-    if not cube:
+    if cube_mm is None or n_valid_planes == 0 or shape2d is None:
         raise RuntimeError(f'No per-integration images generated for {label}')
 
-    stack = np.stack(cube, axis=0)
-    n_ints = len(fits_paths)
-    mean_data = np.nanmean(stack, axis=0)
+    ny, nx = shape2d
+    hdr = header0 if header0 is not None else fits.Header()
+
+    if bool(args.write_moontrack_cube):
+        cube_path = Path(str(imagename_base) + '_moontrack_cube.image.fits')
+        if cube_path.exists() and args.overwrite:
+            _remove_path(cube_path)
+
+        cube_hdr = hdr.copy()
+        cube_hdr['NAXIS'] = 3
+        cube_hdr['NAXIS1'] = int(nx)
+        cube_hdr['NAXIS2'] = int(ny)
+        cube_hdr['NAXIS3'] = int(total)
+        cube_hdr['CTYPE3'] = 'TIME'
+        cube_hdr['CUNIT3'] = 'd'
+        cube_hdr['CRPIX3'] = 1.0
+        cube_hdr['CRVAL3'] = float(cube_times_mjd[0])
+        if total > 1:
+            cube_hdr['CDELT3'] = float(np.median(np.diff(np.asarray(cube_times_mjd, dtype=np.float64))))
+        else:
+            cube_hdr['CDELT3'] = 0.0
+        cube_hdr['NINTS'] = int(n_valid_planes)
+        cube_hdr['NINTSEXP'] = int(total)
+        cube_hdr['HISTORY'] = f'Moon per-integration cube (time axis), valid={n_valid_planes}, expected={total}'
+
+        time_col = fits.Column(name='TIME_MJD', format='D', array=np.asarray(cube_times_mjd, dtype=np.float64))
+        time_hdu = fits.BinTableHDU.from_columns([time_col], name='TIMEAXIS')
+        fits.HDUList([
+            fits.PrimaryHDU(data=cube_mm, header=cube_hdr),
+            time_hdu,
+        ]).writeto(cube_path, overwrite=bool(args.overwrite))
+        print(f'[CASA] moon-track cube image: {cube_path.name} (shape={total}x{ny}x{nx}, valid={n_valid_planes})')
+
+    if count is None or sum_data is None or sum_sq is None or max_data is None:
+        raise RuntimeError('Internal error: stack accumulators are not initialized')
+
+    valid = count > 0
+    mean_data = np.full((ny, nx), np.nan, dtype=np.float32)
+    rms_data = np.full((ny, nx), np.nan, dtype=np.float32)
+    mean_data[valid] = (sum_data[valid] / count[valid]).astype(np.float32)
+    rms_data[valid] = np.sqrt(sum_sq[valid] / count[valid]).astype(np.float32)
+    max_data[~valid] = np.nan
+
     if args.stack_method == 'median':
-        out_data = np.nanmedian(stack, axis=0)
+        out_data = np.nanmedian(cube_mm, axis=0).astype(np.float32)
     else:
         out_data = mean_data
-
-    hdr = header0 if header0 is not None else fits.Header()
 
     def _write_stack(suffix: str, data: np.ndarray, method_label: str) -> None:
         p = Path(str(imagename_base) + f'_moontrack_{suffix}.image.fits')
         if p.exists() and args.overwrite:
             _remove_path(p)
         h = hdr.copy()
-        h['NINTS'] = int(n_ints)
-        h['HISTORY'] = f'Moon per-integration stacked image ({method_label}), n={n_ints}'
+        h['NINTS'] = int(n_valid_planes)
+        h['NINTSEXP'] = int(total)
+        h['HISTORY'] = f'Moon per-integration stacked image ({method_label}), valid={n_valid_planes}, expected={total}'
         fits.PrimaryHDU(data=data.astype(np.float32), header=h).writeto(p, overwrite=bool(args.overwrite))
-        print(f'[CASA] moon-track stacked image: {p.name} (n={n_ints})')
+        print(f'[CASA] moon-track stacked image: {p.name} (valid={n_valid_planes}, expected={total})')
 
-    # Primary stack (mean or median as chosen)
     _write_stack(args.stack_method, out_data, args.stack_method)
-
-    # Always write mean stack as well (needed for exact cross-scan std map math)
     if args.stack_method != 'mean':
         _write_stack('mean', mean_data, 'mean')
-
-    # RMS per pixel across integrations
-    rms_data = np.sqrt(np.nanmean(stack ** 2, axis=0))
     _write_stack('rms', rms_data, 'rms')
-
-    # Max per pixel across integrations
-    max_data = np.nanmax(stack, axis=0)
     _write_stack('max', max_data, 'max')
+
+    del cube_mm
+    if cube_tmp.exists():
+        _remove_path(cube_tmp)
 
 
 
@@ -552,7 +636,7 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
     cube, hdr0 = [], None
     weighted_mean_sum = None
     weighted_ex2_sum = None
-    total_snapshots = 0
+    weighted_count_sum = None
     global_max = None
 
     for fp in fits_paths:
@@ -573,18 +657,20 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
             continue
 
         with af.open(str(method_fp)) as h:
-            d = h[0].data.astype(np.float32)
+            primary = cast(Any, h[0])
+            d = np.asarray(primary.data, dtype=np.float32)
             if hdr0 is None:
-                hdr0 = h[0].header.copy()
+                hdr0 = primary.header.copy()
         cube.append(d)
 
         if max_fp.exists():
             with af.open(str(max_fp)) as hx:
-                max_map = hx[0].data.astype(np.float32)
+                max_primary = cast(Any, hx[0])
+                max_map = np.asarray(max_primary.data, dtype=np.float32)
             if global_max is None:
                 global_max = max_map.copy()
             else:
-                global_max = np.maximum(global_max, max_map)
+                global_max = np.fmax(global_max, max_map)
         else:
             print(f'[CASA] warning: missing max product for exact global max: {max_fp.name}')
 
@@ -593,9 +679,11 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
             continue
 
         with af.open(str(mean_fp)) as hm, af.open(str(rms_fp)) as hr:
-            mean_map = hm[0].data.astype(np.float32)
-            ex2_map = hr[0].data.astype(np.float32) ** 2
-            n_i = int(hm[0].header.get('NINTS', 0))
+            mean_primary = cast(Any, hm[0])
+            rms_primary = cast(Any, hr[0])
+            mean_map = np.asarray(mean_primary.data, dtype=np.float32)
+            ex2_map = np.asarray(rms_primary.data, dtype=np.float32) ** 2
+            n_i = int(mean_primary.header.get('NINTS', 0))
 
         if n_i <= 0:
             print(f'[CASA] warning: missing/invalid NINTS in {mean_fp.name}; skipping from exact std map')
@@ -604,10 +692,16 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
         if weighted_mean_sum is None:
             weighted_mean_sum = np.zeros_like(mean_map, dtype=np.float64)
             weighted_ex2_sum = np.zeros_like(ex2_map, dtype=np.float64)
+            weighted_count_sum = np.zeros_like(mean_map, dtype=np.float64)
 
-        weighted_mean_sum += n_i * mean_map
-        weighted_ex2_sum += n_i * ex2_map
-        total_snapshots += n_i
+        if weighted_ex2_sum is None or weighted_count_sum is None:
+            raise RuntimeError('Internal error: weighted_ex2_sum was not initialized')
+
+        valid = np.isfinite(mean_map) & np.isfinite(ex2_map)
+        if np.any(valid):
+            weighted_mean_sum[valid] += n_i * mean_map[valid]
+            weighted_ex2_sum[valid] += n_i * ex2_map[valid]
+            weighted_count_sum[valid] += n_i
 
     if not cube:
         print('[CASA] warning: no per-scan products available for cross-scan stack')
@@ -618,12 +712,17 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
 
     global_mean = None
     rms = None
-    if total_snapshots > 0 and weighted_mean_sum is not None and weighted_ex2_sum is not None:
-        global_mean = (weighted_mean_sum / float(total_snapshots)).astype(np.float32)
-        global_var = (weighted_ex2_sum / float(total_snapshots)) - (global_mean.astype(np.float64) ** 2)
-        global_var = np.maximum(global_var, 0.0)
-        rms = np.sqrt(global_var).astype(np.float32)
-        print(f'[CASA] cross-scan exact mean/std computed across total snapshots: {total_snapshots}')
+    if weighted_count_sum is not None and weighted_mean_sum is not None and weighted_ex2_sum is not None:
+        valid = weighted_count_sum > 0
+        global_mean = np.full_like(weighted_mean_sum, np.nan, dtype=np.float32)
+        rms = np.full_like(weighted_mean_sum, np.nan, dtype=np.float32)
+        if np.any(valid):
+            mean_valid = weighted_mean_sum[valid] / weighted_count_sum[valid]
+            ex2_valid = weighted_ex2_sum[valid] / weighted_count_sum[valid]
+            var_valid = np.maximum(ex2_valid - (mean_valid ** 2), 0.0)
+            global_mean[valid] = mean_valid.astype(np.float32)
+            rms[valid] = np.sqrt(var_valid).astype(np.float32)
+        print('[CASA] cross-scan exact mean/std computed with per-pixel NaN-aware weighting')
     else:
         print('[CASA] warning: could not compute exact cross-scan mean/std; falling back to unweighted over per-scan stacks')
         global_mean = np.nanmean(arr, axis=0).astype(np.float32)
@@ -639,7 +738,7 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
             else:
                 print(f'[CASA] cross-scan stack: skipping existing {dst.name} (use --overwrite)')
                 return
-        hdr = hdr0.copy()
+        hdr = hdr0.copy() if hdr0 is not None else af.Header()
         hdr['HISTORY'] = f'Moon cross-scan stack ({lbl}), n_scans={n}'
         af.writeto(str(dst), dat.astype(np.float32), hdr)
         print(f'[CASA] cross-scan stack written: {dst.name}  (n_scans={n})')

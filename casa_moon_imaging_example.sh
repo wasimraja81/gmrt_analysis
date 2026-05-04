@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CASA imaging example for split Moon UVFITS files.
-# Images each Moon scan independently using a minimum uv cut of 0.12 kλ.
+# Images each Moon scan independently with uvmin=0.0 kλ (all baselines).
 #
 # Run with either:
 #   bash casa_moon_imaging_example.sh            (if your active python has casatasks), or
@@ -38,7 +38,7 @@ CELL=2arcsec
 IMSIZE=4096
 NITER=6000
 THRESHOLD=5mJy
-SCALES=0,5,20,80,300,900
+SCALES=0,5,20,80,300,400  # multi-scale CLEAN with these scales in pixels (0=point source, then increasing sizes)
 SMALLSCALEBIAS=0.0
 WEIGHTING=briggs
 ROBUST=0.5
@@ -47,8 +47,12 @@ ROBUST=0.5
 # Add --wproject to enable W-projection gridder (slow, rarely needed for Moon).
 STOKES=I
 EXPORT_FITS=1   # 1 => add --export-fits, 0 => skip FITS export
-INTEGRATION_NMAJOR=5   # major cycles per snapshot (default was 2)
-CYCLENITER=250
+INTEGRATION_NITER=800  # total budget of minor CLEAN iterations per integration/snapshot in moon-track mode (review/tune as needed)
+INTEGRATION_NMAJOR=6   # major cycles per snapshot (default was 2)
+CYCLENITER=50   # minor CLEAN iterations per major cycle per snapshot (maps to --integration-cycleniter; default was 100)
+# If ALL cycles are fully used with no early stop, then:
+#   INTEGRATION_NITER = CYCLENITER * INTEGRATION_NMAJOR
+# In real runs, early threshold/convergence/divergence stops can end earlier, so this is often an upper bound.
 CYCLES_PER_REPORT=1
 
 mkdir -p "$OUTDIR"
@@ -63,8 +67,10 @@ CMD=(
   --cell "$CELL"
   --imsize "$IMSIZE"
   --niter "$NITER"
+  --integration-niter "$INTEGRATION_NITER"
   --integration-nmajor "$INTEGRATION_NMAJOR"\
-  --cycleniter "$CYCLENITER"
+  # Moon-track path uses --integration-cycleniter; --cycleniter is only for non-moon-track mode.
+  --integration-cycleniter "$CYCLENITER"
   --cycles-per-report "$CYCLES_PER_REPORT"
   --threshold "$THRESHOLD"
   --scales "$SCALES"
