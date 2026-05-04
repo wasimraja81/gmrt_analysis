@@ -2,8 +2,9 @@
 
 set -euo pipefail
 
-FITS_DIR=~/DATA/gmrt_40_014/work/split/moon
-PATTERN="moon*_calibrated.uvfits"  # change to any glob, e.g. "3c468*_calibrated.uvfits"
+FITS_DIR=~/DATA/gmrt_40_014/work/split
+#PATTERN="moon*_calibrated.uvfits"  # change to any glob, e.g. "3c468*_calibrated.uvfits"
+PATTERN="3c468.1*_calibrated.uvfits"  # change to any glob, e.g. "3c468*_calibrated.uvfits"
 
 OUTDIR=./diagnostics_out/uv_sampling_from_scratch
 PRODUCTS=RR,LL
