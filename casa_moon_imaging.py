@@ -78,6 +78,10 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument('--overwrite', action='store_true', help='Remove existing MS/image products before re-running')
     p.add_argument('--keep-ms', action='store_true', help='Keep imported MeasurementSets after imaging')
     p.add_argument('--export-fits', action='store_true', help='Export CASA .image products to FITS')
+    p.add_argument('--cross-scan-stack', action=argparse.BooleanOptionalAction, default=True,
+                   help='Combine per-scan moontrack stacks into one image (default: True).')
+    p.add_argument('--cross-scan-stack-method', choices=['mean', 'median'], default='mean',
+                   help='Method for cross-scan combination (default: mean).')
     return p.parse_args()
 
 
@@ -527,6 +531,41 @@ def _image_moon_per_integration(
     _write_stack('max', max_data, 'max')
 
 
+
+
+def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
+    import numpy as np
+    from astropy.io import fits as af
+    n = len(fits_paths)
+    print(f'[CASA] cross-scan stack: {n} scans (method={method})')
+    cube, hdr0 = [], None
+    for fp in fits_paths:
+        with af.open(str(fp)) as h:
+            d = h[0].data.astype(np.float32)
+            if hdr0 is None:
+                hdr0 = h[0].header.copy()
+        cube.append(d)
+    arr = np.stack(cube, axis=0)
+    combined = np.nanmedian(arr, axis=0) if method == 'median' else np.nanmean(arr, axis=0)
+    rms = np.sqrt(np.nanmean(arr ** 2, axis=0))
+    od = Path(outdir)
+
+    def _write(sfx, dat, lbl):
+        dst = od / f'moon_allscans_{sfx}.image.fits'
+        if dst.exists():
+            if overwrite:
+                dst.unlink()
+            else:
+                print(f'[CASA] cross-scan stack: skipping existing {dst.name} (use --overwrite)')
+                return
+        hdr = hdr0.copy()
+        hdr['HISTORY'] = f'Moon cross-scan stack ({lbl}), n_scans={n}'
+        af.writeto(str(dst), dat.astype(np.float32), hdr)
+        print(f'[CASA] cross-scan stack written: {dst.name}  (n_scans={n})')
+
+    _write(method, combined, method)
+    _write('rms', rms, 'rms')
+
 def main() -> int:
     args = _parse_args()
     importuvfits, tclean, exportfits, split_task, fixvis_task, phaseshift_task = _import_casa_tasks()
@@ -540,6 +579,7 @@ def main() -> int:
     spw_sel = str(args.spw or '').strip()
     spw_label = spw_sel if spw_sel else 'all'
 
+    scan_stack_fits = []  # per-scan moontrack stacked FITS for cross-scan stack
     for fits_path_str in args.fits:
         fits_path = Path(fits_path_str).expanduser().resolve()
         if not fits_path.exists():
@@ -597,6 +637,11 @@ def main() -> int:
                 exportfits_task=exportfits,
                 args=args,
             )
+            _cand = Path(str(imagename) + f'_moontrack_{args.stack_method}.image.fits')
+            if _cand.exists():
+                scan_stack_fits.append(_cand)
+            else:
+                print(f'[CASA] warning: per-scan stack not found: {_cand.name}')
         else:
             _run_tclean_with_progress(
                 tclean,
@@ -635,6 +680,9 @@ def main() -> int:
         if not args.keep_ms:
             _remove_path(ms_path)
             print(f'[CASA] removed MS: {ms_path.name}')
+
+    if args.moon_track_per_integration and args.cross_scan_stack and scan_stack_fits:
+        _cross_scan_stack(scan_stack_fits, outdir, args.cross_scan_stack_method, args.overwrite)
 
     print(f'[CASA] done. outputs in {outdir}')
     return 0
