@@ -550,6 +550,7 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
     weighted_mean_sum = None
     weighted_ex2_sum = None
     total_snapshots = 0
+    global_max = None
 
     for fp in fits_paths:
         fp_str = str(fp)
@@ -562,6 +563,7 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
         method_fp = Path(base + f'_moontrack_{method}.image.fits')
         mean_fp = Path(base + '_moontrack_mean.image.fits')
         rms_fp = Path(base + '_moontrack_rms.image.fits')
+        max_fp = Path(base + '_moontrack_max.image.fits')
 
         if not method_fp.exists():
             print(f'[CASA] warning: missing per-scan {method} map: {method_fp.name}; skipping scan in cross-scan stack')
@@ -572,6 +574,16 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
             if hdr0 is None:
                 hdr0 = h[0].header.copy()
         cube.append(d)
+
+        if max_fp.exists():
+            with af.open(str(max_fp)) as hx:
+                max_map = hx[0].data.astype(np.float32)
+            if global_max is None:
+                global_max = max_map.copy()
+            else:
+                global_max = np.maximum(global_max, max_map)
+        else:
+            print(f'[CASA] warning: missing max product for exact global max: {max_fp.name}')
 
         if not mean_fp.exists() or not rms_fp.exists():
             print(f'[CASA] warning: missing mean/rms products for exact cross-scan std: {Path(base).name}')
@@ -601,15 +613,18 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
     arr = np.stack(cube, axis=0)
     combined = np.nanmedian(arr, axis=0) if method == 'median' else np.nanmean(arr, axis=0)
 
+    global_mean = None
+    rms = None
     if total_snapshots > 0 and weighted_mean_sum is not None and weighted_ex2_sum is not None:
-        global_mean = weighted_mean_sum / float(total_snapshots)
-        global_var = (weighted_ex2_sum / float(total_snapshots)) - (global_mean ** 2)
+        global_mean = (weighted_mean_sum / float(total_snapshots)).astype(np.float32)
+        global_var = (weighted_ex2_sum / float(total_snapshots)) - (global_mean.astype(np.float64) ** 2)
         global_var = np.maximum(global_var, 0.0)
         rms = np.sqrt(global_var).astype(np.float32)
-        print(f'[CASA] cross-scan exact std map computed across total snapshots: {total_snapshots}')
+        print(f'[CASA] cross-scan exact mean/std computed across total snapshots: {total_snapshots}')
     else:
-        print('[CASA] warning: could not compute exact cross-scan std map; falling back to rms over per-scan stacks')
-        rms = np.sqrt(np.nanmean(arr ** 2, axis=0))
+        print('[CASA] warning: could not compute exact cross-scan mean/std; falling back to unweighted over per-scan stacks')
+        global_mean = np.nanmean(arr, axis=0).astype(np.float32)
+        rms = np.sqrt(np.nanmean(arr ** 2, axis=0)).astype(np.float32)
 
     od = Path(outdir)
 
@@ -627,7 +642,13 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
         print(f'[CASA] cross-scan stack written: {dst.name}  (n_scans={n})')
 
     _write(method, combined, method)
+    _write('mean', global_mean, 'mean across all snapshots')
     _write('rms', rms, 'rms (std across all snapshots)')
+
+    if global_max is not None:
+        _write('max', global_max, 'max across all snapshots')
+    else:
+        print('[CASA] warning: could not compute exact global max map (missing per-scan max products)')
 
 def main() -> int:
     args = _parse_args()
