@@ -503,10 +503,11 @@ def _image_moon_per_integration(
 
     stack = np.stack(cube, axis=0)
     n_ints = len(fits_paths)
+    mean_data = np.nanmean(stack, axis=0)
     if args.stack_method == 'median':
         out_data = np.nanmedian(stack, axis=0)
     else:
-        out_data = np.nanmean(stack, axis=0)
+        out_data = mean_data
 
     hdr = header0 if header0 is not None else fits.Header()
 
@@ -515,12 +516,17 @@ def _image_moon_per_integration(
         if p.exists() and args.overwrite:
             _remove_path(p)
         h = hdr.copy()
+        h['NINTS'] = int(n_ints)
         h['HISTORY'] = f'Moon per-integration stacked image ({method_label}), n={n_ints}'
         fits.PrimaryHDU(data=data.astype(np.float32), header=h).writeto(p, overwrite=bool(args.overwrite))
         print(f'[CASA] moon-track stacked image: {p.name} (n={n_ints})')
 
     # Primary stack (mean or median as chosen)
     _write_stack(args.stack_method, out_data, args.stack_method)
+
+    # Always write mean stack as well (needed for exact cross-scan std map math)
+    if args.stack_method != 'mean':
+        _write_stack('mean', mean_data, 'mean')
 
     # RMS per pixel across integrations
     rms_data = np.sqrt(np.nanmean(stack ** 2, axis=0))
@@ -536,18 +542,75 @@ def _image_moon_per_integration(
 def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
     import numpy as np
     from astropy.io import fits as af
+
     n = len(fits_paths)
     print(f'[CASA] cross-scan stack: {n} scans (method={method})')
+
     cube, hdr0 = [], None
+    weighted_mean_sum = None
+    weighted_ex2_sum = None
+    total_snapshots = 0
+
     for fp in fits_paths:
-        with af.open(str(fp)) as h:
+        fp_str = str(fp)
+        marker = '_moontrack_'
+        if marker not in fp_str:
+            print(f'[CASA] warning: could not parse moontrack product base from {Path(fp).name}; skipping')
+            continue
+
+        base = fp_str.split(marker, 1)[0]
+        method_fp = Path(base + f'_moontrack_{method}.image.fits')
+        mean_fp = Path(base + '_moontrack_mean.image.fits')
+        rms_fp = Path(base + '_moontrack_rms.image.fits')
+
+        if not method_fp.exists():
+            print(f'[CASA] warning: missing per-scan {method} map: {method_fp.name}; skipping scan in cross-scan stack')
+            continue
+
+        with af.open(str(method_fp)) as h:
             d = h[0].data.astype(np.float32)
             if hdr0 is None:
                 hdr0 = h[0].header.copy()
         cube.append(d)
+
+        if not mean_fp.exists() or not rms_fp.exists():
+            print(f'[CASA] warning: missing mean/rms products for exact cross-scan std: {Path(base).name}')
+            continue
+
+        with af.open(str(mean_fp)) as hm, af.open(str(rms_fp)) as hr:
+            mean_map = hm[0].data.astype(np.float32)
+            ex2_map = hr[0].data.astype(np.float32) ** 2
+            n_i = int(hm[0].header.get('NINTS', 0))
+
+        if n_i <= 0:
+            print(f'[CASA] warning: missing/invalid NINTS in {mean_fp.name}; skipping from exact std map')
+            continue
+
+        if weighted_mean_sum is None:
+            weighted_mean_sum = np.zeros_like(mean_map, dtype=np.float64)
+            weighted_ex2_sum = np.zeros_like(ex2_map, dtype=np.float64)
+
+        weighted_mean_sum += n_i * mean_map
+        weighted_ex2_sum += n_i * ex2_map
+        total_snapshots += n_i
+
+    if not cube:
+        print('[CASA] warning: no per-scan products available for cross-scan stack')
+        return
+
     arr = np.stack(cube, axis=0)
     combined = np.nanmedian(arr, axis=0) if method == 'median' else np.nanmean(arr, axis=0)
-    rms = np.sqrt(np.nanmean(arr ** 2, axis=0))
+
+    if total_snapshots > 0 and weighted_mean_sum is not None and weighted_ex2_sum is not None:
+        global_mean = weighted_mean_sum / float(total_snapshots)
+        global_var = (weighted_ex2_sum / float(total_snapshots)) - (global_mean ** 2)
+        global_var = np.maximum(global_var, 0.0)
+        rms = np.sqrt(global_var).astype(np.float32)
+        print(f'[CASA] cross-scan exact std map computed across total snapshots: {total_snapshots}')
+    else:
+        print('[CASA] warning: could not compute exact cross-scan std map; falling back to rms over per-scan stacks')
+        rms = np.sqrt(np.nanmean(arr ** 2, axis=0))
+
     od = Path(outdir)
 
     def _write(sfx, dat, lbl):
@@ -564,7 +627,7 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
         print(f'[CASA] cross-scan stack written: {dst.name}  (n_scans={n})')
 
     _write(method, combined, method)
-    _write('rms', rms, 'rms')
+    _write('rms', rms, 'rms (std across all snapshots)')
 
 def main() -> int:
     args = _parse_args()
