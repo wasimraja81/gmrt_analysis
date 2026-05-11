@@ -171,42 +171,87 @@ def _parse_args() -> argparse.Namespace:
                      help='Radius of circular CLEAN mask around Moon centre (arcmin). '
                           'Moon disk ~15 arcmin radius at this freq; default adds margin.')
 
-    # ── UV range: cycle 1 (restricted) ──
-    uv1 = p.add_argument_group('UV range — selfcal cycle 1 (restricted)')
-    uv1.add_argument('--uvmin1-klambda', type=float, default=0.5,
-                     help='Min uv for cycle 1 (kλ) — excludes very short spacings')
-    uv1.add_argument('--uvmax1-klambda', type=float, default=None,
-                     help='Max uv for cycle 1 (kλ) — restrict to well-behaved baselines')
+    # ── Per-cycle parameters (arrays indexed by selfcal cycle) ───────────────
+    # Each argument is a comma-separated list with one value per selfcal cycle.
+    # To add a 3rd cycle, simply append a value to every list.
+    # Scales uses | to separate cycles (comma is used within each cycle's scale list).
+    cyc = p.add_argument_group(
+        'Per-cycle selfcal parameters',
+        'Each value is a comma-separated list — one entry per selfcal cycle.\n'
+        'All lists must have the same length (= number of cycles).\n'
+        'Example for 2 cycles: --niter-per-cycle 100,300'
+    )
+    cyc.add_argument('--niter-per-cycle', default='100,300',
+                     help='tclean niter per cycle (comma-separated). '
+                          'Typically shallow→deeper as model improves.')
+    cyc.add_argument('--uvmin-per-cycle', default='0.5,0.12',
+                     help='Min uv in kλ per cycle (comma-separated). '
+                          'Start restricted, then relax to include short baselines.')
+    cyc.add_argument('--uvmax-per-cycle', default=',',
+                     help='Max uv in kλ per cycle (comma-separated, empty = no limit).')
+    cyc.add_argument('--scales-per-cycle', default='0,5,15|0,5,15,45',
+                     help='Multiscale clean scales (pixels) per cycle, '
+                          'cycles separated by |, scales within a cycle by comma. '
+                          'E.g. "0,5,15|0,5,15,45" for 2 cycles.')
 
-    # ── UV range: cycle 2 + final (relaxed) ──
-    uv2 = p.add_argument_group('UV range — selfcal cycle 2 + final (relaxed)')
-    uv2.add_argument('--uvmin2-klambda', type=float, default=0.12,
-                     help='Min uv for cycle 2 / final (kλ)')
-    uv2.add_argument('--uvmax2-klambda', type=float, default=None,
-                     help='Max uv for cycle 2 / final (kλ)')
-
-    # ── Clean iterations ──
-    cl = p.add_argument_group('Clean iterations')
-    cl.add_argument('--niter1', type=int, default=100,
-                    help='tclean niter for selfcal cycle 1 (shallow)')
-    cl.add_argument('--niter2', type=int, default=300,
-                    help='tclean niter for selfcal cycle 2')
-    cl.add_argument('--niter-final', type=int, default=500,
-                    help='tclean niter for final image')
-    cl.add_argument('--threshold', default='0mJy',
-                    help='CLEAN threshold applied in all rounds')
-    cl.add_argument('--cycleniter', type=int, default=100,
-                    help='Minor cycles per major cycle')
+    # ── Final image (after all selfcal cycles) ────────────────────────────────
+    fin = p.add_argument_group('Final image (after all selfcal cycles)')
+    fin.add_argument('--niter-final', type=int, default=500,
+                     help='tclean niter for the final image')
+    fin.add_argument('--threshold', default='0mJy',
+                     help='CLEAN threshold applied in all rounds')
+    fin.add_argument('--cycleniter', type=int, default=100,
+                     help='Minor cycles per major cycle (all rounds)')
 
     # ── Selfcal ──
     sc = p.add_argument_group('Selfcal')
     sc.add_argument('--minsnr', type=float, default=3.0,
-                    help='gaincal minsnr parameter')
-    sc.add_argument('--selfcal-cycles', type=int, default=2,
-                    choices=[1, 2],
-                    help='Number of phase-only selfcal iterations (1 or 2)')
+                    help='gaincal minsnr parameter (applied to all cycles)')
 
     return p.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Parse per-cycle parameter arrays from CLI strings
+# ---------------------------------------------------------------------------
+
+def _parse_cycle_params(args: argparse.Namespace) -> list[dict]:
+    """Convert per-cycle comma/pipe-separated CLI strings into a list of dicts.
+
+    Returns a list of length N (one dict per cycle) with keys:
+      niter, uvmin_kl, uvmax_kl, scales
+    Raises ValueError if the lists have inconsistent lengths.
+    """
+    niters   = [int(v.strip())   for v in args.niter_per_cycle.split(',')]
+    uvmins   = [float(v.strip()) if v.strip() else None
+                for v in args.uvmin_per_cycle.split(',')]
+    uvmaxs   = [float(v.strip()) if v.strip() else None
+                for v in args.uvmax_per_cycle.split(',')]
+    scales_blocks = args.scales_per_cycle.split('|')
+
+    lengths = {'niter': len(niters), 'uvmin': len(uvmins),
+               'uvmax': len(uvmaxs), 'scales': len(scales_blocks)}
+    if len(set(lengths.values())) != 1:
+        raise ValueError(
+            f'Per-cycle parameter lists must all have the same length.\n'
+            f'Got: {lengths}\n'
+            f'  --niter-per-cycle  = {args.niter_per_cycle!r}\n'
+            f'  --uvmin-per-cycle  = {args.uvmin_per_cycle!r}\n'
+            f'  --uvmax-per-cycle  = {args.uvmax_per_cycle!r}\n'
+            f'  --scales-per-cycle = {args.scales_per_cycle!r}'
+        )
+
+    cycles = []
+    for i, (niter, uvmin, uvmax, sc_str) in enumerate(
+            zip(niters, uvmins, uvmaxs, scales_blocks)):
+        sc_vals = sorted({int(v.strip()) for v in sc_str.split(',') if v.strip()})
+        if 0 not in sc_vals:
+            sc_vals.insert(0, 0)
+        cycles.append({'niter': niter, 'uvmin_kl': uvmin,
+                        'uvmax_kl': uvmax, 'scales': sc_vals})
+        print(f'[selfcal-dev] Cycle {i+1} params: niter={niter}, '
+              f'uvmin={uvmin}kλ, uvmax={uvmax}kλ, scales={sc_vals}')
+    return cycles
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +280,7 @@ def _process_integration(
     outdir: Path,
     location: EarthLocation,
     args: argparse.Namespace,
+    cycles: list[dict],
     casa: tuple,
 ) -> Path:
     _, split_task, tclean, gaincal, applycal, exportfits = casa
@@ -265,13 +311,6 @@ def _process_integration(
     mask_str = _casa_circle_mask(ra_deg, dec_deg, args.mask_radius_arcmin)
     print(f'[selfcal-dev]   Moon at RA={ra_deg:.4f}°  Dec={dec_deg:.4f}°  mask={mask_str}')
 
-    uvrange1 = _uvrange(args.uvmin1_klambda, args.uvmax1_klambda)
-    uvrange2 = _uvrange(args.uvmin2_klambda, args.uvmax2_klambda)
-    scales = [int(s.strip()) for s in str(args.scales).split(',') if s.strip()]
-    if 0 not in scales:
-        scales.insert(0, 0)
-    scales = sorted(set(scales))
-
     imname_base = str(intdir / label)
 
     common_tclean = dict(
@@ -282,7 +321,6 @@ def _process_integration(
         weighting=args.weighting,
         robust=args.robust,
         deconvolver=args.deconvolver,
-        scales=scales if args.deconvolver == 'multiscale' else [],
         threshold=args.threshold,
         cycleniter=args.cycleniter,
         mask=mask_str,
@@ -294,56 +332,42 @@ def _process_integration(
         verbose=True,
     )
 
-    # ── 3. Selfcal cycle 1 ───────────────────────────────────────────────────
-    print(f'[selfcal-dev]   Cycle 1: tclean niter={args.niter1}  uvrange={uvrange1!r}')
-    imagename1 = imname_base + '_sc1'
-    _clean_fresh(tclean, imagename=imagename1, niter=args.niter1,
-                 uvrange=uvrange1, **common_tclean)
+    # ── 3. Selfcal loop (N cycles, all params from per-cycle arrays) ──────────
+    for c_idx, cyc in enumerate(cycles):
+        c_num = c_idx + 1
+        uvrange_c = _uvrange(cyc['uvmin_kl'], cyc['uvmax_kl'])
+        scales_c = cyc['scales'] if args.deconvolver == 'multiscale' else []
 
-    cal1 = str(intdir / f'{label}_sc1.gcal')
-    print(f'[selfcal-dev]   Cycle 1: gaincal → {cal1}')
-    gaincal(
-        vis=scratch_ms,
-        caltable=cal1,
-        gaintype='G',
-        calmode='p',
-        solint='inf',          # one solution for the whole integration
-        uvrange=uvrange1,
-        minsnr=args.minsnr,
-        append=False,
-    )
+        print(f'[selfcal-dev]   Cycle {c_num}/{len(cycles)}: '
+              f'tclean niter={cyc["niter"]}  uvrange={uvrange_c!r}  scales={scales_c}')
+        imagename_c = imname_base + f'_sc{c_num}'
+        _clean_fresh(tclean, imagename=imagename_c, niter=cyc['niter'],
+                     uvrange=uvrange_c, scales=scales_c, **common_tclean)
 
-    print(f'[selfcal-dev]   Cycle 1: applycal')
-    applycal(vis=scratch_ms, gaintable=[cal1], calwt=False, flagbackup=False)
-
-    # ── 4. Selfcal cycle 2 (optional) ────────────────────────────────────────
-    if args.selfcal_cycles >= 2:
-        print(f'[selfcal-dev]   Cycle 2: tclean niter={args.niter2}  uvrange={uvrange2!r}')
-        imagename2 = imname_base + '_sc2'
-        _clean_fresh(tclean, imagename=imagename2, niter=args.niter2,
-                     uvrange=uvrange2, **common_tclean)
-
-        cal2 = str(intdir / f'{label}_sc2.gcal')
-        print(f'[selfcal-dev]   Cycle 2: gaincal → {cal2}')
+        cal_c = str(intdir / f'{label}_sc{c_num}.gcal')
+        print(f'[selfcal-dev]   Cycle {c_num}/{len(cycles)}: gaincal → {cal_c}')
         gaincal(
             vis=scratch_ms,
-            caltable=cal2,
+            caltable=cal_c,
             gaintype='G',
             calmode='p',
-            solint='inf',
-            uvrange=uvrange2,
+            solint='inf',      # one phase solution per antenna for the 8s dump
+            uvrange=uvrange_c,
             minsnr=args.minsnr,
             append=False,
         )
 
-        print(f'[selfcal-dev]   Cycle 2: applycal')
-        applycal(vis=scratch_ms, gaintable=[cal2], calwt=False, flagbackup=False)
+        print(f'[selfcal-dev]   Cycle {c_num}/{len(cycles)}: applycal')
+        applycal(vis=scratch_ms, gaintable=[cal_c], calwt=False, flagbackup=False)
 
-    # ── 5. Final image ────────────────────────────────────────────────────────
-    print(f'[selfcal-dev]   Final image: tclean niter={args.niter_final}  uvrange={uvrange2!r}')
+    # ── 4. Final image (uses last cycle's uv/scale params) ────────────────────
+    last = cycles[-1]
+    uvrange_final = _uvrange(last['uvmin_kl'], last['uvmax_kl'])
+    scales_final = last['scales'] if args.deconvolver == 'multiscale' else []
+    print(f'[selfcal-dev]   Final image: tclean niter={args.niter_final}  uvrange={uvrange_final!r}  scales={scales_final}')
     imagename_final = imname_base + '_final'
     _clean_fresh(tclean, imagename=imagename_final, niter=args.niter_final,
-                 uvrange=uvrange2, **common_tclean)
+                 uvrange=uvrange_final, scales=scales_final, **common_tclean)
 
     # ── 6. Export FITS ────────────────────────────────────────────────────────
     fits_out = str(intdir / f'{label}_final.fits')
@@ -440,6 +464,8 @@ def main() -> int:
 
     # ── Per-integration loop ──────────────────────────────────────────────────
     results: list[dict] = []
+    cycles = _parse_cycle_params(args)
+
     for idx_i in sorted(args.integrations):
         jd_i = float(scan_jds[idx_i])
         fits_path = _process_integration(
@@ -449,6 +475,7 @@ def main() -> int:
             outdir=outdir,
             location=location,
             args=args,
+            cycles=cycles,
             casa=casa,
         )
         results.append({'integration': idx_i, 'jd': jd_i, 'fits': str(fits_path)})
