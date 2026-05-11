@@ -21,7 +21,10 @@ SCAN="MOON0520"
 # Last 3C468.1 secondary scan ended ~15 min before MOON0520 — making
 # primary+secondary the best-calibrated starting point for all moon scans.
 UVFITS=~/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged.uvfits
-INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
+
+# Row index cache is derived automatically from UVFITS path
+# (<uvfits>.row_index_cache.npz). Override with --index if needed.
+# INDEX=~/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged.uvfits.row_index_cache.npz
 
 OUTDIR=~/DATA/gmrt_40_014/work/casa_selfcal/moon0520_dev
 
@@ -82,7 +85,6 @@ cd "$REPO_ROOT"
 "$PYTHON" experimental/moon_selfcal_dev.py \
     --scan        "$SCAN" \
     --uvfits      "$UVFITS" \
-    --index       "$INDEX" \
     --outdir      "$OUTDIR" \
     --integrations $INTEGRATIONS \
     --cell        "$CELL" \

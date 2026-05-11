@@ -138,8 +138,9 @@ def _parse_args() -> argparse.Namespace:
                     help='Moon scan name as in the index file, e.g. MOON0520')
     io.add_argument('--uvfits', required=True,
                     help='Path to the calibrated split UVFITS for this scan')
-    io.add_argument('--index', required=True,
-                    help='Path to the session index NPZ (for JD timestamps)')
+    io.add_argument('--index', default=None,
+                    help='Path to the row index cache NPZ for the split UVFITS '
+                         '(default: <uvfits>.row_index_cache.npz alongside the UVFITS)')
     io.add_argument('--outdir', required=True,
                     help='Output directory for MS, images, and FITS frames')
     io.add_argument('--integrations', nargs='+', type=int, default=[0],
@@ -384,7 +385,17 @@ def main() -> int:
     outdir.mkdir(parents=True, exist_ok=True)
 
     # ── Load index ────────────────────────────────────────────────────────────
-    idx_npz = np.load(args.index, allow_pickle=True)
+    # Default: row index cache sitting beside the split UVFITS.
+    # This cache reflects the actual split frequencies and only contains rows
+    # for this scan — strictly more correct than the raw session index.
+    index_path = Path(args.index) if args.index else Path(args.uvfits).with_suffix(
+        Path(args.uvfits).suffix + '.row_index_cache.npz'
+    )
+    if not index_path.exists():
+        sys.exit(f'ERROR: index cache not found: {index_path}\n'
+                 f'Run visSplit first, or pass --index explicitly.')
+    print(f'[selfcal-dev] Using index: {index_path}')
+    idx_npz = np.load(index_path, allow_pickle=True)
     meta = json.loads(str(idx_npz['metadata_json']))
 
     # Map scan name → source id
