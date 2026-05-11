@@ -201,15 +201,22 @@ render_run_index() {
   <title>${html_title} — ${RUN_TS}</title>
   <style>
     :root { color-scheme: light dark; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 1100px; padding: 0 1rem; line-height: 1.5; }
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 1160px; padding: 0 1rem; line-height: 1.5; }
     h1, h2 { line-height: 1.2; }
     .meta { padding: 1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+		.summary { margin-top: 1rem; padding: 1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
+		.scheme { width: 100%; border-collapse: collapse; margin-top: 0.8rem; }
+		.scheme th, .scheme td { border: 1px solid #8884; padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
+		.scheme th { background: #8882; }
+		.stage { margin-top: 1.2rem; padding: 1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
+		.stage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
     .card { border: 1px solid #8884; border-radius: 10px; padding: 0.8rem; background: #8881; }
+		.card p { margin: 0.35rem 0; }
     img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
     a { text-decoration: none; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    ul { padding-left: 1.2rem; }
+		ul { padding-left: 1.1rem; }
+		.tiny { opacity: 0.9; font-size: 0.92rem; }
   </style>
 </head>
 <body>
@@ -233,8 +240,51 @@ EOF
 	cat >> "$tmp_file" <<'EOF'
   </div>
 
-  <h2>Diagnostics</h2>
-  <div class="grid">
+	<div class="summary">
+		<h2>What this report shows</h2>
+		<p>This page summarizes how the GMRT 40_014 visibility data evolves through calibration. Each stage contains inline previews and direct links to full-resolution files for zooming and detailed inspection.</p>
+		<table class="scheme">
+			<thead>
+				<tr>
+					<th>Stage</th>
+					<th>Calibrator / Product</th>
+					<th>Calibration scheme</th>
+					<th>Why it matters</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td>Primary solve</td>
+					<td>3C48 bandpass + gains</td>
+					<td>Iterative bandpass/flag solve with final clustering refinement</td>
+					<td>Establishes robust instrumental calibration and RFI rejection baseline</td>
+				</tr>
+				<tr>
+					<td>Primary transfer</td>
+					<td>3C48 and 3C468.1 (primary-only)</td>
+					<td>Apply primary tables + flags, then inspect visibilities</td>
+					<td>Checks whether primary calibration transfer is stable across sources</td>
+				</tr>
+				<tr>
+					<td>Secondary prep</td>
+					<td>3C468.1 clustering diagnostics</td>
+					<td>Before/after clustering on spectrum, Stokes-V, uv-distance views</td>
+					<td>Quantifies data cleaning impact before secondary phase solving</td>
+				</tr>
+				<tr>
+					<td>Secondary transfer</td>
+					<td>3C468.1 final calibrated visibilities</td>
+					<td>Primary + secondary calibration with clustering-derived flags</td>
+					<td>Represents final quality of calibrated target data products</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+
+	<div class="stage">
+		<h2>Stage 2 · Primary calibration diagnostics (3C48)</h2>
+		<p class="tiny">Iterative diagnostics and gain evolution during the primary calibration solve. Use full-resolution links for detailed visual QA.</p>
+		<div class="stage-grid">
 EOF
 
 	while IFS= read -r rel_png; do
@@ -249,22 +299,154 @@ EOF
 EOF
 		if [[ -f "$run_dir/$rel_pdf" ]]; then
 			cat >> "$tmp_file" <<EOF
-      <p><a href="${rel_png}">PNG</a> · <a href="${rel_pdf}">PDF</a></p>
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="${rel_pdf}" target="_blank" rel="noopener">Open PDF</a></p>
 EOF
 		else
 			cat >> "$tmp_file" <<EOF
-      <p><a href="${rel_png}">PNG</a></p>
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
 EOF
 		fi
 		cat >> "$tmp_file" <<'EOF'
     </div>
 EOF
-	done < <(cd "$run_dir" && find diagnostics_out secondary_calibration/clustering -type f -name '*.png' 2>/dev/null | sort)
+	done < <(cd "$run_dir" && find diagnostics_out/3c48_primary_calibration -type f -name '*.png' 2>/dev/null | sort)
+
+	if ! (cd "$run_dir" && find diagnostics_out/3c48_primary_calibration -type f -name '*.png' | grep -q .); then
+		cat >> "$tmp_file" <<'EOF'
+      <p>No PNG diagnostics found for this stage.</p>
+EOF
+	fi
+
+	cat >> "$tmp_file" <<'EOF'
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Stage 4 · Primary transfer visibility plots (3C48)</h2>
+    <p class="tiny">Calibrated/flagged visibility diagnostics after applying primary solutions to the primary calibrator split.</p>
+    <div class="stage-grid">
+EOF
+
+	while IFS= read -r rel_png; do
+		local rel_pdf card_title html_card_title
+		rel_pdf="${rel_png%_page*.png}.pdf"
+		card_title="$(basename "$rel_png")"
+		html_card_title="$(escape_html "$card_title")"
+		cat >> "$tmp_file" <<EOF
+    <div class="card">
+      <p><strong>${html_card_title}</strong></p>
+      <a href="${rel_png}" target="_blank" rel="noopener"><img src="${rel_png}" alt="${html_card_title}"></a>
+EOF
+		if [[ -f "$run_dir/$rel_pdf" && "$rel_pdf" != "$rel_png" ]]; then
+			cat >> "$tmp_file" <<EOF
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="${rel_pdf}" target="_blank" rel="noopener">Open PDF</a></p>
+EOF
+		else
+			cat >> "$tmp_file" <<EOF
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+EOF
+		fi
+		cat >> "$tmp_file" <<'EOF'
+    </div>
+EOF
+	done < <(cd "$run_dir" && find diagnostics_out/3c48_split_calibrated -type f -name '*.png' 2>/dev/null | sort)
+
+	cat >> "$tmp_file" <<'EOF'
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Stage 6 · Primary-only transfer diagnostics (3C468.1)</h2>
+    <p class="tiny">Visibility plots for 3C468.1 after applying only primary calibration tables and flags.</p>
+    <div class="stage-grid">
+EOF
+
+	while IFS= read -r rel_png; do
+		local rel_pdf card_title html_card_title
+		rel_pdf="${rel_png%_page*.png}.pdf"
+		card_title="$(basename "$rel_png")"
+		html_card_title="$(escape_html "$card_title")"
+		cat >> "$tmp_file" <<EOF
+    <div class="card">
+      <p><strong>${html_card_title}</strong></p>
+      <a href="${rel_png}" target="_blank" rel="noopener"><img src="${rel_png}" alt="${html_card_title}"></a>
+EOF
+		if [[ -f "$run_dir/$rel_pdf" && "$rel_pdf" != "$rel_png" ]]; then
+			cat >> "$tmp_file" <<EOF
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="${rel_pdf}" target="_blank" rel="noopener">Open PDF</a></p>
+EOF
+		else
+			cat >> "$tmp_file" <<EOF
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+EOF
+		fi
+		cat >> "$tmp_file" <<'EOF'
+    </div>
+EOF
+	done < <(cd "$run_dir" && find diagnostics_out/3c468.1_primary_split_calibrated -type f -name '*.png' 2>/dev/null | sort)
+
+	cat >> "$tmp_file" <<'EOF'
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Stage 7 · Clustering quality diagnostics (3C468.1)</h2>
+    <p class="tiny">Before/after clustering QA products used to evaluate flagging behavior prior to secondary calibration.</p>
+    <div class="stage-grid">
+EOF
+
+	while IFS= read -r rel_png; do
+		local card_title html_card_title
+		card_title="$(basename "$rel_png")"
+		html_card_title="$(escape_html "$card_title")"
+		cat >> "$tmp_file" <<EOF
+    <div class="card">
+      <p><strong>${html_card_title}</strong></p>
+      <a href="${rel_png}" target="_blank" rel="noopener"><img src="${rel_png}" alt="${html_card_title}"></a>
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+EOF
+	done < <(cd "$run_dir" && find secondary_calibration/clustering -type f -name '*.png' 2>/dev/null | sort)
+
+	cat >> "$tmp_file" <<'EOF'
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Stage 10 · Final primary+secondary calibrated diagnostics (3C468.1)</h2>
+    <p class="tiny">Final calibrated visibility diagnostics after applying both primary and secondary solutions.</p>
+    <div class="stage-grid">
+EOF
+
+	while IFS= read -r rel_png; do
+		local rel_pdf card_title html_card_title
+		rel_pdf="${rel_png%_page*.png}.pdf"
+		card_title="$(basename "$rel_png")"
+		html_card_title="$(escape_html "$card_title")"
+		cat >> "$tmp_file" <<EOF
+    <div class="card">
+      <p><strong>${html_card_title}</strong></p>
+      <a href="${rel_png}" target="_blank" rel="noopener"><img src="${rel_png}" alt="${html_card_title}"></a>
+EOF
+		if [[ -f "$run_dir/$rel_pdf" && "$rel_pdf" != "$rel_png" ]]; then
+			cat >> "$tmp_file" <<EOF
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="${rel_pdf}" target="_blank" rel="noopener">Open PDF</a></p>
+EOF
+		else
+			cat >> "$tmp_file" <<EOF
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+EOF
+		fi
+		cat >> "$tmp_file" <<'EOF'
+    </div>
+EOF
+	done < <(cd "$run_dir" && find diagnostics_out/3c468.1_split_calibrated -type f -name '*.png' 2>/dev/null | sort)
 
 	cat >> "$tmp_file" <<'EOF'
   </div>
 
-  <h2>PDF products</h2>
+  <h2>All PDF products</h2>
+  <p class="tiny">Useful for high-quality zoom/export and documentation snapshots.</p>
   <ul>
 EOF
 
