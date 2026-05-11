@@ -495,6 +495,60 @@ def _infer_original_chan_numbers(index, vis_freqs_hz):
     return chan_numbers
 
 
+def _compute_row_azel(index, source_name, jd_rows):
+    jd_rows = np.asarray(jd_rows, dtype=np.float64)
+    finite = np.isfinite(jd_rows)
+    if not np.any(finite):
+        return None, None
+
+    jd_use = jd_rows[finite]
+    if jd_use.size < 2:
+        return None, None
+
+    jd_sorted = np.sort(jd_use)
+    dt = np.diff(jd_sorted)
+    dt = dt[np.isfinite(dt) & (dt > 0)]
+    if dt.size:
+        time_step_s = float(np.clip(np.nanmedian(dt) * 86400.0, 1.0, 120.0))
+    else:
+        time_step_s = 30.0
+
+    try:
+        azel = q.compute_source_azel(
+            index,
+            source=str(source_name),
+            timerange=(float(np.nanmin(jd_use)), float(np.nanmax(jd_use))),
+            time_step_s=time_step_s,
+        )
+    except Exception as exc:
+        print(f'[plotVis] WARNING: could not compute Az/El track for source={source_name!r}: {exc}')
+        return None, None
+
+    jd_track = np.asarray(azel.get('jd', []), dtype=np.float64)
+    az_track = np.asarray(azel.get('az_deg', []), dtype=np.float64)
+    el_track = np.asarray(azel.get('el_deg', []), dtype=np.float64)
+    good = np.isfinite(jd_track) & np.isfinite(az_track) & np.isfinite(el_track)
+    if not np.any(good):
+        return None, None
+
+    jd_track = jd_track[good]
+    az_track = az_track[good]
+    el_track = el_track[good]
+    order = np.argsort(jd_track)
+    jd_track = jd_track[order]
+    az_track = az_track[order]
+    el_track = el_track[order]
+
+    if jd_track.size < 2:
+        return None, None
+
+    az_row = np.full(jd_rows.shape, np.nan, dtype=np.float64)
+    el_row = np.full(jd_rows.shape, np.nan, dtype=np.float64)
+    az_row[finite] = np.interp(jd_rows[finite], jd_track, az_track)
+    el_row[finite] = np.interp(jd_rows[finite], jd_track, el_track)
+    return az_row, el_row
+
+
 def _compute_sampling_stats(products, vis, corrected_cache, solution, sample_frac, shared_sample_mask):
     stats_by_product = {}
     total_good = 0
@@ -557,7 +611,23 @@ def _compute_sampling_stats(products, vis, corrected_cache, solution, sample_fra
     return stats_by_product, totals
 
 
-def _plot_panel(ax, panel, products, vis, corrected_cache, solution, args, time_axis_row, uvd, freq_mhz, chan_numbers, product_colors, shared_sample_mask):
+def _plot_panel(
+    ax,
+    panel,
+    products,
+    vis,
+    corrected_cache,
+    solution,
+    args,
+    time_axis_row,
+    uvd,
+    freq_mhz,
+    chan_numbers,
+    product_colors,
+    shared_sample_mask,
+    az_row=None,
+    el_row=None,
+):
     panel = '' if panel is None else str(panel)
     panel_alias = {
         'uvdist': 'amp_uvdist',
@@ -582,6 +652,59 @@ def _plot_panel(ax, panel, products, vis, corrected_cache, solution, args, time_
         if (qn, axn) in supported_scalar:
             quantity = qn
             axis = axn
+
+    if panel in ('az_time', 'el_time'):
+        y = az_row if panel == 'az_time' else el_row
+        if y is None:
+            label = 'azimuth' if panel == 'az_time' else 'elevation'
+            ax.text(0.5, 0.5, f'No {label} track available', ha='center', va='center')
+            ax.set_title(panel)
+            ax.grid(True, alpha=0.25)
+            return
+
+        y = np.asarray(y, dtype=np.float64)
+        good = np.isfinite(y) & np.isfinite(time_axis_row)
+        if not np.any(good):
+            ax.text(0.5, 0.5, f'No valid {panel} samples', ha='center', va='center')
+            ax.set_title(panel)
+            ax.grid(True, alpha=0.25)
+            return
+
+        xg = np.asarray(time_axis_row[good], dtype=np.float64)
+        yg = y[good]
+        order = np.argsort(xg)
+        xg = xg[order]
+        yg = yg[order]
+
+        ax.plot(xg, yg, lw=1.3, c='tab:cyan' if panel == 'el_time' else 'tab:orange')
+        ax.scatter(xg, yg, s=2.0, alpha=0.25, c='black')
+        if args.time_format in ('isot_concise', 'isot_full'):
+            ax.set_xlabel('UTC Time')
+            ax.xaxis_date()
+            if args.time_format == 'isot_full':
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%dT%H:%M:%S'))
+            else:
+                locator = mdates.AutoDateLocator(minticks=4, maxticks=8)
+                ax.xaxis.set_major_locator(locator)
+                ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+            ax.tick_params(axis='x', labelrotation=25)
+        else:
+            ax.set_xlabel('Time from start (min)')
+
+        if panel == 'az_time':
+            ax.set_ylabel('Azimuth (deg)')
+            ax.set_ylim(0.0, 360.0)
+        else:
+            ax.set_ylabel('Elevation (deg)')
+            ylo = max(0.0, float(np.nanmin(yg)) - 2.0)
+            yhi = min(90.0, float(np.nanmax(yg)) + 2.0)
+            if yhi <= ylo:
+                ylo, yhi = 0.0, 90.0
+            ax.set_ylim(ylo, yhi)
+
+        ax.set_title(panel)
+        ax.grid(True, alpha=0.25)
+        return
 
     product_payload = []
     for ci, prod in enumerate(products):
@@ -1063,6 +1186,15 @@ def main():
         time_context = 'Time origin: filtered subset start'
     uvd = np.asarray(vis.get('uvdist_klambda', np.zeros(len(jd))), dtype=np.float64)
 
+    requested_panels = _parse_csv_list(args.panels)
+    needs_azel = any(p in ('az_time', 'el_time') for p in requested_panels)
+    az_row = None
+    el_row = None
+    if needs_azel:
+        az_row, el_row = _compute_row_azel(index=index, source_name=source_name, jd_rows=jd)
+        if az_row is None or el_row is None:
+            print('[plotVis] WARNING: Az/El panels requested but Az/El track could not be computed.')
+
     shared_sample_mask = None
     if products:
         z0, _ = _get_product_data(products[0], vis, corrected_cache, solution)
@@ -1090,6 +1222,8 @@ def main():
                 chan_numbers=chan_numbers,
                 product_colors=product_colors,
                 shared_sample_mask=shared_sample_mask,
+                az_row=az_row,
+                el_row=el_row,
             )
 
         for j in range(len(page_panels), len(axs)):
