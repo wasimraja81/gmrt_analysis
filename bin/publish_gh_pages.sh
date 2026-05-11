@@ -470,8 +470,93 @@ EOF
 EOF
 	done < <(cd "$run_dir" && find diagnostics_out/secondary/3c468.1/final_qa -type f -name '*.png' 2>/dev/null | sort)
 
-	cat >> "$tmp_file" <<'EOF'
+	# ── Target QA: Moon scans ─────────────────────────────────────────────────
+	# Iterate over all per-source subdirs under diagnostics_out/target/
+	local moon_srcs=()
+	while IFS= read -r d; do
+		[[ -n "$d" ]] && moon_srcs+=("$d")
+	done < <(cd "$run_dir" && find diagnostics_out/target -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+
+	if (( ${#moon_srcs[@]} > 0 )); then
+		cat >> "$tmp_file" <<'EOF'
   </div>
+
+  <div class="stage">
+    <h2>Target QA — Moon scans</h2>
+    <p>Visibility diagnostics for each Moon scan, shown in three calibration states: raw (flags only), primary-calibrated (bandpass/gain applied), and fully calibrated (primary + secondary phase solutions). All variants have both the primary flag table and the secondary clustering flag table applied at split time.</p>
+EOF
+
+		for moon_src_rel in "${moon_srcs[@]}"; do
+			local moon_tag
+			moon_tag="$(basename "$moon_src_rel")"
+			local html_moon_tag
+			html_moon_tag="$(escape_html "$(printf '%s' "$moon_tag" | tr '[:lower:]' '[:upper:]')")"  # e.g. MOON0520
+
+			cat >> "$tmp_file" <<EOF
+    <h3 style="margin-top:1.2rem">${html_moon_tag}</h3>
+EOF
+
+			local sub_label sub_path sub_desc
+			for sub_label in "raw:Raw (flags only)" "transfer:Primary calibrated" "final_qa:Primary + secondary calibrated"; do
+				sub_path="${sub_label%%:*}"
+				sub_desc="${sub_label#*:}"
+				local html_sub_desc
+				html_sub_desc="$(escape_html "$sub_desc")"
+				local dir_path="${moon_src_rel}/${sub_path}"
+
+				# Check if any PNGs exist for this sub-dir
+				local png_count=0
+				png_count=$(cd "$run_dir" && find "$dir_path" -type f -name '*.png' 2>/dev/null | wc -l | tr -d ' ')
+
+				if (( png_count == 0 )); then
+					continue
+				fi
+
+				cat >> "$tmp_file" <<EOF
+    <p style="margin-top:0.8rem"><strong>${html_sub_desc}</strong></p>
+    <div class="stage-grid">
+EOF
+
+				while IFS= read -r rel_png; do
+					local rel_pdf card_title html_card_title
+					rel_pdf="${rel_png%_page*.png}.pdf"
+					card_title="$(basename "$rel_png")"
+					html_card_title="$(escape_html "$card_title")"
+					cat >> "$tmp_file" <<EOF
+    <div class="card">
+      <p><strong>${html_moon_tag} — ${html_sub_desc}</strong></p>
+      <a href="${rel_png}" target="_blank" rel="noopener"><img src="${rel_png}" alt="${html_card_title}"></a>
+EOF
+					if [[ -f "$run_dir/$rel_pdf" && "$rel_pdf" != "$rel_png" ]]; then
+						cat >> "$tmp_file" <<EOF
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="${rel_pdf}" target="_blank" rel="noopener">Open PDF</a></p>
+EOF
+					else
+						cat >> "$tmp_file" <<EOF
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+EOF
+					fi
+					cat >> "$tmp_file" <<'EOF'
+    </div>
+EOF
+				done < <(cd "$run_dir" && find "$dir_path" -type f -name '*.png' 2>/dev/null | sort)
+
+				cat >> "$tmp_file" <<'EOF'
+    </div>
+EOF
+			done
+		done
+
+		cat >> "$tmp_file" <<'EOF'
+  </div>
+EOF
+	else
+		cat >> "$tmp_file" <<'EOF'
+  </div>
+EOF
+	fi
+
+	cat >> "$tmp_file" <<'EOF'
 
   <h2>All PDF products</h2>
   <p class="tiny">Useful for high-quality zoom/export and documentation snapshots.</p>

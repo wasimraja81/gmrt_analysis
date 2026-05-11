@@ -23,6 +23,9 @@ CLUSTER_PRODUCTS_GLOB="$WORK_DIR/diagnostics_out/secondary/3c468.1/flagging/3c46
 SECONDARY_TABLES_GLOB="$WORK_DIR/secondary_calibration/3c468.1_secondary_phase_only_scan*.npz"
 SPLIT_3C468_FINAL="$WORK_DIR/split/3c468.1/3c468.1_primary_secondary_calibrated_flagged.uvfits"
 PLOT_3C468_FINAL_PDF="$WORK_DIR/diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1.pdf"
+MOON_SOURCES=(MOON0520 MOON0545 MOON0605 MOON0625 MOON0635)
+MOON_SPLIT_GLOB="$WORK_DIR/split/moon/moon*_primary_secondary_calibrated_flagged.uvfits"
+MOON_PLOTS_GLOB="$WORK_DIR/diagnostics_out/target/moon*/final_qa/plotvis_*.pdf"
 
 AUDIT_ONLY=false
 
@@ -73,10 +76,10 @@ run_step() {
   local step_name="$2"
   shift 2
 
-  log "STEP ${step_no}/10 START: ${step_name}"
+  log "STEP ${step_no}/12 START: ${step_name}"
   log "COMMAND: $*"
   "$@" 2>&1 | tee -a "$CHAIN_LOG"
-  log "STEP ${step_no}/10 DONE : ${step_name}"
+  log "STEP ${step_no}/12 DONE : ${step_name}"
 }
 
 assert_file() {
@@ -140,6 +143,12 @@ print_products_to_audit() {
     echo
     echo "Step 10: final 3C468.1 plot"
     echo "$PLOT_3C468_FINAL_PDF"
+    echo
+    echo "Step 11: moon split (all variants, all sources)"
+    ls -1 $MOON_SPLIT_GLOB 2>/dev/null || true
+    echo
+    echo "Step 12: moon visibility plots"
+    ls -1 $MOON_PLOTS_GLOB 2>/dev/null || true
   } > "$manifest"
 
   log "PRODUCTS TO AUDIT (full paths):"
@@ -166,6 +175,8 @@ if [[ "$AUDIT_ONLY" == true ]]; then
   assert_glob "$SECONDARY_TABLES_GLOB"
   assert_file "$SPLIT_3C468_FINAL"
   assert_file "$PLOT_3C468_FINAL_PDF"
+  assert_glob "$MOON_SPLIT_GLOB"
+  assert_glob "$MOON_PLOTS_GLOB"
   print_products_to_audit
   log "Audit-only check complete"
   exit 0
@@ -212,6 +223,14 @@ assert_file "$SPLIT_3C468_FINAL"
 # 10) plot vis on step-9 output
 run_step 10 "plot visibilities for primary+secondary 3C468.1 split" bash "$SCRIPT_DIR/plotVis_3c468.1_example.sh"
 assert_file "$PLOT_3C468_FINAL_PDF"
+
+# 11) split all moon (target) scans — raw, primary, primary+secondary variants
+run_step 11 "split moon (target) scans — raw, primary, primary+secondary" bash "$SCRIPT_DIR/visSplit_moon_example.sh"
+assert_glob "$MOON_SPLIT_GLOB"
+
+# 12) plot vis for all moon variants
+run_step 12 "plot visibilities for moon (target) scans" bash "$SCRIPT_DIR/plotVis_moon_example.sh"
+assert_glob "$MOON_PLOTS_GLOB"
 
 log "GMRT 40_014 calibration workflow complete"
 print_products_to_audit
