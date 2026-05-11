@@ -18,7 +18,7 @@ CONFIG="$REPO_ROOT/preprocess_ugmrt.cfg"
 
 CHAN_START=0
 CHAN_END=127
-OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/3c468.1_primary_split_calibrated
+OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/transfer
 
 LOG_DIR=~/DATA/gmrt_40_014/work/logs
 RUN_TS="$(date +%Y%m%d_%H%M%S)"

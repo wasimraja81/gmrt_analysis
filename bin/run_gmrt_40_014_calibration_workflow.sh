@@ -15,14 +15,14 @@ CHAIN_LOG="$LOG_DIR/run_gmrt_40_014_calibration_workflow_${RUN_TS}.log"
 PRIMARY_BANDPASS="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz"
 PRIMARY_FLAGS="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"
 SPLIT_3C48="$WORK_DIR/split/3c48/3c48_calibrated_flagged.uvfits"
-PLOT_3C48_PDF="$WORK_DIR/diagnostics_out/3c48_split_calibrated/plotvis_3c48.pdf"
+PLOT_3C48_PDF="$WORK_DIR/diagnostics_out/primary/3c48/selfcheck/plotvis_3c48.pdf"
 SPLIT_3C468_PRIMARY="$WORK_DIR/split/3c468.1/3c468.1_primary_calibrated.uvfits"
-PLOT_3C468_PRIMARY_PDF="$WORK_DIR/diagnostics_out/3c468.1_primary_split_calibrated/plotvis_3c468.1.pdf"
+PLOT_3C468_PRIMARY_PDF="$WORK_DIR/diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1.pdf"
 CLUSTER_FLAGS="$WORK_DIR/secondary_calibration/flag/3c468.1_split_clustering_flag_table_session.json"
-CLUSTER_PRODUCTS_GLOB="$WORK_DIR/secondary_calibration/clustering/3c468.1_clustering_*"
+CLUSTER_PRODUCTS_GLOB="$WORK_DIR/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_*"
 SECONDARY_TABLES_GLOB="$WORK_DIR/secondary_calibration/3c468.1_secondary_phase_only_scan*.npz"
 SPLIT_3C468_FINAL="$WORK_DIR/split/3c468.1/3c468.1_primary_secondary_calibrated_flagged.uvfits"
-PLOT_3C468_FINAL_PDF="$WORK_DIR/diagnostics_out/3c468.1_split_calibrated/plotvis_3c468.1.pdf"
+PLOT_3C468_FINAL_PDF="$WORK_DIR/diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1.pdf"
 
 AUDIT_ONLY=false
 

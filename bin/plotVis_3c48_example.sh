@@ -20,13 +20,13 @@ if [[ "$DATA_MODE" == "raw" ]]; then
   INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
   CHAN_START=64
   CHAN_END=191
-  OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/3c48_primary_tables
+  OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/primary/3c48/selfcheck
 elif [[ "$DATA_MODE" == "calibrated" ]]; then
   FITS=~/DATA/gmrt_40_014/work/split/3c48/3c48_calibrated_flagged.uvfits
   INDEX=~/DATA/gmrt_40_014/work/split/3c48/3c48_calibrated_flagged.uvfits.row_index_cache.npz
   CHAN_START=0
   CHAN_END=127
-  OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/3c48_split_calibrated
+  OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/primary/3c48/selfcheck
 else
   echo "Invalid DATA_MODE='$DATA_MODE' (use: raw or calibrated)"
   exit 1

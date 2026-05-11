@@ -17,12 +17,14 @@ DEFAULT_PAGES_DIR="${PAGES_DIR:-${REPO_ROOT}_gh_pages}"
 DEFAULT_BRANCH="gh-pages"
 DEFAULT_LATEST_ALIAS="latest"
 DEFAULT_SITE_TITLE="GMRT 40_014 Calibration Diagnostics"
+DEFAULT_PROJECT_SUBDIR="40_014"
 
 WORK_DIR="$DEFAULT_WORK_DIR"
 PAGES_DIR="$DEFAULT_PAGES_DIR"
 PUBLISH_BRANCH="$DEFAULT_BRANCH"
 LATEST_ALIAS="$DEFAULT_LATEST_ALIAS"
 SITE_TITLE="$DEFAULT_SITE_TITLE"
+PROJECT_SUBDIR="$DEFAULT_PROJECT_SUBDIR"
 MANIFEST_PATH=""
 RUN_TS=""
 PUSH=0
@@ -42,6 +44,7 @@ Options:
   --pages-dir PATH     Override gh-pages worktree path (default: $DEFAULT_PAGES_DIR).
   --branch NAME        Publication branch name (default: $DEFAULT_BRANCH).
   --latest-alias NAME  Alias directory for the most recently published run (default: $DEFAULT_LATEST_ALIAS).
+  --project-subdir DIR Project subdirectory under the gh-pages root (default: $DEFAULT_PROJECT_SUBDIR).
   --site-title TEXT    Site title used in generated HTML.
   --push               Push the publication branch after commit.
   --dry-run            Show planned actions without writing files or committing.
@@ -153,7 +156,6 @@ ensure_pages_worktree() {
 
 collect_publish_files() {
 	local diagnostics_dir="$WORK_DIR/diagnostics_out"
-	local clustering_dir="$WORK_DIR/secondary_calibration/clustering"
 	local workflow_log=""
 
 	PUBLISH_FILES=()
@@ -163,9 +165,6 @@ collect_publish_files() {
 		{
 			if [[ -d "$diagnostics_dir" ]]; then
 				find "$diagnostics_dir" -type f \( -name '*.png' -o -name '*.pdf' \)
-			fi
-			if [[ -d "$clustering_dir" ]]; then
-				find "$clustering_dir" -maxdepth 1 -type f \( -name '*.png' -o -name '*.pdf' \)
 			fi
 		} | sort -u
 	)
@@ -187,6 +186,11 @@ render_run_index() {
 	local source_branch="$5"
 	local workflow_log_name="$6"
 	local manifest_name="$7"
+	local back_link="${8:-../../index.html}"
+	local base_path
+	# Derive base_path from back_link so all relative nav URLs stay consistent
+	# e.g. back_link="../../index.html" → base_path="../../"
+	base_path="${back_link%index.html}"
 	local tmp_file="$run_dir/index.html"
 	local html_title html_run_rel
 	html_title="$(escape_html "$SITE_TITLE")"
@@ -220,7 +224,7 @@ render_run_index() {
   </style>
 </head>
 <body>
-  <p><a href="../../index.html">← all published runs</a> · <a href="../../${LATEST_ALIAS}/index.html">latest</a></p>
+  <p><a href="${back_link}">← all published runs</a> · <a href="${base_path}${LATEST_ALIAS}/index.html">latest</a></p>
   <h1>${html_title}</h1>
   <div class="meta">
     <p><strong>Run timestamp:</strong> <code>${RUN_TS}</code></p>
@@ -242,48 +246,54 @@ EOF
 
 	<div class="summary">
 		<h2>What this report shows</h2>
-		<p>This page summarizes how the GMRT 40_014 visibility data evolves through calibration. Each stage contains inline previews and direct links to full-resolution files for zooming and detailed inspection.</p>
+		<p>This page summarizes how the GMRT 40_014 visibility data evolves through calibration. Each section contains inline previews and direct links to full-resolution files for zooming and detailed inspection.</p>
 		<table class="scheme">
 			<thead>
 				<tr>
-					<th>Stage</th>
+					<th>Section</th>
 					<th>Calibrator / Product</th>
-					<th>Calibration scheme</th>
+					<th>What is shown</th>
 					<th>Why it matters</th>
 				</tr>
 			</thead>
 			<tbody>
 				<tr>
-					<td>Primary solve</td>
-					<td>3C48 bandpass + gains</td>
-					<td>Iterative bandpass/flag solve with final clustering refinement</td>
-					<td>Establishes robust instrumental calibration and RFI rejection baseline</td>
+					<td>Primary bandpass calibration diagnostics</td>
+					<td>3C48</td>
+					<td>Iterative solution-solving process: baseline-averaged spectra, Stokes-V and spectral deviation flags, bandpass solution plots</td>
+					<td>Establishes robust instrumental bandpass calibration and RFI rejection baseline</td>
 				</tr>
 				<tr>
-					<td>Primary transfer</td>
-					<td>3C48 and 3C468.1 (primary-only)</td>
-					<td>Apply primary tables + flags, then inspect visibilities</td>
-					<td>Checks whether primary calibration transfer is stable across sources</td>
+					<td>Primary calibration self-check</td>
+					<td>3C48</td>
+					<td>Calibrated visibility plots after applying primary solutions back to 3C48</td>
+					<td>Verifies that the primary calibration solutions are self-consistent and well-behaved</td>
 				</tr>
 				<tr>
-					<td>Secondary prep</td>
-					<td>3C468.1 clustering diagnostics</td>
-					<td>Before/after clustering on spectrum, Stokes-V, uv-distance views</td>
-					<td>Quantifies data cleaning impact before secondary phase solving</td>
+					<td>Primary calibration transfer check</td>
+					<td>3C468.1</td>
+					<td>Calibrated visibility plots after transferring primary solutions to 3C468.1</td>
+					<td>Checks that primary calibration transfers cleanly to the target field calibrator</td>
 				</tr>
 				<tr>
-					<td>Secondary transfer</td>
-					<td>3C468.1 final calibrated visibilities</td>
-					<td>Primary + secondary calibration with clustering-derived flags</td>
-					<td>Represents final quality of calibrated target data products</td>
+					<td>Advanced flagging diagnostics — clustering algorithm</td>
+					<td>3C468.1</td>
+					<td>Before/after views of the clustering algorithm on spectrum, Stokes-V, and uv-distance</td>
+					<td>Quantifies the impact of advanced flagging before secondary phase solving</td>
+				</tr>
+				<tr>
+					<td>Full calibration QA</td>
+					<td>3C468.1</td>
+					<td>Final calibrated visibility plots after applying both primary and secondary solutions with clustering-derived flags</td>
+					<td>Represents the end-to-end calibration quality of the target field data products</td>
 				</tr>
 			</tbody>
 		</table>
 	</div>
 
 	<div class="stage">
-		<h2>Stage 2 · Primary calibration diagnostics (3C48)</h2>
-		<p class="tiny">Iterative diagnostics and gain evolution during the primary calibration solve. Use full-resolution links for detailed visual QA.</p>
+		<h2>Primary bandpass calibration diagnostics (3C48)</h2>
+		<p>These plots show the solution-solving process for the primary bandpass calibration using 3C48. We iteratively solve for the bandpass, identify and flag bad data based on two criteria — high Stokes-V emission (a proxy for RFI) and deviation of the baseline-averaged spectrum from the Perley–Butler source model — and repeat until stable, well-behaved solutions are reached. The section includes both the per-iteration flagging diagnostic plots and the final bandpass solution plots.</p>
 		<div class="stage-grid">
 EOF
 
@@ -309,9 +319,9 @@ EOF
 		cat >> "$tmp_file" <<'EOF'
     </div>
 EOF
-	done < <(cd "$run_dir" && find diagnostics_out/3c48_primary_calibration -type f -name '*.png' 2>/dev/null | sort)
+	done < <(cd "$run_dir" && find diagnostics_out/primary/3c48/solve -type f -name '*.png' 2>/dev/null | sort)
 
-	if ! (cd "$run_dir" && find diagnostics_out/3c48_primary_calibration -type f -name '*.png' | grep -q .); then
+	if ! (cd "$run_dir" && find diagnostics_out/primary/3c48/solve -type f -name '*.png' | grep -q .); then
 		cat >> "$tmp_file" <<'EOF'
       <p>No PNG diagnostics found for this stage.</p>
 EOF
@@ -322,8 +332,8 @@ EOF
   </div>
 
   <div class="stage">
-    <h2>Stage 4 · Primary transfer visibility plots (3C48)</h2>
-    <p class="tiny">Calibrated/flagged visibility diagnostics after applying primary solutions to the primary calibrator split.</p>
+    <h2>Primary calibration self-check (3C48)</h2>
+    <p>These diagnostic plots probe the quality of the primary calibration by applying the derived solutions back to 3C48 itself. Good calibration should yield clean, well-structured visibilities consistent with the expected source behaviour. Residual structure or anomalous baselines here indicate issues in the primary solve.</p>
     <div class="stage-grid">
 EOF
 
@@ -349,15 +359,15 @@ EOF
 		cat >> "$tmp_file" <<'EOF'
     </div>
 EOF
-	done < <(cd "$run_dir" && find diagnostics_out/3c48_split_calibrated -type f -name '*.png' 2>/dev/null | sort)
+	done < <(cd "$run_dir" && find diagnostics_out/primary/3c48/selfcheck -type f -name '*.png' 2>/dev/null | sort)
 
 	cat >> "$tmp_file" <<'EOF'
     </div>
   </div>
 
   <div class="stage">
-    <h2>Stage 6 · Primary-only transfer diagnostics (3C468.1)</h2>
-    <p class="tiny">Visibility plots for 3C468.1 after applying only primary calibration tables and flags.</p>
+    <h2>Primary calibration transfer check (3C468.1)</h2>
+    <p>These plots show the QA for the primary calibration when its solutions are transferred to and applied to 3C468.1, the secondary calibrator. This tests whether the primary calibration is stable and transferable across sources before any secondary self-calibration is attempted.</p>
     <div class="stage-grid">
 EOF
 
@@ -383,16 +393,17 @@ EOF
 		cat >> "$tmp_file" <<'EOF'
     </div>
 EOF
-	done < <(cd "$run_dir" && find diagnostics_out/3c468.1_primary_split_calibrated -type f -name '*.png' 2>/dev/null | sort)
+	done < <(cd "$run_dir" && find diagnostics_out/secondary/3c468.1/transfer -type f -name '*.png' 2>/dev/null | sort)
 
 	cat >> "$tmp_file" <<'EOF'
     </div>
   </div>
 
   <div class="stage">
-    <h2>Stage 7 · Clustering quality diagnostics (3C468.1)</h2>
-    <p class="tiny">Before/after clustering QA products used to evaluate flagging behavior prior to secondary calibration.</p>
+    <h2>Advanced flagging diagnostics — clustering algorithm (3C468.1)</h2>
+    <p>These plots show the effect of the clustering-based advanced flagging algorithm applied to 3C468.1. Side-by-side before/after views are shown for the baseline-averaged spectrum, Stokes-V, and uv-distance diagnostic planes. This flagging step is applied prior to secondary phase calibration to remove residual RFI and outlier baselines that survived the primary flagging iterations.</p>
     <div class="stage-grid">
+  <div style="grid-column:1/-1;font-weight:600;border-bottom:1px solid #8884;padding-bottom:0.3rem;margin-bottom:0.2rem">Before flagging</div>
 EOF
 
 	while IFS= read -r rel_png; do
@@ -406,15 +417,32 @@ EOF
       <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
     </div>
 EOF
-	done < <(cd "$run_dir" && find secondary_calibration/clustering -type f -name '*.png' 2>/dev/null | sort)
+	done < <(cd "$run_dir" && find secondary_calibration/clustering -type f -name '*_before.png' 2>/dev/null | sort)
+
+	cat >> "$tmp_file" <<'EOF'
+  <div style="grid-column:1/-1;font-weight:600;border-bottom:1px solid #8884;padding-bottom:0.3rem;margin-bottom:0.2rem;margin-top:0.6rem">After flagging</div>
+EOF
+
+	while IFS= read -r rel_png; do
+		local card_title html_card_title
+		card_title="$(basename "$rel_png")"
+		html_card_title="$(escape_html "$card_title")"
+		cat >> "$tmp_file" <<EOF
+    <div class="card">
+      <p><strong>${html_card_title}</strong></p>
+      <a href="${rel_png}" target="_blank" rel="noopener"><img src="${rel_png}" alt="${html_card_title}"></a>
+      <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+EOF
+	done < <(cd "$run_dir" && find diagnostics_out/secondary/3c468.1/flagging -type f -name '*_after.png' 2>/dev/null | sort)
 
 	cat >> "$tmp_file" <<'EOF'
     </div>
   </div>
 
   <div class="stage">
-    <h2>Stage 10 · Final primary+secondary calibrated diagnostics (3C468.1)</h2>
-    <p class="tiny">Final calibrated visibility diagnostics after applying both primary and secondary solutions.</p>
+    <h2>Full calibration QA (3C468.1)</h2>
+    <p>These plots show the end-to-end calibration quality for 3C468.1 after applying both the primary bandpass/gain solutions and the secondary phase calibration derived post-clustering. This is the final QA checkpoint: well-calibrated data should show clean, phase-coherent visibilities across all baselines and channels.</p>
     <div class="stage-grid">
 EOF
 
@@ -440,7 +468,7 @@ EOF
 		cat >> "$tmp_file" <<'EOF'
     </div>
 EOF
-	done < <(cd "$run_dir" && find diagnostics_out/3c468.1_split_calibrated -type f -name '*.png' 2>/dev/null | sort)
+	done < <(cd "$run_dir" && find diagnostics_out/secondary/3c468.1/final_qa -type f -name '*.png' 2>/dev/null | sort)
 
 	cat >> "$tmp_file" <<'EOF'
   </div>
@@ -456,7 +484,7 @@ EOF
 		cat >> "$tmp_file" <<EOF
     <li><a href="${rel_pdf}">${html_name}</a></li>
 EOF
-	done < <(cd "$run_dir" && find diagnostics_out secondary_calibration/clustering -type f -name '*.pdf' 2>/dev/null | sort)
+	done < <(cd "$run_dir" && find diagnostics_out -type f -name '*.pdf' 2>/dev/null | sort)
 
 	cat >> "$tmp_file" <<'EOF'
   </ul>
@@ -466,9 +494,10 @@ EOF
 }
 
 render_root_index() {
-	local root_file="$PAGES_DIR/index.html"
+	local root_file="$PAGES_DIR/$PROJECT_SUBDIR/index.html"
 	local html_title
 	html_title="$(escape_html "$SITE_TITLE")"
+	mkdir -p "$(dirname "$root_file")"
 
 	cat > "$root_file" <<EOF
 <!doctype html>
@@ -500,7 +529,7 @@ EOF
 		cat >> "$root_file" <<EOF
     <li><a href="runs/${run_dir_name}/index.html"><code>${html_name}</code></a></li>
 EOF
-	done < <(find "$PAGES_DIR/runs" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort -r)
+	done < <(find "$PAGES_DIR/$PROJECT_SUBDIR/runs" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort -r)
 
 	cat >> "$root_file" <<'EOF'
   </ul>
@@ -515,7 +544,7 @@ publish_run() {
 	source_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 	source_branch="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
 	published_at="$(date '+%Y-%m-%d %H:%M:%S %Z')"
-	run_rel="runs/${RUN_TS}"
+	run_rel="${PROJECT_SUBDIR}/runs/${RUN_TS}"
 	run_dir="$PAGES_DIR/$run_rel"
 
 	collect_publish_files
@@ -530,7 +559,7 @@ publish_run() {
 		log "DRY-RUN would publish run $RUN_TS into $run_dir"
 	else
 		mkdir -p "$run_dir"
-		rm -rf "$run_dir/diagnostics_out" "$run_dir/secondary_calibration" "$run_dir/logs"
+		rm -rf "$run_dir/diagnostics_out" "$run_dir/logs"
 	fi
 
 	local src rel dst
@@ -553,10 +582,13 @@ publish_run() {
 		return 0
 	fi
 
-	render_run_index "$run_dir" "$run_rel" "$published_at" "$source_commit" "$source_branch" "$workflow_log_name" "$manifest_name"
-	rm -rf "$PAGES_DIR/$LATEST_ALIAS"
-	mkdir -p "$PAGES_DIR/$LATEST_ALIAS"
-	cp -R "$run_dir"/. "$PAGES_DIR/$LATEST_ALIAS/"
+	render_run_index "$run_dir" "$run_rel" "$published_at" "$source_commit" "$source_branch" "$workflow_log_name" "$manifest_name" "../../index.html"
+	local latest_dir="$PAGES_DIR/$PROJECT_SUBDIR/$LATEST_ALIAS"
+	rm -rf "$latest_dir"
+	mkdir -p "$latest_dir"
+	cp -R "$run_dir"/. "$latest_dir/"
+	# Re-render index for latest/ with correct back-link depth (1 level up to project index)
+	render_run_index "$latest_dir" "$run_rel" "$published_at" "$source_commit" "$source_branch" "$workflow_log_name" "$manifest_name" "../index.html"
 	render_root_index
 
 	git -C "$PAGES_DIR" add .
@@ -595,6 +627,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--latest-alias)
 			LATEST_ALIAS="$2"
+			shift 2
+			;;
+		--project-subdir)
+			PROJECT_SUBDIR="$2"
 			shift 2
 			;;
 		--site-title)

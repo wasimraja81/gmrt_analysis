@@ -20,8 +20,8 @@ PRIMARY_BPCAL="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_it
 PRIMARY_FLAG_TABLE="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"
 
 SC_DIR="$WORK_DIR/secondary_calibration"
-CLUSTER_DIR="$SC_DIR/clustering"
-FLAG_DIR="$SC_DIR/flag"
+CLUSTER_DIR="$WORK_DIR/diagnostics_out/secondary/3c468.1/flagging"  # diagnostic PNGs/PDFs
+FLAG_DIR="$SC_DIR/flag"  # flag table JSON stays in secondary_calibration
 
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="$WORK_DIR/logs"
