@@ -417,7 +417,7 @@ EOF
       <p><a href="${rel_png}" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
     </div>
 EOF
-	done < <(cd "$run_dir" && find secondary_calibration/clustering -type f -name '*_before.png' 2>/dev/null | sort)
+	done < <(cd "$run_dir" && find diagnostics_out/secondary/3c468.1/flagging -type f -name '*_before.png' 2>/dev/null | sort)
 
 	cat >> "$tmp_file" <<'EOF'
   <div style="grid-column:1/-1;font-weight:600;border-bottom:1px solid #8884;padding-bottom:0.3rem;margin-bottom:0.2rem;margin-top:0.6rem">After flagging</div>
