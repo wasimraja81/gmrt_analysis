@@ -140,17 +140,23 @@ def _patch_uvfits_veldef(uvfits_path: Path, tmp_dir: Path) -> Path:
     """
     from astropy.io import fits  # type: ignore
 
+    uvfits_path = Path(uvfits_path)
     with fits.open(str(uvfits_path), memmap=False) as hdul:
         hdr = hdul[0].header
         if hdr.get('VELDEF') is not None:
             return uvfits_path          # already present — nothing to do
 
         print('[selfcal-dev] VELDEF missing from UVFITS header — '
-              'writing patched copy with VELDEF = RADIO TOPO')
+              'writing patched copy with VELDEF=RADIO, SPECSYS=TOPOCENT')
         tmp_dir.mkdir(parents=True, exist_ok=True)
         patched = tmp_dir / (uvfits_path.stem + '_veldef_patched.uvfits')
-        # Insert VELDEF right after EQUINOX / before data keywords
-        hdul[0].header['VELDEF'] = ('RADIO TOPO', 'Velocity definition for FREQ axis')
+        # VELDEF: standard FITS UVFITS velocity definition.
+        #   'RADIO' = topocentric radio convention (f_rest - f) / f_rest * c
+        #   This is the correct value for correlator dump output.
+        # SPECSYS: used by newer casacore/CASA to resolve the spectral frame.
+        #   'TOPOCENT' matches topocentric (observatory-frame) frequencies.
+        hdul[0].header['VELDEF'] = ('RADIO', 'Radio velocity convention (topocentric)')
+        hdul[0].header['SPECSYS'] = ('TOPOCENT', 'Spectral reference frame')
         hdul.writeto(str(patched), overwrite=True)
     return patched
 
