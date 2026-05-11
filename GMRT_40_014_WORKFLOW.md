@@ -155,7 +155,52 @@ bash bin/run_gmrt_40_014_calibration_workflow.sh --audit-only
 
 ---
 
-## 9) Operational Recommendation
+## 9) Publishing Curated Outputs to GitHub Pages
+
+Collaborators should generate products from the production workflow on their own machines from the source branch.
+
+GitHub Pages is only for publishing selected static outputs after you inspect them and decide they are worth sharing.
+
+Recommended publish model:
+
+- workflow reproducibility stays on the source branch (`40_014`),
+- local run products stay under `$HOME/DATA/gmrt_40_014/work`,
+- curated PNG/PDF outputs are copied into a separate `gh-pages` worktree/branch.
+
+Publish the latest successful run:
+
+```bash
+cd /Users/raj030/github-wasimraja81/gmrt_analysis
+bash bin/publish_gh_pages.sh
+```
+
+Publish a specific run timestamp:
+
+```bash
+cd /Users/raj030/github-wasimraja81/gmrt_analysis
+bash bin/publish_gh_pages.sh --run-ts 20260511_114843
+```
+
+Publish and push to the remote `gh-pages` branch:
+
+```bash
+cd /Users/raj030/github-wasimraja81/gmrt_analysis
+bash bin/publish_gh_pages.sh --run-ts 20260511_114843 --push
+```
+
+The publish script:
+
+- creates or reuses a separate `gh-pages` worktree,
+- archives the chosen run under `runs/<timestamp>/`,
+- refreshes `latest/` to mirror that chosen run,
+- regenerates a simple static gallery site,
+- commits the update on the `gh-pages` branch.
+
+This means later runs with better labels or styling can be published explicitly, without losing earlier published runs.
+
+---
+
+## 10) Operational Recommendation
 
 For normal operations, run only:
 
