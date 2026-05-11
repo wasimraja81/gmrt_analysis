@@ -16,7 +16,6 @@ This script can be run either:
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import os
 import shutil
 import sys
@@ -39,32 +38,19 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument('--stokes', default='I', help='Output Stokes parameter (default: I)')
     p.add_argument('--spw', default='',
                    help='Optional CASA spw channel selection (default: all channels), e.g. "0:0~127"')
-    p.add_argument('--timerange', default='',
-                   help='Optional CASA timerange selector (default: all times), e.g. "2021/07/24/05:20:00~2021/07/24/05:20:16"')
-    p.add_argument('--antenna', default='',
-                   help='Optional CASA antenna/baseline selector to include, e.g. "1&25;18&30"')
-    p.add_argument('--exclude-baselines', default='',
-                   help='Optional CASA baseline selector to exclude, e.g. "29&30;1&25"')
     p.add_argument('--expected-nchan', type=int, default=None,
                    help='Optional guard: fail if input UVFITS NAXIS4 != expected value')
     p.add_argument('--uvmin-klambda', type=float, default=0.12, help='Minimum uv cut in kλ (default: 0.12)')
     p.add_argument('--uvmax-klambda', type=float, default=None, help='Optional maximum uv cut in kλ')
     p.add_argument('--weighting', default='briggs', choices=['natural', 'uniform', 'briggs'], help='CASA weighting scheme')
     p.add_argument('--robust', type=float, default=0.0, help='Briggs robust parameter (default: 0.0)')
-    p.add_argument('--uvtaper', default='', help='Gaussian uv-taper as comma-separated CASA strings, e.g. "60arcsec" or "90arcsec,60arcsec,45deg" (default: no taper)')
     p.add_argument('--niter', type=int, default=5000, help='Maximum CLEAN iterations (default: 5000)')
-    p.add_argument('--nmajor', type=int, default=-1,
-                   help='Maximum major cycles in non moon-track-per-integration mode (default: -1, auto).')
     p.add_argument('--cycleniter', type=int, default=500, help='Minor iterations per major cycle/chunk (default: 500)')
     p.add_argument('--cycles-per-report', type=int, default=1, help='Major cycles per progress report chunk (default: 1)')
     p.add_argument('--threshold', default='0mJy', help='CLEAN threshold, e.g. 5mJy (default: 0mJy)')
     p.add_argument('--scales', default='0,5,15,45,135', help='CASA multiscale scales in pixels (default: 0,5,15,45,135)')
     p.add_argument('--smallscalebias', type=float, default=0.0,
                    help='CASA smallscalebias for multiscale CLEAN (default: 0.0)')
-    p.add_argument('--gain', type=float, default=0.1,
-                   help='CLEAN loop gain — fraction of peak residual subtracted per minor-cycle iteration (default: 0.1)')
-    p.add_argument('--cyclefactor', type=float, default=1.5,
-                   help='CASA cyclefactor — scales the threshold at which a major cycle is triggered relative to PSF sidelobes (default: 1.5; lower=fewer major cycles)')
     p.add_argument('--deconvolver', default='multiscale', choices=['multiscale', 'hogbom', 'clark'],
                    help='CASA deconvolver (default: multiscale)')
     p.add_argument('--uvmin-m', type=float, default=None,
@@ -75,10 +61,6 @@ def _parse_args() -> argparse.Namespace:
                    help='Enable W-projection gridder (default: off; standard gridder is faster and sufficient when imaging near the phase centre)')
     p.add_argument('--wprojplanes', type=int, default=64,
                    help='W-projection planes, only relevant when --wproject is set (default: 64)')
-    p.add_argument('--pblimit', type=float, default=-1.0,
-                   help='tclean pblimit: primary beam gain level below which pixels are masked to NaN. '
-                        'Set to -1 (default) to disable primary-beam masking entirely and keep all pixels finite. '
-                        'Set to e.g. 0.2 to mask below 20%% primary beam response (CASA default behaviour).')
     p.add_argument('--moon-track-per-integration',
                    action=argparse.BooleanOptionalAction, default=True,
                    help='Phase visibilities to per-integration Moon position and image each separately, then stack '
@@ -91,17 +73,6 @@ def _parse_args() -> argparse.Namespace:
                    help='tclean cycleniter per integration in moon-track mode (default: 100).')
     p.add_argument('--integration-nmajor', type=int, default=2,
                    help='Maximum major cycles per integration in moon-track mode (default: 2; -1 for auto).')
-    p.add_argument('--integration-jobs', type=int, default=1,
-                   help='Number of parallel per-integration workers in moon-track mode (default: 1).')
-    p.add_argument('--phase-strategy', choices=['tclean', 'phaseshift'], default='tclean',
-                   help='Moon-track phase strategy: direct per-snapshot tclean phasecenter (tclean, default) '
-                        'or explicit split+phaseshift/fixvis datasets (phaseshift).')
-    p.add_argument('--integration-phasecenter-mode', choices=['moon', 'observed'], default='moon',
-                   help='Per-integration imaging center: track the Moon each snapshot (moon, default) '
-                        'or keep the original observed phase centre fixed (observed).')
-    p.add_argument('--native-track-phasecenter', default='',
-                   help='Use tclean native moving-source tracking in non per-integration mode, '
-                        'e.g. "MOON", "TRACKFIELD", or an ephemeris table path. Default: off.')
     p.add_argument('--stack-method', choices=['mean', 'median'], default='mean',
                    help='Stacking method for per-integration FITS images (default: mean).')
     p.add_argument('--keep-integration-products', action='store_true',
@@ -120,7 +91,7 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _import_casa_tasks(require_phase_tools: bool = True):
+def _import_casa_tasks():
     try:
         from casatasks import exportfits, importuvfits, split, tclean  # type: ignore
     except Exception as exc:  # pragma: no cover - import path depends on local CASA install
@@ -141,7 +112,7 @@ def _import_casa_tasks(require_phase_tools: bool = True):
     except Exception:
         fixvis_task = None
 
-    if require_phase_tools and phaseshift_task is None and fixvis_task is None:
+    if phaseshift_task is None and fixvis_task is None:
         raise SystemExit('Neither casatasks.phaseshift nor casatasks.fixvis is available for phase shifting.')
 
     return importuvfits, tclean, exportfits, split, fixvis_task, phaseshift_task
@@ -225,8 +196,9 @@ def _run_tclean_with_progress(
         chunk_iters = int(result.get('iterdone', this_chunk))
         iters_done += chunk_iters
 
+        nmajor = int(result.get('nmajordone', 0))
         major_by_iter = max(1, (iters_done + cycleniter - 1) // cycleniter)
-        major_done = max(major_done, major_by_iter)
+        major_done = max(major_done, major_by_iter, nmajor)
 
         peak_res = float('nan')
         summaryminor = result.get('summaryminor', None)
@@ -264,19 +236,6 @@ def _run_tclean_with_progress(
     return result
 
 
-def _parse_uvtaper(uvtaper_str: str) -> list[str]:
-    """Parse a comma-separated uvtaper string into a CASA list.
-
-    Examples:
-      ''                          -> []          (no taper)
-      '60arcsec'                  -> ['60arcsec']
-      '90arcsec,60arcsec,45deg'   -> ['90arcsec', '60arcsec', '45deg']
-    """
-    if not uvtaper_str or not uvtaper_str.strip():
-        return []
-    return [s.strip() for s in uvtaper_str.split(',') if s.strip()]
-
-
 def _uvrange_expr(uvmin_klambda: float, uvmax_klambda: float | None) -> str:
     if uvmax_klambda is None:
         return f'>{uvmin_klambda:.3f}klambda'
@@ -293,20 +252,6 @@ def _uvrange_from_args(args: argparse.Namespace) -> str:
             return f'>{lo:.1f}m'
         return f'{lo:.1f}~{hi_m:.1f}m'
     return _uvrange_expr(args.uvmin_klambda, args.uvmax_klambda)
-
-
-def _antenna_selector_from_args(args: argparse.Namespace) -> str:
-    include_sel = str(getattr(args, 'antenna', '') or '').strip()
-    exclude_sel = str(getattr(args, 'exclude_baselines', '') or '').strip()
-
-    exclude_terms = [tok.strip().lstrip('!') for tok in exclude_sel.split(';') if tok.strip()]
-    exclude_expr = ';'.join([f'!{tok}' for tok in exclude_terms])
-
-    if include_sel and exclude_sel:
-        return f'{include_sel};{exclude_expr}'
-    if exclude_expr:
-        return exclude_expr
-    return include_sel
 
 
 def _remove_path(path: Path) -> None:
@@ -408,206 +353,29 @@ def _to_casa_timerange(mjd_center: float, half_width_sec: float) -> str:
     return f'{s0}~{s1}'
 
 
-def _parse_casa_datetime_to_mjd(text: str) -> float:
-    s = str(text).strip()
-    if not s:
-        raise ValueError('empty CASA datetime')
-    parts = s.split('/')
-    if len(parts) < 4:
-        raise ValueError(f'invalid CASA datetime: {text}')
-    isot = '-'.join(parts[:3]) + 'T' + '/'.join(parts[3:])
-    return float(Time(isot, format='isot', scale='utc').mjd)
-
-
-def _filter_integration_times_by_timerange(times_mjd: np.ndarray, timerange: str) -> np.ndarray:
-    timerange = str(timerange or '').strip()
-    if not timerange:
-        return np.asarray(times_mjd, dtype=np.float64)
-
-    if '~' not in timerange:
-        print(f'[CASA] warning: per-integration timerange ignored (missing ~): {timerange}')
-        return np.asarray(times_mjd, dtype=np.float64)
-
-    start_s, end_s = timerange.split('~', 1)
-    try:
-        mjd0 = _parse_casa_datetime_to_mjd(start_s)
-        mjd1 = _parse_casa_datetime_to_mjd(end_s)
-    except Exception as exc:
-        print(f'[CASA] warning: per-integration timerange parse failed ({exc}); using all integrations')
-        return np.asarray(times_mjd, dtype=np.float64)
-
-    lo, hi = sorted((float(mjd0), float(mjd1)))
-    arr = np.asarray(times_mjd, dtype=np.float64)
-    keep = (arr >= lo) & (arr <= hi)
-    return arr[keep]
-
-
 def _moon_phasecenter_j2000(mjd_utc: float) -> str:
-    """Return the Moon's topocentric J2000 direction at GMRT for the given MJD (UTC, days).
-
-    Uses CASA measures exclusively so that the topocentric position (with the
-    GMRT position frame set) and internal CASA ephemeris are used consistently.
-    The previous astropy-based approach passed geocentric GCRS coordinates as
-    if they were topocentric apparent, introducing a ~57 arcmin error (lunar
-    horizontal parallax).
-    """
     from casatools import measures, quanta  # type: ignore
 
-    t_isot = Time(mjd_utc, format='mjd', scale='utc').isot
+    gmrt = EarthLocation.from_geodetic(lon=74.0497 * u.deg, lat=19.0965 * u.deg, height=650 * u.m)
+    t = Time(mjd_utc, format='mjd', scale='utc', location=gmrt)
+    # Compute the topocentric apparent Moon position at GMRT, then convert it
+    # to a CASA-compatible J2000 direction using CASA measures at the same
+    # observatory and epoch.  Direct ICRS/J2000 from astropy under-tracks the
+    # Moon here, while direct APP failed in phaseshift on this MS.
+    moon_app = cast(Any, get_body('moon', t, location=gmrt))
+    app_ra = moon_app.ra.to_string(unit=u.hour, sep='hms', precision=3, pad=True)
+    app_dec = moon_app.dec.to_string(unit=u.deg, sep='dms', precision=3, alwayssign=True, pad=True)
 
     me = measures()
     qa = quanta()
-    # Set observatory position so me.direction('MOON') gives topocentric coords
     me.doframe(me.position('WGS84', '74.0497deg', '19.0965deg', '650m'))
-    me.doframe(me.epoch('UTC', t_isot))
-    # CASA internal ephemeris computes the topocentric apparent Moon direction
-    moon_dir = me.direction('MOON')
-    j2000_dir = me.measure(moon_dir, 'J2000')
+    me.doframe(me.epoch('UTC', t.isot))
+    app_dir = me.direction('APP', app_ra, app_dec)
+    j2000_dir = me.measure(app_dir, 'J2000')
 
-    ra  = qa.formxxx(j2000_dir['m0'], format='hms', prec=4)
-    dec = qa.formxxx(j2000_dir['m1'], format='dms', prec=4)
+    ra = qa.formxxx(j2000_dir['m0'], format='hms', prec=3)
+    dec = qa.formxxx(j2000_dir['m1'], format='dms', prec=3)
     return f'J2000 {ra} {dec}'
-
-
-def _run_one_moon_integration_job(job: dict[str, Any]) -> dict[str, Any]:
-    idx = int(job['idx'])
-    phase_strategy = str(job.get('phase_strategy', 'phaseshift')).strip().lower()
-    int_ms = Path(str(job['int_ms']))
-    phased_ms = Path(str(job['phased_ms']))
-    int_imagename = Path(str(job['int_imagename']))
-    image_path = Path(str(int_imagename) + '.image')
-    fits_out = Path(str(int_imagename) + '.image.fits')
-
-    def _rm(path: Path) -> None:
-        if not path.exists():
-            return
-        if path.is_dir():
-            shutil.rmtree(path, ignore_errors=True)
-        else:
-            path.unlink(missing_ok=True)
-
-    def _cleanup_imagename_products(imagename: Path, keep_image_fits: bool) -> None:
-        prefix = imagename.parent / imagename.name
-        for p in prefix.parent.glob(prefix.name + '.*'):
-            if keep_image_fits and p.name.endswith('.image.fits'):
-                continue
-            _rm(p)
-
-    try:
-        from casatasks import exportfits, tclean  # type: ignore
-        phaseshift_task = None
-        fixvis_task = None
-        split = None
-        if phase_strategy == 'phaseshift':
-            from casatasks import split  # type: ignore
-            try:
-                from casatasks import phaseshift as phaseshift_task  # type: ignore
-            except Exception:
-                phaseshift_task = None
-            try:
-                from casatasks import fixvis as fixvis_task  # type: ignore
-            except Exception:
-                fixvis_task = None
-    except Exception as exc:
-        return {'idx': idx, 'ok': False, 'error': f'CASA import failed: {exc}'}
-
-    if phase_strategy == 'phaseshift':
-        _rm(int_ms)
-        _rm(phased_ms)
-    _cleanup_imagename_products(int_imagename, keep_image_fits=True)
-
-    try:
-        tclean_vis = str(job['ms_path'])
-        tclean_timerange = str(job['timerange'])
-        tclean_phasecenter = str(job['phasecenter'])
-
-        if phase_strategy == 'phaseshift':
-            if split is None:
-                return {'idx': idx, 'ok': False, 'error': 'CASA split task unavailable for phaseshift strategy'}
-            split(
-                vis=str(job['ms_path']),
-                outputvis=str(int_ms),
-                datacolumn='data',
-                timerange=tclean_timerange,
-                spw=str(job['spw']),
-                keepflags=False,
-            )
-            if not int_ms.exists():
-                return {'idx': idx, 'ok': False, 'error': 'split did not produce integration MS'}
-
-            if phaseshift_task is not None:
-                phaseshift_task(
-                    vis=str(int_ms),
-                    outputvis=str(phased_ms),
-                    phasecenter=tclean_phasecenter,
-                )
-            elif fixvis_task is not None:
-                fixvis_task(
-                    vis=str(int_ms),
-                    outputvis=str(phased_ms),
-                    phasecenter=tclean_phasecenter,
-                )
-            else:
-                return {'idx': idx, 'ok': False, 'error': 'No phaseshift/fixvis task available'}
-
-            tclean_vis = str(phased_ms)
-            tclean_timerange = ''
-            tclean_phasecenter = ''
-
-        tclean(
-            vis=tclean_vis,
-            imagename=str(int_imagename),
-            antenna=str(job['antenna_sel']),
-            spw=str(job['spw']),
-            timerange=tclean_timerange,
-            phasecenter=tclean_phasecenter,
-            imsize=job['imsize'],
-            cell=str(job['cell']),
-            specmode='mfs',
-            deconvolver=str(job['deconvolver']),
-            scales=job['scales'],
-            smallscalebias=float(job['smallscalebias']),
-            weighting=str(job['weighting']),
-            robust=float(job['robust']),
-            uvtaper=job['uvtaper'],
-            gain=float(job['gain']),
-            cyclefactor=float(job['cyclefactor']),
-            niter=int(job['integration_niter']),
-            cycleniter=int(job['integration_cycleniter']),
-            threshold=str(job['threshold']),
-            stokes=str(job['stokes']),
-            uvrange=str(job['uvrange']),
-            gridder='wproject' if bool(job['wproject']) else 'standard',
-            wprojplanes=int(job['wprojplanes']) if bool(job['wproject']) else -1,
-            interactive=False,
-            nmajor=int(job['integration_nmajor']),
-            pbcor=False,
-            pblimit=float(job.get('pblimit', -1.0)),
-            calcpsf=True,
-            calcres=True,
-            savemodel='none',
-        )
-
-        if image_path.exists():
-            if fits_out.exists():
-                _rm(fits_out)
-            exportfits(imagename=str(image_path), fitsimage=str(fits_out), overwrite=True)
-
-        ok = fits_out.exists()
-        if not bool(job['keep_integration_products']):
-            _cleanup_imagename_products(int_imagename, keep_image_fits=True)
-        return {
-            'idx': idx,
-            'ok': bool(ok),
-            'fits_out': str(fits_out),
-            'error': '' if ok else 'no FITS output from integration',
-        }
-    except Exception as exc:
-        return {'idx': idx, 'ok': False, 'error': str(exc)}
-    finally:
-        if phase_strategy == 'phaseshift':
-            _rm(int_ms)
-            _rm(phased_ms)
 
 
 def _image_moon_per_integration(
@@ -624,35 +392,16 @@ def _image_moon_per_integration(
 ) -> None:
     times_mjd, cadence_sec = _get_unique_integration_times_mjd(ms_path)
     step = max(1, int(args.integration_step))
-    timerange_filter = str(args.timerange or '').strip()
-    times_mjd = _filter_integration_times_by_timerange(times_mjd, timerange_filter)
     selected = times_mjd[::step]
     total = len(selected)
     half_width_sec = max(0.1, 0.45 * cadence_sec)
-    phasecenter_mode = str(getattr(args, 'integration_phasecenter_mode', 'moon') or 'moon').strip().lower()
-    phase_strategy = str(args.phase_strategy).strip().lower()
-
-    if total == 0:
-        raise RuntimeError(f'No integrations selected for {label}; check --timerange and integration-step')
-    if phasecenter_mode not in ('moon', 'observed'):
-        raise RuntimeError(f'Unsupported integration phasecenter mode: {phasecenter_mode}')
-    if phasecenter_mode == 'observed' and phase_strategy == 'phaseshift':
-        raise RuntimeError('Static per-integration imaging at the observed phase centre must use --phase-strategy tclean, not phaseshift')
-
-    effective_wprojplanes = int(args.wprojplanes) if bool(args.wproject) else -1
 
     print(
-        f'[CASA] per-integration mode: {label} integrations={len(times_mjd)} '
+        f'[CASA] moon-track mode: {label} integrations={len(times_mjd)} '
         f'(using every {step} -> {total}), cadence~{cadence_sec:.2f}s, '
         f'niter/int={int(args.integration_niter)}, cycleniter/int={int(args.integration_cycleniter)}, '
-        f'nmajor/int={int(args.integration_nmajor)}, jobs/int={int(args.integration_jobs)}, '
-        f'phase_strategy={str(args.phase_strategy)}, '
-        f'phasecenter_mode={phasecenter_mode}, '
-        f'wproject={bool(args.wproject)}, '
-        f'wprojplanes={effective_wprojplanes}'
+        f'nmajor/int={int(args.integration_nmajor)}, wprojplanes={int(args.wprojplanes)}'
     )
-    antenna_sel = _antenna_selector_from_args(args)
-    print(f'[CASA] effective antenna selector (per-integration): {antenna_sel or "all"}')
 
     cube_times_mjd: list[float] = [float(mjd) for mjd in selected]
     cube_tmp = imagename_base.parent / f'{imagename_base.name}_moontrack_cube.tmp.dat'
@@ -668,273 +417,139 @@ def _image_moon_per_integration(
     max_data = None
     n_valid_planes = 0
 
-    jobs = max(1, int(args.integration_jobs))
-    imsize_norm = _normalize_imsize(args.imsize)
-    scales_norm = _parse_scales(args.scales)
-    uvrange = _uvrange_from_args(args)
+    for idx, mjd in enumerate(selected, start=1):
+        timerange = _to_casa_timerange(float(mjd), half_width_sec)
+        phasecenter = _moon_phasecenter_j2000(float(mjd))
 
-    if jobs == 1:
-        for idx, mjd in enumerate(selected, start=1):
-            timerange = _to_casa_timerange(float(mjd), half_width_sec)
-            phasecenter = _moon_phasecenter_j2000(float(mjd)) if phasecenter_mode == 'moon' else ''
+        int_ms = imagename_base.parent / f'{label}__int{idx:04d}.ms'
+        phased_ms = imagename_base.parent / f'{label}__int{idx:04d}_phased.ms'
+        int_imagename = imagename_base.parent / f'{label}__int{idx:04d}'
 
-            int_ms = imagename_base.parent / f'{label}__int{idx:04d}.ms'
-            phased_ms = imagename_base.parent / f'{label}__int{idx:04d}_phased.ms'
-            int_imagename = imagename_base.parent / f'{label}__int{idx:04d}'
+        _remove_path(int_ms)
+        _remove_path(phased_ms)
+        _remove_imagename_products(int_imagename)
 
-            if phase_strategy == 'phaseshift':
-                _remove_path(int_ms)
-                _remove_path(phased_ms)
-            _remove_imagename_products(int_imagename)
+        split_task(
+            vis=str(ms_path),
+            outputvis=str(int_ms),
+            datacolumn='data',
+            timerange=timerange,
+            spw=str(args.spw or ''),
+            keepflags=False,
+        )
+        if not int_ms.exists():
+            continue
 
-            tclean_vis = str(ms_path)
-            tclean_timerange = timerange
-            tclean_phasecenter = phasecenter
-
-            if phase_strategy == 'phaseshift':
-                split_task(
-                    vis=str(ms_path),
-                    outputvis=str(int_ms),
-                    datacolumn='data',
-                    timerange=timerange,
-                    spw=str(args.spw or ''),
-                    keepflags=False,
-                )
-                if not int_ms.exists():
-                    continue
-
-                if phaseshift_task is not None:
-                    phaseshift_task(
-                        vis=str(int_ms),
-                        outputvis=str(phased_ms),
-                        phasecenter=phasecenter,
-                    )
-                elif fixvis_task is not None:
-                    fixvis_task(
-                        vis=str(int_ms),
-                        outputvis=str(phased_ms),
-                        phasecenter=phasecenter,
-                    )
-                else:
-                    raise RuntimeError('No CASA phase-shift task available (phaseshift/fixvis).')
-
-                tclean_vis = str(phased_ms)
-                tclean_timerange = ''
-                tclean_phasecenter = ''
-
-            tclean_task(
-                vis=tclean_vis,
-                imagename=str(int_imagename),
-                antenna=antenna_sel,
-                spw=str(args.spw or ''),
-                timerange=tclean_timerange,
-                phasecenter=tclean_phasecenter,
-                imsize=imsize_norm,
-                cell=args.cell,
-                specmode='mfs',
-                deconvolver=args.deconvolver,
-                scales=scales_norm,
-                smallscalebias=float(args.smallscalebias),
-                weighting=args.weighting,
-                robust=args.robust,
-                uvtaper=_parse_uvtaper(args.uvtaper),
-                gain=float(args.gain),
-                cyclefactor=float(args.cyclefactor),
-                niter=int(args.integration_niter),
-                cycleniter=int(args.integration_cycleniter),
-                threshold=args.threshold,
-                stokes=args.stokes,
-                uvrange=uvrange,
-                gridder='wproject' if args.wproject else 'standard',
-                wprojplanes=int(args.wprojplanes) if args.wproject else -1,
-                interactive=False,
-                nmajor=int(args.integration_nmajor),
-                pbcor=False,
-                pblimit=float(args.pblimit),
-                calcpsf=True,
-                calcres=True,
-                savemodel='none',
+        # Both phaseshift and fixvis (when given a new phasecenter) apply the
+        # e^{2pi i (u*dl + v*dm)} phase rotation to the DATA column and recompute
+        # UVW. phaseshift is the preferred modern task; fixvis is the fallback.
+        if phaseshift_task is not None:
+            phaseshift_task(
+                vis=str(int_ms),
+                outputvis=str(phased_ms),
+                phasecenter=phasecenter,
             )
+        elif fixvis_task is not None:
+            fixvis_task(
+                vis=str(int_ms),
+                outputvis=str(phased_ms),
+                phasecenter=phasecenter,
+            )
+        else:
+            raise RuntimeError('No CASA phase-shift task available (phaseshift/fixvis).')
 
-            image_path = Path(str(int_imagename) + '.image')
-            fits_out = Path(str(int_imagename) + '.image.fits')
-            if image_path.exists():
-                if fits_out.exists():
-                    _remove_path(fits_out)
+        tclean_task(
+            vis=str(phased_ms),
+            imagename=str(int_imagename),
+            spw=str(args.spw or ''),
+            phasecenter=phasecenter,
+            imsize=_normalize_imsize(args.imsize),
+            cell=args.cell,
+            specmode='mfs',
+            deconvolver=args.deconvolver,
+            scales=_parse_scales(args.scales),
+            smallscalebias=float(args.smallscalebias),
+            weighting=args.weighting,
+            robust=args.robust,
+            niter=int(args.integration_niter),
+            cycleniter=int(args.integration_cycleniter),
+            threshold=args.threshold,
+            stokes=args.stokes,
+            uvrange=_uvrange_from_args(args),
+            gridder='wproject' if args.wproject else 'standard',
+            wprojplanes=int(args.wprojplanes) if args.wproject else -1,
+            interactive=False,
+            nmajor=int(args.integration_nmajor),
+            pbcor=False,
+            calcpsf=True,
+            calcres=True,
+            savemodel='none',
+        )
+
+        image_path = Path(str(int_imagename) + '.image')
+        fits_out = Path(str(int_imagename) + '.image.fits')
+        if image_path.exists():
+            if fits_out.exists():
+                _remove_path(fits_out)
+            try:
+                exportfits_task(imagename=str(image_path), fitsimage=str(fits_out), overwrite=True)
+            except Exception as exc:
+                print(f'[CASA] warning: exportfits failed for integration {idx}: {exc}')
+            if fits_out.exists():
                 try:
-                    exportfits_task(imagename=str(image_path), fitsimage=str(fits_out), overwrite=True)
-                except Exception as exc:
-                    print(f'[CASA] warning: exportfits failed for integration {idx}: {exc}')
-                if fits_out.exists():
-                    try:
-                        with fits.open(fits_out) as hdul:
-                            primary = cast(Any, hdul[0])
-                            image = np.asarray(primary.data, dtype=np.float32)
-                            if image.ndim == 4:
-                                image = image[0, 0, :, :]
-                            elif image.ndim != 2:
-                                image = np.squeeze(image)
+                    with fits.open(fits_out) as hdul:
+                        primary = cast(Any, hdul[0])
+                        image = np.asarray(primary.data, dtype=np.float32)
+                        if image.ndim == 4:
+                            image = image[0, 0, :, :]
+                        elif image.ndim != 2:
+                            image = np.squeeze(image)
 
-                            if image.ndim != 2:
-                                print(f'[CASA] warning: unexpected dimensionality in {fits_out.name}, leaving cube plane as NaN')
+                        if image.ndim != 2:
+                            print(f'[CASA] warning: unexpected dimensionality in {fits_out.name}, leaving cube plane as NaN')
+                        else:
+                            if cube_mm is None:
+                                header0 = primary.header.copy()
+                                shape2d = image.shape
+                                ny, nx = shape2d
+                                cube_mm = np.memmap(cube_tmp, mode='w+', dtype=np.float32, shape=(total, ny, nx))
+                                cube_mm[:] = np.nan
+                                count = np.zeros((ny, nx), dtype=np.uint32)
+                                sum_data = np.zeros((ny, nx), dtype=np.float64)
+                                sum_sq = np.zeros((ny, nx), dtype=np.float64)
+                                max_data = np.full((ny, nx), -np.inf, dtype=np.float32)
+
+                            if shape2d is None or image.shape != shape2d:
+                                print(f'[CASA] warning: shape mismatch in {fits_out.name}, leaving cube plane as NaN')
                             else:
-                                if cube_mm is None:
-                                    header0 = primary.header.copy()
-                                    shape2d = image.shape
-                                    ny, nx = shape2d
-                                    cube_mm = np.memmap(cube_tmp, mode='w+', dtype=np.float32, shape=(total, ny, nx))
-                                    cube_mm[:] = np.nan
-                                    count = np.zeros((ny, nx), dtype=np.uint32)
-                                    sum_data = np.zeros((ny, nx), dtype=np.float64)
-                                    sum_sq = np.zeros((ny, nx), dtype=np.float64)
-                                    max_data = np.full((ny, nx), -np.inf, dtype=np.float32)
+                                cube_mm[idx - 1, :, :] = image
+                                n_valid_planes += 1
 
-                                if shape2d is None or image.shape != shape2d:
-                                    print(f'[CASA] warning: shape mismatch in {fits_out.name}, leaving cube plane as NaN')
-                                else:
-                                    cube_mm[idx - 1, :, :] = image
-                                    n_valid_planes += 1
-
-                                    if count is not None and sum_data is not None and sum_sq is not None and max_data is not None:
-                                        finite = np.isfinite(image)
-                                        count[finite] += 1
-                                        image64 = image.astype(np.float64, copy=False)
-                                        sum_data[finite] += image64[finite]
-                                        sum_sq[finite] += image64[finite] ** 2
-                                        max_data = np.where(finite, np.maximum(max_data, image), max_data)
-                    finally:
-                        if not bool(args.keep_integration_fits):
-                            _remove_path(fits_out)
-                else:
-                    print(f'[CASA] warning: no FITS image for integration {idx}, skipping in stack')
+                                if count is not None and sum_data is not None and sum_sq is not None and max_data is not None:
+                                    finite = np.isfinite(image)
+                                    count[finite] += 1
+                                    image64 = image.astype(np.float64, copy=False)
+                                    sum_data[finite] += image64[finite]
+                                    sum_sq[finite] += image64[finite] ** 2
+                                    max_data = np.where(finite, np.maximum(max_data, image), max_data)
+                finally:
+                    if not bool(args.keep_integration_fits):
+                        _remove_path(fits_out)
             else:
-                print(f'[CASA] warning: no .image product for integration {idx}, skipping in stack')
+                print(f'[CASA] warning: no FITS image for integration {idx}, skipping in stack')
+        else:
+            print(f'[CASA] warning: no .image product for integration {idx}, skipping in stack')
 
-            if idx % 5 == 0 or idx == total:
-                print(f'[CASA] moon-track progress: integration {idx}/{total}')
+        if idx % 5 == 0 or idx == total:
+            print(f'[CASA] moon-track progress: integration {idx}/{total}')
 
-            if phase_strategy == 'phaseshift':
-                _remove_path(int_ms)
-                _remove_path(phased_ms)
-            if not bool(args.keep_integration_products):
-                _remove_imagename_products(
-                    int_imagename,
-                    keep_image_fits=bool(args.keep_integration_fits),
-                )
-    else:
-        print(f'[CASA] moon-track parallel mode: submitting {total} integrations with jobs={jobs}')
-        futures = {}
-        results_by_idx: dict[int, dict[str, Any]] = {}
-        ex = None
-        try:
-            ex = concurrent.futures.ProcessPoolExecutor(max_workers=jobs)
-            for idx, mjd in enumerate(selected, start=1):
-                timerange = _to_casa_timerange(float(mjd), half_width_sec)
-                phasecenter = _moon_phasecenter_j2000(float(mjd)) if phasecenter_mode == 'moon' else ''
-                int_ms = imagename_base.parent / f'{label}__int{idx:04d}.ms'
-                phased_ms = imagename_base.parent / f'{label}__int{idx:04d}_phased.ms'
-                int_imagename = imagename_base.parent / f'{label}__int{idx:04d}'
-                job = {
-                    'idx': idx,
-                    'ms_path': str(ms_path),
-                    'phase_strategy': phase_strategy,
-                    'timerange': timerange,
-                    'phasecenter': phasecenter,
-                    'int_ms': str(int_ms),
-                    'phased_ms': str(phased_ms),
-                    'int_imagename': str(int_imagename),
-                    'spw': str(args.spw or ''),
-                    'imsize': imsize_norm,
-                    'cell': args.cell,
-                    'deconvolver': args.deconvolver,
-                    'scales': scales_norm,
-                    'smallscalebias': float(args.smallscalebias),
-                    'weighting': args.weighting,
-                    'robust': float(args.robust),
-                    'uvtaper': _parse_uvtaper(args.uvtaper),
-                    'gain': float(args.gain),
-                    'cyclefactor': float(args.cyclefactor),
-                    'integration_niter': int(args.integration_niter),
-                    'integration_cycleniter': int(args.integration_cycleniter),
-                    'threshold': args.threshold,
-                    'stokes': args.stokes,
-                    'uvrange': uvrange,
-                    'wproject': bool(args.wproject),
-                    'wprojplanes': int(args.wprojplanes),
-                    'pblimit': float(args.pblimit),
-                    'integration_nmajor': int(args.integration_nmajor),
-                    'antenna_sel': antenna_sel,
-                    'keep_integration_products': bool(args.keep_integration_products),
-                }
-                fut = ex.submit(_run_one_moon_integration_job, job)
-                futures[fut] = idx
-
-            done = 0
-            for fut in concurrent.futures.as_completed(futures):
-                idx = futures[fut]
-                try:
-                    results_by_idx[idx] = fut.result()
-                except Exception as exc:
-                    results_by_idx[idx] = {'idx': idx, 'ok': False, 'error': str(exc)}
-                done += 1
-                if done % 5 == 0 or done == total:
-                    print(f'[CASA] moon-track progress: completed {done}/{total} integration jobs')
-
-            for idx in range(1, total + 1):
-                r = results_by_idx.get(idx, {'ok': False, 'error': 'missing worker result'})
-                fits_out = Path(str(imagename_base.parent / f'{label}__int{idx:04d}') + '.image.fits')
-                if not bool(r.get('ok', False)) or (not fits_out.exists()):
-                    print(f"[CASA] warning: integration {idx} failed/empty: {r.get('error', 'no FITS')} ")
-                    continue
-
-                with fits.open(fits_out) as hdul:
-                    primary = cast(Any, hdul[0])
-                    image = np.asarray(primary.data, dtype=np.float32)
-                    if image.ndim == 4:
-                        image = image[0, 0, :, :]
-                    elif image.ndim != 2:
-                        image = np.squeeze(image)
-
-                    if image.ndim != 2:
-                        print(f'[CASA] warning: unexpected dimensionality in {fits_out.name}, leaving cube plane as NaN')
-                        continue
-
-                    if cube_mm is None:
-                        header0 = primary.header.copy()
-                        shape2d = image.shape
-                        ny, nx = shape2d
-                        cube_mm = np.memmap(cube_tmp, mode='w+', dtype=np.float32, shape=(total, ny, nx))
-                        cube_mm[:] = np.nan
-                        count = np.zeros((ny, nx), dtype=np.uint32)
-                        sum_data = np.zeros((ny, nx), dtype=np.float64)
-                        sum_sq = np.zeros((ny, nx), dtype=np.float64)
-                        max_data = np.full((ny, nx), -np.inf, dtype=np.float32)
-
-                    if shape2d is None or image.shape != shape2d:
-                        print(f'[CASA] warning: shape mismatch in {fits_out.name}, leaving cube plane as NaN')
-                        continue
-
-                    cube_mm[idx - 1, :, :] = image
-                    n_valid_planes += 1
-
-                    if count is not None and sum_data is not None and sum_sq is not None and max_data is not None:
-                        finite = np.isfinite(image)
-                        count[finite] += 1
-                        image64 = image.astype(np.float64, copy=False)
-                        sum_data[finite] += image64[finite]
-                        sum_sq[finite] += image64[finite] ** 2
-                        max_data = np.where(finite, np.maximum(max_data, image), max_data)
-
-                if not bool(args.keep_integration_fits):
-                    _remove_path(fits_out)
-        except KeyboardInterrupt:
-            print('[CASA] Ctrl-C received, terminating worker processes...')
-            if ex is not None:
-                ex.shutdown(wait=False, cancel_futures=True)
-            raise SystemExit('User interrupted parallel imaging')
-        finally:
-            if ex is not None:
-                ex.shutdown(wait=True)
+        _remove_path(int_ms)
+        _remove_path(phased_ms)
+        if not bool(args.keep_integration_products):
+            _remove_imagename_products(
+                int_imagename,
+                keep_image_fits=bool(args.keep_integration_fits),
+            )
 
     if cube_mm is None or n_valid_planes == 0 or shape2d is None:
         raise RuntimeError(f'No per-integration images generated for {label}')
@@ -952,8 +567,6 @@ def _image_moon_per_integration(
         cube_hdr['NAXIS1'] = int(nx)
         cube_hdr['NAXIS2'] = int(ny)
         cube_hdr['NAXIS3'] = int(total)
-        for _j in range(4, 10):
-            cube_hdr.remove(f'NAXIS{_j}', ignore_missing=True)
         cube_hdr['CTYPE3'] = 'TIME'
         cube_hdr['CUNIT3'] = 'd'
         cube_hdr['CRPIX3'] = 1.0
@@ -994,9 +607,6 @@ def _image_moon_per_integration(
         if p.exists() and args.overwrite:
             _remove_path(p)
         h = hdr.copy()
-        for _j in range(3, 10):
-            h.remove(f'NAXIS{_j}', ignore_missing=True)
-        h['NAXIS'] = 2
         h['NINTS'] = int(n_valid_planes)
         h['NINTSEXP'] = int(total)
         h['HISTORY'] = f'Moon per-integration stacked image ({method_label}), valid={n_valid_planes}, expected={total}'
@@ -1144,14 +754,7 @@ def _cross_scan_stack(fits_paths, outdir, method='mean', overwrite=False):
 
 def main() -> int:
     args = _parse_args()
-    require_phase_tools = (
-        bool(args.moon_track_per_integration)
-        and str(args.phase_strategy) == 'phaseshift'
-        and str(getattr(args, 'integration_phasecenter_mode', 'moon') or 'moon').strip().lower() == 'moon'
-    )
-    importuvfits, tclean, exportfits, split_task, fixvis_task, phaseshift_task = _import_casa_tasks(
-        require_phase_tools=require_phase_tools
-    )
+    importuvfits, tclean, exportfits, split_task, fixvis_task, phaseshift_task = _import_casa_tasks()
 
     outdir = Path(args.outdir).expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
@@ -1159,10 +762,8 @@ def main() -> int:
     imsize = _normalize_imsize(args.imsize)
     scales = _parse_scales(args.scales)
     uvrange = _uvrange_from_args(args)
-    antenna_sel = _antenna_selector_from_args(args)
     spw_sel = str(args.spw or '').strip()
     spw_label = spw_sel if spw_sel else 'all'
-    native_track_phasecenter = str(getattr(args, 'native_track_phasecenter', '') or '').strip()
 
     scan_stack_fits = []  # per-scan moontrack stacked FITS for cross-scan stack
     for fits_path_str in args.fits:
@@ -1206,17 +807,10 @@ def main() -> int:
         else:
             print(f'[CASA] reusing existing MS: {ms_path}')
 
-        effective_wprojplanes = int(args.wprojplanes) if bool(args.wproject) else -1
-
         print(
             f'[CASA] tclean: label={label} imsize={imsize} cell={args.cell} '
-            f'uvrange={uvrange} stokes={args.stokes} spw={spw_label} '
-            f'timerange={args.timerange or "all"} antenna={antenna_sel or "all"} '
-            f'native_track={native_track_phasecenter or "off"} '
-            f'integration_phasecenter_mode={str(getattr(args, "integration_phasecenter_mode", "moon") or "moon")} '
-            f'wproject={bool(args.wproject)} wprojplanes={effective_wprojplanes}'
+            f'uvrange={uvrange} stokes={args.stokes} spw={spw_label}'
         )
-        print(f'[CASA] effective antenna selector: {antenna_sel or "all"}')
         if args.moon_track_per_integration:
             _image_moon_per_integration(
                 ms_path=ms_path,
@@ -1243,9 +837,7 @@ def main() -> int:
                 cycles_per_report=args.cycles_per_report,
                 vis=str(ms_path),
                 imagename=str(imagename),
-                antenna=antenna_sel,
                 spw=spw_sel,
-                timerange=str(args.timerange or ''),
                 imsize=imsize,
                 cell=args.cell,
                 specmode='mfs',
@@ -1254,19 +846,13 @@ def main() -> int:
                 smallscalebias=float(args.smallscalebias),
                 weighting=args.weighting,
                 robust=args.robust,
-                uvtaper=_parse_uvtaper(args.uvtaper),
                 threshold=args.threshold,
                 stokes=args.stokes,
-                phasecenter=native_track_phasecenter,
                 uvrange=uvrange,
-                gain=float(args.gain),
-                cyclefactor=float(args.cyclefactor),
-                nmajor=int(args.nmajor),
                 gridder='wproject' if args.wproject else 'standard',
                 wprojplanes=int(args.wprojplanes) if args.wproject else -1,
                 interactive=False,
                 pbcor=False,
-                pblimit=float(args.pblimit),
                 savemodel='none',
             )
 

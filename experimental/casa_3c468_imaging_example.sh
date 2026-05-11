@@ -18,7 +18,7 @@ source /Users/raj030/github-wasimraja81/gmrt_analysis/gmrt/bin/activate
 CASA_CMD=${CASA_CMD:-python}
 
 # Input calibrated UVFITS
-CAL_FITS=~/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_calibrated.uvfits
+CAL_FITS=~/DATA/gmrt_40_014/work/split/3c468.1_calibrated.uvfits
 
 # Imaging controls
 OUTDIR=./casa_out/3c468.1

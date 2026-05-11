@@ -7,23 +7,23 @@ set -euo pipefail
 #   calibrated -> do NOT apply tables again
 
 # Raw preset (use with DATA_MODE=raw):
-DATA_MODE="${DATA_MODE:-calibrated}"
-if [[ "$DATA_MODE" == "raw" ]]; then
-  FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
-  INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
-  CHAN_START=64
-  CHAN_END=191
-  OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/primary_tables
-elif [[ "$DATA_MODE" == "calibrated" ]]; then
-  FITS=~/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_secondary_calibrated_flagged.uvfits
-  INDEX=~/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_secondary_calibrated_flagged.uvfits.row_index_cache.npz
-  CHAN_START=0
-  CHAN_END=127
-  OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/primary_and_secondary_tables
-else
-  echo "Invalid DATA_MODE='$DATA_MODE' (use: raw or calibrated)"
-  exit 1
-fi
+DATA_MODE=raw
+FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
+INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
+# Explicit channel selection passed to plotVis.py (overrides CHAN_RANGE in config).
+# Raw preset (original 256-ch file central band):
+CHAN_START=64
+CHAN_END=191
+OUTROOT=./diagnostics_out/primary_tables
+
+## Calibrated preset (use with DATA_MODE=calibrated):
+#DATA_MODE=calibrated
+#FITS=/Users/raj030/DATA/gmrt_40_014/work/split/3c468.1_calibrated.uvfits
+#INDEX=/Users/raj030/DATA/gmrt_40_014/work/split/3c468.1_calibrated.uvfits.row_index_cache.npz
+## Calibrated split preset (128-ch file all channels):
+#CHAN_START=0
+#CHAN_END=127
+#OUTROOT=./diagnostics_out/primary_and_secondary_tables
 
 FLAG=~/DATA/gmrt_40_014/work/3c468.1_flag_table_session.json
 SOURCE=3C468.1
@@ -52,7 +52,7 @@ CMD=(
   --chan-range "$CHAN_START" "$CHAN_END" \
   --elevation-min 25 \
   --products RR,LL \
-  --panels amp_uvdist,phase_uvdist,real_uvdist,imag_uvdist,amp_time,phase_time,real_time,imag_time,az_time,el_time,amp_freq,phase_freq,real_freq,imag_freq,ri_scatter,vector_avg,uv_sampling \
+  --panels amp_uvdist,phase_uvdist,real_uvdist,imag_uvdist,amp_time,phase_time,real_time,imag_time,amp_freq,phase_freq,real_freq,imag_freq,ri_scatter,vector_avg,uv_sampling \
   --sample-frac 0.01 \
   --overlay-flags \
   --multipage both

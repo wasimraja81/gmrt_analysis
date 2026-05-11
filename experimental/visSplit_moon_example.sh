@@ -25,17 +25,6 @@ CHAN_END=191
 STOKES=(RR LL)
 #STOKES=(RR LL RL LR)
 
-# Secondary phase tables toggle:
-#   0 = primary-only calibration
-#   1 = primary + secondary scan phase tables
-USE_SECONDARY=0
-
-if [[ "$USE_SECONDARY" -eq 1 ]]; then
-    CAL_MODE_TAG="primary_secondary"
-else
-    CAL_MODE_TAG="primaryonly"
-fi
-
 # Fallback flag table (used when no Moon-specific table exists)
 FALLBACK_FLAG=~/DATA/gmrt_40_014/work/3c468.1_flag_table_session.json
 
@@ -59,15 +48,12 @@ for SOURCE in "${MOON_SOURCES[@]}"; do
     # Convert source name to a safe filename fragment (lower-case, no special chars)
     TAG="$(echo "$SOURCE" | tr '[:upper:]' '[:lower:]')"  # e.g. moon0520
 
-    OUTPUT="$OUTDIR/${TAG}_${CAL_MODE_TAG}_calibrated.uvfits"
+    OUTPUT="$OUTDIR/${TAG}_calibrated.uvfits"
 
-    # Optional 3C468.1 secondary phase tables (same field → same phase solutions)
-    SECONDARY_TABLES=()
-    if [[ "$USE_SECONDARY" -eq 1 ]]; then
-        shopt -s nullglob
-        SECONDARY_TABLES=(~/DATA/gmrt_40_014/work/3c468.1_secondary_phase_only_scan*.npz)
-        shopt -u nullglob
-    fi
+    # Use the 3C468.1 secondary phase tables (same field → same phase solutions)
+    shopt -s nullglob
+    SECONDARY_TABLES=(~/DATA/gmrt_40_014/work/3c468.1_secondary_phase_only_scan*.npz)
+    shopt -u nullglob
 
     TABLES=("$PRIMARY")
     if [[ ${#SECONDARY_TABLES[@]} -gt 0 ]]; then
@@ -82,7 +68,7 @@ for SOURCE in "${MOON_SOURCES[@]}"; do
         FLAG="$FALLBACK_FLAG"
     fi
 
-    echo "[visSplit-moon] source=$SOURCE  mode=$CAL_MODE_TAG use_secondary=$USE_SECONDARY tables=1+${#SECONDARY_TABLES[@]}  flag=$(basename "$FLAG")  → $OUTPUT"
+    echo "[visSplit-moon] source=$SOURCE  tables=1+${#SECONDARY_TABLES[@]}  flag=$(basename "$FLAG")  → $OUTPUT"
 
     python visSplit.py \
       --config   "$CONFIG" \

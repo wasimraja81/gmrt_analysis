@@ -166,7 +166,7 @@ FITS antenna table. This overcounts when DUD antennas are present.
 ## TODO #3 — Verify & Wire `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED` End-to-End
 
 **Files:** `ugmrt_query.py`, `run_clustering.py`, `preprocess_ugmrt.py`,
-`patch_thresholds.py`, `apply_flag_tables_to_vis` (wherever called).
+`tools/dev/patch_thresholds.py`, `apply_flag_tables_to_vis` (wherever called).
 
 ### Current state
 
@@ -177,7 +177,7 @@ hard-codes `True`:
 
 - `run_clustering.py` line 80: `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED: bool = True`
 - `preprocess_ugmrt.cfg` line 66: `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED = True`
-- `patch_thresholds.py` line 86: `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED = True`
+- `tools/dev/patch_thresholds.py` line 86: `FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED = True`
 
 The underlying function signatures default to `False` (e.g. `ugmrt_query.py`
 lines 2171, 3573, 3987, 4994) — that default is **never** exercised in any
