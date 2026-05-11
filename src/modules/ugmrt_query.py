@@ -3857,6 +3857,29 @@ def derive_point_source_bandpass(
     gains_raw = gains.copy()  # preserve pre-smoothing solutions
     gains = _smooth_complex_bandpass(gains, valid, smooth_window)
 
+    jd_vals = np.asarray(vis.get('jd', []), dtype=np.float64)
+    jd_vals = jd_vals[np.isfinite(jd_vals)]
+    if jd_vals.size:
+        _t0_jd = float(np.nanmin(jd_vals))
+        _t1_jd = float(np.nanmax(jd_vals))
+        _tc_jd = float(0.5 * (_t0_jd + _t1_jd))
+        _t0_utc = Time(_t0_jd, format='jd', scale='utc').isot
+        _t1_utc = Time(_t1_jd, format='jd', scale='utc').isot
+        _tc_utc = Time(_tc_jd, format='jd', scale='utc').isot
+    else:
+        _t0_jd = _t1_jd = _tc_jd = None
+        _t0_utc = _t1_utc = _tc_utc = None
+
+    _el_min_label = f'el>={float(elevation_min_deg):g}°' if elevation_min_deg is not None else None
+    _el_max_label = f'el<={float(elevation_max_deg):g}°' if elevation_max_deg is not None else None
+    _timerange_label = f'{_t0_utc} → {_t1_utc}' if (_t0_utc is not None and _t1_utc is not None) else 'unknown-el-time'
+    _selection_parts = [_timerange_label]
+    if _el_min_label is not None:
+        _selection_parts.append(_el_min_label)
+    if _el_max_label is not None:
+        _selection_parts.append(_el_max_label)
+    _solution_interval_label = ' | '.join(_selection_parts)
+
     return {
         'kind': 'point_source_bandpass',
         'source_name': str(source),
@@ -3889,6 +3912,13 @@ def derive_point_source_bandpass(
         'excluded_baseline_pairs': np.asarray(flag_stats.get('excluded_baseline_pairs', []), dtype=np.int32).reshape(-1, 2),
         'solve_input_rows': int(flag_stats.get('kept_rows', vis.get('nrows', 0))),
         'solve_dropped_rows_by_flag_table': int(flag_stats.get('dropped_rows', 0)),
+        'solution_time_start_jd': _t0_jd,
+        'solution_time_end_jd': _t1_jd,
+        'solution_time_center_jd': _tc_jd,
+        'solution_time_start_utc': _t0_utc,
+        'solution_time_end_utc': _t1_utc,
+        'solution_time_center_utc': _tc_utc,
+        'solution_interval_label': _solution_interval_label,
         # Observed counts (from raw vis before flag-table row drops):
         'obs_active_baselines': _obs_active_bls,
         'obs_active_antennas':  _obs_active_ants,
