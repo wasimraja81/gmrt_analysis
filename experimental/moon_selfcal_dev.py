@@ -123,6 +123,39 @@ def _import_casa() -> Any:
 
 
 # ---------------------------------------------------------------------------
+# UVFITS pre-processing helpers
+# ---------------------------------------------------------------------------
+
+def _patch_uvfits_veldef(uvfits_path: Path, tmp_dir: Path) -> Path:
+    """Return a UVFITS path that is safe to pass to CASA importuvfits.
+
+    CASA casacore requires the VELDEF keyword in the primary HDU header to
+    resolve the frequency reference frame.  GMRT visSplit output omits it,
+    causing the fatal error:
+      "Missing information in Frame specified for conversion"
+
+    If VELDEF is already present the original path is returned unchanged.
+    Otherwise a patched copy is written to *tmp_dir* and that path is returned.
+    The caller should delete tmp_dir when done (or use a tempfile.TemporaryDirectory).
+    """
+    from astropy.io import fits  # type: ignore
+
+    with fits.open(str(uvfits_path), memmap=False) as hdul:
+        hdr = hdul[0].header
+        if hdr.get('VELDEF') is not None:
+            return uvfits_path          # already present — nothing to do
+
+        print('[selfcal-dev] VELDEF missing from UVFITS header — '
+              'writing patched copy with VELDEF = RADIO TOPO')
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        patched = tmp_dir / (uvfits_path.stem + '_veldef_patched.uvfits')
+        # Insert VELDEF right after EQUINOX / before data keywords
+        hdul[0].header['VELDEF'] = ('RADIO TOPO', 'Velocity definition for FREQ axis')
+        hdul.writeto(str(patched), overwrite=True)
+    return patched
+
+
+# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 
@@ -458,7 +491,11 @@ def main() -> int:
         shutil.rmtree(full_ms)
     if not full_ms.exists():
         print(f'[selfcal-dev] Importing UVFITS → {full_ms}')
-        importuvfits(fitsfile=str(args.uvfits), vis=str(full_ms))
+        _tmp_dir = outdir / '_tmp_uvfits_patch'
+        uvfits_for_casa = _patch_uvfits_veldef(args.uvfits, _tmp_dir)
+        importuvfits(fitsfile=str(uvfits_for_casa), vis=str(full_ms))
+        if _tmp_dir.exists():
+            shutil.rmtree(_tmp_dir)
     else:
         print(f'[selfcal-dev] Reusing existing MS: {full_ms}')
 

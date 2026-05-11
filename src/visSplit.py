@@ -511,6 +511,10 @@ def _write_uvfits(
     except Exception:
         primary.header['EQUINOX'] = 2000.0
     primary.header['RADESYS'] = str(orig_header.get('RADESYS', 'FK5'))
+    # VELDEF is required by CASA importuvfits to resolve the FREQ axis frame.
+    # Propagate from original if present; default to RADIO TOPO (topocentric,
+    # standard for correlator/dump output) if absent.
+    primary.header['VELDEF'] = str(orig_header.get('VELDEF', 'RADIO TOPO'))
     if ra_deg is not None and dec_deg is not None:
         primary.header['CRVAL6'] = ra_deg
         primary.header['CRVAL7'] = dec_deg
