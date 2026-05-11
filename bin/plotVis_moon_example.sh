@@ -51,7 +51,6 @@ run_plot() {
         --index-cache "$index"
         --source "$source"
         --chan-range "$CHAN_START" "$CHAN_END"
-        --elevation-min 25
         --products RR,LL
         --panels amp_uvdist,phase_uvdist,real_uvdist,imag_uvdist,amp_time,phase_time,real_time,imag_time,az_time,el_time,amp_freq,phase_freq,real_freq,imag_freq,ri_scatter,vector_avg,uv_sampling
         --sample-frac 0.01

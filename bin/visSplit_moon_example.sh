@@ -74,8 +74,7 @@ run_split() {
         --source "$source"
         --chan-range "$CHAN_START" "$CHAN_END"
         --stokes "${STOKES[@]}"
-        --elevation-min 25
-        "${extra_args[@]}"
+        ${extra_args[@]+"${extra_args[@]}"}
         --flag-tables "$PRIMARY_FLAG" "$SECONDARY_FLAG"
         --out "$output"
         --overwrite
