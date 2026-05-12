@@ -121,21 +121,31 @@ def _casa_circle_mask(ra_deg: float, dec_deg: float, radius_arcmin: float) -> st
 
 
 def _ms_field_radec(ms_path: str) -> tuple[float, float]:
-    """Return (ra_deg, dec_deg) of the stored FIELD phase direction.
+    """Return (ra_deg, dec_deg) of the FIELD phase direction actually used.
 
-    PHASE_DIR is stored in radians in the MS FIELD sub-table.  RA is in
-    [-pi, pi]; we wrap to [0, 360) to match astropy's convention.
+    CASA split preserves all FIELD rows from the parent MS even when only one
+    field is present in the data.  We query FIELD_ID from the MAIN table to
+    find which row is actually referenced, then read PHASE_DIR for that row.
+    PHASE_DIR is in radians, RA in [-pi, pi]; wrap to [0, 360).
     """
     from casatools import table as tb_tool  # type: ignore
     tb = tb_tool()
+    # Find the field ID used in this MS
+    tb.open(ms_path)
+    try:
+        field_ids = tb.getcol('FIELD_ID')
+    finally:
+        tb.close()
+    field_id = int(np.unique(field_ids)[0])
+    # Read that row from the FIELD sub-table
     tb.open(os.path.join(ms_path, 'FIELD'))
     try:
         phase_dir = tb.getcol('PHASE_DIR')  # shape (2, n_poly, n_rows)
-        ra_rad  = float(phase_dir[0, 0, 0])
-        dec_rad = float(phase_dir[1, 0, 0])
+        ra_rad  = float(phase_dir[0, 0, field_id])
+        dec_rad = float(phase_dir[1, 0, field_id])
     finally:
         tb.close()
-    ra_deg = float(np.degrees(ra_rad)) % 360.0   # wrap to [0, 360)
+    ra_deg  = float(np.degrees(ra_rad)) % 360.0   # wrap [-180,180) → [0,360)
     dec_deg = float(np.degrees(dec_rad))
     return ra_deg, dec_deg
 
