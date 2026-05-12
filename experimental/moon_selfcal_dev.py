@@ -439,14 +439,17 @@ def _process_integration(
     print(f'[selfcal-dev]   Moon at RA={ra_deg:.4f}°  Dec={dec_deg:.4f}°  '
           f'offset={offset_arcmin:.2f}arcmin from field centre  '
           f'(image half-width={halfwidth_arcmin:.1f}arcmin)')
-    if offset_arcmin > margin_arcmin:
-        print(f'[selfcal-dev]   WARNING: Moon + mask ({offset_arcmin:.2f} + '
-              f'{args.mask_radius_arcmin:.1f} = '
-              f'{offset_arcmin + args.mask_radius_arcmin:.2f} arcmin) '
-              f'exceeds image half-width ({halfwidth_arcmin:.1f} arcmin). '
+    if offset_arcmin >= halfwidth_arcmin:
+        print(f'[selfcal-dev]   WARNING: Moon centre ({offset_arcmin:.2f} arcmin) '
+              f'is outside image half-width ({halfwidth_arcmin:.1f} arcmin). '
               f'Skipping integration {idx}.')
         shutil.rmtree(str(intdir), ignore_errors=True)
         return None
+    if offset_arcmin > margin_arcmin:
+        print(f'[selfcal-dev]   NOTE: mask circle overhangs image edge '
+              f'({offset_arcmin:.2f} + {args.mask_radius_arcmin:.1f} = '
+              f'{offset_arcmin + args.mask_radius_arcmin:.2f} > {halfwidth_arcmin:.1f} arcmin) '
+              f'-- CASA will clip it, proceeding.')
     print(f'[selfcal-dev]   mask={mask_str}')
 
     imname_base = str(intdir / label)
