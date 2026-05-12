@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -100,11 +101,39 @@ def moon_radec_at_jd(jd: float, location: EarthLocation) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 
 def _casa_circle_mask(ra_deg: float, dec_deg: float, radius_arcmin: float) -> str:
-    """Return a CASA tclean-compatible circular mask region string."""
+    """Return a CASA tclean-compatible sky-coordinate circular mask string."""
     c = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg, frame='icrs')
-    ra_str = c.ra.to_string(unit=u.hour, sep=':', precision=3, pad=True)
-    dec_str = c.dec.to_string(unit=u.deg, sep='.', precision=2, alwayssign=True, pad=True)
+    ra_str  = c.ra.to_string(unit=u.hour, sep=':', precision=3, pad=True)
+    dec_str = c.dec.to_string(unit=u.deg, sep='.', precision=2,
+                              alwayssign=True, pad=True)
     return f"circle[[{ra_str}, {dec_str}], {radius_arcmin:.1f}arcmin]"
+
+
+def _ms_field_radec(ms_path: str) -> tuple[float, float]:
+    """Return (ra_deg, dec_deg) of the stored FIELD phase direction (J2000).
+
+    Reads the PHASE_DIR column from the MS FIELD sub-table — this is the
+    fixed RA/Dec the telescope actually tracked, independent of any ephemeris.
+    """
+    from casatools import table as tb_tool  # type: ignore
+    tb = tb_tool()
+    tb.open(os.path.join(ms_path, 'FIELD'))
+    try:
+        # PHASE_DIR shape: [2, n_poly] per row; take first row, first poly
+        phase_dir = tb.getcol('PHASE_DIR')  # shape (2, n_poly, n_rows)
+        ra_rad  = float(phase_dir[0, 0, 0])
+        dec_rad = float(phase_dir[1, 0, 0])
+    finally:
+        tb.close()
+    return float(np.degrees(ra_rad)), float(np.degrees(dec_rad))
+
+
+def _angular_offset_arcmin(ra1: float, dec1: float,
+                           ra2: float, dec2: float) -> float:
+    """Great-circle angular separation in arcmin between two ICRS positions."""
+    c1 = SkyCoord(ra=ra1 * u.deg, dec=dec1 * u.deg, frame='icrs')
+    c2 = SkyCoord(ra=ra2 * u.deg, dec=dec2 * u.deg, frame='icrs')
+    return float(c1.separation(c2).arcmin)
 
 
 # ---------------------------------------------------------------------------
@@ -374,10 +403,29 @@ def _process_integration(
     print(f'\n[selfcal-dev] === Integration {idx}  JD={jd:.6f}  timerange={timerange} ===')
     split_task(vis=str(full_ms), outputvis=scratch_ms, timerange=timerange, datacolumn='data')
 
-    # ── 2. Moon ephemeris → mask ──────────────────────────────────────────────
+    # ── 2. Moon ephemeris → sky position → mask ────────────────────────────
     ra_deg, dec_deg = moon_radec_at_jd(jd, location)
     mask_str = _casa_circle_mask(ra_deg, dec_deg, args.mask_radius_arcmin)
-    print(f'[selfcal-dev]   Moon at RA={ra_deg:.4f}°  Dec={dec_deg:.4f}°  mask={mask_str}')
+
+    # Check Moon is within the image before proceeding
+    field_ra_deg, field_dec_deg = _ms_field_radec(scratch_ms)
+    offset_arcmin = _angular_offset_arcmin(ra_deg, dec_deg,
+                                           field_ra_deg, field_dec_deg)
+    cell_arcsec   = float(args.cell.replace('arcsec', ''))
+    halfwidth_arcmin = (args.imsize * cell_arcsec / 2.0) / 60.0
+    margin_arcmin = halfwidth_arcmin - args.mask_radius_arcmin
+    print(f'[selfcal-dev]   Moon at RA={ra_deg:.4f}°  Dec={dec_deg:.4f}°  '
+          f'offset={offset_arcmin:.2f}arcmin from field centre  '
+          f'(image half-width={halfwidth_arcmin:.1f}arcmin)')
+    if offset_arcmin > margin_arcmin:
+        print(f'[selfcal-dev]   WARNING: Moon + mask ({offset_arcmin:.2f} + '
+              f'{args.mask_radius_arcmin:.1f} = '
+              f'{offset_arcmin + args.mask_radius_arcmin:.2f} arcmin) '
+              f'exceeds image half-width ({halfwidth_arcmin:.1f} arcmin). '
+              f'Skipping integration {idx}.')
+        shutil.rmtree(str(intdir), ignore_errors=True)
+        return None
+    print(f'[selfcal-dev]   mask={mask_str}')
 
     imname_base = str(intdir / label)
 
@@ -550,7 +598,11 @@ def main() -> int:
             cycles=cycles,
             casa=casa,
         )
-        results.append({'integration': idx_i, 'jd': jd_i, 'fits': str(fits_path)})
+        if fits_path is None:
+            results.append({'integration': idx_i, 'jd': jd_i, 'fits': None,
+                            'skipped': 'moon_outside_image'})
+        else:
+            results.append({'integration': idx_i, 'jd': jd_i, 'fits': str(fits_path)})
 
     # ── Summary ───────────────────────────────────────────────────────────────
     summary_file = outdir / 'summary.json'
