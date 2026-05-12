@@ -129,34 +129,63 @@ def _import_casa() -> Any:
 def _patch_uvfits_veldef(uvfits_path: Path, tmp_dir: Path) -> Path:
     """Return a UVFITS path that is safe to pass to CASA importuvfits.
 
-    CASA casacore requires the VELDEF keyword in the primary HDU header to
-    resolve the frequency reference frame.  GMRT visSplit output omits it,
-    causing the fatal error:
-      "Missing information in Frame specified for conversion"
+    Two patches are applied if needed:
 
-    If VELDEF is already present the original path is returned unchanged.
+    1. VELDEF / SPECSYS — casacore requires VELDEF in the primary HDU to
+       resolve the frequency reference frame; GMRT visSplit output omits it.
+
+    2. PMRA / PMDEC zeroing in the SU table — non-zero values cause casacore
+       to set numPoly=1 and use apparent coordinates (MDirection::APP), which
+       requires a full epoch+position Measures frame.  For the Moon, these
+       fields hold the angular velocity (not a stellar proper motion) and
+       should not be interpreted that way.  Setting them to zero forces
+       casacore to use J2000 RAEPO/DECEPO with numPoly=0.
+
+    If no patches are needed the original path is returned unchanged.
     Otherwise a patched copy is written to *tmp_dir* and that path is returned.
-    The caller should delete tmp_dir when done (or use a tempfile.TemporaryDirectory).
+    The caller should delete tmp_dir when done.
     """
     from astropy.io import fits  # type: ignore
+    import numpy as np
 
     uvfits_path = Path(uvfits_path)
     with fits.open(str(uvfits_path), memmap=False) as hdul:
         hdr = hdul[0].header
-        if hdr.get('VELDEF') is not None:
-            return uvfits_path          # already present — nothing to do
+        need_veldef = hdr.get('VELDEF') is None
+        need_pmra_zero = False
+        for ext_hdu in hdul:
+            if hasattr(ext_hdu, 'name') and 'SU' in str(ext_hdu.name):
+                if hasattr(ext_hdu, 'data') and ext_hdu.data is not None:
+                    if 'PMRA' in ext_hdu.columns.names:
+                        if np.any(ext_hdu.data['PMRA'] != 0.0):
+                            need_pmra_zero = True
+                    if 'PMDEC' in ext_hdu.columns.names:
+                        if np.any(ext_hdu.data['PMDEC'] != 0.0):
+                            need_pmra_zero = True
 
-        print('[selfcal-dev] VELDEF missing from UVFITS header — '
-              'writing patched copy with VELDEF=RADIO, SPECSYS=TOPOCENT')
+        if not need_veldef and not need_pmra_zero:
+            return uvfits_path          # already correct — nothing to do
+
+        msgs = []
+        if need_veldef:
+            msgs.append('VELDEF=RADIO, SPECSYS=TOPOCENT')
+        if need_pmra_zero:
+            msgs.append('PMRA/PMDEC=0 in SU table')
+        print(f'[selfcal-dev] Patching UVFITS for CASA ({", ".join(msgs)})')
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        patched = tmp_dir / (uvfits_path.stem + '_veldef_patched.uvfits')
-        # VELDEF: standard FITS UVFITS velocity definition.
-        #   'RADIO' = topocentric radio convention (f_rest - f) / f_rest * c
-        #   This is the correct value for correlator dump output.
-        # SPECSYS: used by newer casacore/CASA to resolve the spectral frame.
-        #   'TOPOCENT' matches topocentric (observatory-frame) frequencies.
-        hdul[0].header['VELDEF'] = ('RADIO', 'Radio velocity convention (topocentric)')
-        hdul[0].header['SPECSYS'] = ('TOPOCENT', 'Spectral reference frame')
+        patched = tmp_dir / (uvfits_path.stem + '_casa_patched.uvfits')
+
+        if need_veldef:
+            hdul[0].header['VELDEF'] = ('RADIO', 'Radio velocity convention (topocentric)')
+            hdul[0].header['SPECSYS'] = ('TOPOCENT', 'Spectral reference frame')
+        if need_pmra_zero:
+            for i, ext_hdu in enumerate(hdul):
+                if hasattr(ext_hdu, 'name') and 'SU' in str(ext_hdu.name):
+                    if hasattr(ext_hdu, 'data') and ext_hdu.data is not None:
+                        if 'PMRA' in ext_hdu.columns.names:
+                            ext_hdu.data['PMRA'][:] = 0.0
+                        if 'PMDEC' in ext_hdu.columns.names:
+                            ext_hdu.data['PMDEC'][:] = 0.0
         hdul.writeto(str(patched), overwrite=True)
     return patched
 
