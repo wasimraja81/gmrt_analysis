@@ -89,11 +89,22 @@ def _gmrt_location(meta: dict) -> EarthLocation:
 # ---------------------------------------------------------------------------
 
 def moon_radec_at_jd(jd: float, location: EarthLocation) -> tuple[float, float]:
-    """Return (ra_deg, dec_deg) of the Moon in ICRS at the given JD (TT~TDB)."""
+    """Return apparent topocentric (ra_deg, dec_deg) of the Moon at the given JD.
+
+    Uses astropy get_body which returns the GCRS (Geocentric Celestial Reference
+    System) frame for the observer location.  For solar system bodies the GCRS
+    RA/Dec is the *apparent* topocentric direction — the coordinate system that
+    matches what the telescope tracked and what is stored in the MS FIELD table.
+
+    Do NOT transform to ICRS: for the Moon that gives the barycentric direction
+    from the solar system barycentre, which is ~25 degrees different.
+    """
     t = Time(jd, format='jd', scale='utc')
     moon = get_body('moon', t, location=location)
-    c = moon.transform_to('icrs')
-    return float(c.ra.deg), float(c.dec.deg)
+    # moon is in GCRS frame; .ra/.dec give the apparent topocentric RA/Dec
+    ra_deg = float(moon.ra.deg)   # already 0–360
+    dec_deg = float(moon.dec.deg)
+    return ra_deg, dec_deg
 
 
 # ---------------------------------------------------------------------------
@@ -110,22 +121,23 @@ def _casa_circle_mask(ra_deg: float, dec_deg: float, radius_arcmin: float) -> st
 
 
 def _ms_field_radec(ms_path: str) -> tuple[float, float]:
-    """Return (ra_deg, dec_deg) of the stored FIELD phase direction (J2000).
+    """Return (ra_deg, dec_deg) of the stored FIELD phase direction.
 
-    Reads the PHASE_DIR column from the MS FIELD sub-table — this is the
-    fixed RA/Dec the telescope actually tracked, independent of any ephemeris.
+    PHASE_DIR is stored in radians in the MS FIELD sub-table.  RA is in
+    [-pi, pi]; we wrap to [0, 360) to match astropy's convention.
     """
     from casatools import table as tb_tool  # type: ignore
     tb = tb_tool()
     tb.open(os.path.join(ms_path, 'FIELD'))
     try:
-        # PHASE_DIR shape: [2, n_poly] per row; take first row, first poly
         phase_dir = tb.getcol('PHASE_DIR')  # shape (2, n_poly, n_rows)
         ra_rad  = float(phase_dir[0, 0, 0])
         dec_rad = float(phase_dir[1, 0, 0])
     finally:
         tb.close()
-    return float(np.degrees(ra_rad)), float(np.degrees(dec_rad))
+    ra_deg = float(np.degrees(ra_rad)) % 360.0   # wrap to [0, 360)
+    dec_deg = float(np.degrees(dec_rad))
+    return ra_deg, dec_deg
 
 
 def _angular_offset_arcmin(ra1: float, dec1: float,
