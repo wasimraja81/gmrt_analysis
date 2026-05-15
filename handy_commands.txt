@@ -1,5 +1,0 @@
-#FLAG_SERIES_TAG=dev APPLY_SESSION_FLAG=on UVRANGE_KLAMBDA=0 2 bash experimental/plotVis_moon0520_dev.sh 
-
-#python src/plotVis.py --config preprocess_ugmrt.cfg --fits /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged_additional_flags_from_clustering.uvfits --outdir ./tmp --outfile tmp --products RR,LL --uvrange-klambda 0 5 --source MOON0520
-
-python src/plotVis.py --config preprocess_ugmrt.cfg --fits /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged_additional_flags_from_clustering.uvfits --outdir ./tmp --outfile tmp --products RR,LL --uvrange-klambda 0 2.5 --source MOON0520 --sample-frac 1.0 --chan-range 0 127 --time-range "2021/07/25/23:58" "2021/07/26/00:07"

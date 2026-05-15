@@ -25,3 +25,11 @@ work/uvfits_ms_audit/
 TempLattice*/
 *.tablelock
 
+# Local/generated artifacts not ready for versioning
+experimental/*.png
+experimental/*.gif
+share/*.png
+handy_commands.txt
+preprocess_ugmrt.ipynb
+ugmrt_fits_metadata_queries.ipynb
+
