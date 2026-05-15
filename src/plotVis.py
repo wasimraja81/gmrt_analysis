@@ -11,6 +11,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import matplotlib as mpl
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
@@ -103,6 +104,38 @@ def _row_filter_by_baselines(vis, baseline_pairs):
     lo = np.minimum(a1, a2)
     hi = np.maximum(a1, a2)
     return np.array([(int(x), int(y)) in baseline_pairs for x, y in zip(lo, hi)], dtype=bool)
+
+
+def _row_exclude_baselines(vis, exclude_pairs):
+    """Return vis with rows belonging to any of the given baseline pairs removed."""
+    if not exclude_pairs:
+        return vis
+    a1 = np.asarray(vis['ant1'], dtype=np.int32)
+    a2 = np.asarray(vis['ant2'], dtype=np.int32)
+    lo = np.minimum(a1, a2)
+    hi = np.maximum(a1, a2)
+    keep = np.array([(int(x), int(y)) not in exclude_pairs for x, y in zip(lo, hi)], dtype=bool)
+    n_removed = int(np.count_nonzero(~keep))
+    if n_removed:
+        print(f'[plotVis] --exclude-baselines: removed {n_removed} rows ({len(exclude_pairs)} pair(s))')
+    return _slice_rows(vis, keep)
+
+
+def _row_exclude_antennas(vis, exclude_ant_ids):
+    """Return vis with rows involving any of the given antenna IDs (0-based) removed."""
+    if not exclude_ant_ids:
+        return vis
+    exclude_set = set(int(x) for x in exclude_ant_ids)
+    a1 = np.asarray(vis['ant1'], dtype=np.int32)
+    a2 = np.asarray(vis['ant2'], dtype=np.int32)
+    keep = np.array(
+        [(int(x) not in exclude_set) and (int(y) not in exclude_set)
+         for x, y in zip(a1, a2)], dtype=bool
+    )
+    n_removed = int(np.count_nonzero(~keep))
+    if n_removed:
+        print(f'[plotVis] --exclude-antennas: removed {n_removed} rows (excluded ids={sorted(exclude_set)})')
+    return _slice_rows(vis, keep)
 
 
 def _slice_rows(vis, row_keep):
@@ -420,6 +453,37 @@ def _overlay_flag_fraction_curve(ax, x_values, flag_mask, nbins=80):
     return ax2
 
 
+def _robust_quantile_bounds(values, lo=2.0, hi=98.0):
+    vals = np.asarray(values, dtype=np.float64)
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return None, None
+    vmin = float(np.nanpercentile(vals, lo))
+    vmax = float(np.nanpercentile(vals, hi))
+    if not np.isfinite(vmin) or not np.isfinite(vmax):
+        return None, None
+    if vmax <= vmin:
+        span = max(abs(vmin), 1.0)
+        vmin -= 1e-6 * span
+        vmax += 1e-6 * span
+    return vmin, vmax
+
+
+def _scale_marker_sizes(values, smin=0.08, smax=1.0):
+    vals = np.asarray(values, dtype=np.float64)
+    out = np.full(vals.shape, float(smin), dtype=np.float64)
+    finite = np.isfinite(vals)
+    if not np.any(finite):
+        return out
+    vmin, vmax = _robust_quantile_bounds(vals[finite], lo=2.0, hi=98.0)
+    if vmin is None or vmax is None or vmax <= vmin:
+        return out
+    normed = (vals[finite] - vmin) / (vmax - vmin)
+    normed = np.clip(normed, 0.0, 1.0)
+    out[finite] = smin + normed * (smax - smin)
+    return out
+
+
 def _flag_fraction_inputs_3d(vis, corrected_cache, axis, time_axis_row, uvd, freq_mhz):
     flag_cube = None
     if corrected_cache is not None:
@@ -638,6 +702,23 @@ def _plot_panel(
     }
     panel = panel_alias.get(panel, panel)
 
+    uvcov_metric = None
+    uvcov_product = None
+    if panel.startswith('uvcov_'):
+        parts = panel.split('_')
+        if len(parts) == 2:
+            uvcov_metric = parts[1].lower()
+        elif len(parts) == 3:
+            uvcov_product = parts[1].upper()
+            uvcov_metric = parts[2].lower()
+        if uvcov_metric == 'pha':
+            uvcov_metric = 'phase'
+        if uvcov_metric in ('amp', 'real', 'imag', 'phase'):
+            panel = 'uvcov_metric'
+        else:
+            uvcov_metric = None
+            uvcov_product = None
+
     supported_scalar = {
         ('amp', 'time'), ('amp', 'freq'), ('amp', 'uvdist'),
         ('real', 'time'), ('real', 'freq'), ('real', 'uvdist'),
@@ -710,6 +791,102 @@ def _plot_panel(
     for ci, prod in enumerate(products):
         z, f = _get_product_data(prod, vis, corrected_cache, solution)
         product_payload.append((ci, prod, z, f))
+
+    if panel == 'uvcov_metric':
+        uu_sec = np.asarray(vis['uu_sec'], dtype=np.float64)
+        vv_sec = np.asarray(vis['vv_sec'], dtype=np.float64)
+        freqs_hz = np.asarray(vis['freqs_hz'], dtype=np.float64)
+        uu_kl_cell = (uu_sec[:, np.newaxis] * freqs_hz[np.newaxis, :]) / 1e3
+        vv_kl_cell = (vv_sec[:, np.newaxis] * freqs_hz[np.newaxis, :]) / 1e3
+
+        if uvcov_product is not None:
+            uvcov_products = [uvcov_product]
+        else:
+            uvcov_products = list(products)
+
+        scatter_last = None
+        plotted_any = False
+        for pidx, prod in enumerate(uvcov_products):
+            try:
+                z, f = _get_product_data(prod, vis, corrected_cache, solution)
+            except Exception as exc:
+                print(f'[plotVis] WARNING: skipping panel {panel} for product={prod}: {exc}')
+                continue
+
+            finite = np.isfinite(z.real) & np.isfinite(z.imag)
+            good = (~f) & finite
+            if shared_sample_mask is not None and shared_sample_mask.shape == z.shape:
+                sm = shared_sample_mask
+            else:
+                sm = _sample_mask(z.shape, args.sample_frac, seed=100 + pidx)
+            use = good & sm
+            if not np.any(use):
+                continue
+
+            u = uu_kl_cell[use]
+            v = vv_kl_cell[use]
+            if uvcov_metric == 'amp':
+                val = np.abs(z[use]).astype(np.float64)
+            elif uvcov_metric == 'real':
+                val = z.real[use].astype(np.float64)
+            elif uvcov_metric == 'imag':
+                val = z.imag[use].astype(np.float64)
+            else:
+                val = np.degrees(np.angle(z[use])).astype(np.float64)
+
+            if args.uvcov_size_by == 'amp':
+                sizes = _scale_marker_sizes(np.abs(z[use]).astype(np.float64), smin=0.08, smax=1.0)
+            else:
+                sizes = 0.12
+
+            um = np.concatenate([u, -u])
+            vm = np.concatenate([v, -v])
+            cm = np.concatenate([val, val])
+            if isinstance(sizes, np.ndarray):
+                smark = np.concatenate([sizes, sizes])
+            else:
+                smark = sizes
+
+            if uvcov_metric == 'phase':
+                norm = mpl.colors.Normalize(vmin=-180.0, vmax=180.0)
+                scatter_last = ax.scatter(um, vm, c=cm, cmap='twilight', norm=norm, s=smark, alpha=0.42, linewidths=0)
+            elif uvcov_metric in ('real', 'imag'):
+                vmax = float(np.nanpercentile(np.abs(val[np.isfinite(val)]), 98.0)) if np.any(np.isfinite(val)) else 1.0
+                vmax = max(vmax, 1e-6)
+                norm = mpl.colors.Normalize(vmin=-vmax, vmax=vmax)
+                scatter_last = ax.scatter(um, vm, c=cm, cmap='RdBu_r', norm=norm, s=smark, alpha=0.42, linewidths=0)
+            else:
+                clog = np.log10(np.maximum(np.abs(cm), 1e-8))
+                vmin, vmax = _robust_quantile_bounds(clog, lo=2.0, hi=98.0)
+                if vmin is None or vmax is None:
+                    vmin, vmax = -8.0, 0.0
+                norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+                scatter_last = ax.scatter(um, vm, c=clog, cmap='viridis', norm=norm, s=smark, alpha=0.42, linewidths=0)
+
+            plotted_any = True
+
+        if not plotted_any or scatter_last is None:
+            ax.text(0.5, 0.5, 'No sampled cells for selected uvcov panel', ha='center', va='center')
+            ax.set_xlabel('u (kλ)')
+            ax.set_ylabel('v (kλ)')
+            ax.grid(True, alpha=0.25)
+            return
+
+        cbar = plt.colorbar(scatter_last, ax=ax, fraction=0.046, pad=0.04)
+        if uvcov_metric == 'phase':
+            cbar.set_label('Phase (deg)')
+        elif uvcov_metric == 'real':
+            cbar.set_label('Re(V) (Jy)')
+        elif uvcov_metric == 'imag':
+            cbar.set_label('Im(V) (Jy)')
+        else:
+            cbar.set_label('log10 |V| (Jy)')
+
+        ax.set_xlabel('u (kλ)')
+        ax.set_ylabel('v (kλ)')
+        ax.set_aspect('equal', adjustable='datalim')
+        ax.grid(True, alpha=0.25)
+        return
 
     if panel == 'uv_sampling':
         uv_good_marker_size = 0.075
@@ -982,6 +1159,7 @@ def _plot_panel(
     title_map = {
         'vector_avg': 'baseline averaged',
         'uv_sampling': 'uv sampling (sampled)',
+        'uvcov_metric': f'uv metric: {uvcov_metric}',
     }
     ax.set_title(title_map.get(panel, panel))
 
@@ -1000,8 +1178,13 @@ def main():
     sel.add_argument('--time-range', nargs=2, default=None, metavar=('START', 'END'))
     sel.add_argument('--chan-range', nargs=2, type=int, metavar=('START', 'END'), default=None,
                         help='Inclusive original FITS channel range. Default: all channels.')
-    sel.add_argument('--antennas', type=str, default=None, help='Comma list of antennas (name/id)')
-    sel.add_argument('--baselines', type=str, default=None, help='Comma list like E03-W04,C01-C02')
+    sel.add_argument('--antennas', type=str, default=None, help='Comma list of antennas to INCLUDE (name/id)')
+    sel.add_argument('--baselines', type=str, default=None, help='Comma list of baseline pairs to INCLUDE, e.g. E03-W04,C01-C02')
+    sel.add_argument('--exclude-baselines', type=str, default=None,
+                     help='Comma list of baseline pairs to EXCLUDE, e.g. "1-25,2-25". '
+                          'Antenna IDs are 1-based names or antenna index+1.')
+    sel.add_argument('--exclude-antennas', type=str, default=None,
+                     help='Comma list of antennas to EXCLUDE by name or 1-based index, e.g. "25,W01:25".')
     sel.add_argument('--elevation-min', type=float, default=None)
     sel.add_argument('--elevation-max', type=float, default=None)
     sel.add_argument('--uvrange-m', nargs=2, type=float, default=None, metavar=('MIN_M', 'MAX_M'))
@@ -1024,10 +1207,14 @@ def main():
         default='amp_uvdist,real_time,imag_freq,ri_scatter,vector_avg',
         help=(
             'Comma list of panels. Scalar families: amp|real|imag|phase with axis time|freq|uvdist '
-            '(e.g. amp_time, real_freq, imag_uvdist, phase_time). Also supports ri_scatter, vector_avg, uv_sampling. '
+            '(e.g. amp_time, real_freq, imag_uvdist, phase_time). Also supports ri_scatter, vector_avg, uv_sampling, '
+            'and uv-coverage metric panels uvcov_amp|uvcov_pha|uvcov_real|uvcov_imag plus per-product variants '
+            'uvcov_<prod>_<metric> (e.g. uvcov_rr_amp, uvcov_ll_real, uvcov_v_pha). '
             'Legacy aliases: uvdist->amp_uvdist, real_time, imag_freq.'
         ),
     )
+    plotgrp.add_argument('--uvcov-size-by', choices=['none', 'amp'], default='none',
+                         help='Optional marker-size encoding for uvcov_* panels. Default uses color only.')
     plotgrp.add_argument('--panels-per-page', type=str, default='3x2', help='Grid per page, e.g. 3x2 (default), 2x2, 6')
     plotgrp.add_argument('--multipage', choices=['auto', 'pdf', 'png', 'both'], default='auto', help='Output mode when panel count exceeds one page')
     plotgrp.add_argument('--sample-frac', type=float, default=0.03, help='Sparse sample fraction for scatter quicklook')
@@ -1127,6 +1314,20 @@ def main():
     if args.baselines:
         pairs = _parse_baselines(args.baselines, ant_name_map, name_to_id)
         vis = _slice_rows(vis, _row_filter_by_baselines(vis, pairs))
+
+    if args.exclude_baselines:
+        excl_pairs = _parse_baselines(args.exclude_baselines, ant_name_map, name_to_id)
+        vis = _row_exclude_baselines(vis, excl_pairs)
+
+    if args.exclude_antennas:
+        excl_ant_ids = []
+        for token in _parse_csv_list(args.exclude_antennas):
+            aid = _resolve_ant_selector(token, ant_name_map, name_to_id)
+            if aid is not None:
+                excl_ant_ids.append(aid)
+            else:
+                print(f'[plotVis] WARNING: --exclude-antennas: could not resolve {token!r}, skipping')
+        vis = _row_exclude_antennas(vis, excl_ant_ids)
 
     solutions = []
     if args.bpcal:

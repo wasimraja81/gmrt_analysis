@@ -200,6 +200,7 @@ def _build_identity_bandpass(vis_raw: dict, index: dict, source_name: str) -> di
         'gains': _np.ones((nchan, nant, npol), dtype=_np.complex128),
         'valid': _np.ones((nchan, nant, npol), dtype=bool),
         'source_name': source_name,
+        'reference_antenna': ant_ids[0],
     }
 
 
@@ -481,6 +482,9 @@ def main() -> None:
         max_rows           = MAX_ROWS_SOLVE,
         flag_all_corrs_if_any_rawvis_flagged = FLAG_ALL_CORRS_IF_ANY_RAWVIS_FLAGGED,
         elevation_min_deg  = SOLVE_ELEVATION_MIN_DEG,
+        elevation_max_deg  = SOLVE_ELEVATION_MAX_DEG,
+        uvrange_m          = SOLVE_UVRANGE_M,
+        uvrange_klambda    = SOLVE_UVRANGE_KLAMBDA,
     )
     vis_raw['source_name'] = str(SOURCE)
     if active_disk:

@@ -28,6 +28,8 @@ from astropy import units as u
 from astropy.coordinates import EarthLocation, get_body
 from astropy.time import Time
 
+from fits_time_headers import write_extra_header_to_fits_image
+
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description='Import and image split Moon UVFITS files with CASA')
@@ -404,6 +406,10 @@ def _image_moon_per_integration(
     )
 
     cube_times_mjd: list[float] = [float(mjd) for mjd in selected]
+    jd_start = float(Time(cube_times_mjd[0], format='mjd', scale='utc').jd)
+    jd_end = float(Time(cube_times_mjd[-1], format='mjd', scale='utc').jd + cadence_sec / 86400.0)
+    jd_avg = float(Time(cube_times_mjd[len(cube_times_mjd) // 2], format='mjd', scale='utc').jd)
+    jd_mean = float(Time(np.mean(np.asarray(cube_times_mjd, dtype=np.float64)), format='mjd', scale='utc').jd)
     cube_tmp = imagename_base.parent / f'{imagename_base.name}_moontrack_cube.tmp.dat'
     if cube_tmp.exists():
         _remove_path(cube_tmp)
@@ -585,6 +591,17 @@ def _image_moon_per_integration(
             fits.PrimaryHDU(data=cube_mm, header=cube_hdr),
             time_hdu,
         ]).writeto(cube_path, overwrite=bool(args.overwrite))
+        write_extra_header_to_fits_image(
+            cube_path,
+            jd_start=jd_start,
+            jd_end=jd_end,
+            jd_avg=jd_avg,
+            jd_mid=jd_avg,
+            jd_mean=jd_mean,
+            nint=total,
+            inttime_sec=cadence_sec,
+            source_tag='casa_moon_imaging_cube',
+        )
         print(f'[CASA] moon-track cube image: {cube_path.name} (shape={total}x{ny}x{nx}, valid={n_valid_planes})')
 
     if count is None or sum_data is None or sum_sq is None or max_data is None:
@@ -611,6 +628,17 @@ def _image_moon_per_integration(
         h['NINTSEXP'] = int(total)
         h['HISTORY'] = f'Moon per-integration stacked image ({method_label}), valid={n_valid_planes}, expected={total}'
         fits.PrimaryHDU(data=data.astype(np.float32), header=h).writeto(p, overwrite=bool(args.overwrite))
+        write_extra_header_to_fits_image(
+            p,
+            jd_start=jd_start,
+            jd_end=jd_end,
+            jd_avg=jd_avg,
+            jd_mid=jd_avg,
+            jd_mean=jd_mean,
+            nint=total,
+            inttime_sec=cadence_sec,
+            source_tag=f'casa_moon_imaging_{method_label}',
+        )
         print(f'[CASA] moon-track stacked image: {p.name} (valid={n_valid_planes}, expected={total})')
 
     _write_stack(args.stack_method, out_data, args.stack_method)

@@ -14,6 +14,15 @@ import numpy as np
 from astropy.io import fits
 from astropy.time import Time
 
+import re as _re
+
+
+def _normalise_time_str(s: str) -> str:
+    """Accept either ISO ('2021-07-25 23:56:37') or CASA ('2021/07/25/23:56:37')
+    format and return a string acceptable to astropy ``format='iso'``."""
+    return _re.sub(r'^(\d{4})/(\d{2})/(\d{2})/', r'\1-\2-\3 ', s)
+
+
 # ---------------------------------------------------------------------------
 # File discovery & core I/O utilities
 # ---------------------------------------------------------------------------
@@ -949,9 +958,9 @@ def compute_source_azel(
     if timerange is not None:
         t0, t1 = timerange
         if isinstance(t0, str):
-            t0 = Time(t0, format='iso', scale='utc').jd
+            t0 = Time(_normalise_time_str(t0), format='iso', scale='utc').jd
         if isinstance(t1, str):
-            t1 = Time(t1, format='iso', scale='utc').jd
+            t1 = Time(_normalise_time_str(t1), format='iso', scale='utc').jd
         jd_src = jd_src[(jd_src >= t0) & (jd_src <= t1)]
 
     # Downsample to requested time_step_s
@@ -2184,9 +2193,9 @@ class DataSelection:
         from astropy.time import Time as _T
         t0, t1 = self.timerange
         if isinstance(t0, str):
-            t0 = _T(t0, format='iso', scale='utc').jd
+            t0 = _T(_normalise_time_str(t0), format='iso', scale='utc').jd
         if isinstance(t1, str):
-            t1 = _T(t1, format='iso', scale='utc').jd
+            t1 = _T(_normalise_time_str(t1), format='iso', scale='utc').jd
         return (float(t0), float(t1))
 
     def __repr__(self):
@@ -2255,8 +2264,8 @@ def load_vis_for_source(
     if timerange is not None:
         from astropy.time import Time as _T
         t0r, t1r = timerange
-        if isinstance(t0r, str): t0r = _T(t0r, format='iso', scale='utc').jd
-        if isinstance(t1r, str): t1r = _T(t1r, format='iso', scale='utc').jd
+        if isinstance(t0r, str): t0r = _T(_normalise_time_str(t0r), format='iso', scale='utc').jd
+        if isinstance(t1r, str): t1r = _T(_normalise_time_str(t1r), format='iso', scale='utc').jd
         _jd_bounds = (float(t0r), float(t1r))
     import time as _time
     t0 = _time.monotonic()

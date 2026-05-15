@@ -50,9 +50,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from astropy.coordinates import EarthLocation, SkyCoord, get_body
+from astropy.coordinates import Angle, EarthLocation, SkyCoord, get_body
 from astropy.time import Time
 from astropy import units as u
+
+from fits_time_headers import write_extra_header_to_fits_image
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +120,20 @@ def _casa_circle_mask(ra_deg: float, dec_deg: float, radius_arcmin: float) -> st
     dec_str = c.dec.to_string(unit=u.deg, sep='.', precision=2,
                               alwayssign=True, pad=True)
     return f"circle[[{ra_str}, {dec_str}], {radius_arcmin:.1f}arcmin]"
+
+
+def _casa_phasecenter_j2000(ra_deg: float, dec_deg: float) -> str:
+    """Return CASA tclean-compatible phasecenter string from input RA/Dec.
+
+    This function only formats the provided sky coordinates; it does not
+    transform frames.
+    """
+    ra_str = Angle(ra_deg * u.deg).to_string(unit=u.hour, sep='hms',
+                                             precision=3, pad=True)
+    dec_str = Angle(dec_deg * u.deg).to_string(unit=u.deg, sep='dms',
+                                               precision=2, alwayssign=True,
+                                               pad=True)
+    return f'J2000 {ra_str} {dec_str}'
 
 
 def _ms_field_radec(ms_path: str) -> tuple[float, float]:
@@ -260,10 +276,20 @@ def _parse_args() -> argparse.Namespace:
     io.add_argument('--index', default=None,
                     help='Path to the row index cache NPZ for the split UVFITS '
                          '(default: <uvfits>.row_index_cache.npz alongside the UVFITS)')
+    io.add_argument('--build-index-if-missing', action='store_true',
+                    help='If the row index cache is missing, build it on-the-fly '
+                         'from the UVFITS. Useful when imaging a re-flagged UVFITS '
+                         'whose index has not yet been generated.')
     io.add_argument('--outdir', required=True,
                     help='Output directory for MS, images, and FITS frames')
     io.add_argument('--integrations', nargs='+', type=int, default=[0],
                     help='0-based integration indices within the scan to process')
+    io.add_argument('--stack-size', type=int, default=1,
+                    help='Number of consecutive integrations to combine into one MS for '
+                         'imaging + selfcal.  Each stack produces one gaincal solution '
+                         'and one output image.  Default 1 = per-integration (legacy). '
+                         'E.g. 10 = combine 10×8s=80s per stack; Moon smears ~3" '
+                         'which is well within the 8" full-resolution beam.')
     io.add_argument('--overwrite', action='store_true',
                     help='Delete existing outputs and re-run')
 
@@ -289,6 +315,13 @@ def _parse_args() -> argparse.Namespace:
     msk.add_argument('--mask-radius-arcmin', type=float, default=20.0,
                      help='Radius of circular CLEAN mask around Moon centre (arcmin). '
                           'Moon disk ~15 arcmin radius at this freq; default adds margin.')
+    msk.add_argument('--no-mask', action='store_true', default=False,
+                     help='Run all tclean calls with mask="" (no mask). '
+                          'Useful for diagnosing whether the Moon disk mask is biasing the selfcal.')
+    msk.add_argument('--use-tclean-phasecenter', action='store_true', default=False,
+                     help='If set, pass phasecenter to tclean using the same '
+                         'Moon ephemeris position used for mask centering. '
+                         'This recenters imaging on the Moon without altering visibilities.')
 
     # ── Per-cycle parameters (arrays indexed by selfcal cycle) ───────────────
     # Each argument is a comma-separated list with one value per selfcal cycle.
@@ -304,10 +337,17 @@ def _parse_args() -> argparse.Namespace:
                      help='tclean niter per cycle (comma-separated). '
                           'Typically shallow→deeper as model improves.')
     cyc.add_argument('--uvmin-per-cycle', default='0.5,0.12',
-                     help='Min uv in kλ per cycle (comma-separated). '
-                          'Start restricted, then relax to include short baselines.')
+                     help='Min uv in kλ per cycle for tclean imaging (comma-separated).')
     cyc.add_argument('--uvmax-per-cycle', default=',',
-                     help='Max uv in kλ per cycle (comma-separated, empty = no limit).')
+                     help='Max uv in kλ per cycle for tclean imaging (comma-separated, empty = no limit).')
+    cyc.add_argument('--uvmin-cal-per-cycle', default=None,
+                     help='Min uv in kλ per cycle for gaincal (comma-separated). '
+                          'If omitted, falls back to --uvmin-per-cycle. '
+                          'Use to restrict calibration to short baselines where Moon SNR is highest.')
+    cyc.add_argument('--uvmax-cal-per-cycle', default=None,
+                     help='Max uv in kλ per cycle for gaincal (comma-separated, empty = no limit). '
+                          'If omitted, falls back to --uvmax-per-cycle. '
+                          'E.g. "2.0,5.0,10.0," for progressive short-to-all-baseline strategy.')
     cyc.add_argument('--scales-per-cycle', default='0,5,15|0,5,15,45',
                      help='Multiscale clean scales (pixels) per cycle, '
                           'cycles separated by |, scales within a cycle by comma. '
@@ -321,11 +361,32 @@ def _parse_args() -> argparse.Namespace:
                      help='CLEAN threshold applied in all rounds')
     fin.add_argument('--cycleniter', type=int, default=100,
                      help='Minor cycles per major cycle (all rounds)')
+    fin.add_argument('--negativethreshold', type=float, default=0.0,
+                     help='tclean negativethreshold (Jy/beam): stop minor cycle if a negative '
+                          'residual peak exceeds this absolute value. '
+                          '0.0 = disabled (default CASA behaviour, clean both +/-). '
+                          'Set >0 (e.g. 0.001) to restrict to positive-only cleaning.')
 
     # ── Selfcal ──
     sc = p.add_argument_group('Selfcal')
     sc.add_argument('--minsnr', type=float, default=3.0,
                     help='gaincal minsnr parameter (applied to all cycles)')
+    sc.add_argument('--loop-gain', type=float, default=0.05,
+                    help='CLEAN loop gain (tclean gain parameter). '
+                         'Default 0.05 is conservative for extended emission like the Moon. '
+                         'CASA default is 0.1.')
+    sc.add_argument('--solmode', default='',
+                    help='gaincal robust solver mode: "" (standard LS), "L1", "R", "L1R". '
+                         'Default "" = standard LS, reliable with few antennas (~8 at short BLs). '
+                         'L1R needs many baselines to distinguish signal from outliers; '
+                         'use only when >~20 antennas contribute to the solve.')
+    sc.add_argument('--refant', default='1',
+                    help='gaincal reference antenna NAME (as it appears in the MS ANTENNA table). '
+                         'Default "1" = physical antenna 1 = C00:01 (central arm, 100%% bandpass valid). '
+                         'Pass the CASA name string, not a 0-based integer index.')
+    sc.add_argument('--refantmode', default='flex',
+                    help='gaincal refantmode: "flex" (switch if refant drops out) or '
+                         '"strict" (flag all solutions if refant absent). Default flex.')
 
     return p.parse_args()
 
@@ -338,7 +399,9 @@ def _parse_cycle_params(args: argparse.Namespace) -> list[dict]:
     """Convert per-cycle comma/pipe-separated CLI strings into a list of dicts.
 
     Returns a list of length N (one dict per cycle) with keys:
-      niter, uvmin_kl, uvmax_kl, scales
+      niter, uvmin_kl, uvmax_kl, cal_uvmin_kl, cal_uvmax_kl, scales
+    The cal_* keys hold the uvrange used for gaincal; if --uvmin/max-cal-per-cycle
+    are not supplied they fall back to the imaging uvrange values.
     Raises ValueError if the lists have inconsistent lengths.
     """
     niters   = [int(v.strip())   for v in args.niter_per_cycle.split(',')]
@@ -360,16 +423,40 @@ def _parse_cycle_params(args: argparse.Namespace) -> list[dict]:
             f'  --scales-per-cycle = {args.scales_per_cycle!r}'
         )
 
+    # Parse optional per-cycle calibration uvrange; fall back to imaging values if not given.
+    n_cycles = len(niters)
+    if args.uvmin_cal_per_cycle is not None:
+        cal_uvmins = [float(v.strip()) if v.strip() else None
+                      for v in args.uvmin_cal_per_cycle.split(',')]
+        if len(cal_uvmins) != n_cycles:
+            raise ValueError(
+                f'--uvmin-cal-per-cycle has {len(cal_uvmins)} entries but '
+                f'{n_cycles} cycles were defined by --niter-per-cycle.')
+    else:
+        cal_uvmins = uvmins  # fall back to imaging uvmin
+
+    if args.uvmax_cal_per_cycle is not None:
+        cal_uvmaxs = [float(v.strip()) if v.strip() else None
+                      for v in args.uvmax_cal_per_cycle.split(',')]
+        if len(cal_uvmaxs) != n_cycles:
+            raise ValueError(
+                f'--uvmax-cal-per-cycle has {len(cal_uvmaxs)} entries but '
+                f'{n_cycles} cycles were defined by --niter-per-cycle.')
+    else:
+        cal_uvmaxs = uvmaxs  # fall back to imaging uvmax
+
     cycles = []
-    for i, (niter, uvmin, uvmax, sc_str) in enumerate(
-            zip(niters, uvmins, uvmaxs, scales_blocks)):
+    for i, (niter, uvmin, uvmax, cal_uvmin, cal_uvmax, sc_str) in enumerate(
+            zip(niters, uvmins, uvmaxs, cal_uvmins, cal_uvmaxs, scales_blocks)):
         sc_vals = sorted({int(v.strip()) for v in sc_str.split(',') if v.strip()})
         if 0 not in sc_vals:
             sc_vals.insert(0, 0)
-        cycles.append({'niter': niter, 'uvmin_kl': uvmin,
-                        'uvmax_kl': uvmax, 'scales': sc_vals})
+        cycles.append({'niter': niter, 'uvmin_kl': uvmin, 'uvmax_kl': uvmax,
+                        'cal_uvmin_kl': cal_uvmin, 'cal_uvmax_kl': cal_uvmax,
+                        'scales': sc_vals})
         print(f'[selfcal-dev] Cycle {i+1} params: niter={niter}, '
-              f'uvmin={uvmin}kλ, uvmax={uvmax}kλ, scales={sc_vals}')
+              f'img uvmin={uvmin}kλ uvmax={uvmax}kλ, '
+              f'cal uvmin={cal_uvmin}kλ uvmax={cal_uvmax}kλ, scales={sc_vals}')
     return cycles
 
 
@@ -388,13 +475,13 @@ def _uvrange(lo_kl: float | None, hi_kl: float | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Single-integration selfcal loop
+# Per-stack selfcal loop  (stack = 1 or more consecutive integrations)
 # ---------------------------------------------------------------------------
 
-def _process_integration(
+def _process_stack(
     *,
-    idx: int,
-    jd: float,
+    start_idx: int,
+    jds: list[float],
     full_ms: Path,
     outdir: Path,
     location: EarthLocation,
@@ -404,30 +491,50 @@ def _process_integration(
 ) -> Path:
     _, split_task, tclean, gaincal, applycal, exportfits = casa
 
-    label = f'{args.scan.lower()}_int{idx:04d}'
+    n = len(jds)
+    if n == 1:
+        label = f'{args.scan.lower()}_int{start_idx:04d}'
+    else:
+        label = f'{args.scan.lower()}_stk{start_idx:04d}_n{n:02d}'
     intdir = outdir / label
     if args.overwrite and intdir.exists():
         shutil.rmtree(intdir)
     intdir.mkdir(parents=True, exist_ok=True)
 
-    # ── 1. Split single integration ──────────────────────────────────────────
+    # ── 1. Split stack time range ─────────────────────────────────────────────
     scratch_ms = str(intdir / f'{label}.ms')
     if Path(scratch_ms).exists():
         shutil.rmtree(scratch_ms)
 
-    # Convert JD to CASA time range string  (YYYY/MM/DD/HH:MM:SS±1s)
-    t_mid = Time(jd, format='jd', scale='utc')
-    dt_half = 4.0  # half-dump + tiny margin, seconds
-    t0 = (t_mid - dt_half * u.s).strftime('%Y/%m/%d/%H:%M:%S')
-    t1 = (t_mid + dt_half * u.s).strftime('%Y/%m/%d/%H:%M:%S')
+    # Time range: from 4s before first dump to 4s after last dump
+    dt_margin = 4.0  # seconds
+    t_first = Time(jds[0],  format='jd', scale='utc')
+    t_last  = Time(jds[-1], format='jd', scale='utc')
+    t0 = (t_first - dt_margin * u.s).strftime('%Y/%m/%d/%H:%M:%S')
+    t1 = (t_last  + dt_margin * u.s).strftime('%Y/%m/%d/%H:%M:%S')
     timerange = f'{t0}~{t1}'
 
-    print(f'\n[selfcal-dev] === Integration {idx}  JD={jd:.6f}  timerange={timerange} ===')
+    print(f'\n[selfcal-dev] === Stack start_idx={start_idx}  n={n}  '
+          f'JD={jds[0]:.6f}..{jds[-1]:.6f}  timerange={timerange} ===')
     split_task(vis=str(full_ms), outputvis=scratch_ms, timerange=timerange, datacolumn='data')
 
-    # ── 2. Moon ephemeris → sky position → mask ────────────────────────────
-    ra_deg, dec_deg = moon_radec_at_jd(jd, location)
-    mask_str = _casa_circle_mask(ra_deg, dec_deg, args.mask_radius_arcmin)
+    if n > 1:
+        inttime_sec = float(np.median(np.diff(np.asarray(jds, dtype=np.float64))) * 86400.0)
+    else:
+        inttime_sec = 8.0
+
+    jd_start = float(jds[0])
+    jd_mid = float(jds[len(jds) // 2])
+    jd_mean = float(np.mean(np.asarray(jds, dtype=np.float64)))
+    jd_end = float(jd_start + (n * inttime_sec) / 86400.0)
+
+    # ── 2. Moon ephemeris at midpoint of stack → sky position → mask ──────────
+    ra_deg, dec_deg = moon_radec_at_jd(jd_mid, location)
+    phasecenter_str = _casa_phasecenter_j2000(ra_deg, dec_deg)
+    if args.no_mask:
+        mask_str = ''
+    else:
+        mask_str = _casa_circle_mask(ra_deg, dec_deg, args.mask_radius_arcmin)
 
     # Check Moon is within the image before proceeding
     field_ra_deg, field_dec_deg = _ms_field_radec(scratch_ms)
@@ -435,22 +542,32 @@ def _process_integration(
                                            field_ra_deg, field_dec_deg)
     cell_arcsec   = float(args.cell.replace('arcsec', ''))
     halfwidth_arcmin = (args.imsize * cell_arcsec / 2.0) / 60.0
-    margin_arcmin = halfwidth_arcmin - args.mask_radius_arcmin
+    margin_arcmin = halfwidth_arcmin - (0.0 if args.no_mask else args.mask_radius_arcmin)
     print(f'[selfcal-dev]   Moon at RA={ra_deg:.4f}°  Dec={dec_deg:.4f}°  '
           f'offset={offset_arcmin:.2f}arcmin from field centre  '
           f'(image half-width={halfwidth_arcmin:.1f}arcmin)')
     if offset_arcmin >= halfwidth_arcmin:
         print(f'[selfcal-dev]   WARNING: Moon centre ({offset_arcmin:.2f} arcmin) '
               f'is outside image half-width ({halfwidth_arcmin:.1f} arcmin). '
-              f'Skipping integration {idx}.')
+              f'Skipping stack starting at integration {start_idx}.')
         shutil.rmtree(str(intdir), ignore_errors=True)
         return None
-    if offset_arcmin > margin_arcmin:
+    if not args.no_mask and offset_arcmin > margin_arcmin:
         print(f'[selfcal-dev]   NOTE: mask circle overhangs image edge '
               f'({offset_arcmin:.2f} + {args.mask_radius_arcmin:.1f} = '
               f'{offset_arcmin + args.mask_radius_arcmin:.2f} > {halfwidth_arcmin:.1f} arcmin) '
               f'-- CASA will clip it, proceeding.')
-    print(f'[selfcal-dev]   mask={mask_str}')
+    print(f'[selfcal-dev]   mask-center (ephem): RA={ra_deg:.6f} deg  Dec={dec_deg:.6f} deg')
+    if args.no_mask:
+        print('[selfcal-dev]   mask: <disabled by --no-mask>')
+    else:
+        print(f'[selfcal-dev]   mask-radius: {args.mask_radius_arcmin:.2f} arcmin')
+        print(f'[selfcal-dev]   mask-string: {mask_str}')
+
+    if args.use_tclean_phasecenter:
+        print(f'[selfcal-dev]   tclean phasecenter: ENABLED ({phasecenter_str})')
+    else:
+        print('[selfcal-dev]   tclean phasecenter: DISABLED (using MS/native phase center)')
 
     imname_base = str(intdir / label)
 
@@ -464,6 +581,8 @@ def _process_integration(
         deconvolver=args.deconvolver,
         threshold=args.threshold,
         cycleniter=args.cycleniter,
+        gain=args.loop_gain,
+        negativethreshold=args.negativethreshold,
         mask=mask_str,
         gridder='standard',
         normtype='flatnoise',
@@ -472,34 +591,85 @@ def _process_integration(
         savemodel='modelcolumn',
         verbose=True,
     )
+    if args.use_tclean_phasecenter:
+        common_tclean['phasecenter'] = phasecenter_str
 
     # ── 3. Selfcal loop (N cycles, all params from per-cycle arrays) ──────────
     for c_idx, cyc in enumerate(cycles):
         c_num = c_idx + 1
-        uvrange_c = _uvrange(cyc['uvmin_kl'], cyc['uvmax_kl'])
+        uvrange_c     = _uvrange(cyc['uvmin_kl'],     cyc['uvmax_kl'])
+        uvrange_cal_c = _uvrange(cyc['cal_uvmin_kl'], cyc['cal_uvmax_kl'])
         scales_c = cyc['scales'] if args.deconvolver == 'multiscale' else []
 
         print(f'[selfcal-dev]   Cycle {c_num}/{len(cycles)}: '
-              f'tclean niter={cyc["niter"]}  uvrange={uvrange_c!r}  scales={scales_c}')
+              f'tclean niter={cyc["niter"]}  img_uvrange={uvrange_c!r}  '
+              f'cal_uvrange={uvrange_cal_c!r}  scales={scales_c}')
         imagename_c = imname_base + f'_sc{c_num}'
         _clean_fresh(tclean, imagename=imagename_c, niter=cyc['niter'],
                      uvrange=uvrange_c, scales=scales_c, **common_tclean)
 
         cal_c = str(intdir / f'{label}_sc{c_num}.gcal')
         print(f'[selfcal-dev]   Cycle {c_num}/{len(cycles)}: gaincal → {cal_c}')
+        print(f'[selfcal-dev]     solmode={args.solmode!r}  refant={args.refant!r}  refantmode={args.refantmode!r}')
         gaincal(
             vis=scratch_ms,
             caltable=cal_c,
             gaintype='G',
             calmode='p',
             solint='inf',      # one phase solution per antenna for the 8s dump
-            uvrange=uvrange_c,
+            uvrange=uvrange_cal_c,
             minsnr=args.minsnr,
+            solmode=args.solmode,
+            rmsthresh=[],      # use CASA defaults for L1R iteration stopping
+            refant=args.refant,
+            refantmode=args.refantmode,
             append=False,
         )
 
+        if not Path(cal_c).exists():
+            fits_out = str(intdir / f'{label}_final.fits')
+            print(f'[selfcal-dev]   WARNING: gaincal produced no solution table at cycle {c_num} '
+                  f'(insufficient unflagged antennas / low SNR). '
+                  f'Writing NaN placeholder FITS: {fits_out}')
+            _write_nan_fits(
+                fits_out,
+                args.imsize,
+                label,
+                start_idx,
+                jd_start=jd_start,
+                jd_end=jd_end,
+                jd_avg=jd_mid,
+                jd_mid=jd_mid,
+                jd_mean=jd_mean,
+                nint=n,
+                inttime_sec=inttime_sec,
+                moon_ra_deg=ra_deg,
+                moon_dec_deg=dec_deg,
+            )
+            return Path(fits_out)
+
         print(f'[selfcal-dev]   Cycle {c_num}/{len(cycles)}: applycal')
-        applycal(vis=scratch_ms, gaintable=[cal_c], calwt=False, flagbackup=False)
+        applycal(vis=scratch_ms, gaintable=[cal_c], calwt=False, flagbackup=False,
+                 applymode='calonly')  # don't flag data where solution was missing/flagged
+
+        # Export FITS for this cycle so progress can be inspected in DS9
+        fits_c = str(intdir / f'{label}_sc{c_num}.fits')
+        exportfits(imagename=imagename_c + '.image', fitsimage=fits_c, overwrite=True)
+        write_extra_header_to_fits_image(
+            fits_c,
+            jd_start=jd_start,
+            jd_end=jd_end,
+            jd_avg=jd_mid,
+            jd_mid=jd_mid,
+            jd_mean=jd_mean,
+            nint=n,
+            inttime_sec=inttime_sec,
+            start_integration=start_idx,
+            moon_ra_deg=ra_deg,
+            moon_dec_deg=dec_deg,
+            source_tag='moon_selfcal_dev_cycle',
+        )
+        print(f'[selfcal-dev]   Cycle {c_num}/{len(cycles)}: exported {fits_c}')
 
     # ── 4. Final image (uses last cycle's uv/scale params) ────────────────────
     last = cycles[-1]
@@ -513,13 +683,32 @@ def _process_integration(
     # ── 6. Export FITS ────────────────────────────────────────────────────────
     fits_out = str(intdir / f'{label}_final.fits')
     exportfits(imagename=imagename_final + '.image', fitsimage=fits_out, overwrite=True)
+    write_extra_header_to_fits_image(
+        fits_out,
+        jd_start=jd_start,
+        jd_end=jd_end,
+        jd_avg=jd_mid,
+        jd_mid=jd_mid,
+        jd_mean=jd_mean,
+        nint=n,
+        inttime_sec=inttime_sec,
+        start_integration=start_idx,
+        moon_ra_deg=ra_deg,
+        moon_dec_deg=dec_deg,
+        source_tag='moon_selfcal_dev_final',
+    )
     print(f'[selfcal-dev]   Exported: {fits_out}')
 
     # Save ephemeris record alongside image
     ephem_file = intdir / f'{label}_ephemeris.json'
     ephem_file.write_text(json.dumps({
-        'integration_index': idx,
-        'jd': jd,
+        'start_integration': start_idx,
+        'n': n,
+        'jd_start': jd_start,
+        'jd_mid': jd_mid,
+        'jd_mean': jd_mean,
+        'jd_end': jd_end,
+        'inttime_sec': inttime_sec,
         'moon_ra_deg': ra_deg,
         'moon_dec_deg': dec_deg,
         'mask': mask_str,
@@ -527,6 +716,43 @@ def _process_integration(
     }, indent=2))
 
     return Path(fits_out)
+
+
+def _write_nan_fits(fits_out: str,
+                    imsize: int,
+                    label: str,
+                    idx: int,
+                    *,
+                    jd_start: float,
+                    jd_end: float,
+                    jd_avg: float,
+                    jd_mid: float,
+                    jd_mean: float,
+                    nint: int,
+                    inttime_sec: float,
+                    moon_ra_deg: float,
+                    moon_dec_deg: float) -> None:
+    """Write a FITS file filled with NaNs to mark a failed selfcal integration."""
+    from astropy.io import fits as _fits
+    nan_data = np.full((imsize, imsize), np.nan, dtype=np.float32)
+    hdu = _fits.PrimaryHDU(data=nan_data)
+    hdu.header['OBJECT']  = label
+    hdu.header['COMMENT'] = f'NaN placeholder: selfcal failed at integration {idx} (gaincal no solution)'
+    _fits.HDUList([hdu]).writeto(fits_out, overwrite=True)
+    write_extra_header_to_fits_image(
+        fits_out,
+        jd_start=jd_start,
+        jd_end=jd_end,
+        jd_avg=jd_avg,
+        jd_mid=jd_mid,
+        jd_mean=jd_mean,
+        nint=nint,
+        inttime_sec=inttime_sec,
+        start_integration=idx,
+        moon_ra_deg=moon_ra_deg,
+        moon_dec_deg=moon_dec_deg,
+        source_tag='moon_selfcal_dev_nan',
+    )
 
 
 def _clean_fresh(tclean, *, imagename: str, niter: int, uvrange: str, **kwargs) -> None:
@@ -557,8 +783,23 @@ def main() -> int:
         Path(args.uvfits).suffix + '.row_index_cache.npz'
     )
     if not index_path.exists():
-        sys.exit(f'ERROR: index cache not found: {index_path}\n'
-                 f'Run visSplit first, or pass --index explicitly.')
+        if args.build_index_if_missing:
+            print(f'[selfcal-dev] Index not found — building from UVFITS: {args.uvfits}')
+            _src_dir = str(Path(__file__).resolve().parent.parent / 'src')
+            if _src_dir not in sys.path:
+                sys.path.insert(0, _src_dir)
+            import modules.ugmrt_query as _q_build  # type: ignore
+            _q_build.get_or_build_row_index(
+                Path(args.uvfits),
+                cache_path=index_path,
+                force_rebuild=False,
+                write_cache=True,
+            )
+            print(f'[selfcal-dev] Index built: {index_path}')
+        else:
+            sys.exit(f'ERROR: index cache not found: {index_path}\n'
+                     f'Run visSplit first, pass --index explicitly, '
+                     f'or add --build-index-if-missing.')
     print(f'[selfcal-dev] Using index: {index_path}')
     idx_npz = np.load(index_path, allow_pickle=True)
     meta = json.loads(str(idx_npz['metadata_json']))
@@ -585,7 +826,7 @@ def main() -> int:
     if bad:
         sys.exit(f'ERROR: integration indices out of range [0, {len(scan_jds)-1}]: {bad}')
 
-    print(f'[selfcal-dev] Processing integrations: {args.integrations}')
+    print(f'[selfcal-dev] Processing integrations: {args.integrations} (stack_size={args.stack_size})')
 
     # ── GMRT location ─────────────────────────────────────────────────────────
     location = _gmrt_location(meta)
@@ -607,15 +848,26 @@ def main() -> int:
     else:
         print(f'[selfcal-dev] Reusing existing MS: {full_ms}')
 
-    # ── Per-integration loop ──────────────────────────────────────────────────
+    # ── Per-stack loop ────────────────────────────────────────────────────────
     results: list[dict] = []
     cycles = _parse_cycle_params(args)
 
-    for idx_i in sorted(args.integrations):
-        jd_i = float(scan_jds[idx_i])
-        fits_path = _process_integration(
-            idx=idx_i,
-            jd=jd_i,
+    sorted_ints = sorted(args.integrations)
+    # Partition into consecutive groups of stack_size.
+    # If the final chunk would be smaller than stack_size, merge it into the
+    # penultimate chunk rather than leaving a tiny orphan stack.
+    stacks = [sorted_ints[i:i + args.stack_size]
+              for i in range(0, len(sorted_ints), args.stack_size)]
+    if len(stacks) >= 2 and len(stacks[-1]) < args.stack_size:
+        stacks[-2] = stacks[-2] + stacks[-1]
+        stacks = stacks[:-1]
+
+    for stack in stacks:
+        start_idx = stack[0]
+        jd_stack = [float(scan_jds[i]) for i in stack]
+        fits_path = _process_stack(
+            start_idx=start_idx,
+            jds=jd_stack,
             full_ms=full_ms,
             outdir=outdir,
             location=location,
@@ -624,10 +876,12 @@ def main() -> int:
             casa=casa,
         )
         if fits_path is None:
-            results.append({'integration': idx_i, 'jd': jd_i, 'fits': None,
+            results.append({'start_integration': start_idx, 'n': len(stack),
+                            'jd_start': jd_stack[0], 'fits': None,
                             'skipped': 'moon_outside_image'})
         else:
-            results.append({'integration': idx_i, 'jd': jd_i, 'fits': str(fits_path)})
+            results.append({'start_integration': start_idx, 'n': len(stack),
+                            'jd_start': jd_stack[0], 'fits': str(fits_path)})
 
     # ── Summary ───────────────────────────────────────────────────────────────
     summary_file = outdir / 'summary.json'

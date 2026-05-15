@@ -1,0 +1,7 @@
+# Region file format: DS9 version 4.1
+global color=cyan width=2 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
+fk5
+# Moon centre at JD=2459421.507164 (2021/07/26 00:10:18 UTC)
+circle(331.0624, -17.4057, 1200")  # Moon disk (20 arcmin radius = CLEAN mask)
+circle(331.0624, -17.4057, 900")   # Moon disk half-power (~15 arcmin radius)
+point(331.0624, -17.4057) # text={Moon int112}

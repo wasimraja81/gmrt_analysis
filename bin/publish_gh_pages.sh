@@ -29,6 +29,7 @@ MANIFEST_PATH=""
 RUN_TS=""
 PUSH=0
 DRY_RUN=0
+OPEN_AFTER=0
 PUBLISH_FILES=()
 
 usage() {
@@ -43,10 +44,11 @@ Options:
   --work-dir PATH      Override work directory (default: $DEFAULT_WORK_DIR).
   --pages-dir PATH     Override gh-pages worktree path (default: $DEFAULT_PAGES_DIR).
   --branch NAME        Publication branch name (default: $DEFAULT_BRANCH).
-  --latest-alias NAME  Alias directory for the most recently published run (default: $DEFAULT_LATEST_ALIAS).
+
   --project-subdir DIR Project subdirectory under the gh-pages root (default: $DEFAULT_PROJECT_SUBDIR).
   --site-title TEXT    Site title used in generated HTML.
   --push               Push the publication branch after commit.
+  --open               Open the committed index.html in the browser after publishing.
   --dry-run            Show planned actions without writing files or committing.
   -h, --help           Show this help.
 
@@ -156,6 +158,8 @@ ensure_pages_worktree() {
 
 collect_publish_files() {
 	local diagnostics_dir="$WORK_DIR/diagnostics_out"
+	local selfcal_dir="$WORK_DIR/casa_selfcal"
+	local logs_dir="$WORK_DIR/logs"
 	local workflow_log=""
 
 	PUBLISH_FILES=()
@@ -164,7 +168,28 @@ collect_publish_files() {
 	done < <(
 		{
 			if [[ -d "$diagnostics_dir" ]]; then
-				find "$diagnostics_dir" -type f \( -name '*.png' -o -name '*.pdf' \)
+				find "$diagnostics_dir" -type f \( -name '*.png' -o -name '*.pdf' -o -name '*.gif' -o -name '*.mp4' -o -name '*.mov' \)
+			fi
+			if [[ -d "$selfcal_dir" ]]; then
+				find "$selfcal_dir" -type f \( \
+					-name '*.gif' -o -name '*.mp4' -o -name '*.mov' -o \
+					-name '*destripe*.png' -o -name '*destrip*.png' -o \
+					-name '*convergence*.png' -o -name '*iter_progression*.png' -o \
+					-name '*iter_progression*.gif' -o -name '*iter_progression*.mp4' -o \
+					-name '*stack*.png' -o \
+					-name '*selfcal_movie*.png' -o -name '*selfcal_movie*.gif' -o -name '*selfcal_movie*.mp4' -o -name '*selfcal_movie*.mov' -o \
+					-name '*before_after_compare*.png' -o -name '*before_after_compare*.gif' -o -name '*before_after_compare*.mp4' -o -name '*before_after_compare*.mov' -o \
+					-name '*coadd*.png' -o -name '*coadd*.gif' -o -name '*coadd*.mp4' -o -name '*coadd*.mov' -o \
+					-name '*cumulative*.png' -o -name '*cumulative*.gif' -o -name '*cumulative*.mp4' -o -name '*cumulative*.mov' -o \
+					-name '*rms*.png' -o -name '*rms*.pdf' -o -name '*rms*.csv' \
+				\)
+			fi
+			if [[ -d "$logs_dir" ]]; then
+				find "$logs_dir" -maxdepth 1 -type f \( \
+					-name '*moon0520*.cmd' -o -name '*moon0520*.log' -o \
+					-name '*moon_selfcal*.cmd' -o -name '*moon_selfcal*.log' -o \
+					-name 'clustering_moon0520*.cmd' -o -name 'clustering_moon0520*.log' \
+				\)
 			fi
 		} | sort -u
 	)
@@ -176,6 +201,94 @@ collect_publish_files() {
 	PUBLISH_FILES+=("$MANIFEST_PATH")
 
 	((${#PUBLISH_FILES[@]} > 0)) || die "no publishable files found for run $RUN_TS"
+}
+
+render_moon_debug_index() {
+	local run_dir="$1"
+	local rel_case_dir="$2"
+	local title="$3"
+	local debug_root="$run_dir/$rel_case_dir/destripe_debug"
+	local debug_file="$run_dir/$rel_case_dir/debug.html"
+	local html_title
+	html_title="$(escape_html "$title")"
+
+	[[ -d "$debug_root" ]] || return 0
+
+	cat > "$debug_file" <<EOF
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${html_title}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 1160px; padding: 0 1rem; line-height: 1.5; }
+    .card { border: 1px solid #8884; border-radius: 10px; padding: 0.8rem; background: #8881; margin-bottom: 1rem; }
+	img, video { max-width: 100%; height: auto; border-radius: 6px; display: block; }
+	.movie-thumb { max-width: 420px; margin: 0 auto; cursor: zoom-in; }
+    a { text-decoration: none; }
+    .tiny { opacity: 0.9; font-size: 0.92rem; }
+  </style>
+</head>
+<body>
+  <p><a href="../../../index.html">← Back to run summary</a></p>
+  <h1>${html_title}</h1>
+  <p class="tiny">Detailed destriping diagnostics are intentionally hidden from the landing page and collected here.</p>
+EOF
+
+	while IFS= read -r stack_dir; do
+		local stack_name conv_png iter_gif iter_mp4 rel_conv rel_gif rel_mp4 html_name
+		stack_name="$(basename "$stack_dir")"
+		html_name="$(escape_html "$stack_name")"
+		conv_png="$stack_dir/${stack_name}_converge_rms.png"
+		iter_gif="$stack_dir/${stack_name}_iter_progression.gif"
+		iter_mp4="$stack_dir/${stack_name}_iter_progression.mp4"
+		cat >> "$debug_file" <<EOF
+  <div class="card">
+    <h2>${html_name}</h2>
+EOF
+		if [[ -f "$conv_png" ]]; then
+			rel_conv="${conv_png#"$run_dir/"}"
+			cat >> "$debug_file" <<EOF
+    <p><a href="${rel_conv}">Convergence plot (PNG)</a></p>
+    <img src="${rel_conv}" alt="${html_name} convergence plot" loading="lazy">
+EOF
+		fi
+		if [[ -f "$iter_gif" || -f "$iter_mp4" ]]; then
+			cat >> "$debug_file" <<'EOF'
+    <p>
+EOF
+			if [[ -f "$iter_gif" ]]; then
+				rel_gif="${iter_gif#"$run_dir/"}"
+				cat >> "$debug_file" <<EOF
+      <a href="${rel_gif}">Iteration GIF</a>
+EOF
+			fi
+			if [[ -f "$iter_mp4" ]]; then
+				rel_mp4="${iter_mp4#"$run_dir/"}"
+				if [[ -f "$iter_gif" ]]; then
+					cat >> "$debug_file" <<'EOF'
+      ·
+EOF
+				fi
+				cat >> "$debug_file" <<EOF
+      <a href="${rel_mp4}">Iteration MP4</a>
+EOF
+			fi
+			cat >> "$debug_file" <<'EOF'
+    </p>
+EOF
+		fi
+		cat >> "$debug_file" <<'EOF'
+  </div>
+EOF
+	done < <(find "$debug_root" -mindepth 1 -maxdepth 1 -type d | sort)
+
+	cat >> "$debug_file" <<'EOF'
+</body>
+</html>
+EOF
 }
 
 render_run_index() {
@@ -224,8 +337,8 @@ render_run_index() {
   </style>
 </head>
 <body>
-  <p><a href="${back_link}">← all published runs</a> · <a href="${base_path}${LATEST_ALIAS}/index.html">latest</a></p>
   <h1>${html_title}</h1>
+  <p class="tiny"><strong>Published:</strong> ${published_at}</p>
   <div class="meta">
     <p><strong>Run timestamp:</strong> <code>${RUN_TS}</code></p>
     <p><strong>Published at:</strong> <code>${published_at}</code></p>
@@ -556,6 +669,280 @@ EOF
 EOF
 	fi
 
+	# ── Moon imaging diagnostics ──────────────────────────────────────────────
+	local moon_imaging_dir
+	moon_imaging_dir="$run_dir/diagnostics_out/moon_imaging"
+	if [ -d "$moon_imaging_dir" ]; then
+		cat >> "$tmp_file" <<'EOF'
+
+  <h2>Moon imaging diagnostics</h2>
+  <p class="tiny">Per-integration trajectory and selfcal products for the MOON0520 scan.</p>
+  <div class="gallery">
+EOF
+		while IFS= read -r rel_png; do
+			local alt_text
+			alt_text="$(escape_html "$(basename "$rel_png" .png)")"
+			cat >> "$tmp_file" <<EOF
+    <div class="gallery-item">
+      <a href="${rel_png}"><img src="${rel_png}" alt="${alt_text}" loading="lazy"></a>
+      <div class="caption">${alt_text}</div>
+    </div>
+EOF
+		done < <(cd "$run_dir" && find diagnostics_out/moon_imaging -type f -name '*.png' 2>/dev/null | sort)
+		cat >> "$tmp_file" <<'EOF'
+  </div>
+EOF
+	fi
+
+
+	# ── Moon stage command/log provenance files ───────────────────────────────
+	if (cd "$run_dir" && find logs -maxdepth 1 -type f \( -name '*moon0520*.cmd' -o -name '*moon0520*.log' -o -name '*moon_selfcal*.cmd' -o -name '*moon_selfcal*.log' -o -name 'clustering_moon0520*.cmd' -o -name 'clustering_moon0520*.log' \) 2>/dev/null | grep -q .); then
+		cat >> "$tmp_file" <<'EOF'
+
+  <h2>Provenance & reproducibility</h2>
+  <p class="tiny">Stage command and log manifests kept in structured directories for clean audit trail.</p>
+  <ul>
+    <li><a href="logs/">Browse command/log manifests →</a></li>
+  </ul>
+EOF
+	fi
+
+	render_moon_debug_index "$run_dir" "casa_selfcal/ghpages_products/no_phasecenter" "Observed phase-centre destriping debug"
+	render_moon_debug_index "$run_dir" "casa_selfcal/ghpages_products/phasecenter" "Moon-centred tClean destriping debug"
+
+	if [[ -d "$run_dir/casa_selfcal/ghpages_products/no_phasecenter" || -d "$run_dir/casa_selfcal/ghpages_products/phasecenter" ]]; then
+		cat >> "$tmp_file" <<'EOF'
+
+  <div class="stage">
+    <h2>Moon post-selfcal imaging & stacking summary</h2>
+    <p>Four imaging/processing modes organized by geometry, then processing stage. Each section shows the observation movie, stacked image, and RMS evolution diagnostics. Detailed destriping diagnostics are linked separately at the bottom of each section.</p>
+
+    <!-- Section 1: Observed phase-centre RAW -->
+    <div class="card">
+      <h3>1. Observed phase-centre – Raw selfcal</h3>
+      <p class="tiny">Moon drifts across the image. Stacking uses shift-then-add to align moon before co-adding.</p>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+EOF
+
+		# Section 1: no_phasecenter RAW
+		if [[ -d "$run_dir/casa_selfcal/ghpages_products/no_phasecenter" ]]; then
+			cat >> "$tmp_file" <<'EOF'
+        <div class="card">
+          <p><strong>Movie</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_pre.mp4" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <video controls preload="metadata" style="max-width: 100%; cursor: pointer;" onclick="window.open('casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_pre.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_pre.mp4" type="video/mp4">
+          </video>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="card">
+          <p><strong>Stacked image</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png" alt="Observed phase-centre raw stacked image" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png" alt="Observed phase-centre raw stacked image" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="card">
+          <p><strong>RMS evolution</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_rms_evolution.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_rms_evolution.png" alt="Observed phase-centre raw RMS evolution" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_cumulative_rms_evolution.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_cumulative_rms_evolution.png" alt="Observed phase-centre raw RMS evolution" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
+		fi
+
+		cat >> "$tmp_file" <<'EOF'
+      </div>
+      <p class="tiny"><a href="casa_selfcal/ghpages_products/no_phasecenter/debug.html">→ Destriping debug details</a></p>
+    </div>
+
+    <!-- Section 2: Moon-centred RAW -->
+    <div class="card">
+      <h3>2. Moon-centred – Raw selfcal</h3>
+      <p class="tiny">Moon stays near image center. Stacking uses direct (no-shift) co-addition.</p>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+EOF
+
+		# Section 2: phasecenter RAW
+		if [[ -d "$run_dir/casa_selfcal/ghpages_products/phasecenter" ]]; then
+			cat >> "$tmp_file" <<'EOF'
+        <div class="card">
+          <p><strong>Movie</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_pre.mp4" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <video controls preload="metadata" style="max-width: 100%; cursor: pointer;" onclick="window.open('casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_pre.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_pre.mp4" type="video/mp4">
+          </video>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="card">
+          <p><strong>Stacked image</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png" alt="Moon-centred raw stacked image" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png" alt="Moon-centred raw stacked image" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="card">
+          <p><strong>RMS evolution</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_rms_evolution.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_rms_evolution.png" alt="Moon-centred raw RMS evolution" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_cumulative_rms_evolution.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_cumulative_rms_evolution.png" alt="Moon-centred raw RMS evolution" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
+		fi
+
+		cat >> "$tmp_file" <<'EOF'
+      </div>
+      <p class="tiny"><a href="casa_selfcal/ghpages_products/phasecenter/debug.html">→ Destriping debug details</a></p>
+    </div>
+
+    <!-- Section 3: Observed phase-centre DESTRIPED -->
+    <div class="card">
+      <h3>3. Observed phase-centre – Destriped</h3>
+      <p class="tiny">Same geometry as Section 1, but with striping artifacts removed.</p>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+EOF
+
+		# Section 3: no_phasecenter DESTRIPED
+		if [[ -d "$run_dir/casa_selfcal/ghpages_products/no_phasecenter" ]]; then
+			cat >> "$tmp_file" <<'EOF'
+        <div class="card">
+          <p><strong>Movie</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mp4" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <video controls preload="metadata" style="max-width: 100%; cursor: pointer;" onclick="window.open('casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mp4" type="video/mp4">
+          </video>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="card">
+          <p><strong>Stacked image</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png" alt="Observed phase-centre destriped stacked image" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png" alt="Observed phase-centre destriped stacked image" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="card">
+          <p><strong>RMS evolution</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_rms_evolution.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_rms_evolution.png" alt="Observed phase-centre destriped RMS evolution" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
+		fi
+
+		cat >> "$tmp_file" <<'EOF'
+      </div>
+    </div>
+
+    <!-- Section 4: Moon-centred DESTRIPED -->
+    <div class="card">
+      <h3>4. Moon-centred – Destriped</h3>
+      <p class="tiny">Same geometry as Section 2, but with striping artifacts removed.</p>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+EOF
+
+		# Section 4: phasecenter DESTRIPED
+		if [[ -d "$run_dir/casa_selfcal/ghpages_products/phasecenter" ]]; then
+			cat >> "$tmp_file" <<'EOF'
+        <div class="card">
+          <p><strong>Movie</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mp4" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <video controls preload="metadata" style="max-width: 100%; cursor: pointer;" onclick="window.open('casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mp4" type="video/mp4">
+          </video>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="card">
+          <p><strong>Stacked image</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png" alt="Moon-centred destriped stacked image" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png" alt="Moon-centred destriped stacked image" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="card">
+          <p><strong>RMS evolution</strong></p>
+EOF
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_rms_evolution.png" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_rms_evolution.png" alt="Moon-centred destriped RMS evolution" loading="lazy" style="max-width: 100%;"></a>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
+		fi
+
+		cat >> "$tmp_file" <<'EOF'
+      </div>
+    </div>
+
+  </div>
+EOF
+	fi
+
 	cat >> "$tmp_file" <<'EOF'
 
   <h2>All PDF products</h2>
@@ -629,7 +1016,7 @@ publish_run() {
 	source_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 	source_branch="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
 	published_at="$(date '+%Y-%m-%d %H:%M:%S %Z')"
-	run_rel="${PROJECT_SUBDIR}/runs/${RUN_TS}"
+	run_rel="${PROJECT_SUBDIR}/${LATEST_ALIAS}"
 	run_dir="$PAGES_DIR/$run_rel"
 
 	collect_publish_files
@@ -641,10 +1028,10 @@ publish_run() {
 	fi
 
 	if [[ "$DRY_RUN" -eq 1 ]]; then
-		log "DRY-RUN would publish run $RUN_TS into $run_dir"
+		log "DRY-RUN would publish run $RUN_TS to $run_rel (latest only)" >&2
 	else
+		rm -rf "$run_dir"
 		mkdir -p "$run_dir"
-		rm -rf "$run_dir/diagnostics_out" "$run_dir/logs"
 	fi
 
 	local src rel dst
@@ -663,28 +1050,53 @@ publish_run() {
 	done
 
 	if [[ "$DRY_RUN" -eq 1 ]]; then
-		log "DRY-RUN would refresh $LATEST_ALIAS/ and regenerate site indexes"
+		log "DRY-RUN would publish $run_rel"
+		if [[ "$OPEN_AFTER" -eq 1 ]]; then
+			log "DRY-RUN would open $PAGES_DIR/$run_rel/index.html in browser"
+		else
+			log "  (add --open to also open index.html in browser after commit)"
+		fi
 		return 0
 	fi
 
-	render_run_index "$run_dir" "$run_rel" "$published_at" "$source_commit" "$source_branch" "$workflow_log_name" "$manifest_name" "../../index.html"
-	local latest_dir="$PAGES_DIR/$PROJECT_SUBDIR/$LATEST_ALIAS"
-	rm -rf "$latest_dir"
-	mkdir -p "$latest_dir"
-	cp -R "$run_dir"/. "$latest_dir/"
-	# Re-render index for latest/ with correct back-link depth (1 level up to project index)
-	render_run_index "$latest_dir" "$run_rel" "$published_at" "$source_commit" "$source_branch" "$workflow_log_name" "$manifest_name" "../index.html"
-	render_root_index
+	# Publish directly to latest/ (no historical run browsing exposed)
+	render_run_index "$run_dir" "$run_rel" "$published_at" "$source_commit" "$source_branch" "$workflow_log_name" "$manifest_name" "../index.html"
+
+	# Create a simple project landing page at the root
+	local project_root="$PAGES_DIR/$PROJECT_SUBDIR"
+	cat > "$project_root/index.html" <<'EOF'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GMRT 40_014 Calibration Diagnostics</title>
+  <meta http-equiv="refresh" content="0; url=latest/">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 2rem; margin: 0; }
+    a { color: #0969da; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>GMRT 40_014 Calibration Diagnostics</h1>
+  <p>Redirecting to the <a href="latest/">latest published run</a>...</p>
+</body>
+</html>
+EOF
 
 	git -C "$PAGES_DIR" add .
 	if git -C "$PAGES_DIR" diff --cached --quiet; then
 		log "no gh-pages changes to commit"
-		return 0
+	else
+		git -C "$PAGES_DIR" commit -m "Publish GMRT 40_014 run ${RUN_TS}"
+		if [[ "$PUSH" -eq 1 ]]; then
+			git -C "$PAGES_DIR" push -u origin "$PUBLISH_BRANCH"
+		fi
 	fi
 
-	git -C "$PAGES_DIR" commit -m "Publish GMRT 40_014 run ${RUN_TS}"
-	if [[ "$PUSH" -eq 1 ]]; then
-		git -C "$PAGES_DIR" push -u origin "$PUBLISH_BRANCH"
+	if [[ "$OPEN_AFTER" -eq 1 ]]; then
+		open "$run_dir/index.html"
 	fi
 }
 
@@ -728,6 +1140,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--dry-run)
 			DRY_RUN=1
+			shift
+			;;
+		--open)
+			OPEN_AFTER=1
 			shift
 			;;
 		-h|--help)
