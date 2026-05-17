@@ -1223,7 +1223,7 @@ def main():
         print(f'[stack] Reference stack from mean JD: [{new_ref_idx}] {os.path.basename(valid_paths[new_ref_idx])} '
               f'(JD={jd_arr[new_ref_idx]:.8f}, mean={jd_mean:.8f})')
 
-    ref_img = images[new_ref_idx]
+    raw_ref_img = images[new_ref_idx]
     ref_header = load_header(valid_paths[new_ref_idx])
 
     raw_images = list(images)
@@ -1442,6 +1442,8 @@ def main():
                   f'r={moon_radius_pix:.1f}px peaks/iter={peaks_hist} rms/iter={[f"{r:.2e}" for r in rms_hist]}')
         images = destriped
 
+    proc_ref_img = images[new_ref_idx]
+
     px_scale_arcsec = abs(ref_header.get('CDELT2', 0.0004166666666667)) * 3600.0
     print(f'[stack] Registration mode: {args.registration_mode}')
     if args.registration_mode == 'derive':
@@ -1455,7 +1457,7 @@ def main():
     print('-' * 114)
     result = stack_registered_images(
         images=images,
-        ref_img=ref_img,
+        ref_img=proc_ref_img,
         valid_paths=valid_paths,
         ref_idx=new_ref_idx,
         upsample=args.upsample,
@@ -1488,7 +1490,7 @@ def main():
     if args.destripe_iters > 0:
         original_result = stack_registered_images(
             images=raw_images,
-            ref_img=ref_img,
+            ref_img=raw_ref_img,
             valid_paths=valid_paths,
             ref_idx=new_ref_idx,
             upsample=args.upsample,
