@@ -129,7 +129,7 @@ run_stack_destripe() {
       return 0
     fi
 
-    "$PYTHON" "$REPO_ROOT/experimental/stack_moon_snapshots.py" \
+    "$PYTHON" "$REPO_ROOT/src/stack_moon_snapshots.py" \
       --selfcal-dir "$src_dir" \
       --glob "$STACK_GLOB" \
       --output "$stack_out" \

@@ -268,7 +268,7 @@ DESTRIPE_RAN=0
 if [[ "$RUN_DESTRIPE_AFTER_SELFCAL" == "1" ]]; then
     echo "[run-moon-selfcal] Running optional destriping stage..."
     D_CMD=(
-        "$PYTHON" experimental/stack_moon_snapshots.py
+        "$PYTHON" "$REPO_ROOT/src/stack_moon_snapshots.py"
         --selfcal-dir "$OUTDIR"
         --output "$DESTRIPE_STACK_OUTPUT"
         --glob "$DESTRIPE_GLOB_PATTERN"

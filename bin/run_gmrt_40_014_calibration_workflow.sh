@@ -558,7 +558,7 @@ if [[ "$RUN_MOON_SELFCAL_STAGE" == "1" ]]; then
       USE_TCLEAN_PHASECENTER=1 \
       MAKE_MOVIE_AFTER_SELFCAL=0 \
       RUN_DESTRIPE_AFTER_SELFCAL=0 \
-      bash "$SCRIPT_DIR/../experimental/run_moon_selfcal_dev.sh"
+      bash "$SCRIPT_DIR/run_moon_selfcal_dev.sh"
 
     if selfcal_no_phase_enabled; then
       run_optional_step 13 "moon selfcal imaging (no-phasecentre)" \
@@ -566,7 +566,7 @@ if [[ "$RUN_MOON_SELFCAL_STAGE" == "1" ]]; then
         USE_TCLEAN_PHASECENTER=0 \
         MAKE_MOVIE_AFTER_SELFCAL=0 \
         RUN_DESTRIPE_AFTER_SELFCAL=0 \
-        bash "$SCRIPT_DIR/../experimental/run_moon_selfcal_dev.sh"
+        bash "$SCRIPT_DIR/run_moon_selfcal_dev.sh"
     else
       log "INFO: no-phasecenter moon selfcal disabled (RUN_MOON_SELFCAL_NO_PHASECENTER=$RUN_MOON_SELFCAL_NO_PHASECENTER)"
     fi
@@ -599,7 +599,7 @@ if [[ "$RUN_MOON_POSTSELFCAL_ARTIFACTS" == "1" ]]; then
     run_optional_step 15 "moon post-selfcal artifacts (destripe + movies)" \
       env WORK_SELFCAL_ROOT="$WORK_DIR/casa_selfcal" \
       OUTPUT_ROOT="$MOON_GHPAGES_PRODUCTS_DIR" \
-      bash "$SCRIPT_DIR/../experimental/run_moon_ghpages_products.sh"
+      bash "$SCRIPT_DIR/run_moon_ghpages_products.sh"
   else
     log "SMART_RESUME: step 15 already complete; skipping"
   fi
