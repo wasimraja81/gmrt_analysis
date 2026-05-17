@@ -332,14 +332,18 @@ render_run_index() {
 		.stage { margin-top: 1.2rem; padding: 1.1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
 		.stage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
 		.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; align-items: start; }
+		.moon-section .panel-grid { align-items: stretch; }
     .card { border: 1px solid #8884; border-radius: 10px; padding: 0.9rem; background: #8881; }
 		.panel-card { border: 1px solid #8884; border-radius: 10px; padding: 0.75rem; background: #8881; }
+		.moon-section .panel-card { display: flex; flex-direction: column; }
+		.moon-section .panel-card > a { flex: 1; display: flex; align-items: center; justify-content: center; }
 		.moon-section { margin-top: 1rem; border: 1px solid #8884; border-radius: 12px; background: #8881; padding: 1rem; }
 		.moon-section h3 { margin-top: 0; margin-bottom: 0.25rem; }
 		.card p { margin: 0.35rem 0; }
 		.panel-card p { margin: 0.2rem 0 0.5rem 0; }
     img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
 		.panel-card img, .panel-card video { width: 100%; border-radius: 8px; }
+		.moon-section .panel-card img { width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
 		.panel-card video { cursor: pointer; }
     a { text-decoration: none; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -776,13 +780,17 @@ EOF
 				<div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_rms_evolution.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_rms_evolution.png" alt="Observed phase-centre raw RMS evolution" loading="lazy"></a>
-EOF
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_cumulative_rms_evolution.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_cumulative_rms_evolution.png" alt="Observed phase-centre raw RMS evolution" loading="lazy"></a>
+			local no_raw_cum_mp4_rel=""
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4" ]]; then
+				no_raw_cum_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4"
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_coadd.mp4" ]]; then
+				no_raw_cum_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_coadd.mp4"
+			fi
+			if [[ -n "$no_raw_cum_mp4_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<video controls preload="metadata" onclick="window.open('$no_raw_cum_mp4_rel','_blank')" title="Click to open full-size">
+	            <source src="$no_raw_cum_mp4_rel" type="video/mp4">
+	          </video>
 EOF
 			fi
 			cat >> "$tmp_file" <<'EOF'
@@ -839,13 +847,17 @@ EOF
 				<div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_rms_evolution.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_rms_evolution.png" alt="Moon-centred raw RMS evolution" loading="lazy"></a>
-EOF
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_cumulative_rms_evolution.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_cumulative_rms_evolution.png" alt="Moon-centred raw RMS evolution" loading="lazy"></a>
+			local pc_raw_cum_mp4_rel=""
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4" ]]; then
+				pc_raw_cum_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4"
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_coadd.mp4" ]]; then
+				pc_raw_cum_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_coadd.mp4"
+			fi
+			if [[ -n "$pc_raw_cum_mp4_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<video controls preload="metadata" onclick="window.open('$pc_raw_cum_mp4_rel','_blank')" title="Click to open full-size">
+	            <source src="$pc_raw_cum_mp4_rel" type="video/mp4">
+	          </video>
 EOF
 			fi
 			cat >> "$tmp_file" <<'EOF'
@@ -861,6 +873,7 @@ EOF
 		<div class="moon-section">
       <h3>3. Observed phase-centre – Destriped</h3>
       <p class="tiny">Same geometry as Section 1, but with striping artifacts removed.</p>
+		<p class="tiny"><strong>Caution:</strong> residual destriping artifacts can bias the automatic image-alignment shifts. Registration here uses FFT-based phase-correlation, so non-astronomical stripe power can introduce alignment error.</p>
 			<div class="panel-grid">
 EOF
 
@@ -896,9 +909,17 @@ EOF
 				<div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_rms_evolution.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_rms_evolution.png" alt="Observed phase-centre destriped RMS evolution" loading="lazy"></a>
+			local no_dst_cum_mp4_rel=""
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4" ]]; then
+				no_dst_cum_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4"
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_coadd.mp4" ]]; then
+				no_dst_cum_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_coadd.mp4"
+			fi
+			if [[ -n "$no_dst_cum_mp4_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<video controls preload="metadata" onclick="window.open('$no_dst_cum_mp4_rel','_blank')" title="Click to open full-size">
+	            <source src="$no_dst_cum_mp4_rel" type="video/mp4">
+	          </video>
 EOF
 			fi
 			cat >> "$tmp_file" <<'EOF'
@@ -950,9 +971,17 @@ EOF
 				<div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_rms_evolution.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_rms_evolution.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_rms_evolution.png" alt="Moon-centred destriped RMS evolution" loading="lazy"></a>
+			local pc_dst_cum_mp4_rel=""
+			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4" ]]; then
+				pc_dst_cum_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4"
+			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_coadd.mp4" ]]; then
+				pc_dst_cum_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_coadd.mp4"
+			fi
+			if [[ -n "$pc_dst_cum_mp4_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<video controls preload="metadata" onclick="window.open('$pc_dst_cum_mp4_rel','_blank')" title="Click to open full-size">
+	            <source src="$pc_dst_cum_mp4_rel" type="video/mp4">
+	          </video>
 EOF
 			fi
 			cat >> "$tmp_file" <<'EOF'

@@ -239,8 +239,8 @@ run_movie "$NO_PHASECENTER_DIR" \
   "$NO_OUT/destriped_finals" \
   "*_final.fits"
 
-run_cumulative_movie "$NO_PHASECENTER_DIR" "$NO_OUT" "derive" "moon0520_no_phasecenter_phasecorr_raw_selfcal" "$STACK_GLOB"
-run_cumulative_movie "$NO_OUT/destriped_finals" "$NO_OUT" "derive" "moon0520_no_phasecenter_phasecorr_destriped" "*_final.fits"
+run_cumulative_movie "$NO_PHASECENTER_DIR" "$NO_OUT" "derive" "moon0520_observed_center_raw" "$STACK_GLOB"
+run_cumulative_movie "$NO_OUT/destriped_finals" "$NO_OUT" "derive" "moon0520_observed_center_destriped" "*_final.fits"
 cleanup_destriped_finals "$NO_OUT"
 
 echo "[ghpages-products] === tClean phase-centre case ==="
@@ -272,8 +272,8 @@ run_movie "$PHASECENTER_DIR" \
   "$PC_OUT/destriped_finals" \
   "*_final.fits"
 
-run_cumulative_movie "$PHASECENTER_DIR" "$PC_OUT" "none" "moon0520_phasecenter_noshift_raw_selfcal" "$STACK_GLOB"
-run_cumulative_movie "$PC_OUT/destriped_finals" "$PC_OUT" "none" "moon0520_phasecenter_noshift_destriped" "*_final.fits"
+run_cumulative_movie "$PHASECENTER_DIR" "$PC_OUT" "none" "moon0520_moon_centered_raw" "$STACK_GLOB"
+run_cumulative_movie "$PC_OUT/destriped_finals" "$PC_OUT" "none" "moon0520_moon_centered_destriped" "*_final.fits"
 cleanup_destriped_finals "$PC_OUT"
 
 echo "[ghpages-products] done"

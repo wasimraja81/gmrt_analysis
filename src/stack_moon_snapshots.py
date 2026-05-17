@@ -54,6 +54,13 @@ from astropy.io import fits
 from astropy.coordinates import EarthLocation, get_body
 from astropy.time import Time
 from astropy.wcs import WCS
+from modules.moon_registration import (
+    align_images as shared_align_images,
+    apply_shift_fourier as shared_apply_shift_fourier,
+    choose_reference_index_mean_jd,
+    phase_cross_correlate as shared_phase_cross_correlate,
+    representative_jd_from_header as shared_representative_jd_from_header,
+)
 
 
 class TeeStream:
@@ -151,17 +158,7 @@ def representative_jd_from_header(header) -> float:
 
     Priority: JDMID > JDAVG > MJD-AVG > DATE-AVG > DATE-OBS
     """
-    if header.get('JDMID') is not None:
-        return float(header['JDMID'])
-    if header.get('JDAVG') is not None:
-        return float(header['JDAVG'])
-    if header.get('MJD-AVG') is not None:
-        return Time(float(header['MJD-AVG']), format='mjd', scale='utc').jd
-    if header.get('DATE-AVG'):
-        return Time(header['DATE-AVG'], format='isot', scale='utc').jd
-    if header.get('DATE-OBS'):
-        return Time(header['DATE-OBS'], format='isot', scale='utc').jd
-    raise ValueError('No usable time keyword found (JDMID/JDAVG/MJD-AVG/DATE-AVG/DATE-OBS).')
+    return shared_representative_jd_from_header(header)
 
 
 def phase_cross_correlate(ref: np.ndarray, mov: np.ndarray,
@@ -170,20 +167,8 @@ def phase_cross_correlate(ref: np.ndarray, mov: np.ndarray,
     Return (row_shift, col_shift) to align *mov* onto *ref*.
     Uses skimage if available, falls back to numpy FFT integer-only.
     """
-    try:
-        from skimage.registration import phase_cross_correlation
-        shift, _, _ = phase_cross_correlation(ref, mov,
-                                              upsample_factor=upsample,
-                                              normalization=None)
-        return float(shift[0]), float(shift[1])
-    except ImportError:
-        # Integer-only fallback via np.fft
-        F = np.fft.fft2(ref) * np.conj(np.fft.fft2(mov))
-        cc = np.fft.ifft2(F / (np.abs(F) + 1e-30)).real
-        idx = np.unravel_index(np.argmax(cc), cc.shape)
-        dr = idx[0] if idx[0] < ref.shape[0] // 2 else idx[0] - ref.shape[0]
-        dc = idx[1] if idx[1] < ref.shape[1] // 2 else idx[1] - ref.shape[1]
-        return float(dr), float(dc)
+    dr, dc, _ = shared_phase_cross_correlate(ref, mov, upsample=upsample)
+    return dr, dc
 
 
 def apply_shift_fourier(img: np.ndarray, dr: float, dc: float) -> np.ndarray:
@@ -191,15 +176,7 @@ def apply_shift_fourier(img: np.ndarray, dr: float, dc: float) -> np.ndarray:
     Apply sub-pixel shift (dr, dc) via Fourier phase ramp.
     Zero-shift returns the original unchanged.
     """
-    if dr == 0.0 and dc == 0.0:
-        return img
-    ny, nx = img.shape
-    # Build frequency grids
-    fr = np.fft.fftfreq(ny)[:, np.newaxis]  # (ny, 1)
-    fc = np.fft.fftfreq(nx)[np.newaxis, :]  # (1, nx)
-    phase_ramp = np.exp(-2j * np.pi * (dr * fr + dc * fc))
-    shifted = np.fft.ifft2(np.fft.fft2(img) * phase_ramp).real
-    return shifted.astype(np.float32)
+    return shared_apply_shift_fourier(img, dr, dc)
 
 
 def robust_mad_sigma(values: np.ndarray) -> float:
@@ -934,25 +911,20 @@ def stack_registered_images(images: list[np.ndarray],
                             px_scale_arcsec: float,
                             print_shift_table: bool = True) -> np.ndarray:
     """Stack images with optional registration to a reference frame."""
-    shifted = []
-    for i, img in enumerate(images):
-        fname = os.path.basename(valid_paths[i])
-        if registration_mode == 'none':
-            dr, dc = 0.0, 0.0
-        else:
-            if i == ref_idx:
-                dr, dc = 0.0, 0.0
-            elif registration_method == 'phase-correlation':
-                dr, dc = phase_cross_correlate(ref_img, img, upsample=upsample)
-            else:
-                raise ValueError(f'Unsupported registration method: {registration_method}')
+    shifted, shifts, _ = shared_align_images(
+        images=images,
+        ref_idx=ref_idx,
+        registration_mode=registration_mode,
+        registration_method=registration_method,
+        upsample=upsample,
+    )
 
+    for i, (dr, dc) in enumerate(shifts):
+        fname = os.path.basename(valid_paths[i])
         if print_shift_table:
             print(f'{i:>4}  {fname:<45}  {dr:>8.3f}  {dc:>8.3f}  '
                   f'{dr * px_scale_arcsec:>10.3f}  {dc * px_scale_arcsec:>10.3f}  '
                   f'{np.hypot(dr, dc) * px_scale_arcsec / 60.0:>8.3f}')
-
-        shifted.append(apply_shift_fourier(img, dr, dc))
 
     stack = np.array(shifted)
     if method == 'mean':
@@ -1213,13 +1185,8 @@ def main():
             requested_ref_idx = None
 
     if requested_ref_idx is None:
-        jds = []
-        for path in valid_paths:
-            hdr = load_header(path)
-            jds.append(representative_jd_from_header(hdr))
-        jd_arr = np.array(jds, dtype=np.float64)
-        jd_mean = float(np.mean(jd_arr))
-        new_ref_idx = int(np.argmin(np.abs(jd_arr - jd_mean)))
+        headers_for_ref = [load_header(path) for path in valid_paths]
+        new_ref_idx, jd_arr, jd_mean = choose_reference_index_mean_jd(headers_for_ref)
         print(f'[stack] Reference stack from mean JD: [{new_ref_idx}] {os.path.basename(valid_paths[new_ref_idx])} '
               f'(JD={jd_arr[new_ref_idx]:.8f}, mean={jd_mean:.8f})')
 

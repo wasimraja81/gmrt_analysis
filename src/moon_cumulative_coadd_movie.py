@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import re
 import shutil
 import subprocess
@@ -18,6 +17,11 @@ if not matplotlib.get_backend().lower().startswith('agg'):
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.io import fits
+from modules.moon_registration import (
+    align_images as shared_align_images,
+    choose_reference_index_mean_jd,
+    off_moon_rms as shared_off_moon_rms,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +35,8 @@ def parse_args() -> argparse.Namespace:
                         help='Glob used to discover FITS frames recursively')
     parser.add_argument('--registration-mode', choices=['derive', 'none'], default='none',
                         help='Registration before cumulative co-add')
+    parser.add_argument('--upsample', type=int, default=10,
+                        help='Sub-pixel upsample factor for derive registration')
     parser.add_argument('--moon-mask-radius-arcmin', type=float, default=20.0,
                         help='Radius used for off-moon RMS mask')
     parser.add_argument('--frames-dir', default=None,
@@ -90,24 +96,6 @@ def _read_2d_fits(path: Path) -> tuple[np.ndarray, fits.Header]:
     return arr, hdr
 
 
-def _estimate_integer_shift(ref_img: np.ndarray, img: np.ndarray) -> tuple[int, int]:
-    ref = np.nan_to_num(ref_img.astype(np.float64), nan=0.0)
-    cur = np.nan_to_num(img.astype(np.float64), nan=0.0)
-    corr = np.fft.ifft2(np.fft.fft2(ref) * np.conj(np.fft.fft2(cur)))
-    peak_rc = np.unravel_index(np.argmax(np.abs(corr)), corr.shape)
-    dr, dc = int(peak_rc[0]), int(peak_rc[1])
-    nr, nc = ref.shape
-    if dr > nr // 2:
-        dr -= nr
-    if dc > nc // 2:
-        dc -= nc
-    return dr, dc
-
-
-def _apply_shift(img: np.ndarray, dr: int, dc: int) -> np.ndarray:
-    return np.roll(np.roll(img, -dr, axis=0), -dc, axis=1)
-
-
 def _robust_scale(arrays: list[np.ndarray], p_low: float, p_high: float) -> tuple[float, float]:
     lows: list[float] = []
     highs: list[float] = []
@@ -126,23 +114,27 @@ def _robust_scale(arrays: list[np.ndarray], p_low: float, p_high: float) -> tupl
     return vmin, vmax
 
 
-def _off_moon_rms(image: np.ndarray, mask_radius_pix: float) -> float:
-    ny, nx = image.shape
-    yy, xx = np.indices((ny, nx), dtype=np.float64)
-    cy = (ny - 1) / 2.0
-    cx = (nx - 1) / 2.0
-    rr = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
-    mask = rr > float(mask_radius_pix)
-    vals = image[mask]
-    vals = vals[np.isfinite(vals)]
-    if vals.size == 0:
-        return float('nan')
-    med = float(np.median(vals))
-    mad = float(np.median(np.abs(vals - med)))
-    robust_rms = 1.4826 * mad
-    if not np.isfinite(robust_rms) or robust_rms <= 0:
-        robust_rms = float(np.sqrt(np.mean(vals**2)))
-    return robust_rms
+def _off_moon_rms(image: np.ndarray, mask_radius_pix: float,
+                  moon_center: tuple[float, float] | None = None) -> float:
+    return shared_off_moon_rms(image, mask_radius_pix, moon_center=moon_center)
+
+
+def _find_moon_center(image: np.ndarray, bright_frac: float = 0.005) -> tuple[float, float]:
+    """Estimate moon centre as weighted centroid of brightest ~0.5 % of pixels."""
+    arr = np.asarray(image, dtype=np.float64)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return (arr.shape[0] - 1) / 2.0, (arr.shape[1] - 1) / 2.0
+    threshold = np.percentile(finite, 100.0 * (1.0 - bright_frac))
+    mask = np.isfinite(arr) & (arr >= threshold)
+    weights = np.where(mask, arr, 0.0)
+    total = float(weights.sum())
+    if total <= 0:
+        return (arr.shape[0] - 1) / 2.0, (arr.shape[1] - 1) / 2.0
+    yy, xx = np.indices(arr.shape, dtype=np.float64)
+    cy = float((weights * yy).sum() / total)
+    cx = float((weights * xx).sum() / total)
+    return cy, cx
 
 
 def _check_ffmpeg() -> str:
@@ -236,12 +228,13 @@ def _save_rms_outputs(rms_vals: list[float], out_png: Path, out_csv: Path) -> No
     y = np.array(rms_vals, dtype=float)
 
     fig, ax = plt.subplots(figsize=(7.6, 4.6))
-    ax.plot(x, y, '-o', color='tab:cyan', linewidth=2.0, markersize=5)
+    ax.plot(x, y * 1000.0, '-o', color='tab:cyan', linewidth=2.0, markersize=5)
     ax.set_xlabel('Number of co-added frames')
-    ax.set_ylabel('Off-moon RMS (Jy/beam, robust)')
+    ax.set_ylabel('Off-moon RMS (mJy/beam, robust)')
     ax.set_title('Cumulative co-add RMS evolution')
     ax.set_xlim(1, n)
-    y_finite = y[np.isfinite(y)]
+    y_mJy = y * 1000.0
+    y_finite = y_mJy[np.isfinite(y_mJy)]
     if y_finite.size > 0:
         ymin = float(np.min(y_finite))
         ymax = float(np.max(y_finite))
@@ -254,8 +247,8 @@ def _save_rms_outputs(rms_vals: list[float], out_png: Path, out_csv: Path) -> No
     fig.savefig(out_png, dpi=160)
     plt.close(fig)
 
-    out_csv.write_text('n_coadd,offmoon_rms_jy_per_beam\n' + '\n'.join(
-        f'{idx},{val:.10e}' for idx, val in enumerate(rms_vals, start=1)
+    out_csv.write_text('n_coadd,offmoon_rms_mJy_per_beam\n' + '\n'.join(
+        f'{idx},{val * 1000.0:.6f}' for idx, val in enumerate(rms_vals, start=1)
     ))
 
 
@@ -289,18 +282,28 @@ def main() -> int:
         arrays.append(arr)
         headers.append(hdr)
 
-    ref = arrays[0]
-    aligned_arrays: list[np.ndarray] = []
-    shifts: list[tuple[int, int]] = []
-    for index, arr in enumerate(arrays):
-        if args.registration_mode == 'none' or index == 0:
-            dr, dc = 0, 0
-            aligned = arr
-        else:
-            dr, dc = _estimate_integer_shift(ref, arr)
-            aligned = _apply_shift(arr, dr, dc)
-        aligned_arrays.append(aligned)
-        shifts.append((dr, dc))
+    ref_idx, jd_arr, jd_mean = choose_reference_index_mean_jd(headers)
+    aligned_arrays, shifts, backend = shared_align_images(
+        images=arrays,
+        ref_idx=ref_idx,
+        registration_mode=args.registration_mode,
+        registration_method='phase-correlation',
+        upsample=args.upsample,
+    )
+
+    # Log per-frame shifts immediately after alignment so they appear in the run log.
+    for _i, (_dr, _dc) in enumerate(shifts):
+        print(f'[cum-coadd] frame_shift  {_i:02d} ({frame_paths[_i].name}): '
+              f'dr={_dr:+.3f}px  dc={_dc:+.3f}px')
+
+    # Find moon centre in the aligned reference frame.
+    # For no_phasecenter data the moon is NOT at the image centre; using the
+    # centroid of the brightest pixels in the reference aligned image ensures the
+    # off-moon RMS mask is placed correctly for all geometries.
+    moon_cy, moon_cx = _find_moon_center(aligned_arrays[ref_idx])
+    print(f'[cum-coadd] moon_center  : cy={moon_cy:.1f}px  cx={moon_cx:.1f}px  '
+          f'(image centre: cy={(aligned_arrays[ref_idx].shape[0]-1)/2.0:.1f}  '
+          f'cx={(aligned_arrays[ref_idx].shape[1]-1)/2.0:.1f})')
 
     vmin, vmax = _robust_scale(aligned_arrays, args.percentile_low, args.percentile_high)
 
@@ -328,30 +331,38 @@ def main() -> int:
     for idx, arr in enumerate(aligned_arrays, start=1):
         cumulative_sum += np.asarray(arr, dtype=np.float64)
         stack = cumulative_sum / float(idx)
-        rms_val = _off_moon_rms(stack, moon_mask_radius_pix)
+        rms_val = _off_moon_rms(stack, moon_mask_radius_pix, moon_center=(moon_cy, moon_cx))
         rms_vals.append(rms_val)
+
+    cumulative_sum = np.zeros_like(aligned_arrays[0], dtype=np.float64)
+    for idx, arr in enumerate(aligned_arrays, start=1):
+        cumulative_sum += np.asarray(arr, dtype=np.float64)
+        stack = cumulative_sum / float(idx)
 
         fig, ax = plt.subplots(figsize=(7.2, 7.2))
         im = ax.imshow(stack, origin='lower', cmap=args.cmap, vmin=vmin, vmax=vmax)
         ax.set_title(f'Cumulative co-add ({args.registration_mode})  n={idx}/{n_total}')
         ax.set_xticks([])
         ax.set_yticks([])
-        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Jy/beam')
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Jy/beam')  # noqa: colourbar keeps Jy/beam (raw pixel units)
         cbar.ax.tick_params(labelsize=8)
 
         if args.registration_mode == 'derive':
             dr, dc = shifts[idx - 1]
             ax.text(0.02, 0.02,
-                    f'shift applied: Δr={dr:+d}px  Δc={dc:+d}px',
+                f'shift applied: Δr={dr:+.3f}px  Δc={dc:+.3f}px',
                     transform=ax.transAxes, fontsize=8,
                     color='white', bbox=dict(facecolor='black', alpha=0.45, pad=3))
 
         inset = ax.inset_axes((0.58, 0.58, 0.38, 0.35))
         x_full = np.arange(1, n_total + 1)
         inset.plot(x_full, [np.nan] * n_total, alpha=0.0)
-        inset.plot(np.arange(1, idx + 1), rms_vals, '-o', color='tab:cyan', linewidth=1.7, markersize=3)
+        # Inset background is white → curve must be dark; labels/ticks/spines
+        # overhang onto the (dark) image region so they stay yellow.
+        rms_mJy = [v * 1000.0 for v in rms_vals]
+        inset.plot(np.arange(1, idx + 1), rms_mJy[:idx], '-o', color='navy', linewidth=1.7, markersize=3)
         inset.set_xlim(1, n_total)
-        y_finite = np.array(rms_vals, dtype=float)
+        y_finite = np.array(rms_mJy, dtype=float)
         y_finite = y_finite[np.isfinite(y_finite)]
         if y_finite.size > 0:
             ymin = float(np.min(y_finite))
@@ -360,10 +371,12 @@ def main() -> int:
                 ymax = ymin + 1e-6
             pad = 0.1 * (ymax - ymin)
             inset.set_ylim(ymin - pad, ymax + pad)
-        inset.set_title('Off-moon RMS', fontsize=8)
-        inset.set_xlabel('N', fontsize=7)
-        inset.set_ylabel('RMS', fontsize=7)
-        inset.tick_params(axis='both', labelsize=7)
+        inset.set_title('Off-moon RMS', fontsize=8, color='yellow')
+        inset.set_xlabel('N', fontsize=7, color='yellow')
+        inset.set_ylabel('mJy/beam', fontsize=7, color='yellow')
+        inset.tick_params(axis='both', labelsize=7, colors='yellow')
+        for spine in inset.spines.values():
+            spine.set_color('yellow')
         inset.grid(alpha=0.3, linestyle='--')
 
         frame_png = frames_dir / f'frame_{idx - 1:04d}.png'
@@ -381,6 +394,11 @@ def main() -> int:
     print(f'[cum-coadd] selfcal_dir : {selfcal_dir}')
     print(f'[cum-coadd] frames      : {n_total}')
     print(f'[cum-coadd] reg_mode    : {args.registration_mode}')
+    print(f'[cum-coadd] reg_backend : {backend}')
+    print(f'[cum-coadd] upsample    : {args.upsample}')
+    print(f'[cum-coadd] ref_idx     : {ref_idx}')
+    print(f'[cum-coadd] ref_file    : {frame_paths[ref_idx].name}')
+    print(f'[cum-coadd] ref_jd      : {jd_arr[ref_idx]:.8f} (mean={jd_mean:.8f})')
     print(f'[cum-coadd] frame_dir   : {frames_dir}')
     print(f'[cum-coadd] out_mp4     : {out_mp4}')
     print(f'[cum-coadd] out_gif     : {out_gif}')
