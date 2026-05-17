@@ -5,7 +5,7 @@
 # Edit the parameters below and re-run to experiment.
 #
 # Usage:
-#   bash experimental/run_moon_selfcal_dev.sh
+#   bash bin/run_moon_selfcal_dev.sh
 #
 # To test a different scan, change SCAN and UVFITS below.
 
@@ -209,7 +209,7 @@ LOG_FILE="$LOG_DIR/run_moon_selfcal_${SCAN_LOWER}_${RUN_TS}.log"
 INTEGRATION_ARGS=( $INTEGRATIONS )
 
 CMD=(
-    "$PYTHON" experimental/moon_selfcal_dev.py
+    "$PYTHON" "$REPO_ROOT/src/moon_selfcal_dev.py"
     --scan "$SCAN"
     --uvfits "$UVFITS_FOR_SELFCAL"
     --build-index-if-missing
@@ -321,7 +321,7 @@ if [[ "$MAKE_MOVIE_AFTER_SELFCAL" == "1" ]]; then
        PERCENTILE_HIGH="$MOVIE_PERCENTILE_HIGH" \
        SCALE_DIRS="$MOVIE_SCALE_DIRS" \
        PYTHON_CMD="$PYTHON" \
-       bash "$REPO_ROOT/experimental/run_moon_selfcal_movie_dev.sh"; then
+    bash "$REPO_ROOT/bin/run_moon_selfcal_movie_dev.sh"; then
         echo "[run-moon-selfcal] Optional movie generation completed."
     else
         echo "[run-moon-selfcal] WARNING: optional movie generation failed; continuing with selfcal outputs only."
@@ -345,7 +345,7 @@ if [[ "$DESTRIPE_RAN" == "1" && "$MAKE_DESTRIPED_MOVIE" == "1" ]]; then
        OUT_GIF="$OUTDIR/${SCAN_LOWER}_selfcal_movie_destriped.gif" \
        OUT_MOV="$OUTDIR/${SCAN_LOWER}_selfcal_movie_destriped.mov" \
        PYTHON_CMD="$PYTHON" \
-       bash "$REPO_ROOT/experimental/run_moon_selfcal_movie_dev.sh"; then
+    bash "$REPO_ROOT/bin/run_moon_selfcal_movie_dev.sh"; then
         echo "[run-moon-selfcal] Optional destriped movie generation completed."
     else
         echo "[run-moon-selfcal] WARNING: optional destriped movie generation failed."
@@ -370,7 +370,7 @@ if [[ "$DESTRIPE_RAN" == "1" && "$MAKE_COMPARE_MOVIE" == "1" ]]; then
        OUT_GIF="$OUTDIR/${SCAN_LOWER}_selfcal_movie_before_after_compare.gif" \
        OUT_MOV="$OUTDIR/${SCAN_LOWER}_selfcal_movie_before_after_compare.mov" \
        PYTHON_CMD="$PYTHON" \
-       bash "$REPO_ROOT/experimental/run_moon_selfcal_movie_dev.sh"; then
+    bash "$REPO_ROOT/bin/run_moon_selfcal_movie_dev.sh"; then
         echo "[run-moon-selfcal] Optional compare movie generation completed."
     else
         echo "[run-moon-selfcal] WARNING: optional compare movie generation failed."

@@ -91,7 +91,7 @@ run_movie() {
         OUT_GIF="$out_gif" \
         OUT_MOV="$out_mov" \
         PYTHON_CMD="$PYTHON" \
-        bash "$REPO_ROOT/experimental/run_moon_selfcal_movie_dev.sh"
+        bash "$REPO_ROOT/bin/run_moon_selfcal_movie_dev.sh"
     else
         SCAN="$SCAN" \
         SELFCAL_DIR="$src_dir" \
@@ -106,7 +106,7 @@ run_movie() {
         OUT_GIF="$out_gif" \
         OUT_MOV="$out_mov" \
         PYTHON_CMD="$PYTHON" \
-        bash "$REPO_ROOT/experimental/run_moon_selfcal_movie_dev.sh"
+        bash "$REPO_ROOT/bin/run_moon_selfcal_movie_dev.sh"
     fi
 }
 
@@ -174,7 +174,7 @@ run_cumulative_movie() {
       return 0
     fi
 
-    "$PYTHON" "$REPO_ROOT/experimental/moon_cumulative_coadd_movie.py" \
+    "$PYTHON" "$REPO_ROOT/src/moon_cumulative_coadd_movie.py" \
       --selfcal-dir "$src_dir" \
       --glob "$fits_glob" \
       --registration-mode "$reg_mode" \

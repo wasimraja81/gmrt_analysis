@@ -218,7 +218,7 @@ CMD_FILE="$LOG_DIR/run_moon_selfcal_movie_${SCAN_LOWER}_${RUN_TS}.cmd"
 LOG_FILE="$LOG_DIR/run_moon_selfcal_movie_${SCAN_LOWER}_${RUN_TS}.log"
 
 CMD=(
-    "$PYTHON" experimental/moon_selfcal_movie.py
+    "$PYTHON" "$REPO_ROOT/src/moon_selfcal_movie.py"
     --selfcal-dir "$SELFCAL_DIR"
     --glob "$GLOB_PATTERN"
     --frames-dir "$FRAMES_DIR"

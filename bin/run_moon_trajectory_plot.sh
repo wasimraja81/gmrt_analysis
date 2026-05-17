@@ -3,8 +3,8 @@
 # Outputs to diagnostics_out/moon_imaging/moon0520_trajectory.png (in WORK_DIR).
 #
 # Usage:
-#   WORK_DIR=/path/to/work  bash experimental/run_moon_trajectory_plot.sh
-#   WORK_DIR=/path/to/work  MS_PATH=/path/to/full.ms  bash experimental/run_moon_trajectory_plot.sh
+#   WORK_DIR=/path/to/work  bash bin/run_moon_trajectory_plot.sh
+#   WORK_DIR=/path/to/work  MS_PATH=/path/to/full.ms  bash bin/run_moon_trajectory_plot.sh
 
 set -euo pipefail
 
@@ -32,7 +32,7 @@ if [ ! -d "$MS_PATH" ]; then
     exit 0
 fi
 
-exec "$PYTHON" "$REPO_ROOT/experimental/moon_trajectory_plot.py" \
+exec "$PYTHON" "$REPO_ROOT/src/moon_trajectory_plot.py" \
     --ms    "$MS_PATH"  \
     --out   "$OUT_PNG"  \
     --scan  "$SCAN"

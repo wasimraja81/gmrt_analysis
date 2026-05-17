@@ -583,7 +583,7 @@ fi
 if [ -d "$WORK_DIR/casa_selfcal/moon0520_dev/moon0520_full.ms" ]; then
   if (( RUN_FROM_STEP <= 14 )) && stage_enabled 14; then
     run_optional_step 14 "moon imaging diagnostics (trajectory plot)" \
-      env WORK_DIR="$WORK_DIR" bash "$SCRIPT_DIR/../experimental/run_moon_trajectory_plot.sh"
+      env WORK_DIR="$WORK_DIR" bash "$SCRIPT_DIR/run_moon_trajectory_plot.sh"
   else
     log "SMART_RESUME: step 14 already complete; skipping"
   fi
