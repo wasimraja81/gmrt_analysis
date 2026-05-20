@@ -26,7 +26,7 @@ from modules.moon_registration import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='Build cumulative co-add movie with off-moon RMS inset.',
+        description='Build cumulative co-add movie with off-source RMS inset.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument('--selfcal-dir', required=True,
@@ -37,8 +37,16 @@ def parse_args() -> argparse.Namespace:
                         help='Registration before cumulative co-add')
     parser.add_argument('--upsample', type=int, default=10,
                         help='Sub-pixel upsample factor for derive registration')
-    parser.add_argument('--moon-mask-radius-arcmin', type=float, default=20.0,
-                        help='Radius used for off-moon RMS mask')
+    parser.add_argument('--source-name', default='source',
+                        help='Source name for plot labels (default: source)')
+    parser.add_argument('--rms-strategy', choices=['auto-center', 'image-center'], default='auto-center',
+                        help='RMS exclusion strategy: auto-center=brightest pixels; image-center=image center')
+    parser.add_argument('--source-mask-radius-arcmin', type=float, default=None,
+                        help='Preferred source exclusion radius in arcmin for RMS calculation')
+    parser.add_argument('--moon-mask-radius-arcmin', type=float, default=None,
+                        help='Compatibility alias for --source-mask-radius-arcmin')
+    parser.add_argument('--rms-beam-arcsec', type=float, default=12.0,
+                        help='Beam size in arcsec (default: 12.0) for auto-compute exclusion radius when no explicit radius is given')
     parser.add_argument('--frames-dir', default=None,
                         help='Directory to render movie frame PNGs')
     parser.add_argument('--out-mp4', default=None,
@@ -115,13 +123,36 @@ def _robust_scale(arrays: list[np.ndarray], p_low: float, p_high: float) -> tupl
 
 
 def _off_moon_rms(image: np.ndarray, mask_radius_pix: float,
-                  moon_center: tuple[float, float] | None = None) -> float:
-    return shared_off_moon_rms(image, mask_radius_pix, moon_center=moon_center)
+                  center: tuple[float, float] | None = None) -> float:
+    return shared_off_moon_rms(image, mask_radius_pix, moon_center=center)
 
 
-def _find_moon_center(image: np.ndarray, bright_frac: float = 0.005) -> tuple[float, float]:
-    """Estimate moon centre as weighted centroid of brightest ~0.5 % of pixels."""
+def _peak_in_source_mask(image: np.ndarray,
+                         center: tuple[float, float],
+                         radius_pix: float) -> float:
+    """Return peak pixel value inside the source mask circle."""
+    cy, cx = center
+    yy, xx = np.indices(image.shape, dtype=np.float64)
+    rr2 = (yy - cy) ** 2 + (xx - cx) ** 2
+    in_mask = np.isfinite(image) & (rr2 <= radius_pix ** 2)
+    if not np.any(in_mask):
+        return float('nan')
+    vals = np.asarray(image, dtype=np.float64)[in_mask]
+    if vals.size == 0:
+        return float('nan')
+    return float(np.nanmax(vals))
+
+
+def _find_source_center(image: np.ndarray, strategy: str = 'auto-center',
+                        bright_frac: float = 0.005) -> tuple[float, float]:
+    """Find source center based on strategy: auto-center (brightest) or image-center."""
     arr = np.asarray(image, dtype=np.float64)
+    # Handle image-center strategy
+    if strategy == 'image-center':
+        cy = (arr.shape[0] - 1) / 2.0
+        cx = (arr.shape[1] - 1) / 2.0
+        return cy, cx
+    # auto-center: weighted centroid of brightest pixels
     finite = arr[np.isfinite(arr)]
     if finite.size == 0:
         return (arr.shape[0] - 1) / 2.0, (arr.shape[1] - 1) / 2.0
@@ -135,6 +166,49 @@ def _find_moon_center(image: np.ndarray, bright_frac: float = 0.005) -> tuple[fl
     cy = float((weights * yy).sum() / total)
     cx = float((weights * xx).sum() / total)
     return cy, cx
+
+
+def _validate_rms_exclusion_geometry(image: np.ndarray,
+                                     center: tuple[float, float],
+                                     radius_pix: float,
+                                     source_name: str) -> tuple[int, float]:
+    """Validate that RMS exclusion mask is physical for the image geometry."""
+    if not np.isfinite(radius_pix) or radius_pix <= 0:
+        raise ValueError(
+            f'Invalid RMS exclusion radius: {radius_pix}. '
+            'Use a positive value for --source-mask-radius-arcmin or adjust --rms-beam-arcsec.'
+        )
+
+    ny, nx = image.shape
+    cy, cx = center
+    if (not np.isfinite(cy)) or (not np.isfinite(cx)):
+        raise ValueError('RMS mask center is not finite.')
+    if cy < 0 or cy > (ny - 1) or cx < 0 or cx > (nx - 1):
+        raise ValueError(
+            f'RMS mask center (cy={cy:.2f}, cx={cx:.2f}) is outside image bounds '
+            f'0..{ny - 1}, 0..{nx - 1}.'
+        )
+
+    nearest_edge_dist = min(cy, cx, (ny - 1) - cy, (nx - 1) - cx)
+    if radius_pix >= nearest_edge_dist:
+        raise ValueError(
+            f'Unphysical RMS exclusion radius: {radius_pix:.2f}px for image {ny}x{nx} at '
+            f'center (cy={cy:.1f}, cx={cx:.1f}). Nearest edge is {nearest_edge_dist:.2f}px; '
+            f'no off-{source_name} region remains. Reduce exclusion radius.'
+        )
+
+    yy, xx = np.indices(image.shape, dtype=np.float64)
+    rr2 = (yy - cy) ** 2 + (xx - cx) ** 2
+    valid = np.isfinite(image)
+    off_source = valid & (rr2 > radius_pix ** 2)
+    n_off = int(np.count_nonzero(off_source))
+    frac_off = float(n_off) / float(image.size)
+    if n_off < 256:
+        raise ValueError(
+            f'RMS mask leaves too few off-{source_name} pixels ({n_off} px, {frac_off:.4%}). '
+            'Increase image size or reduce exclusion radius.'
+        )
+    return n_off, frac_off
 
 
 def _check_ffmpeg() -> str:
@@ -222,7 +296,7 @@ def _build_mov(ffmpeg_bin: str, frames_dir: Path, fps: int, out_mov: Path) -> No
     subprocess.run(cmd, check=True)
 
 
-def _save_rms_outputs(rms_vals: list[float], out_png: Path, out_csv: Path) -> None:
+def _save_rms_outputs(rms_vals: list[float], out_png: Path, out_csv: Path, source_name: str = 'source') -> None:
     n = len(rms_vals)
     x = np.arange(1, n + 1)
     y = np.array(rms_vals, dtype=float)
@@ -230,8 +304,8 @@ def _save_rms_outputs(rms_vals: list[float], out_png: Path, out_csv: Path) -> No
     fig, ax = plt.subplots(figsize=(7.6, 4.6))
     ax.plot(x, y * 1000.0, '-o', color='tab:cyan', linewidth=2.0, markersize=5)
     ax.set_xlabel('Number of co-added frames')
-    ax.set_ylabel('Off-moon RMS (mJy/beam, robust)')
-    ax.set_title('Cumulative co-add RMS evolution')
+    ax.set_ylabel(f'Off-{source_name} RMS (mJy/beam, robust)')
+    ax.set_title(f'Cumulative co-add RMS evolution (excluding {source_name})')
     ax.set_xlim(1, n)
     y_mJy = y * 1000.0
     y_finite = y_mJy[np.isfinite(y_mJy)]
@@ -247,9 +321,9 @@ def _save_rms_outputs(rms_vals: list[float], out_png: Path, out_csv: Path) -> No
     fig.savefig(out_png, dpi=160)
     plt.close(fig)
 
-    out_csv.write_text('n_coadd,offmoon_rms_mJy_per_beam\n' + '\n'.join(
+    out_csv.write_text('n_coadd,offsource_rms_mJy_per_beam\n' + '\n'.join(
         f'{idx},{val * 1000.0:.6f}' for idx, val in enumerate(rms_vals, start=1)
-    ))
+    ) + '\n')
 
 
 def main() -> int:
@@ -296,12 +370,9 @@ def main() -> int:
         print(f'[cum-coadd] frame_shift  {_i:02d} ({frame_paths[_i].name}): '
               f'dr={_dr:+.3f}px  dc={_dc:+.3f}px')
 
-    # Find moon centre in the aligned reference frame.
-    # For no_phasecenter data the moon is NOT at the image centre; using the
-    # centroid of the brightest pixels in the reference aligned image ensures the
-    # off-moon RMS mask is placed correctly for all geometries.
-    moon_cy, moon_cx = _find_moon_center(aligned_arrays[ref_idx])
-    print(f'[cum-coadd] moon_center  : cy={moon_cy:.1f}px  cx={moon_cx:.1f}px  '
+    # Find source centre using specified strategy
+    source_cy, source_cx = _find_source_center(aligned_arrays[ref_idx], args.rms_strategy)
+    print(f'[cum-coadd] source_center : cy={source_cy:.1f}px  cx={source_cx:.1f}px  '
           f'(image centre: cy={(aligned_arrays[ref_idx].shape[0]-1)/2.0:.1f}  '
           f'cx={(aligned_arrays[ref_idx].shape[1]-1)/2.0:.1f})')
 
@@ -312,8 +383,36 @@ def main() -> int:
         cdelt2_deg = abs(float(cdelt2_raw))
     else:
         cdelt2_deg = 1.0 / 3600.0
-    pix_per_arcmin = 1.0 / (cdelt2_deg * 60.0)
-    moon_mask_radius_pix = max(1.0, args.moon_mask_radius_arcmin * pix_per_arcmin)
+    arcsec_per_pix = cdelt2_deg * 3600.0
+    
+    # Compute RMS exclusion radius in pixels
+    # Preferred: source-mask-radius-arcmin
+    # Compatibility fallback: moon legacy alias > beam-auto
+    if args.source_mask_radius_arcmin is not None:
+        source_radius_arcsec = 60.0 * float(args.source_mask_radius_arcmin)
+        rms_exclude_radius_pix = source_radius_arcsec / arcsec_per_pix
+        radius_source = f'source-mask-radius-arcmin ({args.source_mask_radius_arcmin:.2f}arcmin)'
+    elif args.moon_mask_radius_arcmin is not None:
+        moon_radius_arcsec = 60.0 * float(args.moon_mask_radius_arcmin)
+        rms_exclude_radius_pix = moon_radius_arcsec / arcsec_per_pix
+        radius_source = f'moon-legacy-compat ({args.moon_mask_radius_arcmin:.2f}arcmin)'
+    else:
+        # Auto: 1.5x the beam to safely exclude the source
+        rms_exclude_radius_pix = (1.5 * args.rms_beam_arcsec) / arcsec_per_pix
+        radius_source = f'beam-auto ({args.rms_beam_arcsec:.1f}arcsec beam)'
+    
+    print(f'[cum-coadd] rms_strategy   : {args.rms_strategy}')
+    print(f'[cum-coadd] rms_exclude_r  : {rms_exclude_radius_pix:.2f}px '
+          f'({rms_exclude_radius_pix * arcsec_per_pix:.1f}arcsec; source={radius_source})')
+
+    n_off, frac_off = _validate_rms_exclusion_geometry(
+        aligned_arrays[ref_idx],
+        (source_cy, source_cx),
+        rms_exclude_radius_pix,
+        args.source_name,
+    )
+    print(f'[cum-coadd] image_shape    : {aligned_arrays[ref_idx].shape[0]}x{aligned_arrays[ref_idx].shape[1]}')
+    print(f'[cum-coadd] offsource_px   : {n_off} ({frac_off:.2%} of image)')
 
     if args.clean_frames and frames_dir.exists():
         shutil.rmtree(frames_dir)
@@ -331,8 +430,14 @@ def main() -> int:
     for idx, arr in enumerate(aligned_arrays, start=1):
         cumulative_sum += np.asarray(arr, dtype=np.float64)
         stack = cumulative_sum / float(idx)
-        rms_val = _off_moon_rms(stack, moon_mask_radius_pix, moon_center=(moon_cy, moon_cx))
+        rms_val = _off_moon_rms(stack, rms_exclude_radius_pix, center=(source_cy, source_cx))
         rms_vals.append(rms_val)
+
+    if not np.any(np.isfinite(np.asarray(rms_vals, dtype=float))):
+        raise ValueError(
+            f'All RMS values are NaN for off-{args.source_name} region. '
+            'Mask geometry may be too aggressive for finite data coverage; reduce exclusion radius.'
+        )
 
     cumulative_sum = np.zeros_like(aligned_arrays[0], dtype=np.float64)
     for idx, arr in enumerate(aligned_arrays, start=1):
@@ -371,7 +476,7 @@ def main() -> int:
                 ymax = ymin + 1e-6
             pad = 0.1 * (ymax - ymin)
             inset.set_ylim(ymin - pad, ymax + pad)
-        inset.set_title('Off-moon RMS', fontsize=8, color='yellow')
+        inset.set_title(f'Off-{args.source_name} RMS', fontsize=8, color='yellow')
         inset.set_xlabel('N', fontsize=7, color='yellow')
         inset.set_ylabel('mJy/beam', fontsize=7, color='yellow')
         inset.tick_params(axis='both', labelsize=7, colors='yellow')
@@ -379,12 +484,32 @@ def main() -> int:
             spine.set_color('yellow')
         inset.grid(alpha=0.3, linestyle='--')
 
+        peak_jy = _peak_in_source_mask(stack, (source_cy, source_cx), rms_exclude_radius_pix)
+        rms_jy = float(rms_vals[idx - 1]) if idx - 1 < len(rms_vals) else float('nan')
+        if np.isfinite(peak_jy) and np.isfinite(rms_jy) and rms_jy > 0:
+            dr_val = peak_jy / rms_jy
+        else:
+            dr_val = float('nan')
+        peak_text = f'{peak_jy:.3f}' if np.isfinite(peak_jy) else 'nan'
+        dr_text = f'{dr_val:.1f}' if np.isfinite(dr_val) else 'nan'
+        inset.text(
+            0.03,
+            0.97,
+            f'Peak(mask): {peak_text} Jy/beam\nDR: {dr_text}',
+            transform=inset.transAxes,
+            fontsize=6.8,
+            color='yellow',
+            va='top',
+            ha='left',
+            bbox=dict(facecolor='black', alpha=0.45, pad=2),
+        )
+
         frame_png = frames_dir / f'frame_{idx - 1:04d}.png'
         fig.tight_layout()
         fig.savefig(frame_png, dpi=args.dpi)
         plt.close(fig)
 
-    _save_rms_outputs(rms_vals, out_rms_png, out_rms_csv)
+    _save_rms_outputs(rms_vals, out_rms_png, out_rms_csv, args.source_name)
 
     ffmpeg_bin = _check_ffmpeg()
     _build_mp4(ffmpeg_bin, frames_dir, args.fps, out_mp4)
@@ -409,4 +534,8 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(f'[cum-coadd] ERROR: {exc}', file=sys.stderr)
+        raise SystemExit(2)

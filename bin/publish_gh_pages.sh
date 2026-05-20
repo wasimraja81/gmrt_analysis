@@ -32,15 +32,6 @@ DRY_RUN=0
 OPEN_AFTER=1
 PUBLISH_FILES=()
 GHPAGES_LAYOUT_MANIFEST="${GHPAGES_LAYOUT_MANIFEST:-}"
-if [[ -z "${MANIFEST_ONLY+x}" ]]; then
-	if [[ "${ALLOW_LEGACY_MOON_LAYOUT:-0}" == "1" ]]; then
-		MANIFEST_ONLY="0"
-	else
-		MANIFEST_ONLY="1"
-	fi
-else
-	MANIFEST_ONLY="${MANIFEST_ONLY}"
-fi
 MANIFEST_TRACE_PATH="${MANIFEST_TRACE_PATH:-}"
 
 usage() {
@@ -70,9 +61,7 @@ Examples:
   bash bin/publish_gh_pages.sh --manifest "$HOME/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_products_20260511_114843.txt" --push
 
 Environment knobs:
-	MANIFEST_ONLY=1|0            Force manifest-only Moon layout render (default: 1).
 	GHPAGES_LAYOUT_MANIFEST=PATH Use explicit Moon layout manifest JSON.
-	ALLOW_LEGACY_MOON_LAYOUT=1   Emergency fallback: disables default MANIFEST_ONLY.
 EOF
 }
 
@@ -104,18 +93,126 @@ print(html.escape(sys.argv[1], quote=True))
 PY
 }
 
-select_first_existing_rel() {
+render_csv_table_page() {
 	local run_dir="$1"
-	local base_dir="$2"
-	shift 2
-	local candidate=""
-	for candidate in "$@"; do
-		if [[ -f "$run_dir/$base_dir/$candidate" ]]; then
-			echo "$base_dir/$candidate"
-			return 0
-		fi
-	done
-	echo ""
+	local rel_csv="$2"
+	local table_title="$3"
+	local abs_csv="$run_dir/$rel_csv"
+	[[ -f "$abs_csv" ]] || return 1
+
+	local rel_html="${rel_csv%.csv}.table.html"
+	if [[ "$rel_html" == "$rel_csv" ]]; then
+		rel_html="${rel_csv}.table.html"
+	fi
+	local abs_html="$run_dir/$rel_html"
+	mkdir -p "$(dirname "$abs_html")"
+
+	python - "$abs_csv" "$abs_html" "$table_title" <<'PY'
+import csv
+import html
+import os
+import sys
+
+csv_path, html_path, table_title = sys.argv[1], sys.argv[2], sys.argv[3]
+
+with open(csv_path, newline='', encoding='utf-8') as handle:
+	rows = list(csv.reader(handle))
+
+header = rows[0] if rows else []
+data_rows = rows[1:] if len(rows) > 1 else []
+csv_name = os.path.basename(csv_path)
+
+quantity_notes = []
+if csv_name.endswith('_per_integration.csv'):
+	quantity_notes = [
+		('run_id', 'Workflow run identifier from the launcher.'),
+		('selfcal_name', 'Selfcal directory name for this scan/source.'),
+		('scan_tag', 'Scan label used to group integrations.'),
+		('start_integration', 'Starting integration index within the scan.'),
+		('cycle', 'Selfcal cycle label (for example sc1…sc4, final).'),
+		('cycle_index', 'Numeric ordering of the selfcal cycle.'),
+		('peak_jy_per_beam', 'Peak pixel value in the cleaned image for that cycle.'),
+		('residual_peak_jy_per_beam', 'Peak residual pixel value after model subtraction.'),
+		('model_sum_jy', 'Integrated model flux estimate for the cycle.'),
+		('dr_peak_over_residual', 'Peak-to-residual dynamic range = peak_jy_per_beam / residual_peak_jy_per_beam.'),
+		('nminor_cycles_total', 'Total minor cycles performed by tclean.'),
+		('nmajor_cycles_used', 'Total major cycles used by tclean.'),
+	]
+elif csv_name.endswith('_summary_stats.csv'):
+	quantity_notes = [
+		('cycle', 'Cycle label summarised across integrations.'),
+		('n', 'Number of independent selfcal runs / time snapshots contributing to the cycle; the table reports descriptive statistics across these 38 per-run measurements, and does not use stacked or combined images.'),
+		('*_min', 'Minimum value across the rows contributing to this cycle.'),
+		('*_max', 'Maximum value across the rows contributing to this cycle.'),
+		('*_std', 'Sample standard deviation across the rows contributing to this cycle.'),
+		('*_median', 'Median across the rows contributing to this cycle.'),
+		('dr_peak_over_residual_*', 'Peak-to-residual dynamic range summary; not peak/off-source RMS.'),
+	]
+
+def _cells(tag: str, values: list[str]) -> str:
+	return ''.join(f'<{tag}>{html.escape(str(value), quote=True)}</{tag}>' for value in values)
+
+parts = [
+	'<!doctype html>',
+	'<html lang="en">',
+	'<head>',
+	'  <meta charset="utf-8">',
+	'  <meta name="viewport" content="width=device-width, initial-scale=1">',
+	f'  <title>{html.escape(table_title, quote=True)}</title>',
+	'  <style>',
+	'    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 1rem auto; max-width: 96vw; padding: 0 1rem; line-height: 1.45; }',
+	'    .meta { margin-bottom: 0.9rem; font-size: 0.92rem; opacity: 0.9; }',
+	'    .table-wrap { overflow: auto; border: 1px solid #8884; border-radius: 8px; }',
+	'    table { border-collapse: collapse; width: max-content; min-width: 100%; }',
+	'    th, td { border: 1px solid #8884; padding: 0.35rem 0.5rem; font-size: 0.86rem; white-space: nowrap; }',
+	'    th { position: sticky; top: 0; background: #f6f8fa; text-align: left; }',
+	'    tr:nth-child(even) td { background: #8881; }',
+	'    @media (prefers-color-scheme: dark) { th { background: #1f2328; } }',
+	'  </style>',
+	'</head>',
+	'<body>',
+	f'  <h1>{html.escape(table_title, quote=True)}</h1>',
+	f'  <p class="meta"><a href="{html.escape(csv_name, quote=True)}">Download raw CSV</a> · Rows: {len(data_rows)} · Columns: {len(header)}</p>',
+	'  <h2>Quantity index</h2>',
+	'  <ul>',
+]
+
+if quantity_notes:
+	for key, desc in quantity_notes:
+		parts.append(f'    <li><strong>{html.escape(key, quote=True)}</strong>: {html.escape(desc, quote=True)}</li>')
+else:
+	parts.append('    <li>No quantity index available for this table.</li>')
+
+parts.extend([
+	'  </ul>',
+	'  <p class="meta"><strong>Note:</strong> the DR column shown here is the table’s internal peak/residual metric. It is <em>not</em> the peak-to-off-source-RMS value shown in the cumulative movie inset.</p>',
+	'  <div class="table-wrap">',
+	'    <table>',
+])
+
+if header:
+	parts.extend([
+		'      <thead>',
+		f'        <tr>{_cells("th", header)}</tr>',
+		'      </thead>',
+	])
+
+parts.append('      <tbody>')
+for row in data_rows:
+	parts.append(f'        <tr>{_cells("td", row)}</tr>')
+parts.extend([
+	'      </tbody>',
+	'    </table>',
+	'  </div>',
+	'</body>',
+	'</html>',
+])
+
+with open(html_path, 'w', encoding='utf-8') as handle:
+	handle.write('\n'.join(parts) + '\n')
+PY
+
+	echo "$rel_html"
 }
 
 trace_manifest_entry() {
@@ -181,6 +278,26 @@ out = {
     'pc_dst_cum_mp4_rel': eval_entry('pc_dst_rms_movie'),
 }
 
+static_targets = data.get('static_targets', [])
+out['static_count'] = str(len(static_targets))
+for idx, section in enumerate(static_targets, start=1):
+	if not isinstance(section, dict):
+		continue
+	prefix = f'static_{idx}_'
+	out[prefix + 'section_id'] = str(section.get('section_id', ''))
+	out[prefix + 'section_name'] = str(section.get('section_name', ''))
+	out[prefix + 'source_label'] = str(section.get('source_label', ''))
+	out[prefix + 'scan_tag'] = str(section.get('scan_tag', ''))
+	out[prefix + 'stack_size'] = str(section.get('stack_size', ''))
+	out[prefix + 'section_title'] = str(section.get('section_title', ''))
+	out[prefix + 'section_context'] = str(section.get('section_context', ''))
+	out[prefix + 'movie_rel'] = str(section.get('movie_rel', ''))
+	out[prefix + 'stack_rel'] = str(section.get('stack_rel', ''))
+	out[prefix + 'rms_movie_rel'] = str(section.get('rms_movie_rel', ''))
+	out[prefix + 'diag_panel_rel'] = str(section.get('diag_panel_rel', ''))
+	out[prefix + 'diag_csv_rel'] = str(section.get('diag_csv_rel', ''))
+	out[prefix + 'diag_stats_rel'] = str(section.get('diag_stats_rel', ''))
+
 for key, val in out.items():
     print(f"{key}\t{val}")
 PY
@@ -208,6 +325,20 @@ PY
 			pc_dst_mp4_rel) pc_dst_mp4_rel="$val" ;;
 			pc_dst_stack_rel) pc_dst_stack_rel="$val" ;;
 			pc_dst_cum_mp4_rel) pc_dst_cum_mp4_rel="$val" ;;
+			static_count) static_count="$val" ;;
+			static_*_section_id) eval "$key=\"$val\"" ;;
+			static_*_section_name) eval "$key=\"$val\"" ;;
+			static_*_source_label) eval "$key=\"$val\"" ;;
+			static_*_scan_tag) eval "$key=\"$val\"" ;;
+			static_*_stack_size) eval "$key=\"$val\"" ;;
+			static_*_section_title) eval "$key=\"$val\"" ;;
+			static_*_section_context) eval "$key=\"$val\"" ;;
+			static_*_movie_rel) eval "$key=\"$val\"" ;;
+			static_*_stack_rel) eval "$key=\"$val\"" ;;
+			static_*_rms_movie_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_panel_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_csv_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_stats_rel) eval "$key=\"$val\"" ;;
 		esac
 	done <<< "$fields"
 
@@ -319,6 +450,8 @@ collect_publish_files() {
 			if [[ -d "$selfcal_dir" ]]; then
 				find "$selfcal_dir" -type f \( \
 					-name '*.gif' -o -name '*.mp4' -o -name '*.mov' -o \
+					-name 'scan*_clean_cycle_metrics_panel*.png' -o \
+					-name 'scan*_clean_cycle_metrics*.csv' -o \
 					-name '*destripe*.png' -o -name '*destrip*.png' -o \
 					-name '*convergence*.png' -o -name '*iter_progression*.png' -o \
 					-name '*iter_progression*.gif' -o -name '*iter_progression*.mp4' -o \
@@ -887,62 +1020,23 @@ EOF
 	local pc_dst_mp4_rel=""
 	local pc_dst_stack_rel=""
 	local pc_dst_cum_mp4_rel=""
-	local moon_layout_loaded="0"
-
-	if [[ -n "$GHPAGES_LAYOUT_MANIFEST" ]]; then
-		if load_moon_layout_manifest "$GHPAGES_LAYOUT_MANIFEST" "$RUN_TS"; then
-			moon_layout_loaded="1"
-		fi
+	local static_count="0"
+	if ! load_moon_layout_manifest "$GHPAGES_LAYOUT_MANIFEST" "$RUN_TS"; then
+		die "Moon layout manifest could not be loaded: $GHPAGES_LAYOUT_MANIFEST"
 	fi
 
-	if [[ "$MANIFEST_ONLY" == "1" && "$moon_layout_loaded" != "1" ]]; then
-		die "MANIFEST_ONLY=1 but layout manifest could not be loaded: $GHPAGES_LAYOUT_MANIFEST"
-	fi
-
-	if [[ "$moon_layout_loaded" != "1" ]]; then
-		if [[ -d "$run_dir/casa_selfcal/ghpages_products/moon0520/no_phasecenter" || -d "$run_dir/casa_selfcal/ghpages_products/moon0520/phasecenter" ]]; then
-			moon_products_root="casa_selfcal/ghpages_products/moon0520"
-		elif [[ -d "$run_dir/casa_selfcal/ghpages_products/no_phasecenter" || -d "$run_dir/casa_selfcal/ghpages_products/phasecenter" ]]; then
-			moon_products_root="casa_selfcal/ghpages_products"
-		fi
-		moon_no_phasecenter_dir="${moon_products_root}/no_phasecenter"
-		moon_phasecenter_dir="${moon_products_root}/phasecenter"
-		[[ -d "$run_dir/$moon_no_phasecenter_dir" ]] && moon_has_no_phasecenter="1"
-		[[ -d "$run_dir/$moon_phasecenter_dir" ]] && moon_has_phasecenter="1"
-
-		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
-			no_raw_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_no_phasecenter_raw_selfcal.mp4 moon0520_no_phasecenter_pre.mp4)"
-			no_raw_stack_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png moon0520_no_phasecenter_phasecorr_destriped_stack_original.png)"
-			no_raw_cum_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_observed_center_raw_cumulative_coadd.mp4 moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_coadd.mp4)"
-			no_dst_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_no_phasecenter_destriped.mp4)"
-			no_dst_stack_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_no_phasecenter_phasecorr_destriped_stack.png moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png)"
-			no_dst_cum_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_observed_center_destriped_cumulative_coadd.mp4 moon0520_no_phasecenter_phasecorr_destriped_cumulative_coadd.mp4)"
-		fi
-
-		if [[ "$moon_has_phasecenter" == "1" ]]; then
-			pc_raw_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_phasecenter_raw_selfcal.mp4 moon0520_phasecenter_pre.mp4)"
-			pc_raw_stack_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_phasecenter_noshift_raw_selfcal_stack.png moon0520_phasecenter_noshift_destriped_stack_original.png)"
-			pc_raw_cum_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_moon_centered_raw_cumulative_coadd.mp4 moon0520_phasecenter_noshift_raw_selfcal_cumulative_coadd.mp4)"
-			pc_dst_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_phasecenter_destriped.mp4)"
-			pc_dst_stack_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_phasecenter_noshift_destriped_stack.png moon0520_phasecenter_noshift_destriped_stack_destriped.png)"
-			pc_dst_cum_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_moon_centered_destriped_cumulative_coadd.mp4 moon0520_phasecenter_noshift_destriped_cumulative_coadd.mp4)"
-		fi
-	fi
-
-	if [[ "$MANIFEST_ONLY" == "1" ]]; then
-		trace_manifest_entry "moon.section1" "moon.s1.movie" "$no_raw_mp4_rel"
-		trace_manifest_entry "moon.section1" "moon.s1.stack" "$no_raw_stack_rel"
-		trace_manifest_entry "moon.section1" "moon.s1.rms_movie" "$no_raw_cum_mp4_rel"
-		trace_manifest_entry "moon.section2" "moon.s2.movie" "$pc_raw_mp4_rel"
-		trace_manifest_entry "moon.section2" "moon.s2.stack" "$pc_raw_stack_rel"
-		trace_manifest_entry "moon.section2" "moon.s2.rms_movie" "$pc_raw_cum_mp4_rel"
-		trace_manifest_entry "moon.section3" "moon.s3.movie" "$no_dst_mp4_rel"
-		trace_manifest_entry "moon.section3" "moon.s3.stack" "$no_dst_stack_rel"
-		trace_manifest_entry "moon.section3" "moon.s3.rms_movie" "$no_dst_cum_mp4_rel"
-		trace_manifest_entry "moon.section4" "moon.s4.movie" "$pc_dst_mp4_rel"
-		trace_manifest_entry "moon.section4" "moon.s4.stack" "$pc_dst_stack_rel"
-		trace_manifest_entry "moon.section4" "moon.s4.rms_movie" "$pc_dst_cum_mp4_rel"
-	fi
+	trace_manifest_entry "moon.section1" "moon.s1.movie" "$no_raw_mp4_rel"
+	trace_manifest_entry "moon.section1" "moon.s1.stack" "$no_raw_stack_rel"
+	trace_manifest_entry "moon.section1" "moon.s1.rms_movie" "$no_raw_cum_mp4_rel"
+	trace_manifest_entry "moon.section2" "moon.s2.movie" "$pc_raw_mp4_rel"
+	trace_manifest_entry "moon.section2" "moon.s2.stack" "$pc_raw_stack_rel"
+	trace_manifest_entry "moon.section2" "moon.s2.rms_movie" "$pc_raw_cum_mp4_rel"
+	trace_manifest_entry "moon.section3" "moon.s3.movie" "$no_dst_mp4_rel"
+	trace_manifest_entry "moon.section3" "moon.s3.stack" "$no_dst_stack_rel"
+	trace_manifest_entry "moon.section3" "moon.s3.rms_movie" "$no_dst_cum_mp4_rel"
+	trace_manifest_entry "moon.section4" "moon.s4.movie" "$pc_dst_mp4_rel"
+	trace_manifest_entry "moon.section4" "moon.s4.stack" "$pc_dst_stack_rel"
+	trace_manifest_entry "moon.section4" "moon.s4.rms_movie" "$pc_dst_cum_mp4_rel"
 
 	if [[ "$moon_has_no_phasecenter" == "1" ]]; then
 		render_moon_debug_index "$run_dir" "$moon_no_phasecenter_dir" "Observed phase-centre destriping debug"
@@ -1169,161 +1263,126 @@ EOF
 EOF
 	fi
 
-	# ── Generic post-selfcal artifacts (target-agnostic) ─────────────────────
-	local generic_selfcal_dirs=()
-	while IFS= read -r d; do
-		[[ -n "$d" ]] || continue
-		case "$(basename "$d")" in
-			moon*|MOON*)
-				# Moon products are rendered in the dedicated Moon sections below.
-				# Keep the generic section for non-Moon targets like 3C468.1.
-				continue
-				;;
-		esac
-		generic_selfcal_dirs+=("$d")
-	done < <(cd "$run_dir" && find casa_selfcal -mindepth 1 -maxdepth 1 -type d ! -name 'ghpages_products' 2>/dev/null | sort)
-
-	if (( ${#generic_selfcal_dirs[@]} > 0 )); then
-		local rendered_any_generic=0
-		for rel_dir in "${generic_selfcal_dirs[@]}"; do
-			local abs_dir
-			abs_dir="$run_dir/$rel_dir"
-
-			if ! compgen -G "$abs_dir/*_final.fits" > /dev/null && ! compgen -G "$abs_dir/*/*_final.fits" > /dev/null; then
-				continue
-			fi
-
-			local section_name section_name_html
-			section_name="$(basename "$rel_dir")"
-			section_name_html="$(escape_html "$section_name")"
-
-			local movie_rel=""
-			local cumulative_movie_rel=""
-			local stack_png_rel=""
-			local rms_png_rel=""
-			local diag_panel_rel=""
-			local diag_csv_rel=""
-			local diag_stats_rel=""
-
-			while IFS= read -r f; do
-				local rel
-				rel="${f#"$run_dir/"}"
-				if [[ -z "$movie_rel" && "$f" == *selfcal_movie*.mp4 ]]; then
-					movie_rel="$rel"
-				elif [[ -z "$movie_rel" && "$f" == *selfcal_movie*.mov ]]; then
-					movie_rel="$rel"
-				elif [[ -z "$movie_rel" && "$f" == *selfcal_movie*.gif ]]; then
-					movie_rel="$rel"
-				fi
-
-				if [[ -z "$cumulative_movie_rel" && "$f" == *cumulative_coadd*.mp4 ]]; then
-					cumulative_movie_rel="$rel"
-				elif [[ -z "$cumulative_movie_rel" && "$f" == *cumulative_coadd*.mov ]]; then
-					cumulative_movie_rel="$rel"
-				elif [[ -z "$cumulative_movie_rel" && "$f" == *cumulative_coadd*.gif ]]; then
-					cumulative_movie_rel="$rel"
-				fi
-
-				if [[ -z "$stack_png_rel" && "$f" == *stack_mean.png ]]; then
-					stack_png_rel="$rel"
-				elif [[ -z "$stack_png_rel" && "$f" == *stack*.png ]]; then
-					stack_png_rel="$rel"
-				fi
-
-				if [[ -z "$rms_png_rel" && "$f" == *cumulative_rms_evolution.png ]]; then
-					rms_png_rel="$rel"
-				fi
-
-				if [[ -z "$diag_panel_rel" && "$f" == *clean_cycle_metrics_panel_5x5.png ]]; then
-					diag_panel_rel="$rel"
-				fi
-				if [[ -z "$diag_csv_rel" && "$f" == *clean_cycle_metrics_per_integration.csv ]]; then
-					diag_csv_rel="$rel"
-				fi
-				if [[ -z "$diag_stats_rel" && "$f" == *clean_cycle_metrics_summary_stats.csv ]]; then
-					diag_stats_rel="$rel"
-				fi
-			done < <(find "$abs_dir" -maxdepth 2 -type f \( -name '*.png' -o -name '*.gif' -o -name '*.mp4' -o -name '*.mov' -o -name '*.csv' \) 2>/dev/null | sort)
-
-			if [[ -z "$movie_rel" && -z "$stack_png_rel" && -z "$rms_png_rel" && -z "$diag_panel_rel" ]]; then
-				continue
-			fi
-
-			if [[ "$rendered_any_generic" -eq 0 ]]; then
-				cat >> "$tmp_file" <<'EOF'
+	# ── Manifest-driven static-target sections ───────────────────────────────
+	if [[ "$static_count" =~ ^[0-9]+$ ]] && [[ "$static_count" -gt 0 ]]; then
+		cat >> "$tmp_file" <<'EOF'
 
   <div class="stage">
-    <h2>Post-selfcal artifacts (generic)</h2>
-    <p>Auto-discovered post-selfcal products for any source directory under <code>casa_selfcal</code> with per-integration final FITS outputs. This section is target-agnostic and is not tied to Moon-specific naming.</p>
+    <h2>Post-selfcal imaging summary: 3C468.1</h2>
+    <p>Per-scan post-selfcal products for 3C468.1, rendered from the layout manifest in the same panel order as the Moon sections.</p>
 EOF
-				rendered_any_generic=1
+		for ((i=1; i<=static_count; i++)); do
+			local pfx="static_${i}_"
+			local section_title_var="${pfx}section_title"
+			local section_context_var="${pfx}section_context"
+			local movie_var="${pfx}movie_rel"
+			local stack_var="${pfx}stack_rel"
+			local rms_movie_var="${pfx}rms_movie_rel"
+			local diag_panel_var="${pfx}diag_panel_rel"
+			local diag_csv_var="${pfx}diag_csv_rel"
+			local diag_stats_var="${pfx}diag_stats_rel"
+			local section_title="${!section_title_var}"
+			local section_context="${!section_context_var}"
+			local movie_rel="${!movie_var}"
+			local stack_rel="${!stack_var}"
+			local rms_movie_rel="${!rms_movie_var}"
+			local diag_panel_rel="${!diag_panel_var}"
+			local diag_csv_rel="${!diag_csv_var}"
+			local diag_stats_rel="${!diag_stats_var}"
+			local diag_csv_table_rel=""
+			local diag_stats_table_rel=""
+			if [[ -n "$diag_csv_rel" && -f "$run_dir/$diag_csv_rel" ]]; then
+				diag_csv_table_rel="$(render_csv_table_page "$run_dir" "$diag_csv_rel" "${section_title} · Per-integration clean-cycle metrics")" || diag_csv_table_rel=""
+			fi
+			if [[ -n "$diag_stats_rel" && -f "$run_dir/$diag_stats_rel" ]]; then
+				diag_stats_table_rel="$(render_csv_table_page "$run_dir" "$diag_stats_rel" "${section_title} · Clean-cycle summary statistics")" || diag_stats_table_rel=""
 			fi
 
 			cat >> "$tmp_file" <<EOF
     <div class="moon-section">
-      <h3>${section_name_html}</h3>
+      <h3>${section_title}</h3>
+      <p class="tiny">${section_context}</p>
       <div class="panel-grid">
 EOF
 
+			cat >> "$tmp_file" <<'EOF'
+        <div class="panel-card">
+          <p><strong>Movie</strong></p>
+EOF
 			if [[ -n "$movie_rel" ]]; then
 				cat >> "$tmp_file" <<EOF
-        <div class="panel-card">
-          <p><strong>Selfcal movie</strong></p>
           <video controls preload="metadata" onclick="window.open('${movie_rel}','_blank')" title="Click to open full-size">
             <source src="${movie_rel}" type="video/mp4">
           </video>
-        </div>
+EOF
+			else
+				cat >> "$tmp_file" <<'EOF'
+          <p class="tiny">Not generated for this source/run.</p>
 EOF
 			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
 
-			if [[ -n "$stack_png_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
+			cat >> "$tmp_file" <<'EOF'
         <div class="panel-card">
           <p><strong>Stacked image</strong></p>
-          <a href="${stack_png_rel}"><img src="${stack_png_rel}" alt="${section_name_html} stacked image" loading="lazy"></a>
-        </div>
+EOF
+			if [[ -n "$stack_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+          <a href="${stack_rel}"><img src="${stack_rel}" alt="${section_title} stacked image" loading="lazy"></a>
+EOF
+			else
+				cat >> "$tmp_file" <<'EOF'
+          <p class="tiny">Not generated for this source/run.</p>
 EOF
 			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
 
-			if [[ -n "$rms_png_rel" || -n "$cumulative_movie_rel" ]]; then
-				cat >> "$tmp_file" <<'EOF'
+			cat >> "$tmp_file" <<'EOF'
         <div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-				if [[ -n "$cumulative_movie_rel" ]]; then
-					cat >> "$tmp_file" <<EOF
-          <video controls preload="metadata" onclick="window.open('${cumulative_movie_rel}','_blank')" title="Click to open full-size">
-            <source src="${cumulative_movie_rel}" type="video/mp4">
+			if [[ -n "$rms_movie_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+          <video controls preload="metadata" onclick="window.open('${rms_movie_rel}','_blank')" title="Click to open full-size">
+            <source src="${rms_movie_rel}" type="video/mp4">
           </video>
 EOF
-				fi
-				if [[ -n "$rms_png_rel" ]]; then
-					cat >> "$tmp_file" <<EOF
-          <a href="${rms_png_rel}"><img src="${rms_png_rel}" alt="${section_name_html} cumulative RMS evolution" loading="lazy"></a>
-EOF
-				fi
+			else
 				cat >> "$tmp_file" <<'EOF'
-        </div>
+          <p class="tiny">Not generated for this source/run.</p>
 EOF
 			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
 
-			if [[ -n "$diag_panel_rel" || -n "$diag_csv_rel" || -n "$diag_stats_rel" ]]; then
-				cat >> "$tmp_file" <<'EOF'
+			cat >> "$tmp_file" <<'EOF'
         <div class="panel-card">
           <p><strong>Selfcal diagnostics</strong></p>
 EOF
-				if [[ -n "$diag_panel_rel" ]]; then
-					cat >> "$tmp_file" <<EOF
-          <a href="${diag_panel_rel}"><img src="${diag_panel_rel}" alt="${section_name_html} selfcal diagnostics panel" loading="lazy"></a>
+			if [[ -n "$diag_panel_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+          <a href="${diag_panel_rel}"><img src="${diag_panel_rel}" alt="${section_title} selfcal diagnostics panel" loading="lazy"></a>
 EOF
-				fi
+			fi
+			if [[ -n "$diag_csv_rel" || -n "$diag_stats_rel" ]]; then
 				cat >> "$tmp_file" <<'EOF'
           <p>
 EOF
 				if [[ -n "$diag_csv_rel" ]]; then
-					cat >> "$tmp_file" <<EOF
+					if [[ -n "$diag_csv_table_rel" ]]; then
+						cat >> "$tmp_file" <<EOF
+            <a href="${diag_csv_table_rel}">Per-integration table</a> · <a href="${diag_csv_rel}">CSV</a>
+EOF
+					else
+						cat >> "$tmp_file" <<EOF
             <a href="${diag_csv_rel}">Per-integration CSV</a>
 EOF
+					fi
 				fi
 				if [[ -n "$diag_csv_rel" && -n "$diag_stats_rel" ]]; then
 					cat >> "$tmp_file" <<'EOF'
@@ -1331,27 +1390,37 @@ EOF
 EOF
 				fi
 				if [[ -n "$diag_stats_rel" ]]; then
-					cat >> "$tmp_file" <<EOF
+					if [[ -n "$diag_stats_table_rel" ]]; then
+						cat >> "$tmp_file" <<EOF
+            <a href="${diag_stats_table_rel}">Summary stats table</a> · <a href="${diag_stats_rel}">CSV</a>
+EOF
+					else
+						cat >> "$tmp_file" <<EOF
             <a href="${diag_stats_rel}">Summary stats CSV</a>
 EOF
+					fi
 				fi
 				cat >> "$tmp_file" <<'EOF'
           </p>
-        </div>
 EOF
 			fi
+			if [[ -z "$diag_panel_rel" && -z "$diag_csv_rel" && -z "$diag_stats_rel" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+          <p class="tiny">Not generated for this source/run.</p>
+EOF
+			fi
+			cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
 
 			cat >> "$tmp_file" <<'EOF'
       </div>
     </div>
 EOF
 		done
-
-		if [[ "$rendered_any_generic" -eq 1 ]]; then
-			cat >> "$tmp_file" <<'EOF'
+		cat >> "$tmp_file" <<'EOF'
   </div>
 EOF
-		fi
 	fi
 
 	cat >> "$tmp_file" <<'EOF'
@@ -1577,22 +1646,15 @@ done
 resolve_manifest
 
 if ! ensure_moon_layout_manifest; then
-	if [[ "$MANIFEST_ONLY" == "1" ]]; then
-		die "MANIFEST_ONLY=1 but Moon layout manifest could not be prepared (set ALLOW_LEGACY_MOON_LAYOUT=1 only for emergency fallback)"
-	fi
-	log "WARNING: Moon layout manifest unavailable; continuing with legacy Moon layout discovery"
+	die "Moon layout manifest could not be prepared"
 fi
 
 log "repo root: $REPO_ROOT"
 log "work dir: $WORK_DIR"
 log "manifest: $MANIFEST_PATH"
 log "run timestamp: $RUN_TS"
-log "manifest only: $MANIFEST_ONLY"
 if [[ -n "$GHPAGES_LAYOUT_MANIFEST" ]]; then
 	log "moon layout manifest: $GHPAGES_LAYOUT_MANIFEST"
-fi
-if [[ "$MANIFEST_ONLY" != "1" ]]; then
-	log "WARNING: legacy Moon layout discovery is DEPRECATED and will be removed; use manifest-only mode"
 fi
 log "pages dir: $PAGES_DIR"
 log "publish branch: $PUBLISH_BRANCH"

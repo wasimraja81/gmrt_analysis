@@ -176,13 +176,8 @@ bash bin/publish_gh_pages.sh
 
 Moon layout note:
 
-- Moon section rendering is now **manifest-first and manifest-only by default**.
+- Moon section rendering is now **strict manifest-only**.
 - The publisher auto-generates `logs/moon_layout_manifest_<RUN_TS>.json` when needed.
-- Emergency rollback only (deprecated):
-
-```bash
-ALLOW_LEGACY_MOON_LAYOUT=1 bash bin/publish_gh_pages.sh
-```
 
 Publish a specific run timestamp:
 
@@ -221,7 +216,7 @@ What it enforces:
 
 - byte-equivalence between baseline and manifest-rendered Moon HTML,
 - negative-control detection,
-- sabotage protection (legacy discovery paths hidden).
+- sabotage protection (legacy Moon product directories hidden).
 
 Data-host scheduling example (nightly at 02:30):
 

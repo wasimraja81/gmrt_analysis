@@ -9,7 +9,8 @@ WORK_SELFCAL_ROOT="${WORK_SELFCAL_ROOT:-/Users/raj030/DATA/gmrt_40_014/work/casa
 NO_PHASECENTER_DIR="${NO_PHASECENTER_DIR:-$WORK_SELFCAL_ROOT/moon0520_stk10}"
 PHASECENTER_DIR="${PHASECENTER_DIR:-$WORK_SELFCAL_ROOT/moon0520_stk10_phasecenter}"
 
-OUTPUT_ROOT="${OUTPUT_ROOT:-$WORK_SELFCAL_ROOT/ghpages_products}"
+MOON_GHPAGES_TARGET="${MOON_GHPAGES_TARGET:-moon0520}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-$WORK_SELFCAL_ROOT/ghpages_products/$MOON_GHPAGES_TARGET}"
 NO_OUT="${NO_OUT:-$OUTPUT_ROOT/no_phasecenter}"
 PC_OUT="${PC_OUT:-$OUTPUT_ROOT/phasecenter}"
 
@@ -178,7 +179,8 @@ run_cumulative_movie() {
       --selfcal-dir "$src_dir" \
       --glob "$fits_glob" \
       --registration-mode "$reg_mode" \
-      --moon-mask-radius-arcmin "$MOON_MASK_RADIUS_ARCMIN" \
+      --source-name "moon" \
+      --source-mask-radius-arcmin "$MOON_MASK_RADIUS_ARCMIN" \
       --fps "$MOVIE_FPS" \
       --cmap "$MOVIE_CMAP" \
       --percentile-low "$MOVIE_PERCENTILE_LOW" \

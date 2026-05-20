@@ -524,7 +524,6 @@ if [[ "$DRY_RUN" == true ]]; then
   log "  bash bin/publish_gh_pages.sh          # manifest-default publish to local gh-pages worktree"
   log "  bash bin/publish_gh_pages.sh --open   # publish + open index.html in browser"
   log "  bash bin/publish_gh_pages.sh --push   # publish + push to GitHub Pages"
-  log "  ALLOW_LEGACY_MOON_LAYOUT=1 bash bin/publish_gh_pages.sh   # emergency fallback only"
   exit 0
 fi
 

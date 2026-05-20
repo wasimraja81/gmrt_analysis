@@ -56,6 +56,7 @@ _UVFITS_BASE="${_UVFITS_BASE%.FITS}"
 OUTDIR="${OUTDIR:-$HOME/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10}"
 NO_MASK="${NO_MASK:-0}"
 USE_TCLEAN_PHASECENTER="${USE_TCLEAN_PHASECENTER:-0}"
+MOON_SELFCAL_ENGINE="${MOON_SELFCAL_ENGINE:-generic}"   # generic (default) | legacy
 LOG_DIR=~/DATA/gmrt_40_014/work/logs
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 MAKE_MOVIE_AFTER_SELFCAL="${MAKE_MOVIE_AFTER_SELFCAL:-1}"
@@ -208,8 +209,23 @@ LOG_FILE="$LOG_DIR/run_moon_selfcal_${SCAN_LOWER}_${RUN_TS}.log"
 # shellcheck disable=SC2206
 INTEGRATION_ARGS=( $INTEGRATIONS )
 
+case "$MOON_SELFCAL_ENGINE" in
+    generic)
+        SELFCAL_SCRIPT="$REPO_ROOT/src/gmrt_selfcal_dev.py"
+        SELFCAL_ENGINE_LABEL="generic"
+        ;;
+    legacy)
+        SELFCAL_SCRIPT="$REPO_ROOT/src/moon_selfcal_dev.py"
+        SELFCAL_ENGINE_LABEL="legacy"
+        ;;
+    *)
+        echo "[run-moon-selfcal] ERROR: invalid MOON_SELFCAL_ENGINE='$MOON_SELFCAL_ENGINE' (expected: generic|legacy)" >&2
+        exit 2
+        ;;
+esac
+
 CMD=(
-    "$PYTHON" "$REPO_ROOT/src/moon_selfcal_dev.py"
+    "$PYTHON" "$SELFCAL_SCRIPT"
     --scan "$SCAN"
     --uvfits "$UVFITS_FOR_SELFCAL"
     --build-index-if-missing
@@ -240,6 +256,13 @@ CMD=(
     --refantmode "$REFANTMODE"
 )
 
+if [[ "$SELFCAL_ENGINE_LABEL" == "generic" ]]; then
+    CMD+=(
+        --target-mode moving-target
+        --ephemeris-body moon
+    )
+fi
+
 if [[ "$NO_MASK" == "1" ]]; then
     CMD+=("--no-mask")
 fi
@@ -255,14 +278,34 @@ fi
 {
     echo "# timestamp=$RUN_TS"
     echo "# cwd=$PWD"
+    echo "# moon_selfcal_engine=$SELFCAL_ENGINE_LABEL"
+    echo "# selfcal_script=$SELFCAL_SCRIPT"
     printf '%q ' "${CMD[@]}"
     printf '\n'
 } > "$CMD_FILE"
 
+echo "[run-moon-selfcal] ==========================================================="
+echo "[run-moon-selfcal] INFO: Moon imaging now defaults to the GENERIC selfcal engine"
+echo "[run-moon-selfcal]       (src/gmrt_selfcal_dev.py, moving-target mode)."
+echo "[run-moon-selfcal]       Set MOON_SELFCAL_ENGINE=legacy to force the old path"
+echo "[run-moon-selfcal]       (src/moon_selfcal_dev.py)."
+echo "[run-moon-selfcal] ==========================================================="
+echo "[run-moon-selfcal] engine    : $SELFCAL_ENGINE_LABEL"
+echo "[run-moon-selfcal] script    : $SELFCAL_SCRIPT"
 echo "[run-moon-selfcal] cmd       : $CMD_FILE"
 echo "[run-moon-selfcal] log       : $LOG_FILE"
 
-"${CMD[@]}" 2>&1 | tee "$LOG_FILE"
+if "${CMD[@]}" 2>&1 | tee "$LOG_FILE"; then
+    echo "[run-moon-selfcal] Selfcal completed successfully (engine=$SELFCAL_ENGINE_LABEL)."
+else
+    rc=$?
+    echo "[run-moon-selfcal] ERROR: selfcal failed with engine=$SELFCAL_ENGINE_LABEL (exit=$rc)." >&2
+    if [[ "$SELFCAL_ENGINE_LABEL" == "generic" ]]; then
+        echo "[run-moon-selfcal] FALLBACK: rerun with moon-specific engine:" >&2
+        echo "[run-moon-selfcal]   MOON_SELFCAL_ENGINE=legacy bash bin/run_moon_selfcal_dev.sh" >&2
+    fi
+    exit "$rc"
+fi
 
 DESTRIPE_RAN=0
 if [[ "$RUN_DESTRIPE_AFTER_SELFCAL" == "1" ]]; then

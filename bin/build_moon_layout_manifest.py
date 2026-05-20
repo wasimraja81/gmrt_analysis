@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +23,84 @@ def detect_moon_root(run_dir: Path) -> str:
     if (run_dir / legacy / "no_phasecenter").is_dir() or (run_dir / legacy / "phasecenter").is_dir():
         return legacy
     return ""
+
+
+def detect_static_target_dirs(run_dir: Path) -> list[Path]:
+    roots = sorted(run_dir.glob("casa_selfcal/3c468.1_scan*_stk*"))
+    return [p for p in roots if p.is_dir()]
+
+
+def _first_existing_rel(run_dir: Path, base_dir: str, candidates: list[str]) -> str:
+    return select_first_existing_rel(run_dir, base_dir, candidates)
+
+
+def build_static_target_sections(run_dir: Path) -> list[dict]:
+    sections: list[dict] = []
+    for section_dir in detect_static_target_dirs(run_dir):
+        name = section_dir.name
+        scan_tag = ""
+        stack_size = ""
+        if m := re.search(r"(scan\d+)", name):
+            scan_tag = m.group(1)
+        if m := re.search(r"_stk(\d+)", name):
+            stack_size = m.group(1)
+
+        source_label = "3C468.1"
+        context_bits = [f"Source {source_label}"]
+        if scan_tag:
+            context_bits.append(scan_tag)
+        if stack_size:
+            context_bits.append(f"imaged per integration (stack size = {stack_size})")
+        context_bits.append("static target tracked at phase-tracking centre (unlike moving-target Moon)")
+
+        movie_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            "3c468.1_selfcal_movie.mp4",
+            "3c468.1_selfcal_movie.mov",
+            "3c468.1_selfcal_movie.gif",
+        ])
+        stack_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            "3c468.1_stack_mean.png",
+            "3c468.1_stack.png",
+            "3c468.1_stack_mean_destriped.png",
+        ])
+        rms_movie_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{name}_cumulative_coadd.mp4",
+            f"{name}_cumulative_coadd.mov",
+            f"{name}_cumulative_coadd.gif",
+            "3c468.1_cumulative_coadd.mp4",
+            "3c468.1_cumulative_coadd.mov",
+            "3c468.1_cumulative_coadd.gif",
+            "3c468.1_cumulative_rms_evolution.mp4",
+            "3c468.1_cumulative_rms_evolution.mov",
+            "3c468.1_cumulative_rms_evolution.gif",
+        ])
+        diag_panel_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            "scan05_clean_cycle_metrics_panel_5x5.png",
+            "scan05_clean_cycle_metrics_panel.png",
+        ])
+        diag_csv_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            "scan05_clean_cycle_metrics_per_integration.csv",
+        ])
+        diag_stats_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            "scan05_clean_cycle_metrics_summary_stats.csv",
+        ])
+
+        sections.append({
+            "section_id": f"static.{name}",
+            "section_name": name,
+            "source_label": source_label,
+            "scan_tag": scan_tag,
+            "stack_size": stack_size,
+            "section_title": f"Post-selfcal imaging summary: {source_label}",
+            "section_context": " · ".join(context_bits),
+            "movie_rel": movie_rel,
+            "stack_rel": stack_rel,
+            "rms_movie_rel": rms_movie_rel,
+            "diag_panel_rel": diag_panel_rel,
+            "diag_csv_rel": diag_csv_rel,
+            "diag_stats_rel": diag_stats_rel,
+        })
+    return sections
 
 
 def main() -> int:
@@ -93,7 +172,7 @@ def main() -> int:
     }
 
     doc = {
-        "schema": "gmrt-ghpages-layout-v1",
+        "schema": "gmrt-ghpages-layout-v2",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "run_ts": args.run_ts,
         "moon": {
@@ -104,6 +183,7 @@ def main() -> int:
             "has_phasecenter": has_pc,
             "entries": entries,
         },
+        "static_targets": build_static_target_sections(run_dir),
     }
 
     out = Path(args.output).expanduser().resolve()
