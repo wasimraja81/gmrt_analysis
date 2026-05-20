@@ -31,7 +31,7 @@ PUSH=0
 DRY_RUN=0
 OPEN_AFTER=1
 PUBLISH_FILES=()
-GHPAGES_LAYOUT_MANIFEST="${GHPAGES_LAYOUT_MANIFEST:-}"
+GHPAGES_COHORT_LAYOUT_MANIFEST="${GHPAGES_COHORT_LAYOUT_MANIFEST:-${GHPAGES_LAYOUT_MANIFEST:-}}"
 MANIFEST_TRACE_PATH="${MANIFEST_TRACE_PATH:-}"
 
 usage() {
@@ -61,7 +61,8 @@ Examples:
   bash bin/publish_gh_pages.sh --manifest "$HOME/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_products_20260511_114843.txt" --push
 
 Environment knobs:
-	GHPAGES_LAYOUT_MANIFEST=PATH Use explicit Moon layout manifest JSON.
+	GHPAGES_COHORT_LAYOUT_MANIFEST=PATH Use explicit cohort layout manifest JSON.
+	GHPAGES_LAYOUT_MANIFEST=PATH Legacy alias for GHPAGES_COHORT_LAYOUT_MANIFEST.
 EOF
 }
 
@@ -224,7 +225,7 @@ trace_manifest_entry() {
 	printf '{"section_id":"%s","entry_id":"%s","resolved_rel":"%s"}\n' "$section_id" "$entry_id" "$resolved_rel" >> "$MANIFEST_TRACE_PATH"
 }
 
-load_moon_layout_manifest() {
+load_cohort_layout_manifest() {
 	local manifest_path="$1"
 	local run_ts="$2"
 	[[ -f "$manifest_path" ]] || return 1
@@ -345,9 +346,9 @@ PY
 	return 0
 }
 
-ensure_moon_layout_manifest() {
-	if [[ -n "$GHPAGES_LAYOUT_MANIFEST" ]]; then
-		[[ -f "$GHPAGES_LAYOUT_MANIFEST" ]] || return 1
+ensure_cohort_layout_manifest() {
+	if [[ -n "$GHPAGES_COHORT_LAYOUT_MANIFEST" ]]; then
+		[[ -f "$GHPAGES_COHORT_LAYOUT_MANIFEST" ]] || return 1
 		return 0
 	fi
 
@@ -356,8 +357,8 @@ ensure_moon_layout_manifest() {
 		--work-dir "$WORK_DIR" \
 		--run-ts "$RUN_TS" \
 		--output "$auto_manifest"; then
-		GHPAGES_LAYOUT_MANIFEST="$auto_manifest"
-		log "auto-generated moon layout manifest: $GHPAGES_LAYOUT_MANIFEST"
+		GHPAGES_COHORT_LAYOUT_MANIFEST="$auto_manifest"
+		log "auto-generated cohort layout manifest: $GHPAGES_COHORT_LAYOUT_MANIFEST"
 		return 0
 	fi
 
@@ -1176,8 +1177,8 @@ EOF
 	local pc_dst_stack_rel=""
 	local pc_dst_cum_mp4_rel=""
 	local static_count="0"
-	if ! load_moon_layout_manifest "$GHPAGES_LAYOUT_MANIFEST" "$RUN_TS"; then
-		die "Moon layout manifest could not be loaded: $GHPAGES_LAYOUT_MANIFEST"
+	if ! load_cohort_layout_manifest "$GHPAGES_COHORT_LAYOUT_MANIFEST" "$RUN_TS"; then
+		die "Cohort layout manifest could not be loaded: $GHPAGES_COHORT_LAYOUT_MANIFEST"
 	fi
 
 	trace_manifest_entry "moon.section1" "moon.s1.movie" "$no_raw_mp4_rel"
@@ -1371,8 +1372,8 @@ publish_run() {
 	run_dir="$PAGES_DIR/$run_rel"
 
 	collect_publish_files
-	if [[ -n "$GHPAGES_LAYOUT_MANIFEST" && -f "$GHPAGES_LAYOUT_MANIFEST" ]]; then
-		PUBLISH_FILES+=("$GHPAGES_LAYOUT_MANIFEST")
+	if [[ -n "$GHPAGES_COHORT_LAYOUT_MANIFEST" && -f "$GHPAGES_COHORT_LAYOUT_MANIFEST" ]]; then
+		PUBLISH_FILES+=("$GHPAGES_COHORT_LAYOUT_MANIFEST")
 	fi
 	workflow_log="$(awk '/^Workflow log:/{getline; print; exit}' "$MANIFEST_PATH")"
 	manifest_name="$(basename "$MANIFEST_PATH")"
@@ -1516,16 +1517,16 @@ done
 
 resolve_manifest
 
-if ! ensure_moon_layout_manifest; then
-	die "Moon layout manifest could not be prepared"
+if ! ensure_cohort_layout_manifest; then
+	die "Cohort layout manifest could not be prepared"
 fi
 
 log "repo root: $REPO_ROOT"
 log "work dir: $WORK_DIR"
 log "manifest: $MANIFEST_PATH"
 log "run timestamp: $RUN_TS"
-if [[ -n "$GHPAGES_LAYOUT_MANIFEST" ]]; then
-	log "moon layout manifest: $GHPAGES_LAYOUT_MANIFEST"
+if [[ -n "$GHPAGES_COHORT_LAYOUT_MANIFEST" ]]; then
+	log "cohort layout manifest: $GHPAGES_COHORT_LAYOUT_MANIFEST"
 fi
 log "pages dir: $PAGES_DIR"
 log "publish branch: $PUBLISH_BRANCH"
