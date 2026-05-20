@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORK_DIR="${WORK_DIR:-$HOME/DATA/gmrt_40_014/work}"
 MANIFEST_PATH="${1:-}"
+STRICT_LAYOUT_COMPAT="${STRICT_LAYOUT_COMPAT:-0}"
+LAYOUT_COMPAT_REF="${LAYOUT_COMPAT_REF:-HEAD~1}"
 
 if [[ -z "$MANIFEST_PATH" ]]; then
   MANIFEST_PATH="$(ls -1t "$WORK_DIR"/logs/run_gmrt_40_014_products_*.txt 2>/dev/null | head -1 || true)"
@@ -40,7 +42,17 @@ exec /bin/date "\$@"
 EOF
 chmod +x "$FAKEBIN/date"
 
-git -C "$REPO_ROOT" show HEAD:bin/publish_gh_pages.sh > "$BASELINE_SCRIPT"
+if [[ "$STRICT_LAYOUT_COMPAT" == "1" ]]; then
+  if ! git -C "$REPO_ROOT" cat-file -e "${LAYOUT_COMPAT_REF}:bin/publish_gh_pages.sh" 2>/dev/null; then
+    echo "Layout compat ref missing script: ${LAYOUT_COMPAT_REF}:bin/publish_gh_pages.sh" >&2
+    exit 2
+  fi
+  git -C "$REPO_ROOT" show "${LAYOUT_COMPAT_REF}:bin/publish_gh_pages.sh" > "$BASELINE_SCRIPT"
+  BASELINE_SOURCE="$LAYOUT_COMPAT_REF"
+else
+  cp -f "$REPO_ROOT/bin/publish_gh_pages.sh" "$BASELINE_SCRIPT"
+  BASELINE_SOURCE="WORKTREE"
+fi
 chmod +x "$BASELINE_SCRIPT"
 python3 "$REPO_ROOT/bin/build_moon_layout_manifest.py" --work-dir "$WORK_DIR" --run-ts "$RUN_TS" --output "$LAYOUT_MANIFEST"
 
@@ -48,6 +60,7 @@ BASELINE_BRANCH="gh-pages-baseline-${RUN_TS//_/}-$$"
 MANIFEST_BRANCH="gh-pages-manifest-${RUN_TS//_/}-$$"
 MANIFEST_SAB_BRANCH="gh-pages-manifest-sab-${RUN_TS//_/}-$$"
 
+GHPAGES_LAYOUT_MANIFEST="$LAYOUT_MANIFEST" \
 PATH="$FAKEBIN:$PATH" bash "$BASELINE_SCRIPT" \
   --manifest "$MANIFEST_PATH" \
   --work-dir "$WORK_DIR" \
@@ -81,6 +94,9 @@ set -e
 {
   echo "RUN_TS=$RUN_TS"
   echo "MANIFEST_PATH=$MANIFEST_PATH"
+  echo "STRICT_LAYOUT_COMPAT=$STRICT_LAYOUT_COMPAT"
+  echo "LAYOUT_COMPAT_REF=$LAYOUT_COMPAT_REF"
+  echo "BASELINE_SOURCE=$BASELINE_SOURCE"
   echo "LAYOUT_MANIFEST=$LAYOUT_MANIFEST"
   echo "TRACE_FILE=$TRACE_FILE"
   echo "BASELINE_INDEX=$BASELINE_INDEX"
@@ -92,10 +108,19 @@ set -e
 
 if [[ "$CMP_STATUS" -ne 0 ]]; then
   diff -u "$BASELINE_INDEX" "$MANIFEST_INDEX" > "$TEST_ROOT/index.diff" || true
+  if [[ "$STRICT_LAYOUT_COMPAT" == "1" ]]; then
+    echo "LAYOUT_COMPAT=FAIL" >> "$REPORT_FILE"
+  fi
   echo "BYTE_EQ=FAIL" >> "$REPORT_FILE"
   echo "Diff written: $TEST_ROOT/index.diff" >> "$REPORT_FILE"
   cat "$REPORT_FILE"
   exit 1
+fi
+
+if [[ "$STRICT_LAYOUT_COMPAT" == "1" ]]; then
+  echo "LAYOUT_COMPAT=PASS" >> "$REPORT_FILE"
+else
+  echo "LAYOUT_COMPAT=SKIP" >> "$REPORT_FILE"
 fi
 
 echo "BYTE_EQ=PASS" >> "$REPORT_FILE"

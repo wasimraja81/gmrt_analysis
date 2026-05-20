@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORK_DIR="${WORK_DIR:-$HOME/DATA/gmrt_40_014/work}"
 MANIFEST_PATH="${1:-}"
 STRICT_DATA="${STRICT_DATA:-1}"
+STRICT_LAYOUT_COMPAT="${STRICT_LAYOUT_COMPAT:-0}"
+LAYOUT_COMPAT_REF="${LAYOUT_COMPAT_REF:-HEAD~1}"
 
 find_latest_manifest() {
   ls -1t "$WORK_DIR"/logs/run_gmrt_40_014_products_*.txt 2>/dev/null | head -1 || true
@@ -34,8 +36,15 @@ REPORT_FILE="${TEST_ROOT:-$REPO_ROOT/work/manifest_equivalence_${RUN_TS}}/equiva
 
 echo "[moon-manifest-ci] RUN_TS=$RUN_TS"
 echo "[moon-manifest-ci] MANIFEST_PATH=$MANIFEST_PATH"
+echo "[moon-manifest-ci] STRICT_LAYOUT_COMPAT=$STRICT_LAYOUT_COMPAT"
+if [[ "$STRICT_LAYOUT_COMPAT" == "1" ]]; then
+  echo "[moon-manifest-ci] LAYOUT_COMPAT_REF=$LAYOUT_COMPAT_REF"
+fi
 
-env WORK_DIR="$WORK_DIR" bash "$REPO_ROOT/bin/test_moon_manifest_equivalence.sh" "$MANIFEST_PATH"
+env WORK_DIR="$WORK_DIR" \
+    STRICT_LAYOUT_COMPAT="$STRICT_LAYOUT_COMPAT" \
+    LAYOUT_COMPAT_REF="$LAYOUT_COMPAT_REF" \
+    bash "$REPO_ROOT/bin/test_moon_manifest_equivalence.sh" "$MANIFEST_PATH"
 
 [[ -f "$REPORT_FILE" ]] || {
   echo "[moon-manifest-ci] FAIL: report not found: $REPORT_FILE" >&2
@@ -45,6 +54,9 @@ env WORK_DIR="$WORK_DIR" bash "$REPO_ROOT/bin/test_moon_manifest_equivalence.sh"
 grep -q '^BYTE_EQ=PASS$' "$REPORT_FILE" || { echo "[moon-manifest-ci] FAIL: BYTE_EQ not PASS" >&2; exit 1; }
 grep -q '^NEGATIVE_CONTROL=PASS$' "$REPORT_FILE" || { echo "[moon-manifest-ci] FAIL: NEGATIVE_CONTROL not PASS" >&2; exit 1; }
 grep -q '^SABOTAGE_CHECK=PASS$' "$REPORT_FILE" || { echo "[moon-manifest-ci] FAIL: SABOTAGE_CHECK not PASS" >&2; exit 1; }
+if [[ "$STRICT_LAYOUT_COMPAT" == "1" ]]; then
+  grep -q '^LAYOUT_COMPAT=PASS$' "$REPORT_FILE" || { echo "[moon-manifest-ci] FAIL: LAYOUT_COMPAT not PASS" >&2; exit 1; }
+fi
 
 echo "[moon-manifest-ci] PASS: Moon manifest regression gate passed"
 echo "[moon-manifest-ci] REPORT=$REPORT_FILE"
