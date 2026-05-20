@@ -54,7 +54,7 @@ else
   BASELINE_SOURCE="WORKTREE"
 fi
 chmod +x "$BASELINE_SCRIPT"
-python3 "$REPO_ROOT/bin/build_moon_layout_manifest.py" --work-dir "$WORK_DIR" --run-ts "$RUN_TS" --output "$LAYOUT_MANIFEST"
+python3 "$REPO_ROOT/bin/build_gmrt_40_014_layout_manifest.py" --work-dir "$WORK_DIR" --run-ts "$RUN_TS" --output "$LAYOUT_MANIFEST"
 
 BASELINE_BRANCH="gh-pages-baseline-${RUN_TS//_/}-$$"
 MANIFEST_BRANCH="gh-pages-manifest-${RUN_TS//_/}-$$"

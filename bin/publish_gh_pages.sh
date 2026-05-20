@@ -352,7 +352,7 @@ ensure_moon_layout_manifest() {
 	fi
 
 	local auto_manifest="$WORK_DIR/logs/moon_layout_manifest_${RUN_TS}.json"
-	if python3 "$REPO_ROOT/bin/build_moon_layout_manifest.py" \
+	if python3 "$REPO_ROOT/bin/build_gmrt_40_014_layout_manifest.py" \
 		--work-dir "$WORK_DIR" \
 		--run-ts "$RUN_TS" \
 		--output "$auto_manifest"; then
