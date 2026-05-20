@@ -243,6 +243,7 @@ with open(manifest_path, 'r', encoding='utf-8') as handle:
 if run_ts and data.get('run_ts') and str(data.get('run_ts')) != run_ts:
     raise SystemExit(f"manifest run_ts mismatch: expected {run_ts}, got {data.get('run_ts')}")
 
+workflow_run_id = '' if data.get('workflow_run_id') is None else str(data.get('workflow_run_id', ''))
 moon = data.get('moon', {})
 entries = moon.get('entries', {})
 
@@ -260,6 +261,7 @@ def eval_entry(key):
     return ''
 
 out = {
+	'workflow_run_id': workflow_run_id,
     'moon_products_root': sval('products_root', ''),
     'moon_no_phasecenter_dir': sval('no_phasecenter_dir', ''),
     'moon_phasecenter_dir': sval('phasecenter_dir', ''),
@@ -309,6 +311,7 @@ PY
 	local key val
 	while IFS=$'\t' read -r key val; do
 		case "$key" in
+			workflow_run_id) workflow_run_id="$val" ;;
 			moon_products_root) moon_products_root="$val" ;;
 			moon_no_phasecenter_dir) moon_no_phasecenter_dir="$val" ;;
 			moon_phasecenter_dir) moon_phasecenter_dir="$val" ;;
@@ -737,6 +740,7 @@ render_run_index() {
 	local manifest_name="$7"
 	local back_link="${8:-../../index.html}"
 	local base_path
+	local workflow_run_id=""
 	# Derive base_path from back_link so all relative nav URLs stay consistent
 	# e.g. back_link="../../index.html" → base_path="../../"
 	base_path="${back_link%index.html}"
@@ -744,6 +748,17 @@ render_run_index() {
 	local html_title html_run_rel
 	html_title="$(escape_html "$SITE_TITLE")"
 	html_run_rel="$(escape_html "$run_rel")"
+	if [[ -n "$GHPAGES_COHORT_LAYOUT_MANIFEST" && -f "$GHPAGES_COHORT_LAYOUT_MANIFEST" ]]; then
+		workflow_run_id="$(python - "$GHPAGES_COHORT_LAYOUT_MANIFEST" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], 'r', encoding='utf-8') as handle:
+    data = json.load(handle)
+print('' if data.get('workflow_run_id') is None else str(data.get('workflow_run_id', '')))
+PY
+)"
+	fi
 
 	cat > "$tmp_file" <<EOF
 <!doctype html>
@@ -793,6 +808,15 @@ render_run_index() {
   <p class="tiny"><strong>Published:</strong> ${published_at}</p>
   <div class="meta">
     <p><strong>Run timestamp:</strong> <code>${RUN_TS}</code></p>
+EOF
+
+	if [[ -n "$workflow_run_id" ]]; then
+		cat >> "$tmp_file" <<EOF
+		<p><strong>Workflow run ID:</strong> <code>${workflow_run_id}</code></p>
+EOF
+	fi
+
+	cat >> "$tmp_file" <<EOF
     <p><strong>Published at:</strong> <code>${published_at}</code></p>
     <p><strong>Source branch:</strong> <code>${source_branch}</code></p>
     <p><strong>Source commit:</strong> <code>${source_commit}</code></p>

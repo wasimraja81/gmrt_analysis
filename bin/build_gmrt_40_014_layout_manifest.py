@@ -8,6 +8,31 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def detect_workflow_run_id(work_dir: Path, run_ts: str) -> str:
+    products_manifest = work_dir / "logs" / f"run_gmrt_40_014_products_{run_ts}.txt"
+    if not products_manifest.is_file():
+        return ""
+
+    workflow_log: Path | None = None
+    lines = products_manifest.read_text(encoding="utf-8").splitlines()
+    for idx, line in enumerate(lines):
+        if line.strip() == "Workflow log:" and idx + 1 < len(lines):
+            candidate = Path(lines[idx + 1].strip()).expanduser()
+            if candidate.is_file():
+                workflow_log = candidate
+            break
+
+    if workflow_log is None or not workflow_log.is_file():
+        return ""
+
+    run_id_re = re.compile(r"\bRUN_ID=(\S+)")
+    for line in workflow_log.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = run_id_re.search(line)
+        if match:
+            return match.group(1)
+    return ""
+
+
 def select_first_existing_rel(run_dir: Path, base_dir: str, candidates: list[str]) -> str:
     for candidate in candidates:
         if (run_dir / base_dir / candidate).is_file():
@@ -175,6 +200,7 @@ def main() -> int:
         "schema": "gmrt-ghpages-layout-v2",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "run_ts": args.run_ts,
+        "workflow_run_id": detect_workflow_run_id(work_dir, args.run_ts),
         "moon": {
             "products_root": moon_products_root,
             "no_phasecenter_dir": moon_no,
