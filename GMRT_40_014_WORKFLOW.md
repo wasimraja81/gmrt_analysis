@@ -174,6 +174,16 @@ cd /Users/raj030/github-wasimraja81/gmrt_analysis
 bash bin/publish_gh_pages.sh
 ```
 
+Moon layout note:
+
+- Moon section rendering is now **manifest-first and manifest-only by default**.
+- The publisher auto-generates `logs/moon_layout_manifest_<RUN_TS>.json` when needed.
+- Emergency rollback only (deprecated):
+
+```bash
+ALLOW_LEGACY_MOON_LAYOUT=1 bash bin/publish_gh_pages.sh
+```
+
 Publish a specific run timestamp:
 
 ```bash
@@ -195,6 +205,35 @@ The publish script:
 - refreshes `latest/` to mirror that chosen run,
 - regenerates a simple static gallery site,
 - commits the update on the `gh-pages` branch.
+
+---
+
+## 11) Moon Manifest Regression Gate (Regular Check)
+
+Run this gate after publish changes and on a regular schedule (e.g. nightly cron on the data host):
+
+```bash
+cd /Users/raj030/github-wasimraja81/gmrt_analysis
+bash bin/run_moon_manifest_regression_ci.sh
+```
+
+What it enforces:
+
+- byte-equivalence between baseline and manifest-rendered Moon HTML,
+- negative-control detection,
+- sabotage protection (legacy discovery paths hidden).
+
+Data-host scheduling example (nightly at 02:30):
+
+```bash
+30 2 * * * cd /Users/raj030/github-wasimraja81/gmrt_analysis && bash bin/run_moon_manifest_regression_ci.sh >> $HOME/DATA/gmrt_40_014/work/logs/moon_manifest_ci_cron.log 2>&1
+```
+
+If running in an environment without data mounts, allow clean skip:
+
+```bash
+STRICT_DATA=0 bash bin/run_moon_manifest_regression_ci.sh
+```
 
 This means later runs with better labels or styling can be published explicitly, without losing earlier published runs.
 

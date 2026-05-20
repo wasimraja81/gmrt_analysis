@@ -31,6 +31,17 @@ PUSH=0
 DRY_RUN=0
 OPEN_AFTER=1
 PUBLISH_FILES=()
+GHPAGES_LAYOUT_MANIFEST="${GHPAGES_LAYOUT_MANIFEST:-}"
+if [[ -z "${MANIFEST_ONLY+x}" ]]; then
+	if [[ "${ALLOW_LEGACY_MOON_LAYOUT:-0}" == "1" ]]; then
+		MANIFEST_ONLY="0"
+	else
+		MANIFEST_ONLY="1"
+	fi
+else
+	MANIFEST_ONLY="${MANIFEST_ONLY}"
+fi
+MANIFEST_TRACE_PATH="${MANIFEST_TRACE_PATH:-}"
 
 usage() {
 	cat <<EOF
@@ -57,6 +68,11 @@ Examples:
   bash bin/publish_gh_pages.sh
   bash bin/publish_gh_pages.sh --run-ts 20260511_114843
   bash bin/publish_gh_pages.sh --manifest "$HOME/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_products_20260511_114843.txt" --push
+
+Environment knobs:
+	MANIFEST_ONLY=1|0            Force manifest-only Moon layout render (default: 1).
+	GHPAGES_LAYOUT_MANIFEST=PATH Use explicit Moon layout manifest JSON.
+	ALLOW_LEGACY_MOON_LAYOUT=1   Emergency fallback: disables default MANIFEST_ONLY.
 EOF
 }
 
@@ -86,6 +102,135 @@ import html
 import sys
 print(html.escape(sys.argv[1], quote=True))
 PY
+}
+
+select_first_existing_rel() {
+	local run_dir="$1"
+	local base_dir="$2"
+	shift 2
+	local candidate=""
+	for candidate in "$@"; do
+		if [[ -f "$run_dir/$base_dir/$candidate" ]]; then
+			echo "$base_dir/$candidate"
+			return 0
+		fi
+	done
+	echo ""
+}
+
+trace_manifest_entry() {
+	local section_id="$1"
+	local entry_id="$2"
+	local resolved_rel="$3"
+	[[ -n "$MANIFEST_TRACE_PATH" ]] || return 0
+	mkdir -p "$(dirname "$MANIFEST_TRACE_PATH")"
+	printf '{"section_id":"%s","entry_id":"%s","resolved_rel":"%s"}\n' "$section_id" "$entry_id" "$resolved_rel" >> "$MANIFEST_TRACE_PATH"
+}
+
+load_moon_layout_manifest() {
+	local manifest_path="$1"
+	local run_ts="$2"
+	[[ -f "$manifest_path" ]] || return 1
+
+	local fields
+	if ! fields="$(python - "$manifest_path" "$run_ts" <<'PY'
+import json
+import sys
+
+manifest_path = sys.argv[1]
+run_ts = sys.argv[2]
+with open(manifest_path, 'r', encoding='utf-8') as handle:
+    data = json.load(handle)
+
+if run_ts and data.get('run_ts') and str(data.get('run_ts')) != run_ts:
+    raise SystemExit(f"manifest run_ts mismatch: expected {run_ts}, got {data.get('run_ts')}")
+
+moon = data.get('moon', {})
+entries = moon.get('entries', {})
+
+def sval(key, default=''):
+    val = moon.get(key, default)
+    return '' if val is None else str(val)
+
+def bval(key):
+    return '1' if bool(moon.get(key, False)) else '0'
+
+def eval_entry(key):
+    node = entries.get(key, {})
+    if isinstance(node, dict):
+        return '' if node.get('resolved_rel') is None else str(node.get('resolved_rel', ''))
+    return ''
+
+out = {
+    'moon_products_root': sval('products_root', ''),
+    'moon_no_phasecenter_dir': sval('no_phasecenter_dir', ''),
+    'moon_phasecenter_dir': sval('phasecenter_dir', ''),
+    'moon_has_no_phasecenter': bval('has_no_phasecenter'),
+    'moon_has_phasecenter': bval('has_phasecenter'),
+    'no_raw_mp4_rel': eval_entry('no_raw_movie'),
+    'no_raw_stack_rel': eval_entry('no_raw_stack'),
+    'no_raw_cum_mp4_rel': eval_entry('no_raw_rms_movie'),
+    'pc_raw_mp4_rel': eval_entry('pc_raw_movie'),
+    'pc_raw_stack_rel': eval_entry('pc_raw_stack'),
+    'pc_raw_cum_mp4_rel': eval_entry('pc_raw_rms_movie'),
+    'no_dst_mp4_rel': eval_entry('no_dst_movie'),
+    'no_dst_stack_rel': eval_entry('no_dst_stack'),
+    'no_dst_cum_mp4_rel': eval_entry('no_dst_rms_movie'),
+    'pc_dst_mp4_rel': eval_entry('pc_dst_movie'),
+    'pc_dst_stack_rel': eval_entry('pc_dst_stack'),
+    'pc_dst_cum_mp4_rel': eval_entry('pc_dst_rms_movie'),
+}
+
+for key, val in out.items():
+    print(f"{key}\t{val}")
+PY
+)"; then
+		return 1
+	fi
+
+	local key val
+	while IFS=$'\t' read -r key val; do
+		case "$key" in
+			moon_products_root) moon_products_root="$val" ;;
+			moon_no_phasecenter_dir) moon_no_phasecenter_dir="$val" ;;
+			moon_phasecenter_dir) moon_phasecenter_dir="$val" ;;
+			moon_has_no_phasecenter) moon_has_no_phasecenter="$val" ;;
+			moon_has_phasecenter) moon_has_phasecenter="$val" ;;
+			no_raw_mp4_rel) no_raw_mp4_rel="$val" ;;
+			no_raw_stack_rel) no_raw_stack_rel="$val" ;;
+			no_raw_cum_mp4_rel) no_raw_cum_mp4_rel="$val" ;;
+			pc_raw_mp4_rel) pc_raw_mp4_rel="$val" ;;
+			pc_raw_stack_rel) pc_raw_stack_rel="$val" ;;
+			pc_raw_cum_mp4_rel) pc_raw_cum_mp4_rel="$val" ;;
+			no_dst_mp4_rel) no_dst_mp4_rel="$val" ;;
+			no_dst_stack_rel) no_dst_stack_rel="$val" ;;
+			no_dst_cum_mp4_rel) no_dst_cum_mp4_rel="$val" ;;
+			pc_dst_mp4_rel) pc_dst_mp4_rel="$val" ;;
+			pc_dst_stack_rel) pc_dst_stack_rel="$val" ;;
+			pc_dst_cum_mp4_rel) pc_dst_cum_mp4_rel="$val" ;;
+		esac
+	done <<< "$fields"
+
+	return 0
+}
+
+ensure_moon_layout_manifest() {
+	if [[ -n "$GHPAGES_LAYOUT_MANIFEST" ]]; then
+		[[ -f "$GHPAGES_LAYOUT_MANIFEST" ]] || return 1
+		return 0
+	fi
+
+	local auto_manifest="$WORK_DIR/logs/moon_layout_manifest_${RUN_TS}.json"
+	if python3 "$REPO_ROOT/bin/build_moon_layout_manifest.py" \
+		--work-dir "$WORK_DIR" \
+		--run-ts "$RUN_TS" \
+		--output "$auto_manifest"; then
+		GHPAGES_LAYOUT_MANIFEST="$auto_manifest"
+		log "auto-generated moon layout manifest: $GHPAGES_LAYOUT_MANIFEST"
+		return 0
+	fi
+
+	return 1
 }
 
 find_latest_manifest() {
@@ -725,10 +870,88 @@ EOF
 EOF
 	fi
 
-	render_moon_debug_index "$run_dir" "casa_selfcal/ghpages_products/no_phasecenter" "Observed phase-centre destriping debug"
-	render_moon_debug_index "$run_dir" "casa_selfcal/ghpages_products/phasecenter" "Moon-centred tClean destriping debug"
+	local moon_products_root=""
+	local moon_no_phasecenter_dir=""
+	local moon_phasecenter_dir=""
+	local moon_has_no_phasecenter="0"
+	local moon_has_phasecenter="0"
+	local no_raw_mp4_rel=""
+	local no_raw_stack_rel=""
+	local no_raw_cum_mp4_rel=""
+	local pc_raw_mp4_rel=""
+	local pc_raw_stack_rel=""
+	local pc_raw_cum_mp4_rel=""
+	local no_dst_mp4_rel=""
+	local no_dst_stack_rel=""
+	local no_dst_cum_mp4_rel=""
+	local pc_dst_mp4_rel=""
+	local pc_dst_stack_rel=""
+	local pc_dst_cum_mp4_rel=""
+	local moon_layout_loaded="0"
 
-	if [[ -d "$run_dir/casa_selfcal/ghpages_products/no_phasecenter" || -d "$run_dir/casa_selfcal/ghpages_products/phasecenter" ]]; then
+	if [[ -n "$GHPAGES_LAYOUT_MANIFEST" ]]; then
+		if load_moon_layout_manifest "$GHPAGES_LAYOUT_MANIFEST" "$RUN_TS"; then
+			moon_layout_loaded="1"
+		fi
+	fi
+
+	if [[ "$MANIFEST_ONLY" == "1" && "$moon_layout_loaded" != "1" ]]; then
+		die "MANIFEST_ONLY=1 but layout manifest could not be loaded: $GHPAGES_LAYOUT_MANIFEST"
+	fi
+
+	if [[ "$moon_layout_loaded" != "1" ]]; then
+		if [[ -d "$run_dir/casa_selfcal/ghpages_products/moon0520/no_phasecenter" || -d "$run_dir/casa_selfcal/ghpages_products/moon0520/phasecenter" ]]; then
+			moon_products_root="casa_selfcal/ghpages_products/moon0520"
+		elif [[ -d "$run_dir/casa_selfcal/ghpages_products/no_phasecenter" || -d "$run_dir/casa_selfcal/ghpages_products/phasecenter" ]]; then
+			moon_products_root="casa_selfcal/ghpages_products"
+		fi
+		moon_no_phasecenter_dir="${moon_products_root}/no_phasecenter"
+		moon_phasecenter_dir="${moon_products_root}/phasecenter"
+		[[ -d "$run_dir/$moon_no_phasecenter_dir" ]] && moon_has_no_phasecenter="1"
+		[[ -d "$run_dir/$moon_phasecenter_dir" ]] && moon_has_phasecenter="1"
+
+		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
+			no_raw_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_no_phasecenter_raw_selfcal.mp4 moon0520_no_phasecenter_pre.mp4)"
+			no_raw_stack_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png moon0520_no_phasecenter_phasecorr_destriped_stack_original.png)"
+			no_raw_cum_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_observed_center_raw_cumulative_coadd.mp4 moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_coadd.mp4)"
+			no_dst_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_no_phasecenter_destriped.mp4)"
+			no_dst_stack_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_no_phasecenter_phasecorr_destriped_stack.png moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png)"
+			no_dst_cum_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_no_phasecenter_dir" moon0520_observed_center_destriped_cumulative_coadd.mp4 moon0520_no_phasecenter_phasecorr_destriped_cumulative_coadd.mp4)"
+		fi
+
+		if [[ "$moon_has_phasecenter" == "1" ]]; then
+			pc_raw_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_phasecenter_raw_selfcal.mp4 moon0520_phasecenter_pre.mp4)"
+			pc_raw_stack_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_phasecenter_noshift_raw_selfcal_stack.png moon0520_phasecenter_noshift_destriped_stack_original.png)"
+			pc_raw_cum_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_moon_centered_raw_cumulative_coadd.mp4 moon0520_phasecenter_noshift_raw_selfcal_cumulative_coadd.mp4)"
+			pc_dst_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_phasecenter_destriped.mp4)"
+			pc_dst_stack_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_phasecenter_noshift_destriped_stack.png moon0520_phasecenter_noshift_destriped_stack_destriped.png)"
+			pc_dst_cum_mp4_rel="$(select_first_existing_rel "$run_dir" "$moon_phasecenter_dir" moon0520_moon_centered_destriped_cumulative_coadd.mp4 moon0520_phasecenter_noshift_destriped_cumulative_coadd.mp4)"
+		fi
+	fi
+
+	if [[ "$MANIFEST_ONLY" == "1" ]]; then
+		trace_manifest_entry "moon.section1" "moon.s1.movie" "$no_raw_mp4_rel"
+		trace_manifest_entry "moon.section1" "moon.s1.stack" "$no_raw_stack_rel"
+		trace_manifest_entry "moon.section1" "moon.s1.rms_movie" "$no_raw_cum_mp4_rel"
+		trace_manifest_entry "moon.section2" "moon.s2.movie" "$pc_raw_mp4_rel"
+		trace_manifest_entry "moon.section2" "moon.s2.stack" "$pc_raw_stack_rel"
+		trace_manifest_entry "moon.section2" "moon.s2.rms_movie" "$pc_raw_cum_mp4_rel"
+		trace_manifest_entry "moon.section3" "moon.s3.movie" "$no_dst_mp4_rel"
+		trace_manifest_entry "moon.section3" "moon.s3.stack" "$no_dst_stack_rel"
+		trace_manifest_entry "moon.section3" "moon.s3.rms_movie" "$no_dst_cum_mp4_rel"
+		trace_manifest_entry "moon.section4" "moon.s4.movie" "$pc_dst_mp4_rel"
+		trace_manifest_entry "moon.section4" "moon.s4.stack" "$pc_dst_stack_rel"
+		trace_manifest_entry "moon.section4" "moon.s4.rms_movie" "$pc_dst_cum_mp4_rel"
+	fi
+
+	if [[ "$moon_has_no_phasecenter" == "1" ]]; then
+		render_moon_debug_index "$run_dir" "$moon_no_phasecenter_dir" "Observed phase-centre destriping debug"
+	fi
+	if [[ "$moon_has_phasecenter" == "1" ]]; then
+		render_moon_debug_index "$run_dir" "$moon_phasecenter_dir" "Moon-centred tClean destriping debug"
+	fi
+
+	if [[ -n "$moon_products_root" ]]; then
 		cat >> "$tmp_file" <<'EOF'
 
   <div class="stage">
@@ -743,13 +966,7 @@ EOF
 EOF
 
 		# Section 1: no_phasecenter RAW
-		if [[ -d "$run_dir/casa_selfcal/ghpages_products/no_phasecenter" ]]; then
-			local no_raw_mp4_rel=""
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4" ]]; then
-				no_raw_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4"
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_pre.mp4" ]]; then
-				no_raw_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_pre.mp4"
-			fi
+		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
 			cat >> "$tmp_file" <<'EOF'
 				<div class="panel-card">
           <p><strong>Movie</strong></p>
@@ -766,13 +983,9 @@ EOF
 				<div class="panel-card">
           <p><strong>Stacked image</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png" alt="Observed phase-centre raw stacked image" loading="lazy"></a>
-EOF
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png" alt="Observed phase-centre raw stacked image" loading="lazy"></a>
+			if [[ -n "$no_raw_stack_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<a href="${no_raw_stack_rel}"><img src="${no_raw_stack_rel}" alt="Observed phase-centre raw stacked image" loading="lazy"></a>
 EOF
 			fi
 			cat >> "$tmp_file" <<'EOF'
@@ -780,12 +993,6 @@ EOF
 				<div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-			local no_raw_cum_mp4_rel=""
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4" ]]; then
-				no_raw_cum_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4"
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_coadd.mp4" ]]; then
-				no_raw_cum_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_cumulative_coadd.mp4"
-			fi
 			if [[ -n "$no_raw_cum_mp4_rel" ]]; then
 				cat >> "$tmp_file" <<EOF
 					<video controls preload="metadata" onclick="window.open('$no_raw_cum_mp4_rel','_blank')" title="Click to open full-size">
@@ -810,13 +1017,7 @@ EOF
 EOF
 
 		# Section 2: phasecenter RAW
-		if [[ -d "$run_dir/casa_selfcal/ghpages_products/phasecenter" ]]; then
-			local pc_raw_mp4_rel=""
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_raw_selfcal.mp4" ]]; then
-				pc_raw_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_raw_selfcal.mp4"
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_pre.mp4" ]]; then
-				pc_raw_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_pre.mp4"
-			fi
+		if [[ "$moon_has_phasecenter" == "1" ]]; then
 			cat >> "$tmp_file" <<'EOF'
 				<div class="panel-card">
           <p><strong>Movie</strong></p>
@@ -833,13 +1034,9 @@ EOF
 				<div class="panel-card">
           <p><strong>Stacked image</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png" alt="Moon-centred raw stacked image" loading="lazy"></a>
-EOF
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png" alt="Moon-centred raw stacked image" loading="lazy"></a>
+			if [[ -n "$pc_raw_stack_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<a href="${pc_raw_stack_rel}"><img src="${pc_raw_stack_rel}" alt="Moon-centred raw stacked image" loading="lazy"></a>
 EOF
 			fi
 			cat >> "$tmp_file" <<'EOF'
@@ -847,12 +1044,6 @@ EOF
 				<div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-			local pc_raw_cum_mp4_rel=""
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4" ]]; then
-				pc_raw_cum_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4"
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_coadd.mp4" ]]; then
-				pc_raw_cum_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_cumulative_coadd.mp4"
-			fi
 			if [[ -n "$pc_raw_cum_mp4_rel" ]]; then
 				cat >> "$tmp_file" <<EOF
 					<video controls preload="metadata" onclick="window.open('$pc_raw_cum_mp4_rel','_blank')" title="Click to open full-size">
@@ -878,15 +1069,15 @@ EOF
 EOF
 
 		# Section 3: no_phasecenter DESTRIPED
-		if [[ -d "$run_dir/casa_selfcal/ghpages_products/no_phasecenter" ]]; then
+		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
 			cat >> "$tmp_file" <<'EOF'
 				<div class="panel-card">
           <p><strong>Movie</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mp4" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mp4','_blank')" title="Click to open full-size">
-            <source src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mp4" type="video/mp4">
+			if [[ -n "$no_dst_mp4_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<video controls preload="metadata" onclick="window.open('${no_dst_mp4_rel}','_blank')" title="Click to open full-size">
+            <source src="${no_dst_mp4_rel}" type="video/mp4">
           </video>
 EOF
 			fi
@@ -895,13 +1086,9 @@ EOF
 				<div class="panel-card">
           <p><strong>Stacked image</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png" alt="Observed phase-centre destriped stacked image" loading="lazy"></a>
-EOF
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png"><img src="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png" alt="Observed phase-centre destriped stacked image" loading="lazy"></a>
+			if [[ -n "$no_dst_stack_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<a href="${no_dst_stack_rel}"><img src="${no_dst_stack_rel}" alt="Observed phase-centre destriped stacked image" loading="lazy"></a>
 EOF
 			fi
 			cat >> "$tmp_file" <<'EOF'
@@ -909,12 +1096,6 @@ EOF
 				<div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-			local no_dst_cum_mp4_rel=""
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4" ]]; then
-				no_dst_cum_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4"
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_coadd.mp4" ]]; then
-				no_dst_cum_mp4_rel="casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_cumulative_coadd.mp4"
-			fi
 			if [[ -n "$no_dst_cum_mp4_rel" ]]; then
 				cat >> "$tmp_file" <<EOF
 					<video controls preload="metadata" onclick="window.open('$no_dst_cum_mp4_rel','_blank')" title="Click to open full-size">
@@ -927,9 +1108,9 @@ EOF
 EOF
 		fi
 
-		cat >> "$tmp_file" <<'EOF'
+		cat >> "$tmp_file" <<EOF
       </div>
-		<p class="tiny"><a href="casa_selfcal/ghpages_products/no_phasecenter/debug.html">→ Destriping debug details</a></p>
+		<p class="tiny"><a href="${moon_no_phasecenter_dir}/debug.html">→ Destriping debug details</a></p>
     </div>
 
     <!-- Section 4: Moon-centred DESTRIPED -->
@@ -940,15 +1121,15 @@ EOF
 EOF
 
 		# Section 4: phasecenter DESTRIPED
-		if [[ -d "$run_dir/casa_selfcal/ghpages_products/phasecenter" ]]; then
+		if [[ "$moon_has_phasecenter" == "1" ]]; then
 			cat >> "$tmp_file" <<'EOF'
 				<div class="panel-card">
           <p><strong>Movie</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mp4" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mp4','_blank')" title="Click to open full-size">
-            <source src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mp4" type="video/mp4">
+			if [[ -n "$pc_dst_mp4_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<video controls preload="metadata" onclick="window.open('${pc_dst_mp4_rel}','_blank')" title="Click to open full-size">
+            <source src="${pc_dst_mp4_rel}" type="video/mp4">
           </video>
 EOF
 			fi
@@ -957,13 +1138,9 @@ EOF
 				<div class="panel-card">
           <p><strong>Stacked image</strong></p>
 EOF
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png" alt="Moon-centred destriped stacked image" loading="lazy"></a>
-EOF
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-					<a href="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png"><img src="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png" alt="Moon-centred destriped stacked image" loading="lazy"></a>
+			if [[ -n "$pc_dst_stack_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+					<a href="${pc_dst_stack_rel}"><img src="${pc_dst_stack_rel}" alt="Moon-centred destriped stacked image" loading="lazy"></a>
 EOF
 			fi
 			cat >> "$tmp_file" <<'EOF'
@@ -971,12 +1148,6 @@ EOF
 				<div class="panel-card">
           <p><strong>RMS evolution</strong></p>
 EOF
-			local pc_dst_cum_mp4_rel=""
-			if [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4" ]]; then
-				pc_dst_cum_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4"
-			elif [[ -f "$run_dir/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_coadd.mp4" ]]; then
-				pc_dst_cum_mp4_rel="casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_cumulative_coadd.mp4"
-			fi
 			if [[ -n "$pc_dst_cum_mp4_rel" ]]; then
 				cat >> "$tmp_file" <<EOF
 					<video controls preload="metadata" onclick="window.open('$pc_dst_cum_mp4_rel','_blank')" title="Click to open full-size">
@@ -989,13 +1160,198 @@ EOF
 EOF
 		fi
 
-		cat >> "$tmp_file" <<'EOF'
+		cat >> "$tmp_file" <<EOF
       </div>
-		<p class="tiny"><a href="casa_selfcal/ghpages_products/phasecenter/debug.html">→ Destriping debug details</a></p>
+		<p class="tiny"><a href="${moon_phasecenter_dir}/debug.html">→ Destriping debug details</a></p>
     </div>
 
   </div>
 EOF
+	fi
+
+	# ── Generic post-selfcal artifacts (target-agnostic) ─────────────────────
+	local generic_selfcal_dirs=()
+	while IFS= read -r d; do
+		[[ -n "$d" ]] || continue
+		case "$(basename "$d")" in
+			moon*|MOON*)
+				# Moon products are rendered in the dedicated Moon sections below.
+				# Keep the generic section for non-Moon targets like 3C468.1.
+				continue
+				;;
+		esac
+		generic_selfcal_dirs+=("$d")
+	done < <(cd "$run_dir" && find casa_selfcal -mindepth 1 -maxdepth 1 -type d ! -name 'ghpages_products' 2>/dev/null | sort)
+
+	if (( ${#generic_selfcal_dirs[@]} > 0 )); then
+		local rendered_any_generic=0
+		for rel_dir in "${generic_selfcal_dirs[@]}"; do
+			local abs_dir
+			abs_dir="$run_dir/$rel_dir"
+
+			if ! compgen -G "$abs_dir/*_final.fits" > /dev/null && ! compgen -G "$abs_dir/*/*_final.fits" > /dev/null; then
+				continue
+			fi
+
+			local section_name section_name_html
+			section_name="$(basename "$rel_dir")"
+			section_name_html="$(escape_html "$section_name")"
+
+			local movie_rel=""
+			local cumulative_movie_rel=""
+			local stack_png_rel=""
+			local rms_png_rel=""
+			local diag_panel_rel=""
+			local diag_csv_rel=""
+			local diag_stats_rel=""
+
+			while IFS= read -r f; do
+				local rel
+				rel="${f#"$run_dir/"}"
+				if [[ -z "$movie_rel" && "$f" == *selfcal_movie*.mp4 ]]; then
+					movie_rel="$rel"
+				elif [[ -z "$movie_rel" && "$f" == *selfcal_movie*.mov ]]; then
+					movie_rel="$rel"
+				elif [[ -z "$movie_rel" && "$f" == *selfcal_movie*.gif ]]; then
+					movie_rel="$rel"
+				fi
+
+				if [[ -z "$cumulative_movie_rel" && "$f" == *cumulative_coadd*.mp4 ]]; then
+					cumulative_movie_rel="$rel"
+				elif [[ -z "$cumulative_movie_rel" && "$f" == *cumulative_coadd*.mov ]]; then
+					cumulative_movie_rel="$rel"
+				elif [[ -z "$cumulative_movie_rel" && "$f" == *cumulative_coadd*.gif ]]; then
+					cumulative_movie_rel="$rel"
+				fi
+
+				if [[ -z "$stack_png_rel" && "$f" == *stack_mean.png ]]; then
+					stack_png_rel="$rel"
+				elif [[ -z "$stack_png_rel" && "$f" == *stack*.png ]]; then
+					stack_png_rel="$rel"
+				fi
+
+				if [[ -z "$rms_png_rel" && "$f" == *cumulative_rms_evolution.png ]]; then
+					rms_png_rel="$rel"
+				fi
+
+				if [[ -z "$diag_panel_rel" && "$f" == *clean_cycle_metrics_panel_5x5.png ]]; then
+					diag_panel_rel="$rel"
+				fi
+				if [[ -z "$diag_csv_rel" && "$f" == *clean_cycle_metrics_per_integration.csv ]]; then
+					diag_csv_rel="$rel"
+				fi
+				if [[ -z "$diag_stats_rel" && "$f" == *clean_cycle_metrics_summary_stats.csv ]]; then
+					diag_stats_rel="$rel"
+				fi
+			done < <(find "$abs_dir" -maxdepth 2 -type f \( -name '*.png' -o -name '*.gif' -o -name '*.mp4' -o -name '*.mov' -o -name '*.csv' \) 2>/dev/null | sort)
+
+			if [[ -z "$movie_rel" && -z "$stack_png_rel" && -z "$rms_png_rel" && -z "$diag_panel_rel" ]]; then
+				continue
+			fi
+
+			if [[ "$rendered_any_generic" -eq 0 ]]; then
+				cat >> "$tmp_file" <<'EOF'
+
+  <div class="stage">
+    <h2>Post-selfcal artifacts (generic)</h2>
+    <p>Auto-discovered post-selfcal products for any source directory under <code>casa_selfcal</code> with per-integration final FITS outputs. This section is target-agnostic and is not tied to Moon-specific naming.</p>
+EOF
+				rendered_any_generic=1
+			fi
+
+			cat >> "$tmp_file" <<EOF
+    <div class="moon-section">
+      <h3>${section_name_html}</h3>
+      <div class="panel-grid">
+EOF
+
+			if [[ -n "$movie_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+        <div class="panel-card">
+          <p><strong>Selfcal movie</strong></p>
+          <video controls preload="metadata" onclick="window.open('${movie_rel}','_blank')" title="Click to open full-size">
+            <source src="${movie_rel}" type="video/mp4">
+          </video>
+        </div>
+EOF
+			fi
+
+			if [[ -n "$stack_png_rel" ]]; then
+				cat >> "$tmp_file" <<EOF
+        <div class="panel-card">
+          <p><strong>Stacked image</strong></p>
+          <a href="${stack_png_rel}"><img src="${stack_png_rel}" alt="${section_name_html} stacked image" loading="lazy"></a>
+        </div>
+EOF
+			fi
+
+			if [[ -n "$rms_png_rel" || -n "$cumulative_movie_rel" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+        <div class="panel-card">
+          <p><strong>RMS evolution</strong></p>
+EOF
+				if [[ -n "$cumulative_movie_rel" ]]; then
+					cat >> "$tmp_file" <<EOF
+          <video controls preload="metadata" onclick="window.open('${cumulative_movie_rel}','_blank')" title="Click to open full-size">
+            <source src="${cumulative_movie_rel}" type="video/mp4">
+          </video>
+EOF
+				fi
+				if [[ -n "$rms_png_rel" ]]; then
+					cat >> "$tmp_file" <<EOF
+          <a href="${rms_png_rel}"><img src="${rms_png_rel}" alt="${section_name_html} cumulative RMS evolution" loading="lazy"></a>
+EOF
+				fi
+				cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
+			fi
+
+			if [[ -n "$diag_panel_rel" || -n "$diag_csv_rel" || -n "$diag_stats_rel" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+        <div class="panel-card">
+          <p><strong>Selfcal diagnostics</strong></p>
+EOF
+				if [[ -n "$diag_panel_rel" ]]; then
+					cat >> "$tmp_file" <<EOF
+          <a href="${diag_panel_rel}"><img src="${diag_panel_rel}" alt="${section_name_html} selfcal diagnostics panel" loading="lazy"></a>
+EOF
+				fi
+				cat >> "$tmp_file" <<'EOF'
+          <p>
+EOF
+				if [[ -n "$diag_csv_rel" ]]; then
+					cat >> "$tmp_file" <<EOF
+            <a href="${diag_csv_rel}">Per-integration CSV</a>
+EOF
+				fi
+				if [[ -n "$diag_csv_rel" && -n "$diag_stats_rel" ]]; then
+					cat >> "$tmp_file" <<'EOF'
+            ·
+EOF
+				fi
+				if [[ -n "$diag_stats_rel" ]]; then
+					cat >> "$tmp_file" <<EOF
+            <a href="${diag_stats_rel}">Summary stats CSV</a>
+EOF
+				fi
+				cat >> "$tmp_file" <<'EOF'
+          </p>
+        </div>
+EOF
+			fi
+
+			cat >> "$tmp_file" <<'EOF'
+      </div>
+    </div>
+EOF
+		done
+
+		if [[ "$rendered_any_generic" -eq 1 ]]; then
+			cat >> "$tmp_file" <<'EOF'
+  </div>
+EOF
+		fi
 	fi
 
 	cat >> "$tmp_file" <<'EOF'
@@ -1075,6 +1431,9 @@ publish_run() {
 	run_dir="$PAGES_DIR/$run_rel"
 
 	collect_publish_files
+	if [[ -n "$GHPAGES_LAYOUT_MANIFEST" && -f "$GHPAGES_LAYOUT_MANIFEST" ]]; then
+		PUBLISH_FILES+=("$GHPAGES_LAYOUT_MANIFEST")
+	fi
 	workflow_log="$(awk '/^Workflow log:/{getline; print; exit}' "$MANIFEST_PATH")"
 	manifest_name="$(basename "$MANIFEST_PATH")"
 	workflow_log_name=""
@@ -1216,10 +1575,25 @@ while [[ $# -gt 0 ]]; do
 done
 
 resolve_manifest
+
+if ! ensure_moon_layout_manifest; then
+	if [[ "$MANIFEST_ONLY" == "1" ]]; then
+		die "MANIFEST_ONLY=1 but Moon layout manifest could not be prepared (set ALLOW_LEGACY_MOON_LAYOUT=1 only for emergency fallback)"
+	fi
+	log "WARNING: Moon layout manifest unavailable; continuing with legacy Moon layout discovery"
+fi
+
 log "repo root: $REPO_ROOT"
 log "work dir: $WORK_DIR"
 log "manifest: $MANIFEST_PATH"
 log "run timestamp: $RUN_TS"
+log "manifest only: $MANIFEST_ONLY"
+if [[ -n "$GHPAGES_LAYOUT_MANIFEST" ]]; then
+	log "moon layout manifest: $GHPAGES_LAYOUT_MANIFEST"
+fi
+if [[ "$MANIFEST_ONLY" != "1" ]]; then
+	log "WARNING: legacy Moon layout discovery is DEPRECATED and will be removed; use manifest-only mode"
+fi
 log "pages dir: $PAGES_DIR"
 log "publish branch: $PUBLISH_BRANCH"
 

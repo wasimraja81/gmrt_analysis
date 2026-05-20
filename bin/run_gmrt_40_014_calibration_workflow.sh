@@ -10,6 +10,7 @@ cd "$REPO_ROOT"
 WORK_DIR="$HOME/DATA/gmrt_40_014/work"
 LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
+RUN_ID="${RUN_ID:-${RUN_TS}_p$$_r${RANDOM}}"
 CHAIN_LOG="$LOG_DIR/run_gmrt_40_014_calibration_workflow_${RUN_TS}.log"
 
 PRIMARY_BANDPASS="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz"
@@ -27,12 +28,17 @@ MOON_SOURCES=(MOON0520 MOON0545 MOON0605 MOON0625 MOON0635)
 MOON_SPLIT_GLOB="$WORK_DIR/split/moon/moon*_primary_secondary_calibrated_flagged.uvfits"
 MOON_PLOTS_GLOB="$WORK_DIR/diagnostics_out/target/moon*/final_qa/plotvis_*.pdf"
 RUN_MOON_POSTSELFCAL_ARTIFACTS="${RUN_MOON_POSTSELFCAL_ARTIFACTS:-0}"
+RUN_3C468_SELFCAL_STAGE="${RUN_3C468_SELFCAL_STAGE:-0}"
+RUN_3C468_POSTSELFCAL_ARTIFACTS="${RUN_3C468_POSTSELFCAL_ARTIFACTS:-0}"
+RUN_3C468_SCAN_TAGS="${RUN_3C468_SCAN_TAGS:-1 2 3 4 5 6 7 8 9}"
 RUN_MOON_SELFCAL_STAGE="${RUN_MOON_SELFCAL_STAGE:-0}"
 RUN_MOON_SELFCAL_NO_PHASECENTER="${RUN_MOON_SELFCAL_NO_PHASECENTER:-0}"
 RUN_CLEAN_STAGE="${RUN_CLEAN_STAGE:-0}"
-MOON_GHPAGES_PRODUCTS_DIR="$WORK_DIR/casa_selfcal/ghpages_products"
+MOON_GHPAGES_PRODUCTS_DIR="$WORK_DIR/casa_selfcal/ghpages_products/moon0520"
 MOON_SELFCAL_NC_DIR="$WORK_DIR/casa_selfcal/moon0520_stk10"
 MOON_SELFCAL_PC_DIR="$WORK_DIR/casa_selfcal/moon0520_stk10_phasecenter"
+THREEC468_SELFCAL_FINAL_GLOB="$WORK_DIR/casa_selfcal/3c468.1_scan*_stk*/*/*_final.fits"
+THREEC468_POST_PRODUCTS_GLOB="$WORK_DIR/casa_selfcal/3c468.1_scan*_stk*/3c468.1_stack_mean.fits"
 SMART_RESUME="${SMART_RESUME:-1}"
 FORCE_FROM_STEP="${FORCE_FROM_STEP:-}"
 
@@ -69,6 +75,8 @@ Stages:
   |   13 | RUN_MOON_SELFCAL_STAGE              | moon selfcal imaging     |
   |   14 | RUN_MOON_SELFCAL_STAGE              | moon trajectory plot     |
   |   15 | RUN_MOON_POSTSELFCAL_ARTIFACTS      | moon post-selfcal arts   |
+  |   16 | RUN_3C468_SELFCAL_STAGE             | 3C468.1 selfcal imaging  |
+  |   17 | RUN_3C468_POSTSELFCAL_ARTIFACTS     | 3C468.1 post-selfcal arts|
   --------------------------------------------------------------------------
   Step 13 sub-mode: RUN_MOON_SELFCAL_NO_PHASECENTER=1 adds no-phasecenter branch.
   Steps 2-12 skip automatically when outputs exist (SMART_RESUME=1, default).
@@ -77,6 +85,7 @@ Stages:
 Environment controls:
   SMART_RESUME=1|0    Stage auto-skip based on output existence (default: 1)
   FORCE_FROM_STEP=N   Force rerun from step N through all downstream steps
+  RUN_3C468_SCAN_TAGS="1 5"  Select 3C468.1 scan tags for step 16 (default: all 1..9)
 
 Common intents:
   Resume from where you left off (default):
@@ -94,6 +103,7 @@ Common intents:
 
   Run full workflow including selfcal + post-selfcal artifacts:
     RUN_MOON_SELFCAL_STAGE=1 RUN_MOON_POSTSELFCAL_ARTIFACTS=1 \
+    RUN_3C468_SELFCAL_STAGE=1 RUN_3C468_POSTSELFCAL_ARTIFACTS=1 \
       bash bin/run_gmrt_40_014_calibration_workflow.sh
 
   Run post-selfcal artifact stage only (steps 2-14 already done):
@@ -124,6 +134,35 @@ mkdir -p "$LOG_DIR"
 
 log() {
   echo "[$(date +%F' '%T)] $*" | tee -a "$CHAIN_LOG"
+}
+
+log_env_var() {
+  local name="$1"
+  local value="${!name-}"
+  if [[ -z "${value}" ]]; then
+    log "  ${name}=<unset>"
+  else
+    log "  ${name}=${value}"
+  fi
+}
+
+log_invocation_provenance() {
+  log "INVOCATION PROVENANCE (effective values)"
+  log_env_var "FORCE_FROM_STEP"
+  log_env_var "RUN_ID"
+  log_env_var "SMART_RESUME"
+  log_env_var "RUN_CLEAN_STAGE"
+  log_env_var "RUN_3C468_SELFCAL_STAGE"
+  log_env_var "RUN_3C468_SCAN_TAGS"
+  log_env_var "RUN_3C468_POSTSELFCAL_ARTIFACTS"
+  log_env_var "RUN_MOON_SELFCAL_STAGE"
+  log_env_var "RUN_MOON_POSTSELFCAL_ARTIFACTS"
+  log_env_var "STACK_SIZE"
+  log_env_var "NO_MASK"
+  log_env_var "MASK_RADIUS_ARCMIN"
+  log_env_var "PYTHON_CMD"
+  log_env_var "NITER_PER_CYCLE"
+  log_env_var "NITER_FINAL"
 }
 
 on_error() {
@@ -219,6 +258,12 @@ stage_enabled() {
     15)
       [[ "$RUN_MOON_POSTSELFCAL_ARTIFACTS" == "1" ]]
       ;;
+    16)
+      [[ "$RUN_3C468_SELFCAL_STAGE" == "1" ]]
+      ;;
+    17)
+      [[ "$RUN_3C468_POSTSELFCAL_ARTIFACTS" == "1" ]]
+      ;;
     *)
       return 0
       ;;
@@ -249,6 +294,8 @@ stage_done() {
       ;;
     14) [[ -f "$WORK_DIR/diagnostics_out/moon_imaging/moon0520_trajectory.png" ]] ;;
     15) glob_exists "$MOON_GHPAGES_PRODUCTS_DIR/no_phasecenter/*" && glob_exists "$MOON_GHPAGES_PRODUCTS_DIR/phasecenter/*" ;;
+    16) glob_exists "$THREEC468_SELFCAL_FINAL_GLOB" ;;
+    17) glob_exists "$THREEC468_POST_PRODUCTS_GLOB" ;;
     *) return 1 ;;
   esac
 }
@@ -274,7 +321,7 @@ determine_run_from_step() {
   fi
 
   local step
-  for step in $(seq 2 15); do
+  for step in $(seq 2 17); do
     if ! stage_enabled "$step"; then
       continue
     fi
@@ -305,6 +352,8 @@ stage_name() {
     13) echo "moon selfcal imaging (optional)" ;;
     14) echo "moon trajectory plot (optional)" ;;
     15) echo "moon post-selfcal artifacts (optional)" ;;
+    16) echo "3C468.1 selfcal imaging (optional)" ;;
+    17) echo "3C468.1 post-selfcal artifacts (optional)" ;;
     *) echo "unknown" ;;
   esac
 }
@@ -322,7 +371,7 @@ print_execution_plan() {
   log "--------------------------------------------------------------------------"
 
   local step action reason name
-  for step in $(seq 1 15); do
+  for step in $(seq 1 17); do
     name="$(stage_name "$step")"
 
     if ! stage_enabled "$step"; then
@@ -404,6 +453,13 @@ print_products_to_audit() {
     echo "Step 15: moon post-selfcal artifacts (destripe + movies)"
     ls -1 "$MOON_GHPAGES_PRODUCTS_DIR"/no_phasecenter/* 2>/dev/null || true
     ls -1 "$MOON_GHPAGES_PRODUCTS_DIR"/phasecenter/* 2>/dev/null || true
+    echo
+    echo "Step 16: 3C468.1 selfcal imaging outputs"
+    ls -1 $THREEC468_SELFCAL_FINAL_GLOB 2>/dev/null || true
+    echo
+    echo "Step 17: 3C468.1 post-selfcal artifacts (stack + movie)"
+    ls -1 $THREEC468_POST_PRODUCTS_GLOB 2>/dev/null || true
+    ls -1 "$WORK_DIR"/casa_selfcal/3c468.1_scan*_stk*/3c468.1_selfcal_movie.* 2>/dev/null || true
   } > "$manifest"
 
   log "PRODUCTS TO AUDIT (full paths):"
@@ -416,6 +472,7 @@ print_products_to_audit() {
 log "GMRT 40_014 calibration workflow start"
 log "cwd=$PWD"
 log "chain_log=$CHAIN_LOG"
+log_invocation_provenance
 
 if [[ "$AUDIT_ONLY" == true ]]; then
   log "Running in --audit-only mode (no calibration steps will be executed)."
@@ -442,6 +499,12 @@ if [[ "$AUDIT_ONLY" == true ]]; then
     assert_glob "$MOON_GHPAGES_PRODUCTS_DIR/no_phasecenter/*"
     assert_glob "$MOON_GHPAGES_PRODUCTS_DIR/phasecenter/*"
   fi
+  if [[ "$RUN_3C468_SELFCAL_STAGE" == "1" ]]; then
+    assert_glob "$THREEC468_SELFCAL_FINAL_GLOB"
+  fi
+  if [[ "$RUN_3C468_POSTSELFCAL_ARTIFACTS" == "1" ]]; then
+    assert_glob "$THREEC468_POST_PRODUCTS_GLOB"
+  fi
   print_products_to_audit
   log "Audit-only check complete"
   exit 0
@@ -458,9 +521,10 @@ if [[ "$DRY_RUN" == true ]]; then
   log "DRY-RUN complete (no commands executed)."
   log ""
   log "Next: run without --dry-run to execute, then publish diagnostics:"
-  log "  bash bin/publish_gh_pages.sh          # commit to local gh-pages worktree"
-  log "  bash bin/publish_gh_pages.sh --open   # commit + open index.html in browser"
-  log "  bash bin/publish_gh_pages.sh --push   # commit + push to GitHub Pages"
+  log "  bash bin/publish_gh_pages.sh          # manifest-default publish to local gh-pages worktree"
+  log "  bash bin/publish_gh_pages.sh --open   # publish + open index.html in browser"
+  log "  bash bin/publish_gh_pages.sh --push   # publish + push to GitHub Pages"
+  log "  ALLOW_LEGACY_MOON_LAYOUT=1 bash bin/publish_gh_pages.sh   # emergency fallback only"
   exit 0
 fi
 
@@ -605,6 +669,45 @@ if [[ "$RUN_MOON_POSTSELFCAL_ARTIFACTS" == "1" ]]; then
   fi
 else
   log "INFO: optional moon post-selfcal artifacts step disabled (RUN_MOON_POSTSELFCAL_ARTIFACTS=$RUN_MOON_POSTSELFCAL_ARTIFACTS)"
+fi
+
+# 16) optional 3C468.1 selfcal stage
+#     Runs all 9 scan blocks; defaults of run_3c468.1_selfcal_dev.sh apply.
+if [[ "$RUN_3C468_SELFCAL_STAGE" == "1" ]]; then
+  if (( RUN_FROM_STEP <= 16 )) && stage_enabled 16; then
+    RUN_3C468_SCAN_TAGS_EXPANDED="${RUN_3C468_SCAN_TAGS//,/ }"
+    for scan_tag in $RUN_3C468_SCAN_TAGS_EXPANDED; do
+      if ! [[ "$scan_tag" =~ ^[1-9]$ ]]; then
+        log "ERROR: RUN_3C468_SCAN_TAGS contains invalid tag '$scan_tag' (expected digits 1..9)"
+        exit 2
+      fi
+      run_optional_step 16 "3C468.1 selfcal imaging (scan${scan_tag})" \
+        env SCAN_TAG="$scan_tag" \
+        RUN_ID="$RUN_ID" \
+        MAKE_MOVIE_AFTER_SELFCAL=0 \
+        bash "$SCRIPT_DIR/run_3c468.1_selfcal_dev.sh"
+    done
+  else
+    log "SMART_RESUME: step 16 already complete; skipping"
+  fi
+else
+  log "INFO: optional 3C468.1 selfcal stage disabled (RUN_3C468_SELFCAL_STAGE=$RUN_3C468_SELFCAL_STAGE)"
+fi
+
+# 17) optional 3C468.1 post-selfcal artifacts
+#     Builds post-selfcal analysis artifacts from 3C468.1 selfcal output directories.
+if [[ "$RUN_3C468_POSTSELFCAL_ARTIFACTS" == "1" ]]; then
+  if (( RUN_FROM_STEP <= 17 )) && stage_enabled 17; then
+    run_optional_step 17 "3C468.1 post-selfcal artifacts (stack + movie + RMS)" \
+      env WORK_SELFCAL_ROOT="$WORK_DIR/casa_selfcal" \
+      RUN_ID="$RUN_ID" \
+      SELFCAL_GLOB="3c468.1_scan*_stk*" \
+      bash "$SCRIPT_DIR/run_3c468.1_post_selfcal_artifacts.sh"
+  else
+    log "SMART_RESUME: step 17 already complete; skipping"
+  fi
+else
+  log "INFO: optional 3C468.1 post-selfcal artifacts step disabled (RUN_3C468_POSTSELFCAL_ARTIFACTS=$RUN_3C468_POSTSELFCAL_ARTIFACTS)"
 fi
 
 log "GMRT 40_014 calibration workflow complete"
