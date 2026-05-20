@@ -571,6 +571,161 @@ EOF
 EOF
 }
 
+render_post_selfcal_section() {
+	local tmp_file="$1"
+	local section_title="$2"
+	local section_context="$3"
+	local movie_rel="$4"
+	local stack_rel="$5"
+	local rms_movie_rel="$6"
+	local diag_panel_rel="$7"
+	local diag_csv_rel="$8"
+	local diag_stats_rel="$9"
+	local diag_csv_table_rel="${10}"
+	local diag_stats_table_rel="${11}"
+	local section_note_html="${12}"
+	local footer_link="${13}"
+	local footer_label="${14}"
+	local html_section_title html_section_context
+
+	html_section_title="$(escape_html "$section_title")"
+	html_section_context="$(escape_html "$section_context")"
+
+	cat >> "$tmp_file" <<EOF
+    <div class="moon-section">
+      <h3>${html_section_title}</h3>
+      <p class="tiny">${html_section_context}</p>
+EOF
+	if [[ -n "$section_note_html" ]]; then
+		cat >> "$tmp_file" <<EOF
+      ${section_note_html}
+EOF
+	fi
+
+	cat >> "$tmp_file" <<'EOF'
+      <div class="panel-grid">
+        <div class="panel-card">
+          <p><strong>Movie</strong></p>
+EOF
+	if [[ -n "$movie_rel" ]]; then
+		cat >> "$tmp_file" <<EOF
+          <video controls preload="metadata" onclick="window.open('${movie_rel}','_blank')" title="Click to open full-size">
+            <source src="${movie_rel}" type="video/mp4">
+          </video>
+EOF
+	else
+		cat >> "$tmp_file" <<'EOF'
+          <p class="tiny">Not generated for this source/run.</p>
+EOF
+	fi
+
+	cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="panel-card">
+          <p><strong>Stacked image</strong></p>
+EOF
+	if [[ -n "$stack_rel" ]]; then
+		cat >> "$tmp_file" <<EOF
+          <a href="${stack_rel}"><img src="${stack_rel}" alt="${html_section_title} stacked image" loading="lazy"></a>
+EOF
+	else
+		cat >> "$tmp_file" <<'EOF'
+          <p class="tiny">Not generated for this source/run.</p>
+EOF
+	fi
+
+	cat >> "$tmp_file" <<'EOF'
+        </div>
+        <div class="panel-card">
+          <p><strong>RMS evolution</strong></p>
+EOF
+	if [[ -n "$rms_movie_rel" ]]; then
+		cat >> "$tmp_file" <<EOF
+          <video controls preload="metadata" onclick="window.open('${rms_movie_rel}','_blank')" title="Click to open full-size">
+            <source src="${rms_movie_rel}" type="video/mp4">
+          </video>
+EOF
+	else
+		cat >> "$tmp_file" <<'EOF'
+          <p class="tiny">Not generated for this source/run.</p>
+EOF
+	fi
+
+	cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
+
+	if [[ -n "$diag_panel_rel" || -n "$diag_csv_rel" || -n "$diag_stats_rel" || -n "$diag_csv_table_rel" || -n "$diag_stats_table_rel" ]]; then
+		cat >> "$tmp_file" <<'EOF'
+        <div class="panel-card">
+          <p><strong>Selfcal diagnostics</strong></p>
+EOF
+		if [[ -n "$diag_panel_rel" ]]; then
+			cat >> "$tmp_file" <<EOF
+          <a href="${diag_panel_rel}"><img src="${diag_panel_rel}" alt="${html_section_title} selfcal diagnostics panel" loading="lazy"></a>
+EOF
+		fi
+		if [[ -n "$diag_csv_rel" || -n "$diag_stats_rel" ]]; then
+			cat >> "$tmp_file" <<'EOF'
+          <p>
+EOF
+			if [[ -n "$diag_csv_rel" ]]; then
+				if [[ -n "$diag_csv_table_rel" ]]; then
+					cat >> "$tmp_file" <<EOF
+            <a href="${diag_csv_table_rel}">Per-integration table</a> · <a href="${diag_csv_rel}">CSV</a>
+EOF
+				else
+					cat >> "$tmp_file" <<EOF
+            <a href="${diag_csv_rel}">Per-integration CSV</a>
+EOF
+				fi
+			fi
+			if [[ -n "$diag_csv_rel" && -n "$diag_stats_rel" ]]; then
+				cat >> "$tmp_file" <<'EOF'
+            ·
+EOF
+			fi
+			if [[ -n "$diag_stats_rel" ]]; then
+				if [[ -n "$diag_stats_table_rel" ]]; then
+					cat >> "$tmp_file" <<EOF
+            <a href="${diag_stats_table_rel}">Summary stats table</a> · <a href="${diag_stats_rel}">CSV</a>
+EOF
+				else
+					cat >> "$tmp_file" <<EOF
+            <a href="${diag_stats_rel}">Summary stats CSV</a>
+EOF
+				fi
+			fi
+			cat >> "$tmp_file" <<'EOF'
+          </p>
+EOF
+		fi
+		if [[ -z "$diag_panel_rel" && -z "$diag_csv_rel" && -z "$diag_stats_rel" ]]; then
+			cat >> "$tmp_file" <<'EOF'
+          <p class="tiny">Not generated for this source/run.</p>
+EOF
+		fi
+		cat >> "$tmp_file" <<'EOF'
+        </div>
+EOF
+	fi
+
+	cat >> "$tmp_file" <<'EOF'
+      </div>
+EOF
+	if [[ -n "$footer_link" && -n "$footer_label" ]]; then
+		local html_footer_label
+		html_footer_label="$(escape_html "$footer_label")"
+		cat >> "$tmp_file" <<EOF
+      <p class="tiny"><a href="${footer_link}">${html_footer_label}</a></p>
+EOF
+	fi
+
+	cat >> "$tmp_file" <<'EOF'
+    </div>
+EOF
+}
+
 render_run_index() {
 	local run_dir="$1"
 	local run_rel="$2"
@@ -1046,219 +1201,49 @@ EOF
 	fi
 
 	if [[ -n "$moon_products_root" ]]; then
+		local moon_section3_note
+		moon_section3_note='<p class="tiny"><strong>Caution:</strong> residual destriping artifacts can bias the automatic image-alignment shifts. Registration here uses FFT-based phase-correlation, so non-astronomical stripe power can introduce alignment error.</p>'
+
 		cat >> "$tmp_file" <<'EOF'
 
   <div class="stage">
     <h2>Moon post-selfcal imaging & stacking summary</h2>
     <p>Four imaging/processing modes organized by geometry, then processing stage. Each section shows the observation movie, stacked image, and RMS evolution diagnostics. Detailed destriping diagnostics are linked separately at the bottom of each section.</p>
-
-    <!-- Section 1: Observed phase-centre RAW -->
-		<div class="moon-section">
-      <h3>1. Observed phase-centre – Raw selfcal</h3>
-      <p class="tiny">Moon drifts across the image. Stacking uses shift-then-add to align moon before co-adding.</p>
-			<div class="panel-grid">
 EOF
 
-		# Section 1: no_phasecenter RAW
 		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
-			cat >> "$tmp_file" <<'EOF'
-				<div class="panel-card">
-          <p><strong>Movie</strong></p>
-EOF
-			if [[ -n "$no_raw_mp4_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<video controls preload="metadata" onclick="window.open('$no_raw_mp4_rel','_blank')" title="Click to open full-size">
-            <source src="$no_raw_mp4_rel" type="video/mp4">
-          </video>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-				<div class="panel-card">
-          <p><strong>Stacked image</strong></p>
-EOF
-			if [[ -n "$no_raw_stack_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<a href="${no_raw_stack_rel}"><img src="${no_raw_stack_rel}" alt="Observed phase-centre raw stacked image" loading="lazy"></a>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-				<div class="panel-card">
-          <p><strong>RMS evolution</strong></p>
-EOF
-			if [[ -n "$no_raw_cum_mp4_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<video controls preload="metadata" onclick="window.open('$no_raw_cum_mp4_rel','_blank')" title="Click to open full-size">
-	            <source src="$no_raw_cum_mp4_rel" type="video/mp4">
-	          </video>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-EOF
+			render_post_selfcal_section "$tmp_file" \
+				"1. Observed phase-centre – Raw selfcal" \
+				"Moon drifts across the image. Stacking uses shift-then-add to align moon before co-adding." \
+				"$no_raw_mp4_rel" "$no_raw_stack_rel" "$no_raw_cum_mp4_rel" \
+				"" "" "" "" "" "" "" ""
+		fi
+
+		if [[ "$moon_has_phasecenter" == "1" ]]; then
+			render_post_selfcal_section "$tmp_file" \
+				"2. Moon-centred – Raw selfcal" \
+				"Moon stays near image center. Stacking uses direct (no-shift) co-addition." \
+				"$pc_raw_mp4_rel" "$pc_raw_stack_rel" "$pc_raw_cum_mp4_rel" \
+				"" "" "" "" "" "" "" ""
+		fi
+
+		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
+			render_post_selfcal_section "$tmp_file" \
+				"3. Observed phase-centre – Destriped" \
+				"Same geometry as Section 1, but with striping artifacts removed." \
+				"$no_dst_mp4_rel" "$no_dst_stack_rel" "$no_dst_cum_mp4_rel" \
+				"" "" "" "" "" "$moon_section3_note" "${moon_no_phasecenter_dir}/debug.html" "→ Destriping debug details"
+		fi
+
+		if [[ "$moon_has_phasecenter" == "1" ]]; then
+			render_post_selfcal_section "$tmp_file" \
+				"4. Moon-centred – Destriped" \
+				"Same geometry as Section 2, but with striping artifacts removed." \
+				"$pc_dst_mp4_rel" "$pc_dst_stack_rel" "$pc_dst_cum_mp4_rel" \
+				"" "" "" "" "" "" "${moon_phasecenter_dir}/debug.html" "→ Destriping debug details"
 		fi
 
 		cat >> "$tmp_file" <<'EOF'
-      </div>
-    </div>
-
-    <!-- Section 2: Moon-centred RAW -->
-		<div class="moon-section">
-      <h3>2. Moon-centred – Raw selfcal</h3>
-      <p class="tiny">Moon stays near image center. Stacking uses direct (no-shift) co-addition.</p>
-			<div class="panel-grid">
-EOF
-
-		# Section 2: phasecenter RAW
-		if [[ "$moon_has_phasecenter" == "1" ]]; then
-			cat >> "$tmp_file" <<'EOF'
-				<div class="panel-card">
-          <p><strong>Movie</strong></p>
-EOF
-			if [[ -n "$pc_raw_mp4_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<video controls preload="metadata" onclick="window.open('$pc_raw_mp4_rel','_blank')" title="Click to open full-size">
-            <source src="$pc_raw_mp4_rel" type="video/mp4">
-          </video>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-				<div class="panel-card">
-          <p><strong>Stacked image</strong></p>
-EOF
-			if [[ -n "$pc_raw_stack_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<a href="${pc_raw_stack_rel}"><img src="${pc_raw_stack_rel}" alt="Moon-centred raw stacked image" loading="lazy"></a>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-				<div class="panel-card">
-          <p><strong>RMS evolution</strong></p>
-EOF
-			if [[ -n "$pc_raw_cum_mp4_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<video controls preload="metadata" onclick="window.open('$pc_raw_cum_mp4_rel','_blank')" title="Click to open full-size">
-	            <source src="$pc_raw_cum_mp4_rel" type="video/mp4">
-	          </video>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-EOF
-		fi
-
-		cat >> "$tmp_file" <<'EOF'
-      </div>
-    </div>
-
-    <!-- Section 3: Observed phase-centre DESTRIPED -->
-		<div class="moon-section">
-      <h3>3. Observed phase-centre – Destriped</h3>
-      <p class="tiny">Same geometry as Section 1, but with striping artifacts removed.</p>
-		<p class="tiny"><strong>Caution:</strong> residual destriping artifacts can bias the automatic image-alignment shifts. Registration here uses FFT-based phase-correlation, so non-astronomical stripe power can introduce alignment error.</p>
-			<div class="panel-grid">
-EOF
-
-		# Section 3: no_phasecenter DESTRIPED
-		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
-			cat >> "$tmp_file" <<'EOF'
-				<div class="panel-card">
-          <p><strong>Movie</strong></p>
-EOF
-			if [[ -n "$no_dst_mp4_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<video controls preload="metadata" onclick="window.open('${no_dst_mp4_rel}','_blank')" title="Click to open full-size">
-            <source src="${no_dst_mp4_rel}" type="video/mp4">
-          </video>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-				<div class="panel-card">
-          <p><strong>Stacked image</strong></p>
-EOF
-			if [[ -n "$no_dst_stack_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<a href="${no_dst_stack_rel}"><img src="${no_dst_stack_rel}" alt="Observed phase-centre destriped stacked image" loading="lazy"></a>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-				<div class="panel-card">
-          <p><strong>RMS evolution</strong></p>
-EOF
-			if [[ -n "$no_dst_cum_mp4_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<video controls preload="metadata" onclick="window.open('$no_dst_cum_mp4_rel','_blank')" title="Click to open full-size">
-	            <source src="$no_dst_cum_mp4_rel" type="video/mp4">
-	          </video>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-EOF
-		fi
-
-		cat >> "$tmp_file" <<EOF
-      </div>
-		<p class="tiny"><a href="${moon_no_phasecenter_dir}/debug.html">→ Destriping debug details</a></p>
-    </div>
-
-    <!-- Section 4: Moon-centred DESTRIPED -->
-		<div class="moon-section">
-      <h3>4. Moon-centred – Destriped</h3>
-      <p class="tiny">Same geometry as Section 2, but with striping artifacts removed.</p>
-			<div class="panel-grid">
-EOF
-
-		# Section 4: phasecenter DESTRIPED
-		if [[ "$moon_has_phasecenter" == "1" ]]; then
-			cat >> "$tmp_file" <<'EOF'
-				<div class="panel-card">
-          <p><strong>Movie</strong></p>
-EOF
-			if [[ -n "$pc_dst_mp4_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<video controls preload="metadata" onclick="window.open('${pc_dst_mp4_rel}','_blank')" title="Click to open full-size">
-            <source src="${pc_dst_mp4_rel}" type="video/mp4">
-          </video>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-				<div class="panel-card">
-          <p><strong>Stacked image</strong></p>
-EOF
-			if [[ -n "$pc_dst_stack_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<a href="${pc_dst_stack_rel}"><img src="${pc_dst_stack_rel}" alt="Moon-centred destriped stacked image" loading="lazy"></a>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-				<div class="panel-card">
-          <p><strong>RMS evolution</strong></p>
-EOF
-			if [[ -n "$pc_dst_cum_mp4_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-					<video controls preload="metadata" onclick="window.open('$pc_dst_cum_mp4_rel','_blank')" title="Click to open full-size">
-	            <source src="$pc_dst_cum_mp4_rel" type="video/mp4">
-	          </video>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-EOF
-		fi
-
-		cat >> "$tmp_file" <<EOF
-      </div>
-		<p class="tiny"><a href="${moon_phasecenter_dir}/debug.html">→ Destriping debug details</a></p>
-    </div>
-
   </div>
 EOF
 	fi
@@ -1298,125 +1283,11 @@ EOF
 				diag_stats_table_rel="$(render_csv_table_page "$run_dir" "$diag_stats_rel" "${section_title} · Clean-cycle summary statistics")" || diag_stats_table_rel=""
 			fi
 
-			cat >> "$tmp_file" <<EOF
-    <div class="moon-section">
-      <h3>${section_title}</h3>
-      <p class="tiny">${section_context}</p>
-      <div class="panel-grid">
-EOF
-
-			cat >> "$tmp_file" <<'EOF'
-        <div class="panel-card">
-          <p><strong>Movie</strong></p>
-EOF
-			if [[ -n "$movie_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-          <video controls preload="metadata" onclick="window.open('${movie_rel}','_blank')" title="Click to open full-size">
-            <source src="${movie_rel}" type="video/mp4">
-          </video>
-EOF
-			else
-				cat >> "$tmp_file" <<'EOF'
-          <p class="tiny">Not generated for this source/run.</p>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-EOF
-
-			cat >> "$tmp_file" <<'EOF'
-        <div class="panel-card">
-          <p><strong>Stacked image</strong></p>
-EOF
-			if [[ -n "$stack_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-          <a href="${stack_rel}"><img src="${stack_rel}" alt="${section_title} stacked image" loading="lazy"></a>
-EOF
-			else
-				cat >> "$tmp_file" <<'EOF'
-          <p class="tiny">Not generated for this source/run.</p>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-EOF
-
-			cat >> "$tmp_file" <<'EOF'
-        <div class="panel-card">
-          <p><strong>RMS evolution</strong></p>
-EOF
-			if [[ -n "$rms_movie_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-          <video controls preload="metadata" onclick="window.open('${rms_movie_rel}','_blank')" title="Click to open full-size">
-            <source src="${rms_movie_rel}" type="video/mp4">
-          </video>
-EOF
-			else
-				cat >> "$tmp_file" <<'EOF'
-          <p class="tiny">Not generated for this source/run.</p>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-EOF
-
-			cat >> "$tmp_file" <<'EOF'
-        <div class="panel-card">
-          <p><strong>Selfcal diagnostics</strong></p>
-EOF
-			if [[ -n "$diag_panel_rel" ]]; then
-				cat >> "$tmp_file" <<EOF
-          <a href="${diag_panel_rel}"><img src="${diag_panel_rel}" alt="${section_title} selfcal diagnostics panel" loading="lazy"></a>
-EOF
-			fi
-			if [[ -n "$diag_csv_rel" || -n "$diag_stats_rel" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-          <p>
-EOF
-				if [[ -n "$diag_csv_rel" ]]; then
-					if [[ -n "$diag_csv_table_rel" ]]; then
-						cat >> "$tmp_file" <<EOF
-            <a href="${diag_csv_table_rel}">Per-integration table</a> · <a href="${diag_csv_rel}">CSV</a>
-EOF
-					else
-						cat >> "$tmp_file" <<EOF
-            <a href="${diag_csv_rel}">Per-integration CSV</a>
-EOF
-					fi
-				fi
-				if [[ -n "$diag_csv_rel" && -n "$diag_stats_rel" ]]; then
-					cat >> "$tmp_file" <<'EOF'
-            ·
-EOF
-				fi
-				if [[ -n "$diag_stats_rel" ]]; then
-					if [[ -n "$diag_stats_table_rel" ]]; then
-						cat >> "$tmp_file" <<EOF
-            <a href="${diag_stats_table_rel}">Summary stats table</a> · <a href="${diag_stats_rel}">CSV</a>
-EOF
-					else
-						cat >> "$tmp_file" <<EOF
-            <a href="${diag_stats_rel}">Summary stats CSV</a>
-EOF
-					fi
-				fi
-				cat >> "$tmp_file" <<'EOF'
-          </p>
-EOF
-			fi
-			if [[ -z "$diag_panel_rel" && -z "$diag_csv_rel" && -z "$diag_stats_rel" ]]; then
-				cat >> "$tmp_file" <<'EOF'
-          <p class="tiny">Not generated for this source/run.</p>
-EOF
-			fi
-			cat >> "$tmp_file" <<'EOF'
-        </div>
-EOF
-
-			cat >> "$tmp_file" <<'EOF'
-      </div>
-    </div>
-EOF
+			render_post_selfcal_section "$tmp_file" \
+				"$section_title" "$section_context" \
+				"$movie_rel" "$stack_rel" "$rms_movie_rel" \
+				"$diag_panel_rel" "$diag_csv_rel" "$diag_stats_rel" \
+				"$diag_csv_table_rel" "$diag_stats_table_rel" "" "" ""
 		done
 		cat >> "$tmp_file" <<'EOF'
   </div>
