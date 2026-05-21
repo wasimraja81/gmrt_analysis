@@ -1,0 +1,23 @@
+2026-05-12 11:59:27,790  INFO      REAL RUN — clustering flags will be written to /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0520/flagging/moon0520_dev_flag_table.json
+2026-05-12 11:59:27,790  INFO      Source        : MOON0520
+2026-05-12 11:59:27,790  INFO      DOCAL/DOFLAG  : off / off   CALVER/FLAGVER: latest / latest
+2026-05-12 11:59:27,791  INFO      CLUSTERING_CORR=['V', 'RR', 'LL']  threshold={'V': 25.0, 'RR': 50.0, 'LL': 50.0} Jy  threshold_low=None Jy
+2026-05-12 11:59:27,791  INFO      Active disk flag tables: (none)
+2026-05-12 11:59:27,791  INFO      Loading row index (cache=/Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged.uvfits.row_index_cache.npz) ...
+2026-05-12 11:59:27,803  INFO      DOCAL=off: will use identity calibration (raw vis amplitudes).
+2026-05-12 11:59:27,804  INFO      Loading vis for MOON0520 (stokes=['RR', 'LL']) ...
+2026-05-12 11:59:28,284  INFO        active antennas (observed): 26  active baselines (observed): 310
+Loaded row index cache: /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged.uvfits.row_index_cache.npz
+[row-index-cache] applying override_dud_names to cached index: cached=[] -> override=[31, 32]
+Saved row index cache: /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged.uvfits.row_index_cache.npz
+[load_vis] 35,030 rows, 108 MB read, 0.5s
+Traceback (most recent call last):
+  File "/Users/raj030/github-wasimraja81/gmrt_analysis/src/run_clustering.py", line 1089, in <module>
+    main()
+    ~~~~^^
+  File "/Users/raj030/github-wasimraja81/gmrt_analysis/src/run_clustering.py", line 510, in main
+    vis_corr = q.apply_bandpass_solution(vis_raw, _id_bp)
+  File "/Users/raj030/github-wasimraja81/gmrt_analysis/src/modules/ugmrt_query.py", line 5703, in apply_bandpass_solution
+    out['applied_bandpass_reference_antenna'] = int(solution['reference_antenna'])
+                                                    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'reference_antenna'

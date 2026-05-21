@@ -1,0 +1,9 @@
+Loaded row index cache: /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged.uvfits.row_index_cache.npz
+[load_vis] uvrange_klambda filter: 13,005 / 35,030 rows kept
+[load_vis] 13,005 rows, 108 MB read, 0.4s
+[flag-table] time-range/chanrange flags applied: 493,804 vis cell(s) zeroed across 13,005 kept row(s)
+[plotVis] channels selected: nchan=128 file_chan_range=[0,127]
+[plotVis] requested --chan-range=[0,127]
+[plotVis] Saved: /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0520/vis_dev/plotvis_moon0520.pdf
+[plotVis] Saved: /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0520/vis_dev/plotvis_moon0520_page01.png
+[plotVis] Saved: /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0520/vis_dev/plotvis_moon0520_page02.png

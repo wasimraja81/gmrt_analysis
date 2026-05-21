@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/raj030/github-wasimraja81/gmrt_analysis/experimental/moon_selfcal_movie.py", line 405, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/Users/raj030/github-wasimraja81/gmrt_analysis/experimental/moon_selfcal_movie.py", line 270, in main
+    raise FileNotFoundError(f'compare dir not found: {compare_dir}')
+FileNotFoundError: compare dir not found: /Users/raj030/github-wasimraja81/gmrt_analysis/before_finals

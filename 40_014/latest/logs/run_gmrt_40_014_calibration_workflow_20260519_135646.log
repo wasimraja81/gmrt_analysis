@@ -1,0 +1,1921 @@
+[2026-05-19 13:56:46] GMRT 40_014 calibration workflow start
+[2026-05-19 13:56:46] cwd=/Users/raj030/github-wasimraja81/gmrt_analysis
+[2026-05-19 13:56:46] chain_log=/Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260519_135646.log
+[2026-05-19 13:56:46] INVOCATION PROVENANCE (effective values)
+[2026-05-19 13:56:46]   FORCE_FROM_STEP=16
+[2026-05-19 13:56:46]   RUN_ID=20260519_135646_p61377_r22611
+[2026-05-19 13:56:46]   SMART_RESUME=1
+[2026-05-19 13:56:46]   RUN_CLEAN_STAGE=0
+[2026-05-19 13:56:46]   RUN_3C468_SELFCAL_STAGE=1
+[2026-05-19 13:56:46]   RUN_3C468_SCAN_TAGS=5
+[2026-05-19 13:56:46]   RUN_3C468_POSTSELFCAL_ARTIFACTS=1
+[2026-05-19 13:56:46]   RUN_MOON_SELFCAL_STAGE=0
+[2026-05-19 13:56:46]   RUN_MOON_POSTSELFCAL_ARTIFACTS=0
+[2026-05-19 13:56:46]   STACK_SIZE=1
+[2026-05-19 13:56:46]   NO_MASK=<unset>
+[2026-05-19 13:56:46]   MASK_RADIUS_ARCMIN=<unset>
+[2026-05-19 13:56:46]   PYTHON_CMD=<unset>
+[2026-05-19 13:56:46]   NITER_PER_CYCLE=<unset>
+[2026-05-19 13:56:46]   NITER_FINAL=<unset>
+[2026-05-19 13:56:46] SMART_RESUME: executing strict downstream rerun from step 16
+[2026-05-19 13:56:46] SMART_RESUME: skipping clean step to preserve existing products
+[2026-05-19 13:56:46] INFO: optional moon selfcal stage disabled (RUN_MOON_SELFCAL_STAGE=0)
+[2026-05-19 13:56:46] WARNING: optional moon trajectory step skipped; MS not found: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_dev/moon0520_full.ms
+[2026-05-19 13:56:46] WARNING: continuing workflow so pre-selfcal products remain publishable
+[2026-05-19 13:56:46] INFO: optional moon post-selfcal artifacts step disabled (RUN_MOON_POSTSELFCAL_ARTIFACTS=0)
+[2026-05-19 13:56:46] STEP 16 START (optional): 3C468.1 selfcal imaging (scan5)
+[2026-05-19 13:56:46] COMMAND: env SCAN_TAG=5 RUN_ID=20260519_135646_p61377_r22611 MAKE_MOVIE_AFTER_SELFCAL=0 bash /Users/raj030/github-wasimraja81/gmrt_analysis/bin/run_3c468.1_selfcal_dev.sh
+[run-3c468.1-selfcal] scan_tag : scan05
+[run-3c468.1-selfcal] run_id   : 20260519_135646_p61377_r22611
+[run-3c468.1-selfcal] uvfits   : /Users/raj030/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_secondary_calibrated_flagged.uvfits
+[run-3c468.1-selfcal] outdir   : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1
+[run-3c468.1-selfcal] cmd      : /Users/raj030/DATA/gmrt_40_014/work/logs/run_3c468.1_selfcal_scan05_20260519_135646_p61377_r22611.cmd
+[run-3c468.1-selfcal] log      : /Users/raj030/DATA/gmrt_40_014/work/logs/run_3c468.1_selfcal_scan05_20260519_135646_p61377_r22611.log
+[2026-05-19 13:56:46] [selfcal] Using index: /Users/raj030/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_secondary_calibrated_flagged.uvfits.row_index_cache.npz
+[2026-05-19 13:56:46] [selfcal] Scan 3C468.1 (id=4): 321 integrations
+[2026-05-19 13:56:46] [selfcal] Target mode: fixed-target
+[2026-05-19 13:56:46] [selfcal] Processing integrations: [130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167] (stack_size=1)
+[2026-05-19 13:56:51] [selfcal] Importing UVFITS → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_full.ms
+2026-05-19 03:56:52	WARN	MSFitsInput::fillAntennaTable	XYZHAND keyword not found in AN table. Will assume antenna coordinate system is right handed.
+2026-05-19 03:56:52	WARN	MSFitsInput::fillExtraTable	No systemic velocity for field 3
+2026-05-19 03:56:52	WARN	MSFitsInput::fillExtraTable	No rest frequency for field 3
+[2026-05-19 13:56:51] [selfcal] Fixed-target phase centre from FIELD table: RA=357.728852°  Dec=64.671627°
+[selfcal] Cycle 1 params: niter=300, img uvmin=Nonekλ uvmax=Nonekλ, cal uvmin=Nonekλ uvmax=Nonekλ, scales=[0]
+[selfcal] Cycle 2 params: niter=1000, img uvmin=Nonekλ uvmax=Nonekλ, cal uvmin=Nonekλ uvmax=Nonekλ, scales=[0]
+[selfcal] Cycle 3 params: niter=2000, img uvmin=Nonekλ uvmax=Nonekλ, cal uvmin=Nonekλ uvmax=Nonekλ, scales=[0]
+[selfcal] Cycle 4 params: niter=6000, img uvmin=Nonekλ uvmax=Nonekλ, cal uvmin=Nonekλ uvmax=Nonekλ, scales=[0]
+[2026-05-19 13:56:51] [selfcal] === Stack start_idx=130  n=1  JD=2459421.365116..2459421.365116  timerange=2021/07/25/20:45:42~2021/07/25/20:45:50 ===
+[2026-05-19 13:56:52] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 13:56:52] [selfcal]   target-mode: fixed-target
+[2026-05-19 13:56:52] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 13:56:52] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 13:56:52] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 13:56:54] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_sc1.gcal
+[2026-05-19 13:56:54] [selfcal]   Cycle 1/4: applycal
+WARNING: VerifyWarning: Card is too long, comment will be truncated. [astropy.io.fits.card]
+[2026-05-19 13:56:54] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_sc1.fits
+[2026-05-19 13:56:54] [selfcal]   Cycle 1/4: elapsed 2.83s
+[2026-05-19 13:56:54] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 13:57:00] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_sc2.gcal
+[2026-05-19 13:57:00] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 13:57:00] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_sc2.fits
+[2026-05-19 13:57:00] [selfcal]   Cycle 2/4: elapsed 6.05s
+[2026-05-19 13:57:00] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 13:57:11] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_sc3.gcal
+[2026-05-19 13:57:11] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 13:57:11] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_sc3.fits
+[2026-05-19 13:57:11] [selfcal]   Cycle 3/4: elapsed 10.73s
+[2026-05-19 13:57:11] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 13:57:42] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_sc4.gcal
+[2026-05-19 13:57:42] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 13:57:42] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_sc4.fits
+[2026-05-19 13:57:42] [selfcal]   Cycle 4/4: elapsed 30.78s
+[2026-05-19 13:57:42] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 13:58:32] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_final.fits
+[2026-05-19 13:58:32] [selfcal]   Final image: elapsed 49.68s
+[2026-05-19 13:58:32] [selfcal] === Stack done start_idx=130  elapsed 1m40.20s ===
+[2026-05-19 13:58:32] [selfcal] === Stack start_idx=131  n=1  JD=2459421.365210..2459421.365210  timerange=2021/07/25/20:45:50~2021/07/25/20:45:58 ===
+[2026-05-19 13:58:32] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 13:58:32] [selfcal]   target-mode: fixed-target
+[2026-05-19 13:58:32] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 13:58:32] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 13:58:32] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 13:58:34] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_sc1.gcal
+[2026-05-19 13:58:35] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 13:58:35] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_sc1.fits
+[2026-05-19 13:58:35] [selfcal]   Cycle 1/4: elapsed 2.91s
+[2026-05-19 13:58:35] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 13:58:41] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_sc2.gcal
+[2026-05-19 13:58:41] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 13:58:41] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_sc2.fits
+[2026-05-19 13:58:41] [selfcal]   Cycle 2/4: elapsed 6.28s
+[2026-05-19 13:58:41] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 13:58:52] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_sc3.gcal
+[2026-05-19 13:58:52] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 13:58:52] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_sc3.fits
+[2026-05-19 13:58:52] [selfcal]   Cycle 3/4: elapsed 11.52s
+[2026-05-19 13:58:52] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 13:59:23] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_sc4.gcal
+[2026-05-19 13:59:23] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 13:59:23] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_sc4.fits
+[2026-05-19 13:59:23] [selfcal]   Cycle 4/4: elapsed 30.91s
+[2026-05-19 13:59:23] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:00:14] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_final.fits
+[2026-05-19 14:00:14] [selfcal]   Final image: elapsed 50.86s
+[2026-05-19 14:00:14] [selfcal] === Stack done start_idx=131  elapsed 1m42.61s ===
+[2026-05-19 14:00:14] [selfcal] === Stack start_idx=132  n=1  JD=2459421.365303..2459421.365303  timerange=2021/07/25/20:45:58~2021/07/25/20:46:06 ===
+[2026-05-19 14:00:14] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:00:14] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:00:14] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:00:14] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:00:14] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:00:17] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_sc1.gcal
+[2026-05-19 14:00:17] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:00:17] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_sc1.fits
+[2026-05-19 14:00:17] [selfcal]   Cycle 1/4: elapsed 2.88s
+[2026-05-19 14:00:17] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:00:23] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_sc2.gcal
+[2026-05-19 14:00:24] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:00:24] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_sc2.fits
+[2026-05-19 14:00:24] [selfcal]   Cycle 2/4: elapsed 6.42s
+[2026-05-19 14:00:24] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:00:35] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_sc3.gcal
+[2026-05-19 14:00:35] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:00:35] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_sc3.fits
+[2026-05-19 14:00:35] [selfcal]   Cycle 3/4: elapsed 11.31s
+[2026-05-19 14:00:35] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:01:06] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_sc4.gcal
+[2026-05-19 14:01:06] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:01:06] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_sc4.fits
+[2026-05-19 14:01:06] [selfcal]   Cycle 4/4: elapsed 31.29s
+[2026-05-19 14:01:06] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:01:58] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_final.fits
+[2026-05-19 14:01:58] [selfcal]   Final image: elapsed 51.29s
+[2026-05-19 14:01:58] [selfcal] === Stack done start_idx=132  elapsed 1m43.35s ===
+[2026-05-19 14:01:58] [selfcal] === Stack start_idx=133  n=1  JD=2459421.365396..2459421.365396  timerange=2021/07/25/20:46:06~2021/07/25/20:46:14 ===
+[2026-05-19 14:01:58] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:01:58] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:01:58] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:01:58] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:01:58] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:02:00] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_sc1.gcal
+[2026-05-19 14:02:01] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:02:01] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_sc1.fits
+[2026-05-19 14:02:01] [selfcal]   Cycle 1/4: elapsed 2.94s
+[2026-05-19 14:02:01] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:02:07] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_sc2.gcal
+[2026-05-19 14:02:07] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:02:07] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_sc2.fits
+[2026-05-19 14:02:07] [selfcal]   Cycle 2/4: elapsed 6.34s
+[2026-05-19 14:02:07] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:02:18] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_sc3.gcal
+[2026-05-19 14:02:18] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:02:18] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_sc3.fits
+[2026-05-19 14:02:18] [selfcal]   Cycle 3/4: elapsed 11.02s
+[2026-05-19 14:02:18] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:02:48] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_sc4.gcal
+[2026-05-19 14:02:49] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:02:49] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_sc4.fits
+[2026-05-19 14:02:49] [selfcal]   Cycle 4/4: elapsed 30.67s
+[2026-05-19 14:02:49] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:03:38] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_final.fits
+[2026-05-19 14:03:38] [selfcal]   Final image: elapsed 49.08s
+[2026-05-19 14:03:38] [selfcal] === Stack done start_idx=133  elapsed 1m40.20s ===
+[2026-05-19 14:03:38] [selfcal] === Stack start_idx=134  n=1  JD=2459421.365489..2459421.365489  timerange=2021/07/25/20:46:14~2021/07/25/20:46:22 ===
+[2026-05-19 14:03:38] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:03:38] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:03:38] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:03:38] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:03:38] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:03:40] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_sc1.gcal
+[2026-05-19 14:03:41] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:03:41] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_sc1.fits
+[2026-05-19 14:03:41] [selfcal]   Cycle 1/4: elapsed 2.72s
+[2026-05-19 14:03:41] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:03:47] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_sc2.gcal
+[2026-05-19 14:03:47] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:03:47] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_sc2.fits
+[2026-05-19 14:03:47] [selfcal]   Cycle 2/4: elapsed 6.13s
+[2026-05-19 14:03:47] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:03:57] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_sc3.gcal
+[2026-05-19 14:03:58] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:03:58] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_sc3.fits
+[2026-05-19 14:03:58] [selfcal]   Cycle 3/4: elapsed 10.85s
+[2026-05-19 14:03:58] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:04:28] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_sc4.gcal
+[2026-05-19 14:04:28] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:04:28] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_sc4.fits
+[2026-05-19 14:04:28] [selfcal]   Cycle 4/4: elapsed 30.18s
+[2026-05-19 14:04:28] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:05:17] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_final.fits
+[2026-05-19 14:05:17] [selfcal]   Final image: elapsed 49.59s
+[2026-05-19 14:05:17] [selfcal] === Stack done start_idx=134  elapsed 1m39.59s ===
+[2026-05-19 14:05:17] [selfcal] === Stack start_idx=135  n=1  JD=2459421.365582..2459421.365582  timerange=2021/07/25/20:46:22~2021/07/25/20:46:30 ===
+[2026-05-19 14:05:17] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:05:17] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:05:17] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:05:17] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:05:17] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:05:20] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_sc1.gcal
+[2026-05-19 14:05:20] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:05:20] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_sc1.fits
+[2026-05-19 14:05:20] [selfcal]   Cycle 1/4: elapsed 2.82s
+[2026-05-19 14:05:20] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:05:26] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_sc2.gcal
+[2026-05-19 14:05:26] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:05:27] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_sc2.fits
+[2026-05-19 14:05:27] [selfcal]   Cycle 2/4: elapsed 6.21s
+[2026-05-19 14:05:27] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:05:37] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_sc3.gcal
+[2026-05-19 14:05:37] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:05:37] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_sc3.fits
+[2026-05-19 14:05:37] [selfcal]   Cycle 3/4: elapsed 10.85s
+[2026-05-19 14:05:37] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:06:07] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_sc4.gcal
+[2026-05-19 14:06:07] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:06:07] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_sc4.fits
+[2026-05-19 14:06:07] [selfcal]   Cycle 4/4: elapsed 29.88s
+[2026-05-19 14:06:07] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:06:57] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_final.fits
+[2026-05-19 14:06:57] [selfcal]   Final image: elapsed 49.39s
+[2026-05-19 14:06:57] [selfcal] === Stack done start_idx=135  elapsed 1m39.29s ===
+[2026-05-19 14:06:57] [selfcal] === Stack start_idx=136  n=1  JD=2459421.365676..2459421.365676  timerange=2021/07/25/20:46:30~2021/07/25/20:46:38 ===
+[2026-05-19 14:06:57] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:06:57] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:06:57] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:06:57] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:06:57] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:06:59] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_sc1.gcal
+[2026-05-19 14:07:00] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:07:00] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_sc1.fits
+[2026-05-19 14:07:00] [selfcal]   Cycle 1/4: elapsed 2.85s
+[2026-05-19 14:07:00] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:07:06] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_sc2.gcal
+[2026-05-19 14:07:06] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:07:06] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_sc2.fits
+[2026-05-19 14:07:06] [selfcal]   Cycle 2/4: elapsed 6.20s
+[2026-05-19 14:07:06] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:07:17] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_sc3.gcal
+[2026-05-19 14:07:17] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:07:17] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_sc3.fits
+[2026-05-19 14:07:17] [selfcal]   Cycle 3/4: elapsed 10.99s
+[2026-05-19 14:07:17] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:07:47] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_sc4.gcal
+[2026-05-19 14:07:47] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:07:48] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_sc4.fits
+[2026-05-19 14:07:48] [selfcal]   Cycle 4/4: elapsed 30.73s
+[2026-05-19 14:07:48] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:08:37] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_final.fits
+[2026-05-19 14:08:37] [selfcal]   Final image: elapsed 49.72s
+[2026-05-19 14:08:37] [selfcal] === Stack done start_idx=136  elapsed 1m40.63s ===
+[2026-05-19 14:08:37] [selfcal] === Stack start_idx=137  n=1  JD=2459421.365769..2459421.365769  timerange=2021/07/25/20:46:38~2021/07/25/20:46:46 ===
+[2026-05-19 14:08:37] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:08:37] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:08:37] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:08:37] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:08:37] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:08:40] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_sc1.gcal
+[2026-05-19 14:08:40] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:08:40] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_sc1.fits
+[2026-05-19 14:08:40] [selfcal]   Cycle 1/4: elapsed 2.79s
+[2026-05-19 14:08:40] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:08:46] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_sc2.gcal
+[2026-05-19 14:08:46] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:08:46] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_sc2.fits
+[2026-05-19 14:08:46] [selfcal]   Cycle 2/4: elapsed 6.14s
+[2026-05-19 14:08:46] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:08:57] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_sc3.gcal
+[2026-05-19 14:08:57] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:08:57] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_sc3.fits
+[2026-05-19 14:08:57] [selfcal]   Cycle 3/4: elapsed 11.13s
+[2026-05-19 14:08:57] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:09:27] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_sc4.gcal
+[2026-05-19 14:09:27] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:09:27] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_sc4.fits
+[2026-05-19 14:09:27] [selfcal]   Cycle 4/4: elapsed 29.90s
+[2026-05-19 14:09:27] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:10:16] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_final.fits
+[2026-05-19 14:10:16] [selfcal]   Final image: elapsed 48.44s
+[2026-05-19 14:10:16] [selfcal] === Stack done start_idx=137  elapsed 1m38.53s ===
+[2026-05-19 14:10:16] [selfcal] === Stack start_idx=138  n=1  JD=2459421.365862..2459421.365862  timerange=2021/07/25/20:46:46~2021/07/25/20:46:54 ===
+[2026-05-19 14:10:16] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:10:16] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:10:16] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:10:16] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:10:16] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:10:19] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_sc1.gcal
+[2026-05-19 14:10:19] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:10:19] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_sc1.fits
+[2026-05-19 14:10:19] [selfcal]   Cycle 1/4: elapsed 2.88s
+[2026-05-19 14:10:19] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:10:25] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_sc2.gcal
+[2026-05-19 14:10:25] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:10:25] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_sc2.fits
+[2026-05-19 14:10:25] [selfcal]   Cycle 2/4: elapsed 6.32s
+[2026-05-19 14:10:25] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:10:36] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_sc3.gcal
+[2026-05-19 14:10:36] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:10:36] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_sc3.fits
+[2026-05-19 14:10:36] [selfcal]   Cycle 3/4: elapsed 10.89s
+[2026-05-19 14:10:36] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:11:06] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_sc4.gcal
+[2026-05-19 14:11:06] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:11:06] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_sc4.fits
+[2026-05-19 14:11:06] [selfcal]   Cycle 4/4: elapsed 29.81s
+[2026-05-19 14:11:06] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:11:55] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_final.fits
+[2026-05-19 14:11:55] [selfcal]   Final image: elapsed 49.27s
+[2026-05-19 14:11:55] [selfcal] === Stack done start_idx=138  elapsed 1m39.29s ===
+[2026-05-19 14:11:55] [selfcal] === Stack start_idx=139  n=1  JD=2459421.365955..2459421.365955  timerange=2021/07/25/20:46:54~2021/07/25/20:47:02 ===
+[2026-05-19 14:11:55] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:11:55] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:11:55] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:11:55] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:11:55] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:11:58] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_sc1.gcal
+[2026-05-19 14:11:58] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:11:58] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_sc1.fits
+[2026-05-19 14:11:58] [selfcal]   Cycle 1/4: elapsed 2.80s
+[2026-05-19 14:11:58] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:12:04] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_sc2.gcal
+[2026-05-19 14:12:04] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:12:04] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_sc2.fits
+[2026-05-19 14:12:04] [selfcal]   Cycle 2/4: elapsed 6.11s
+[2026-05-19 14:12:04] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:12:15] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_sc3.gcal
+[2026-05-19 14:12:15] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:12:15] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_sc3.fits
+[2026-05-19 14:12:15] [selfcal]   Cycle 3/4: elapsed 10.87s
+[2026-05-19 14:12:15] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:12:45] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_sc4.gcal
+[2026-05-19 14:12:45] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:12:45] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_sc4.fits
+[2026-05-19 14:12:45] [selfcal]   Cycle 4/4: elapsed 30.18s
+[2026-05-19 14:12:45] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:13:34] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_final.fits
+[2026-05-19 14:13:34] [selfcal]   Final image: elapsed 49.27s
+[2026-05-19 14:13:34] [selfcal] === Stack done start_idx=139  elapsed 1m39.34s ===
+[2026-05-19 14:13:34] [selfcal] === Stack start_idx=140  n=1  JD=2459421.366048..2459421.366048  timerange=2021/07/25/20:47:02~2021/07/25/20:47:10 ===
+[2026-05-19 14:13:35] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:13:35] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:13:35] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:13:35] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:13:35] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:13:37] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_sc1.gcal
+[2026-05-19 14:13:37] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:13:37] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_sc1.fits
+[2026-05-19 14:13:37] [selfcal]   Cycle 1/4: elapsed 2.75s
+[2026-05-19 14:13:37] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:13:43] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_sc2.gcal
+[2026-05-19 14:13:43] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:13:43] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_sc2.fits
+[2026-05-19 14:13:43] [selfcal]   Cycle 2/4: elapsed 6.12s
+[2026-05-19 14:13:43] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:13:54] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_sc3.gcal
+[2026-05-19 14:13:54] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:13:54] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_sc3.fits
+[2026-05-19 14:13:54] [selfcal]   Cycle 3/4: elapsed 10.91s
+[2026-05-19 14:13:54] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:14:24] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_sc4.gcal
+[2026-05-19 14:14:25] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:14:25] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_sc4.fits
+[2026-05-19 14:14:25] [selfcal]   Cycle 4/4: elapsed 30.27s
+[2026-05-19 14:14:25] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:15:13] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_final.fits
+[2026-05-19 14:15:13] [selfcal]   Final image: elapsed 48.87s
+[2026-05-19 14:15:13] [selfcal] === Stack done start_idx=140  elapsed 1m39.03s ===
+[2026-05-19 14:15:13] [selfcal] === Stack start_idx=141  n=1  JD=2459421.366142..2459421.366142  timerange=2021/07/25/20:47:10~2021/07/25/20:47:18 ===
+[2026-05-19 14:15:14] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:15:14] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:15:14] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:15:14] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:15:14] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:15:16] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_sc1.gcal
+[2026-05-19 14:15:16] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:15:16] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_sc1.fits
+[2026-05-19 14:15:16] [selfcal]   Cycle 1/4: elapsed 2.75s
+[2026-05-19 14:15:16] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:15:22] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_sc2.gcal
+[2026-05-19 14:15:22] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:15:23] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_sc2.fits
+[2026-05-19 14:15:23] [selfcal]   Cycle 2/4: elapsed 6.17s
+[2026-05-19 14:15:23] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:15:33] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_sc3.gcal
+[2026-05-19 14:15:34] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:15:34] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_sc3.fits
+[2026-05-19 14:15:34] [selfcal]   Cycle 3/4: elapsed 11.07s
+[2026-05-19 14:15:34] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:16:03] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_sc4.gcal
+[2026-05-19 14:16:04] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:16:04] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_sc4.fits
+[2026-05-19 14:16:04] [selfcal]   Cycle 4/4: elapsed 30.05s
+[2026-05-19 14:16:04] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:16:52] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_final.fits
+[2026-05-19 14:16:52] [selfcal]   Final image: elapsed 48.69s
+[2026-05-19 14:16:52] [selfcal] === Stack done start_idx=141  elapsed 1m38.86s ===
+[2026-05-19 14:16:52] [selfcal] === Stack start_idx=142  n=1  JD=2459421.366235..2459421.366235  timerange=2021/07/25/20:47:18~2021/07/25/20:47:26 ===
+[2026-05-19 14:16:52] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:16:52] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:16:52] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:16:52] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:16:52] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:16:55] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_sc1.gcal
+2 of 52 solutions flagged due to SNR < 3 in spw=0 at 2021/07/25/20:47:22.7
+[2026-05-19 14:16:55] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:16:55] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_sc1.fits
+[2026-05-19 14:16:55] [selfcal]   Cycle 1/4: elapsed 2.69s
+[2026-05-19 14:16:55] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:17:01] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_sc2.gcal
+2 of 52 solutions flagged due to SNR < 3 in spw=0 at 2021/07/25/20:47:22.7
+[2026-05-19 14:17:01] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:17:01] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_sc2.fits
+[2026-05-19 14:17:01] [selfcal]   Cycle 2/4: elapsed 6.01s
+[2026-05-19 14:17:01] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:17:12] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_sc3.gcal
+2 of 52 solutions flagged due to SNR < 3 in spw=0 at 2021/07/25/20:47:22.7
+[2026-05-19 14:17:12] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:17:12] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_sc3.fits
+[2026-05-19 14:17:12] [selfcal]   Cycle 3/4: elapsed 10.82s
+[2026-05-19 14:17:12] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:17:42] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_sc4.gcal
+2 of 52 solutions flagged due to SNR < 3 in spw=0 at 2021/07/25/20:47:22.7
+[2026-05-19 14:17:42] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:17:42] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_sc4.fits
+[2026-05-19 14:17:42] [selfcal]   Cycle 4/4: elapsed 29.88s
+[2026-05-19 14:17:42] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:18:30] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_final.fits
+[2026-05-19 14:18:30] [selfcal]   Final image: elapsed 48.50s
+[2026-05-19 14:18:30] [selfcal] === Stack done start_idx=142  elapsed 1m38.03s ===
+[2026-05-19 14:18:30] [selfcal] === Stack start_idx=143  n=1  JD=2459421.366328..2459421.366328  timerange=2021/07/25/20:47:26~2021/07/25/20:47:34 ===
+[2026-05-19 14:18:31] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:18:31] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:18:31] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:18:31] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:18:31] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:18:33] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_sc1.gcal
+[2026-05-19 14:18:33] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:18:33] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_sc1.fits
+[2026-05-19 14:18:33] [selfcal]   Cycle 1/4: elapsed 2.77s
+[2026-05-19 14:18:33] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:18:39] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_sc2.gcal
+[2026-05-19 14:18:39] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:18:39] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_sc2.fits
+[2026-05-19 14:18:39] [selfcal]   Cycle 2/4: elapsed 6.11s
+[2026-05-19 14:18:39] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:18:50] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_sc3.gcal
+[2026-05-19 14:18:50] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:18:50] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_sc3.fits
+[2026-05-19 14:18:50] [selfcal]   Cycle 3/4: elapsed 10.89s
+[2026-05-19 14:18:50] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:19:20] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_sc4.gcal
+[2026-05-19 14:19:20] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:19:20] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_sc4.fits
+[2026-05-19 14:19:20] [selfcal]   Cycle 4/4: elapsed 29.87s
+[2026-05-19 14:19:20] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:20:09] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_final.fits
+[2026-05-19 14:20:09] [selfcal]   Final image: elapsed 49.11s
+[2026-05-19 14:20:09] [selfcal] === Stack done start_idx=143  elapsed 1m38.87s ===
+[2026-05-19 14:20:09] [selfcal] === Stack start_idx=144  n=1  JD=2459421.366421..2459421.366421  timerange=2021/07/25/20:47:34~2021/07/25/20:47:42 ===
+[2026-05-19 14:20:09] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:20:09] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:20:09] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:20:09] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:20:09] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:20:12] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_sc1.gcal
+[2026-05-19 14:20:12] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:20:12] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_sc1.fits
+[2026-05-19 14:20:12] [selfcal]   Cycle 1/4: elapsed 2.69s
+[2026-05-19 14:20:12] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:20:18] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_sc2.gcal
+[2026-05-19 14:20:18] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:20:18] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_sc2.fits
+[2026-05-19 14:20:18] [selfcal]   Cycle 2/4: elapsed 6.04s
+[2026-05-19 14:20:18] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:20:29] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_sc3.gcal
+[2026-05-19 14:20:29] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:20:29] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_sc3.fits
+[2026-05-19 14:20:29] [selfcal]   Cycle 3/4: elapsed 11.08s
+[2026-05-19 14:20:29] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:20:59] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_sc4.gcal
+[2026-05-19 14:20:59] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:21:00] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_sc4.fits
+[2026-05-19 14:21:00] [selfcal]   Cycle 4/4: elapsed 30.35s
+[2026-05-19 14:21:00] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:21:49] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_final.fits
+[2026-05-19 14:21:49] [selfcal]   Final image: elapsed 48.96s
+[2026-05-19 14:21:49] [selfcal] === Stack done start_idx=144  elapsed 1m39.26s ===
+[2026-05-19 14:21:49] [selfcal] === Stack start_idx=145  n=1  JD=2459421.366515..2459421.366515  timerange=2021/07/25/20:47:42~2021/07/25/20:47:50 ===
+[2026-05-19 14:21:49] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:21:49] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:21:49] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:21:49] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:21:49] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:21:51] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_sc1.gcal
+[2026-05-19 14:21:51] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:21:51] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_sc1.fits
+[2026-05-19 14:21:51] [selfcal]   Cycle 1/4: elapsed 2.79s
+[2026-05-19 14:21:51] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:21:57] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_sc2.gcal
+[2026-05-19 14:21:58] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:21:58] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_sc2.fits
+[2026-05-19 14:21:58] [selfcal]   Cycle 2/4: elapsed 6.15s
+[2026-05-19 14:21:58] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:22:08] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_sc3.gcal
+[2026-05-19 14:22:08] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:22:09] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_sc3.fits
+[2026-05-19 14:22:09] [selfcal]   Cycle 3/4: elapsed 10.98s
+[2026-05-19 14:22:09] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:22:39] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_sc4.gcal
+[2026-05-19 14:22:39] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:22:39] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_sc4.fits
+[2026-05-19 14:22:39] [selfcal]   Cycle 4/4: elapsed 30.31s
+[2026-05-19 14:22:39] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:23:28] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_final.fits
+[2026-05-19 14:23:28] [selfcal]   Final image: elapsed 49.14s
+[2026-05-19 14:23:28] [selfcal] === Stack done start_idx=145  elapsed 1m39.50s ===
+[2026-05-19 14:23:28] [selfcal] === Stack start_idx=146  n=1  JD=2459421.366608..2459421.366608  timerange=2021/07/25/20:47:50~2021/07/25/20:47:58 ===
+[2026-05-19 14:23:28] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:23:28] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:23:28] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:23:28] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:23:28] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:23:31] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_sc1.gcal
+[2026-05-19 14:23:31] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:23:31] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_sc1.fits
+[2026-05-19 14:23:31] [selfcal]   Cycle 1/4: elapsed 2.78s
+[2026-05-19 14:23:31] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:23:37] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_sc2.gcal
+[2026-05-19 14:23:37] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:23:37] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_sc2.fits
+[2026-05-19 14:23:37] [selfcal]   Cycle 2/4: elapsed 6.14s
+[2026-05-19 14:23:37] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:23:48] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_sc3.gcal
+[2026-05-19 14:23:48] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:23:48] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_sc3.fits
+[2026-05-19 14:23:48] [selfcal]   Cycle 3/4: elapsed 10.85s
+[2026-05-19 14:23:48] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:24:18] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_sc4.gcal
+[2026-05-19 14:24:18] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:24:18] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_sc4.fits
+[2026-05-19 14:24:18] [selfcal]   Cycle 4/4: elapsed 30.19s
+[2026-05-19 14:24:18] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:25:08] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_final.fits
+[2026-05-19 14:25:08] [selfcal]   Final image: elapsed 49.82s
+[2026-05-19 14:25:08] [selfcal] === Stack done start_idx=146  elapsed 1m39.90s ===
+[2026-05-19 14:25:08] [selfcal] === Stack start_idx=147  n=1  JD=2459421.366701..2459421.366701  timerange=2021/07/25/20:47:58~2021/07/25/20:48:06 ===
+[2026-05-19 14:25:08] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:25:08] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:25:08] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:25:08] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:25:08] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:25:11] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_sc1.gcal
+[2026-05-19 14:25:11] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:25:11] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_sc1.fits
+[2026-05-19 14:25:11] [selfcal]   Cycle 1/4: elapsed 2.75s
+[2026-05-19 14:25:11] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:25:17] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_sc2.gcal
+[2026-05-19 14:25:17] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:25:17] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_sc2.fits
+[2026-05-19 14:25:17] [selfcal]   Cycle 2/4: elapsed 6.16s
+[2026-05-19 14:25:17] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:25:28] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_sc3.gcal
+[2026-05-19 14:25:28] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:25:28] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_sc3.fits
+[2026-05-19 14:25:28] [selfcal]   Cycle 3/4: elapsed 11.14s
+[2026-05-19 14:25:28] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:25:58] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_sc4.gcal
+[2026-05-19 14:25:58] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:25:58] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_sc4.fits
+[2026-05-19 14:25:58] [selfcal]   Cycle 4/4: elapsed 30.23s
+[2026-05-19 14:25:58] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:26:48] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_final.fits
+[2026-05-19 14:26:48] [selfcal]   Final image: elapsed 49.52s
+[2026-05-19 14:26:48] [selfcal] === Stack done start_idx=147  elapsed 1m39.95s ===
+[2026-05-19 14:26:48] [selfcal] === Stack start_idx=148  n=1  JD=2459421.366794..2459421.366794  timerange=2021/07/25/20:48:07~2021/07/25/20:48:15 ===
+[2026-05-19 14:26:48] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:26:48] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:26:48] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:26:48] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:26:48] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:26:51] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_sc1.gcal
+[2026-05-19 14:26:51] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:26:51] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_sc1.fits
+[2026-05-19 14:26:51] [selfcal]   Cycle 1/4: elapsed 2.87s
+[2026-05-19 14:26:51] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:26:57] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_sc2.gcal
+[2026-05-19 14:26:57] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:26:57] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_sc2.fits
+[2026-05-19 14:26:57] [selfcal]   Cycle 2/4: elapsed 6.15s
+[2026-05-19 14:26:57] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:27:08] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_sc3.gcal
+[2026-05-19 14:27:08] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:27:08] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_sc3.fits
+[2026-05-19 14:27:08] [selfcal]   Cycle 3/4: elapsed 10.84s
+[2026-05-19 14:27:08] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:27:38] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_sc4.gcal
+[2026-05-19 14:27:38] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:27:38] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_sc4.fits
+[2026-05-19 14:27:38] [selfcal]   Cycle 4/4: elapsed 30.14s
+[2026-05-19 14:27:38] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:28:27] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_final.fits
+[2026-05-19 14:28:27] [selfcal]   Final image: elapsed 48.91s
+[2026-05-19 14:28:27] [selfcal] === Stack done start_idx=148  elapsed 1m39.04s ===
+[2026-05-19 14:28:27] [selfcal] === Stack start_idx=149  n=1  JD=2459421.366887..2459421.366887  timerange=2021/07/25/20:48:15~2021/07/25/20:48:23 ===
+[2026-05-19 14:28:27] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:28:27] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:28:27] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:28:27] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:28:27] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:28:30] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_sc1.gcal
+[2026-05-19 14:28:30] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:28:30] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_sc1.fits
+[2026-05-19 14:28:30] [selfcal]   Cycle 1/4: elapsed 2.72s
+[2026-05-19 14:28:30] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:28:36] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_sc2.gcal
+[2026-05-19 14:28:36] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:28:36] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_sc2.fits
+[2026-05-19 14:28:36] [selfcal]   Cycle 2/4: elapsed 6.06s
+[2026-05-19 14:28:36] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:28:47] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_sc3.gcal
+[2026-05-19 14:28:47] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:28:47] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_sc3.fits
+[2026-05-19 14:28:47] [selfcal]   Cycle 3/4: elapsed 10.89s
+[2026-05-19 14:28:47] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:29:16] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_sc4.gcal
+[2026-05-19 14:29:16] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:29:16] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_sc4.fits
+[2026-05-19 14:29:16] [selfcal]   Cycle 4/4: elapsed 29.56s
+[2026-05-19 14:29:16] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:30:05] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_final.fits
+[2026-05-19 14:30:05] [selfcal]   Final image: elapsed 49.12s
+[2026-05-19 14:30:05] [selfcal] === Stack done start_idx=149  elapsed 1m38.49s ===
+[2026-05-19 14:30:05] [selfcal] === Stack start_idx=150  n=1  JD=2459421.366981..2459421.366981  timerange=2021/07/25/20:48:23~2021/07/25/20:48:31 ===
+[2026-05-19 14:30:06] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:30:06] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:30:06] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:30:06] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:30:06] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:30:08] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_sc1.gcal
+[2026-05-19 14:30:08] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:30:08] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_sc1.fits
+[2026-05-19 14:30:08] [selfcal]   Cycle 1/4: elapsed 2.80s
+[2026-05-19 14:30:08] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:30:14] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_sc2.gcal
+[2026-05-19 14:30:14] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:30:14] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_sc2.fits
+[2026-05-19 14:30:14] [selfcal]   Cycle 2/4: elapsed 6.08s
+[2026-05-19 14:30:14] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:30:25] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_sc3.gcal
+[2026-05-19 14:30:25] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:30:25] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_sc3.fits
+[2026-05-19 14:30:25] [selfcal]   Cycle 3/4: elapsed 10.91s
+[2026-05-19 14:30:25] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:30:55] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_sc4.gcal
+[2026-05-19 14:30:55] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:30:55] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_sc4.fits
+[2026-05-19 14:30:55] [selfcal]   Cycle 4/4: elapsed 30.00s
+[2026-05-19 14:30:55] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:31:45] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_final.fits
+[2026-05-19 14:31:45] [selfcal]   Final image: elapsed 49.38s
+[2026-05-19 14:31:45] [selfcal] === Stack done start_idx=150  elapsed 1m39.31s ===
+[2026-05-19 14:31:45] [selfcal] === Stack start_idx=151  n=1  JD=2459421.367074..2459421.367074  timerange=2021/07/25/20:48:31~2021/07/25/20:48:39 ===
+[2026-05-19 14:31:45] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:31:45] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:31:45] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:31:45] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:31:45] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:31:47] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_sc1.gcal
+[2026-05-19 14:31:48] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:31:48] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_sc1.fits
+[2026-05-19 14:31:48] [selfcal]   Cycle 1/4: elapsed 2.80s
+[2026-05-19 14:31:48] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:31:54] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_sc2.gcal
+[2026-05-19 14:31:54] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:31:54] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_sc2.fits
+[2026-05-19 14:31:54] [selfcal]   Cycle 2/4: elapsed 6.09s
+[2026-05-19 14:31:54] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:32:04] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_sc3.gcal
+[2026-05-19 14:32:04] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:32:05] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_sc3.fits
+[2026-05-19 14:32:05] [selfcal]   Cycle 3/4: elapsed 10.78s
+[2026-05-19 14:32:05] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:32:34] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_sc4.gcal
+[2026-05-19 14:32:35] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:32:35] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_sc4.fits
+[2026-05-19 14:32:35] [selfcal]   Cycle 4/4: elapsed 30.18s
+[2026-05-19 14:32:35] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:33:23] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_final.fits
+[2026-05-19 14:33:23] [selfcal]   Final image: elapsed 48.56s
+[2026-05-19 14:33:23] [selfcal] === Stack done start_idx=151  elapsed 1m38.55s ===
+[2026-05-19 14:33:23] [selfcal] === Stack start_idx=152  n=1  JD=2459421.367167..2459421.367167  timerange=2021/07/25/20:48:39~2021/07/25/20:48:47 ===
+[2026-05-19 14:33:23] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:33:23] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:33:23] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:33:23] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:33:23] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:33:26] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_sc1.gcal
+[2026-05-19 14:33:26] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:33:26] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_sc1.fits
+[2026-05-19 14:33:26] [selfcal]   Cycle 1/4: elapsed 2.85s
+[2026-05-19 14:33:26] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:33:32] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_sc2.gcal
+[2026-05-19 14:33:32] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:33:32] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_sc2.fits
+[2026-05-19 14:33:32] [selfcal]   Cycle 2/4: elapsed 6.23s
+[2026-05-19 14:33:32] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:33:43] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_sc3.gcal
+[2026-05-19 14:33:43] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:33:43] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_sc3.fits
+[2026-05-19 14:33:43] [selfcal]   Cycle 3/4: elapsed 10.73s
+[2026-05-19 14:33:43] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:34:13] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_sc4.gcal
+[2026-05-19 14:34:13] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:34:13] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_sc4.fits
+[2026-05-19 14:34:13] [selfcal]   Cycle 4/4: elapsed 29.98s
+[2026-05-19 14:34:13] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:35:02] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_final.fits
+[2026-05-19 14:35:02] [selfcal]   Final image: elapsed 49.18s
+[2026-05-19 14:35:02] [selfcal] === Stack done start_idx=152  elapsed 1m39.11s ===
+[2026-05-19 14:35:02] [selfcal] === Stack start_idx=153  n=1  JD=2459421.367260..2459421.367260  timerange=2021/07/25/20:48:47~2021/07/25/20:48:55 ===
+[2026-05-19 14:35:02] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:35:02] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:35:02] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:35:02] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:35:02] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:35:05] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_sc1.gcal
+[2026-05-19 14:35:05] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:35:05] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_sc1.fits
+[2026-05-19 14:35:05] [selfcal]   Cycle 1/4: elapsed 2.84s
+[2026-05-19 14:35:05] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:35:11] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_sc2.gcal
+[2026-05-19 14:35:11] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:35:11] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_sc2.fits
+[2026-05-19 14:35:11] [selfcal]   Cycle 2/4: elapsed 6.07s
+[2026-05-19 14:35:11] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:35:22] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_sc3.gcal
+[2026-05-19 14:35:22] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:35:22] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_sc3.fits
+[2026-05-19 14:35:22] [selfcal]   Cycle 3/4: elapsed 10.81s
+[2026-05-19 14:35:22] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:35:53] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_sc4.gcal
+[2026-05-19 14:35:53] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:35:53] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_sc4.fits
+[2026-05-19 14:35:53] [selfcal]   Cycle 4/4: elapsed 30.50s
+[2026-05-19 14:35:53] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:36:42] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_final.fits
+[2026-05-19 14:36:42] [selfcal]   Final image: elapsed 49.60s
+[2026-05-19 14:36:42] [selfcal] === Stack done start_idx=153  elapsed 1m39.94s ===
+[2026-05-19 14:36:42] [selfcal] === Stack start_idx=154  n=1  JD=2459421.367353..2459421.367353  timerange=2021/07/25/20:48:55~2021/07/25/20:49:03 ===
+[2026-05-19 14:36:42] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:36:42] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:36:42] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:36:42] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:36:42] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:36:45] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_sc1.gcal
+[2026-05-19 14:36:45] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:36:45] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_sc1.fits
+[2026-05-19 14:36:45] [selfcal]   Cycle 1/4: elapsed 2.78s
+[2026-05-19 14:36:45] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:36:51] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_sc2.gcal
+[2026-05-19 14:36:51] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:36:51] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_sc2.fits
+[2026-05-19 14:36:51] [selfcal]   Cycle 2/4: elapsed 6.14s
+[2026-05-19 14:36:51] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:37:02] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_sc3.gcal
+[2026-05-19 14:37:02] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:37:02] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_sc3.fits
+[2026-05-19 14:37:02] [selfcal]   Cycle 3/4: elapsed 10.86s
+[2026-05-19 14:37:02] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:37:32] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_sc4.gcal
+[2026-05-19 14:37:32] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:37:32] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_sc4.fits
+[2026-05-19 14:37:32] [selfcal]   Cycle 4/4: elapsed 30.03s
+[2026-05-19 14:37:32] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:38:21] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_final.fits
+[2026-05-19 14:38:21] [selfcal]   Final image: elapsed 48.58s
+[2026-05-19 14:38:21] [selfcal] === Stack done start_idx=154  elapsed 1m38.54s ===
+[2026-05-19 14:38:21] [selfcal] === Stack start_idx=155  n=1  JD=2459421.367447..2459421.367447  timerange=2021/07/25/20:49:03~2021/07/25/20:49:11 ===
+[2026-05-19 14:38:21] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:38:21] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:38:21] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:38:21] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:38:21] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:38:24] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_sc1.gcal
+[2026-05-19 14:38:24] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:38:24] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_sc1.fits
+[2026-05-19 14:38:24] [selfcal]   Cycle 1/4: elapsed 2.81s
+[2026-05-19 14:38:24] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:38:30] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_sc2.gcal
+[2026-05-19 14:38:30] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:38:30] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_sc2.fits
+[2026-05-19 14:38:30] [selfcal]   Cycle 2/4: elapsed 6.32s
+[2026-05-19 14:38:30] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:38:41] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_sc3.gcal
+[2026-05-19 14:38:41] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:38:41] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_sc3.fits
+[2026-05-19 14:38:41] [selfcal]   Cycle 3/4: elapsed 11.02s
+[2026-05-19 14:38:41] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:39:11] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_sc4.gcal
+[2026-05-19 14:39:11] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:39:11] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_sc4.fits
+[2026-05-19 14:39:11] [selfcal]   Cycle 4/4: elapsed 29.71s
+[2026-05-19 14:39:11] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:40:00] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_final.fits
+[2026-05-19 14:40:00] [selfcal]   Final image: elapsed 49.21s
+[2026-05-19 14:40:00] [selfcal] === Stack done start_idx=155  elapsed 1m39.21s ===
+[2026-05-19 14:40:00] [selfcal] === Stack start_idx=156  n=1  JD=2459421.367540..2459421.367540  timerange=2021/07/25/20:49:11~2021/07/25/20:49:19 ===
+[2026-05-19 14:40:00] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:40:00] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:40:00] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:40:00] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:40:00] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:40:03] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_sc1.gcal
+[2026-05-19 14:40:03] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:40:03] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_sc1.fits
+[2026-05-19 14:40:03] [selfcal]   Cycle 1/4: elapsed 2.80s
+[2026-05-19 14:40:03] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:40:09] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_sc2.gcal
+[2026-05-19 14:40:09] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:40:09] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_sc2.fits
+[2026-05-19 14:40:09] [selfcal]   Cycle 2/4: elapsed 6.18s
+[2026-05-19 14:40:09] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:40:20] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_sc3.gcal
+[2026-05-19 14:40:20] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:40:20] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_sc3.fits
+[2026-05-19 14:40:20] [selfcal]   Cycle 3/4: elapsed 10.89s
+[2026-05-19 14:40:20] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:40:50] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_sc4.gcal
+[2026-05-19 14:40:50] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:40:50] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_sc4.fits
+[2026-05-19 14:40:50] [selfcal]   Cycle 4/4: elapsed 30.32s
+[2026-05-19 14:40:50] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:41:40] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_final.fits
+[2026-05-19 14:41:40] [selfcal]   Final image: elapsed 49.33s
+[2026-05-19 14:41:40] [selfcal] === Stack done start_idx=156  elapsed 1m39.66s ===
+[2026-05-19 14:41:40] [selfcal] === Stack start_idx=157  n=1  JD=2459421.367633..2459421.367633  timerange=2021/07/25/20:49:19~2021/07/25/20:49:27 ===
+[2026-05-19 14:41:40] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:41:40] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:41:40] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:41:40] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:41:40] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:41:42] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_sc1.gcal
+[2026-05-19 14:41:43] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:41:43] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_sc1.fits
+[2026-05-19 14:41:43] [selfcal]   Cycle 1/4: elapsed 2.84s
+[2026-05-19 14:41:43] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:41:49] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_sc2.gcal
+[2026-05-19 14:41:49] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:41:49] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_sc2.fits
+[2026-05-19 14:41:49] [selfcal]   Cycle 2/4: elapsed 6.13s
+[2026-05-19 14:41:49] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:42:00] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_sc3.gcal
+[2026-05-19 14:42:00] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:42:00] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_sc3.fits
+[2026-05-19 14:42:00] [selfcal]   Cycle 3/4: elapsed 11.15s
+[2026-05-19 14:42:00] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:42:30] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_sc4.gcal
+[2026-05-19 14:42:31] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:42:31] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_sc4.fits
+[2026-05-19 14:42:31] [selfcal]   Cycle 4/4: elapsed 30.67s
+[2026-05-19 14:42:31] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:43:19] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_final.fits
+[2026-05-19 14:43:19] [selfcal]   Final image: elapsed 48.80s
+[2026-05-19 14:43:19] [selfcal] === Stack done start_idx=157  elapsed 1m39.72s ===
+[2026-05-19 14:43:19] [selfcal] === Stack start_idx=158  n=1  JD=2459421.367726..2459421.367726  timerange=2021/07/25/20:49:27~2021/07/25/20:49:35 ===
+[2026-05-19 14:43:20] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:43:20] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:43:20] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:43:20] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:43:20] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:43:22] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_sc1.gcal
+[2026-05-19 14:43:22] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:43:22] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_sc1.fits
+[2026-05-19 14:43:22] [selfcal]   Cycle 1/4: elapsed 2.81s
+[2026-05-19 14:43:22] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:43:29] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_sc2.gcal
+[2026-05-19 14:43:29] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:43:29] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_sc2.fits
+[2026-05-19 14:43:29] [selfcal]   Cycle 2/4: elapsed 6.61s
+[2026-05-19 14:43:29] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:43:40] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_sc3.gcal
+[2026-05-19 14:43:40] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:43:40] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_sc3.fits
+[2026-05-19 14:43:40] [selfcal]   Cycle 3/4: elapsed 11.21s
+[2026-05-19 14:43:40] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:44:10] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_sc4.gcal
+[2026-05-19 14:44:10] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:44:10] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_sc4.fits
+[2026-05-19 14:44:10] [selfcal]   Cycle 4/4: elapsed 29.90s
+[2026-05-19 14:44:10] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:44:59] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_final.fits
+[2026-05-19 14:44:59] [selfcal]   Final image: elapsed 49.18s
+[2026-05-19 14:44:59] [selfcal] === Stack done start_idx=158  elapsed 1m39.85s ===
+[2026-05-19 14:44:59] [selfcal] === Stack start_idx=159  n=1  JD=2459421.367819..2459421.367819  timerange=2021/07/25/20:49:35~2021/07/25/20:49:43 ===
+[2026-05-19 14:44:59] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:44:59] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:44:59] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:44:59] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:44:59] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:45:02] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_sc1.gcal
+[2026-05-19 14:45:02] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:45:02] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_sc1.fits
+[2026-05-19 14:45:02] [selfcal]   Cycle 1/4: elapsed 2.70s
+[2026-05-19 14:45:02] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:45:08] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_sc2.gcal
+[2026-05-19 14:45:08] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:45:08] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_sc2.fits
+[2026-05-19 14:45:08] [selfcal]   Cycle 2/4: elapsed 6.31s
+[2026-05-19 14:45:08] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:45:19] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_sc3.gcal
+[2026-05-19 14:45:19] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:45:19] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_sc3.fits
+[2026-05-19 14:45:19] [selfcal]   Cycle 3/4: elapsed 10.94s
+[2026-05-19 14:45:19] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:45:49] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_sc4.gcal
+[2026-05-19 14:45:49] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:45:49] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_sc4.fits
+[2026-05-19 14:45:49] [selfcal]   Cycle 4/4: elapsed 29.96s
+[2026-05-19 14:45:49] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:46:39] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_final.fits
+[2026-05-19 14:46:39] [selfcal]   Final image: elapsed 49.22s
+[2026-05-19 14:46:39] [selfcal] === Stack done start_idx=159  elapsed 1m39.26s ===
+[2026-05-19 14:46:39] [selfcal] === Stack start_idx=160  n=1  JD=2459421.367913..2459421.367913  timerange=2021/07/25/20:49:43~2021/07/25/20:49:51 ===
+[2026-05-19 14:46:39] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:46:39] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:46:39] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:46:39] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:46:39] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:46:41] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_sc1.gcal
+[2026-05-19 14:46:41] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:46:41] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_sc1.fits
+[2026-05-19 14:46:41] [selfcal]   Cycle 1/4: elapsed 2.76s
+[2026-05-19 14:46:41] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:46:47] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_sc2.gcal
+[2026-05-19 14:46:47] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:46:48] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_sc2.fits
+[2026-05-19 14:46:48] [selfcal]   Cycle 2/4: elapsed 6.09s
+[2026-05-19 14:46:48] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:46:59] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_sc3.gcal
+[2026-05-19 14:46:59] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:46:59] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_sc3.fits
+[2026-05-19 14:46:59] [selfcal]   Cycle 3/4: elapsed 11.27s
+[2026-05-19 14:46:59] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:47:29] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_sc4.gcal
+[2026-05-19 14:47:30] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:47:30] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_sc4.fits
+[2026-05-19 14:47:30] [selfcal]   Cycle 4/4: elapsed 30.81s
+[2026-05-19 14:47:30] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:48:19] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_final.fits
+[2026-05-19 14:48:19] [selfcal]   Final image: elapsed 49.53s
+[2026-05-19 14:48:19] [selfcal] === Stack done start_idx=160  elapsed 1m40.60s ===
+[2026-05-19 14:48:19] [selfcal] === Stack start_idx=161  n=1  JD=2459421.368006..2459421.368006  timerange=2021/07/25/20:49:51~2021/07/25/20:49:59 ===
+[2026-05-19 14:48:19] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:48:19] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:48:19] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:48:19] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:48:19] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:48:22] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_sc1.gcal
+[2026-05-19 14:48:22] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:48:22] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_sc1.fits
+[2026-05-19 14:48:22] [selfcal]   Cycle 1/4: elapsed 2.75s
+[2026-05-19 14:48:22] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:48:28] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_sc2.gcal
+[2026-05-19 14:48:28] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:48:28] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_sc2.fits
+[2026-05-19 14:48:28] [selfcal]   Cycle 2/4: elapsed 6.20s
+[2026-05-19 14:48:28] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:48:39] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_sc3.gcal
+[2026-05-19 14:48:39] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:48:39] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_sc3.fits
+[2026-05-19 14:48:39] [selfcal]   Cycle 3/4: elapsed 11.11s
+[2026-05-19 14:48:39] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:49:09] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_sc4.gcal
+[2026-05-19 14:49:10] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:49:10] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_sc4.fits
+[2026-05-19 14:49:10] [selfcal]   Cycle 4/4: elapsed 30.28s
+[2026-05-19 14:49:10] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:49:59] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_final.fits
+[2026-05-19 14:49:59] [selfcal]   Final image: elapsed 49.42s
+[2026-05-19 14:49:59] [selfcal] === Stack done start_idx=161  elapsed 1m39.88s ===
+[2026-05-19 14:49:59] [selfcal] === Stack start_idx=162  n=1  JD=2459421.368099..2459421.368099  timerange=2021/07/25/20:49:59~2021/07/25/20:50:07 ===
+[2026-05-19 14:49:59] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:49:59] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:49:59] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:49:59] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:49:59] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:50:02] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_sc1.gcal
+[2026-05-19 14:50:02] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:50:02] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_sc1.fits
+[2026-05-19 14:50:02] [selfcal]   Cycle 1/4: elapsed 2.77s
+[2026-05-19 14:50:02] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:50:08] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_sc2.gcal
+[2026-05-19 14:50:08] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:50:08] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_sc2.fits
+[2026-05-19 14:50:08] [selfcal]   Cycle 2/4: elapsed 6.05s
+[2026-05-19 14:50:08] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:50:19] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_sc3.gcal
+[2026-05-19 14:50:19] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:50:19] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_sc3.fits
+[2026-05-19 14:50:19] [selfcal]   Cycle 3/4: elapsed 11.08s
+[2026-05-19 14:50:19] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:50:50] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_sc4.gcal
+[2026-05-19 14:50:50] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:50:50] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_sc4.fits
+[2026-05-19 14:50:50] [selfcal]   Cycle 4/4: elapsed 30.72s
+[2026-05-19 14:50:50] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:51:40] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_final.fits
+[2026-05-19 14:51:40] [selfcal]   Final image: elapsed 50.11s
+[2026-05-19 14:51:40] [selfcal] === Stack done start_idx=162  elapsed 1m40.85s ===
+[2026-05-19 14:51:40] [selfcal] === Stack start_idx=163  n=1  JD=2459421.368192..2459421.368192  timerange=2021/07/25/20:50:07~2021/07/25/20:50:15 ===
+[2026-05-19 14:51:40] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:51:40] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:51:40] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:51:40] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:51:40] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:51:43] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_sc1.gcal
+[2026-05-19 14:51:43] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:51:43] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_sc1.fits
+[2026-05-19 14:51:43] [selfcal]   Cycle 1/4: elapsed 2.82s
+[2026-05-19 14:51:43] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:51:49] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_sc2.gcal
+[2026-05-19 14:51:49] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:51:49] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_sc2.fits
+[2026-05-19 14:51:49] [selfcal]   Cycle 2/4: elapsed 6.34s
+[2026-05-19 14:51:49] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:52:00] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_sc3.gcal
+[2026-05-19 14:52:00] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:52:00] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_sc3.fits
+[2026-05-19 14:52:00] [selfcal]   Cycle 3/4: elapsed 11.27s
+[2026-05-19 14:52:00] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:52:31] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_sc4.gcal
+[2026-05-19 14:52:31] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:52:31] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_sc4.fits
+[2026-05-19 14:52:31] [selfcal]   Cycle 4/4: elapsed 30.37s
+[2026-05-19 14:52:31] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:53:20] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_final.fits
+[2026-05-19 14:53:20] [selfcal]   Final image: elapsed 48.99s
+[2026-05-19 14:53:20] [selfcal] === Stack done start_idx=163  elapsed 1m39.92s ===
+[2026-05-19 14:53:20] [selfcal] === Stack start_idx=164  n=1  JD=2459421.368285..2459421.368285  timerange=2021/07/25/20:50:15~2021/07/25/20:50:23 ===
+[2026-05-19 14:53:20] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:53:20] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:53:20] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:53:20] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:53:20] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:53:23] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_sc1.gcal
+[2026-05-19 14:53:23] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:53:23] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_sc1.fits
+[2026-05-19 14:53:23] [selfcal]   Cycle 1/4: elapsed 2.79s
+[2026-05-19 14:53:23] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:53:29] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_sc2.gcal
+[2026-05-19 14:53:29] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:53:29] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_sc2.fits
+[2026-05-19 14:53:29] [selfcal]   Cycle 2/4: elapsed 6.46s
+[2026-05-19 14:53:29] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:53:40] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_sc3.gcal
+[2026-05-19 14:53:40] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:53:41] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_sc3.fits
+[2026-05-19 14:53:41] [selfcal]   Cycle 3/4: elapsed 11.28s
+[2026-05-19 14:53:41] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:54:10] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_sc4.gcal
+[2026-05-19 14:54:10] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:54:11] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_sc4.fits
+[2026-05-19 14:54:11] [selfcal]   Cycle 4/4: elapsed 30.02s
+[2026-05-19 14:54:11] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:55:00] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_final.fits
+[2026-05-19 14:55:00] [selfcal]   Final image: elapsed 49.59s
+[2026-05-19 14:55:00] [selfcal] === Stack done start_idx=164  elapsed 1m40.29s ===
+[2026-05-19 14:55:00] [selfcal] === Stack start_idx=165  n=1  JD=2459421.368379..2459421.368379  timerange=2021/07/25/20:50:23~2021/07/25/20:50:31 ===
+[2026-05-19 14:55:00] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:55:00] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:55:00] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:55:00] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:55:00] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:55:03] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_sc1.gcal
+[2026-05-19 14:55:03] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:55:03] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_sc1.fits
+[2026-05-19 14:55:03] [selfcal]   Cycle 1/4: elapsed 2.81s
+[2026-05-19 14:55:03] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:55:09] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_sc2.gcal
+[2026-05-19 14:55:09] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:55:09] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_sc2.fits
+[2026-05-19 14:55:09] [selfcal]   Cycle 2/4: elapsed 6.22s
+[2026-05-19 14:55:09] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:55:20] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_sc3.gcal
+[2026-05-19 14:55:20] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:55:20] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_sc3.fits
+[2026-05-19 14:55:20] [selfcal]   Cycle 3/4: elapsed 11.09s
+[2026-05-19 14:55:20] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:55:51] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_sc4.gcal
+[2026-05-19 14:55:51] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:55:51] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_sc4.fits
+[2026-05-19 14:55:51] [selfcal]   Cycle 4/4: elapsed 30.60s
+[2026-05-19 14:55:51] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:56:40] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_final.fits
+[2026-05-19 14:56:40] [selfcal]   Final image: elapsed 49.14s
+[2026-05-19 14:56:40] [selfcal] === Stack done start_idx=165  elapsed 1m40.00s ===
+[2026-05-19 14:56:40] [selfcal] === Stack start_idx=166  n=1  JD=2459421.368472..2459421.368472  timerange=2021/07/25/20:50:31~2021/07/25/20:50:39 ===
+[2026-05-19 14:56:40] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:56:40] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:56:40] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:56:40] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:56:40] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:56:43] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_sc1.gcal
+[2026-05-19 14:56:43] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:56:43] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_sc1.fits
+[2026-05-19 14:56:43] [selfcal]   Cycle 1/4: elapsed 2.72s
+[2026-05-19 14:56:43] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:56:49] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_sc2.gcal
+[2026-05-19 14:56:49] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:56:49] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_sc2.fits
+[2026-05-19 14:56:49] [selfcal]   Cycle 2/4: elapsed 6.09s
+[2026-05-19 14:56:49] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:57:00] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_sc3.gcal
+[2026-05-19 14:57:00] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:57:00] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_sc3.fits
+[2026-05-19 14:57:00] [selfcal]   Cycle 3/4: elapsed 10.98s
+[2026-05-19 14:57:00] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:57:30] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_sc4.gcal
+[2026-05-19 14:57:30] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:57:30] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_sc4.fits
+[2026-05-19 14:57:30] [selfcal]   Cycle 4/4: elapsed 30.38s
+[2026-05-19 14:57:30] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:58:19] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_final.fits
+[2026-05-19 14:58:19] [selfcal]   Final image: elapsed 48.38s
+[2026-05-19 14:58:19] [selfcal] === Stack done start_idx=166  elapsed 1m38.70s ===
+[2026-05-19 14:58:19] [selfcal] === Stack start_idx=167  n=1  JD=2459421.368565..2459421.368565  timerange=2021/07/25/20:50:40~2021/07/25/20:50:48 ===
+[2026-05-19 14:58:19] [selfcal]   3C468.1 at RA=357.7289°  Dec=64.6716°  offset=0.00arcmin from field centre  (image half-width=12.8arcmin)
+[2026-05-19 14:58:19] [selfcal]   target-mode: fixed-target
+[2026-05-19 14:58:19] [selfcal]   mask: <disabled by --no-mask>
+[2026-05-19 14:58:19] [selfcal]   tclean phasecenter: DISABLED (using MS native phase centre)
+[2026-05-19 14:58:19] [selfcal]   Cycle 1/4: tclean niter=300  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:58:21] [selfcal]   Cycle 1/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_sc1.gcal
+[2026-05-19 14:58:22] [selfcal]   Cycle 1/4: applycal
+[2026-05-19 14:58:22] [selfcal]   Cycle 1/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_sc1.fits
+[2026-05-19 14:58:22] [selfcal]   Cycle 1/4: elapsed 2.73s
+[2026-05-19 14:58:22] [selfcal]   Cycle 2/4: tclean niter=1000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:58:28] [selfcal]   Cycle 2/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_sc2.gcal
+[2026-05-19 14:58:28] [selfcal]   Cycle 2/4: applycal
+[2026-05-19 14:58:28] [selfcal]   Cycle 2/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_sc2.fits
+[2026-05-19 14:58:28] [selfcal]   Cycle 2/4: elapsed 6.20s
+[2026-05-19 14:58:28] [selfcal]   Cycle 3/4: tclean niter=2000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:58:39] [selfcal]   Cycle 3/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_sc3.gcal
+[2026-05-19 14:58:39] [selfcal]   Cycle 3/4: applycal
+[2026-05-19 14:58:39] [selfcal]   Cycle 3/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_sc3.fits
+[2026-05-19 14:58:39] [selfcal]   Cycle 3/4: elapsed 10.92s
+[2026-05-19 14:58:39] [selfcal]   Cycle 4/4: tclean niter=6000  img_uvrange=''  cal_uvrange=''  scales=[]
+[2026-05-19 14:59:08] [selfcal]   Cycle 4/4: gaincal → /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_sc4.gcal
+[2026-05-19 14:59:08] [selfcal]   Cycle 4/4: applycal
+[2026-05-19 14:59:09] [selfcal]   Cycle 4/4: exported /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_sc4.fits
+[2026-05-19 14:59:09] [selfcal]   Cycle 4/4: elapsed 29.79s
+[2026-05-19 14:59:09] [selfcal]   Final image: niter=10000  uvrange=''
+[2026-05-19 14:59:57] [selfcal]   Exported: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_final.fits
+[2026-05-19 14:59:57] [selfcal]   Final image: elapsed 48.81s
+[2026-05-19 14:59:57] [selfcal] === Stack done start_idx=167  elapsed 1m38.57s ===
+[2026-05-19 14:59:57] [selfcal] Done.  38 stacks processed.
+[2026-05-19 14:59:57] [selfcal] Summary: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/summary.json
+swig/python detected a memory leak of type 'casac::coordsys *', no destructor found.
+[run-3c468.1-selfcal] Optional movie generation disabled (MAKE_MOVIE_AFTER_SELFCAL=0).
+
+Log: /Users/raj030/DATA/gmrt_40_014/work/logs/run_3c468.1_selfcal_scan05_20260519_135646_p61377_r22611.log
+Cmd: /Users/raj030/DATA/gmrt_40_014/work/logs/run_3c468.1_selfcal_scan05_20260519_135646_p61377_r22611.cmd
+Outputs: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1
+[2026-05-19 14:59:58] STEP 16 DONE  (optional): 3C468.1 selfcal imaging (scan5)
+[2026-05-19 14:59:58] STEP 17 START (optional): 3C468.1 post-selfcal artifacts (stack + movie + RMS)
+[2026-05-19 14:59:58] COMMAND: env WORK_SELFCAL_ROOT=/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal RUN_ID=20260519_135646_p61377_r22611 SELFCAL_GLOB=3c468.1_scan*_stk* bash /Users/raj030/github-wasimraja81/gmrt_analysis/bin/run_3c468.1_post_selfcal_artifacts.sh
+[3c468.1-post] python            : /Users/raj030/github-wasimraja81/gmrt_analysis/gmrt/bin/python
+[3c468.1-post] selfcal root       : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal
+[3c468.1-post] selfcal glob       : 3c468.1_scan*_stk*
+[3c468.1-post] run id            : 20260519_135646_p61377_r22611
+[3c468.1-post] force rebuild      : 0
+[3c468.1-post] --- processing: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1
+[run-moon-selfcal-movie] cmd       : /Users/raj030/DATA/gmrt_40_014/work/logs/run_moon_selfcal_movie_3c468.1_20260519_145958.cmd
+[run-moon-selfcal-movie] log       : /Users/raj030/DATA/gmrt_40_014/work/logs/run_moon_selfcal_movie_3c468.1_20260519_145958.log
+[run-moon-selfcal-movie] selfcal   : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1
+[run-moon-selfcal-movie] compare   : <none>
+[run-moon-selfcal-movie] out_mp4   : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4
+[run-moon-selfcal-movie] out_gif   : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.gif
+[run-moon-selfcal-movie] out_mov   : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mov
+ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/movie_frames/frame_%04d.png':
+  Duration: 00:00:09.50, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 720x720 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (png (native) -> h264 (libx264))
+Press [q] to stop, [?] for help
+[libx264 @ 0x12be08ba0] using SAR=1/1
+[libx264 @ 0x12be08ba0] using cpu capabilities: ARMv8 NEON
+[libx264 @ 0x12be08ba0] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x12be08ba0] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=21 lookahead_threads=3 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=4 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
+Output #0, mp4, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 720x720 [SAR 1:1 DAR 1:1], q=2-31, 4 fps, 16384 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 libx264
+      Side data:
+        cpb: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
+[out#0/mp4 @ 0x12bf057f0] video:1412KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.093249%
+frame=   38 fps=0.0 q=-1.0 Lsize=    1413KiB time=00:00:09.00 bitrate=1286.2kbits/s speed=59.9x    
+[libx264 @ 0x12be08ba0] frame I:1     Avg QP:17.47  size: 63452
+[libx264 @ 0x12be08ba0] frame P:10    Avg QP:20.16  size: 44827
+[libx264 @ 0x12be08ba0] frame B:27    Avg QP:20.70  size: 34562
+[libx264 @ 0x12be08ba0] consecutive B-frames:  5.3%  0.0%  0.0% 94.7%
+[libx264 @ 0x12be08ba0] mb I  I16..4: 24.7% 42.9% 32.4%
+[libx264 @ 0x12be08ba0] mb P  I16..4:  0.1% 19.1%  8.2%  P16..4:  7.5% 13.4% 13.8%  0.0%  0.0%    skip:37.8%
+[libx264 @ 0x12be08ba0] mb B  I16..4:  0.0% 10.0%  5.0%  B16..8: 11.2% 14.8% 12.7%  direct: 7.6%  skip:38.8%  L0:37.5% L1:35.0% BI:27.4%
+[libx264 @ 0x12be08ba0] 8x8 transform intra:64.6% inter:70.6%
+[libx264 @ 0x12be08ba0] coded y,uvDC,uvAC intra: 93.2% 94.3% 94.1% inter: 46.3% 47.5% 40.9%
+[libx264 @ 0x12be08ba0] i16 v,h,dc,p: 77% 15%  8%  0%
+[libx264 @ 0x12be08ba0] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu:  7%  7%  9%  2% 31%  9% 26%  2%  6%
+[libx264 @ 0x12be08ba0] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 11%  9%  7%  2% 30% 12% 21%  3%  5%
+[libx264 @ 0x12be08ba0] i8c dc,h,v,p: 68% 14%  9%  9%
+[libx264 @ 0x12be08ba0] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x12be08ba0] ref P L0: 33.6% 16.4% 33.1% 16.9%
+[libx264 @ 0x12be08ba0] ref B L0: 73.2% 20.8%  5.9%
+[libx264 @ 0x12be08ba0] ref B L1: 88.5% 11.5%
+[libx264 @ 0x12be08ba0] kb/s:1216.76
+ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/movie_frames/frame_%04d.png':
+  Duration: 00:00:09.50, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 720x720 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (png (native) -> png (native))
+Press [q] to stop, [?] for help
+[Parsed_palettegen_1 @ 0x133f0ab40] 255(+1) colors generated out of 27338 colors; ratio=0.009328
+[Parsed_palettegen_1 @ 0x133f0ab40] Duped color: FF21114D
+[Parsed_palettegen_1 @ 0x133f0ab40] Duped color: FF420F74
+[Parsed_palettegen_1 @ 0x133f0ab40] Duped color: FF481077
+[Parsed_palettegen_1 @ 0x133f0ab40] Duped color: FF6E1D80
+Output #0, image2, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/movie_frames/palette.png':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown, progressive), 16x16 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 4 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 png
+[image2 @ 0x133f07250] The specified filename '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/movie_frames/palette.png' does not contain an image sequence pattern or a pattern is invalid.
+[image2 @ 0x133f07250] Use a pattern such as %03d for an image sequence or use the -update option (with -frames:v 1 if needed) to write a single image.
+[out#0/image2 @ 0x133f07ed0] video:1KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.25 bitrate=N/A speed=4.11x    
+ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/movie_frames/frame_%04d.png':
+  Duration: 00:00:09.50, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 720x720 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+Input #1, png_pipe, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/movie_frames/palette.png':
+  Duration: N/A, bitrate: N/A
+  Stream #1:0: Video: png, rgba(pc, gbr/unknown/unknown), 16x16 [SAR 1:1 DAR 1:1], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 (png) -> fps:default
+  Stream #1:0 (png) -> paletteuse
+  paletteuse:default -> Stream #0:0 (gif)
+Press [q] to stop, [?] for help
+Output #0, gif, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.gif':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: gif, pal8(pc, gbr/unknown/unknown, progressive), 720x720 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 100 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 gif
+[out#0/gif @ 0x159632080] video:9503KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000206%
+frame=   38 fps=0.0 q=-0.0 Lsize=    9503KiB time=00:00:09.50 bitrate=8194.9kbits/s speed=  24x    
+ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/movie_frames/frame_%04d.png':
+  Duration: 00:00:09.50, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 720x720 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (png (native) -> prores (prores_ks))
+Press [q] to stop, [?] for help
+Output #0, mov, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mov':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: prores (HQ) (apch / 0x68637061), yuv422p10le(tv, progressive), 720x720 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 16384 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 prores_ks
+[out#0/mov @ 0x129706de0] video:8475KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.010843%
+frame=   38 fps=0.0 q=-0.0 Lsize=    8476KiB time=00:00:09.50 bitrate=7308.9kbits/s speed=87.1x    
+[moon-selfcal-movie] selfcal_dir : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1
+[moon-selfcal-movie] frames     : 38
+[moon-selfcal-movie] frames_dir : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/movie_frames
+[moon-selfcal-movie] scale      : vmin=-0.0213548, vmax=0.0670804
+[moon-selfcal-movie] out_mp4    : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4
+[moon-selfcal-movie] out_gif    : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.gif
+[moon-selfcal-movie] out_mov    : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mov
+[moon-selfcal-movie] done. duration≈9.50s
+
+Log: /Users/raj030/DATA/gmrt_40_014/work/logs/run_moon_selfcal_movie_3c468.1_20260519_145958.log
+Cmd: /Users/raj030/DATA/gmrt_40_014/work/logs/run_moon_selfcal_movie_3c468.1_20260519_145958.cmd
+Movie MP4: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4
+Movie GIF: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.gif
+Movie MOV: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mov
+[provenance] cmd: /Users/raj030/github-wasimraja81/gmrt_analysis/provenance_logs/run_stack_moon_snapshots_3c468.1_stack_mean_20260519_150005.cmd
+[provenance] log: /Users/raj030/github-wasimraja81/gmrt_analysis/provenance_logs/run_stack_moon_snapshots_3c468.1_stack_mean_20260519_150005.log
+[stack] Found 38 FITS files under /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1
+[stack] Reference stack from mean JD: [18] 3c468p1_int0148_final.fits (JD=2459421.36679411, mean=2459421.36684072)
+[stack] Registration mode: none
+[stack] Registration method: <none> (no image shifts will be applied)
+[stack] Shift table values are fixed to 0.0 pix (direct co-add mode).
+[stack] Shift conversion: 1 pix = 1.5000 arcsec
+
+   #  file                                             dr_pix    dc_pix   dr_arcsec   dc_arcsec  r_arcmin
+------------------------------------------------------------------------------------------------------------------
+   0  3c468p1_int0130_final.fits                        0.000     0.000       0.000       0.000     0.000
+   1  3c468p1_int0131_final.fits                        0.000     0.000       0.000       0.000     0.000
+   2  3c468p1_int0132_final.fits                        0.000     0.000       0.000       0.000     0.000
+   3  3c468p1_int0133_final.fits                        0.000     0.000       0.000       0.000     0.000
+   4  3c468p1_int0134_final.fits                        0.000     0.000       0.000       0.000     0.000
+   5  3c468p1_int0135_final.fits                        0.000     0.000       0.000       0.000     0.000
+   6  3c468p1_int0136_final.fits                        0.000     0.000       0.000       0.000     0.000
+   7  3c468p1_int0137_final.fits                        0.000     0.000       0.000       0.000     0.000
+   8  3c468p1_int0138_final.fits                        0.000     0.000       0.000       0.000     0.000
+   9  3c468p1_int0139_final.fits                        0.000     0.000       0.000       0.000     0.000
+  10  3c468p1_int0140_final.fits                        0.000     0.000       0.000       0.000     0.000
+  11  3c468p1_int0141_final.fits                        0.000     0.000       0.000       0.000     0.000
+  12  3c468p1_int0142_final.fits                        0.000     0.000       0.000       0.000     0.000
+  13  3c468p1_int0143_final.fits                        0.000     0.000       0.000       0.000     0.000
+  14  3c468p1_int0144_final.fits                        0.000     0.000       0.000       0.000     0.000
+  15  3c468p1_int0145_final.fits                        0.000     0.000       0.000       0.000     0.000
+  16  3c468p1_int0146_final.fits                        0.000     0.000       0.000       0.000     0.000
+  17  3c468p1_int0147_final.fits                        0.000     0.000       0.000       0.000     0.000
+  18  3c468p1_int0148_final.fits                        0.000     0.000       0.000       0.000     0.000
+  19  3c468p1_int0149_final.fits                        0.000     0.000       0.000       0.000     0.000
+  20  3c468p1_int0150_final.fits                        0.000     0.000       0.000       0.000     0.000
+  21  3c468p1_int0151_final.fits                        0.000     0.000       0.000       0.000     0.000
+  22  3c468p1_int0152_final.fits                        0.000     0.000       0.000       0.000     0.000
+  23  3c468p1_int0153_final.fits                        0.000     0.000       0.000       0.000     0.000
+  24  3c468p1_int0154_final.fits                        0.000     0.000       0.000       0.000     0.000
+  25  3c468p1_int0155_final.fits                        0.000     0.000       0.000       0.000     0.000
+  26  3c468p1_int0156_final.fits                        0.000     0.000       0.000       0.000     0.000
+  27  3c468p1_int0157_final.fits                        0.000     0.000       0.000       0.000     0.000
+  28  3c468p1_int0158_final.fits                        0.000     0.000       0.000       0.000     0.000
+  29  3c468p1_int0159_final.fits                        0.000     0.000       0.000       0.000     0.000
+  30  3c468p1_int0160_final.fits                        0.000     0.000       0.000       0.000     0.000
+  31  3c468p1_int0161_final.fits                        0.000     0.000       0.000       0.000     0.000
+  32  3c468p1_int0162_final.fits                        0.000     0.000       0.000       0.000     0.000
+  33  3c468p1_int0163_final.fits                        0.000     0.000       0.000       0.000     0.000
+  34  3c468p1_int0164_final.fits                        0.000     0.000       0.000       0.000     0.000
+  35  3c468p1_int0165_final.fits                        0.000     0.000       0.000       0.000     0.000
+  36  3c468p1_int0166_final.fits                        0.000     0.000       0.000       0.000     0.000
+  37  3c468p1_int0167_final.fits                        0.000     0.000       0.000       0.000     0.000
+
+[stack] Stacked 38 images using mean.
+[stack] Result shape: (1024, 1024)   peak=18.3491  rms=0.0894
+[stack] Written: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.fits
+[stack] Saved preview PNG: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.png
+[3c468.1-rms] ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+[3c468.1-rms]   built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+[3c468.1-rms]   configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+[3c468.1-rms]   libavutil      59. 39.100 / 59. 39.100
+[3c468.1-rms]   libavcodec     61. 19.101 / 61. 19.101
+[3c468.1-rms]   libavformat    61.  7.100 / 61.  7.100
+[3c468.1-rms]   libavdevice    61.  3.100 / 61.  3.100
+[3c468.1-rms]   libavfilter    10.  4.100 / 10.  4.100
+[3c468.1-rms]   libswscale      8.  3.100 /  8.  3.100
+[3c468.1-rms]   libswresample   5.  3.100 /  5.  3.100
+[3c468.1-rms]   libpostproc    58.  3.100 / 58.  3.100
+[3c468.1-rms] Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/cumulative_frames/frame_%04d.png':
+[3c468.1-rms]   Duration: 00:00:09.50, start: 0.000000, bitrate: N/A
+[3c468.1-rms]   Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 864x864 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+[3c468.1-rms] Stream mapping:
+[3c468.1-rms]   Stream #0:0 -> #0:0 (png (native) -> h264 (libx264))
+[3c468.1-rms] Press [q] to stop, [?] for help
+[3c468.1-rms] [libx264 @ 0x14c708eb0] using SAR=1/1
+[3c468.1-rms] [libx264 @ 0x14c708eb0] using cpu capabilities: ARMv8 NEON
+[3c468.1-rms] [libx264 @ 0x14c708eb0] profile High, level 3.1, 4:2:0, 8-bit
+[3c468.1-rms] [libx264 @ 0x14c708eb0] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=21 lookahead_threads=3 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=4 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
+[3c468.1-rms] Output #0, mp4, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_scan05_stk1_cumulative_coadd.mp4':
+[3c468.1-rms]   Metadata:
+[3c468.1-rms]     encoder         : Lavf61.7.100
+[3c468.1-rms]   Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 864x864 [SAR 1:1 DAR 1:1], q=2-31, 4 fps, 16384 tbn
+[3c468.1-rms]       Metadata:
+[3c468.1-rms]         encoder         : Lavc61.19.101 libx264
+[3c468.1-rms]       Side data:
+[3c468.1-rms]         cpb: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
+[3c468.1-rms] [out#0/mp4 @ 0x14c707f50] video:615KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.191217%
+[3c468.1-rms] frame=   38 fps=0.0 q=-1.0 Lsize=     616KiB time=00:00:09.00 bitrate= 560.8kbits/s speed=75.7x    
+[3c468.1-rms] [libx264 @ 0x14c708eb0] frame I:1     Avg QP:16.49  size: 86172
+[3c468.1-rms] [libx264 @ 0x14c708eb0] frame P:27    Avg QP:16.68  size: 16590
+[3c468.1-rms] [libx264 @ 0x14c708eb0] frame B:10    Avg QP:20.73  size:  9487
+[3c468.1-rms] [libx264 @ 0x14c708eb0] consecutive B-frames: 55.3% 26.3%  7.9% 10.5%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] mb I  I16..4: 32.3% 38.5% 29.2%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] mb P  I16..4:  0.1%  1.3%  0.7%  P16..4: 16.8% 15.0% 12.5%  0.0%  0.0%    skip:53.6%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] mb B  I16..4:  0.1%  0.5%  0.1%  B16..8: 16.4%  4.1%  3.9%  direct: 7.0%  skip:68.0%  L0:13.7% L1:73.3% BI:13.0%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] 8x8 transform intra:49.3% inter:58.4%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] coded y,uvDC,uvAC intra: 73.6% 73.9% 73.5% inter: 23.3% 29.5% 17.1%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] i16 v,h,dc,p: 81% 13%  6%  0%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 10% 11%  9%  2% 23%  9% 25%  2%  7%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 18% 19%  7%  2% 20% 10% 17%  3%  5%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] i8c dc,h,v,p: 60% 18% 11% 10%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] Weighted P-Frames: Y:0.0% UV:0.0%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] ref P L0: 75.6% 22.2%  1.8%  0.4%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] ref B L0: 98.0%  1.9%  0.1%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] ref B L1: 97.8%  2.2%
+[3c468.1-rms] [libx264 @ 0x14c708eb0] kb/s:529.65
+[3c468.1-rms] ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+[3c468.1-rms]   built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+[3c468.1-rms]   configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+[3c468.1-rms]   libavutil      59. 39.100 / 59. 39.100
+[3c468.1-rms]   libavcodec     61. 19.101 / 61. 19.101
+[3c468.1-rms]   libavformat    61.  7.100 / 61.  7.100
+[3c468.1-rms]   libavdevice    61.  3.100 / 61.  3.100
+[3c468.1-rms]   libavfilter    10.  4.100 / 10.  4.100
+[3c468.1-rms]   libswscale      8.  3.100 /  8.  3.100
+[3c468.1-rms]   libswresample   5.  3.100 /  5.  3.100
+[3c468.1-rms]   libpostproc    58.  3.100 / 58.  3.100
+[3c468.1-rms] Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/cumulative_frames/frame_%04d.png':
+[3c468.1-rms]   Duration: 00:00:09.50, start: 0.000000, bitrate: N/A
+[3c468.1-rms]   Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 864x864 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+[3c468.1-rms] Stream mapping:
+[3c468.1-rms]   Stream #0:0 -> #0:0 (png (native) -> png (native))
+[3c468.1-rms] Press [q] to stop, [?] for help
+[3c468.1-rms] [Parsed_palettegen_1 @ 0x107704b40] 255(+1) colors generated out of 34134 colors; ratio=0.007471
+[3c468.1-rms] [Parsed_palettegen_1 @ 0x107704b40] Duped color: FF1F114A
+[3c468.1-rms] [Parsed_palettegen_1 @ 0x107704b40] Duped color: FF3C0F6F
+[3c468.1-rms] [Parsed_palettegen_1 @ 0x107704b40] Duped color: FF4A1079
+[3c468.1-rms] [Parsed_palettegen_1 @ 0x107704b40] Duped color: FF4F127A
+[3c468.1-rms] Output #0, image2, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/cumulative_frames/palette.png':
+[3c468.1-rms]   Metadata:
+[3c468.1-rms]     encoder         : Lavf61.7.100
+[3c468.1-rms]   Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown, progressive), 16x16 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 4 tbn
+[3c468.1-rms]       Metadata:
+[3c468.1-rms]         encoder         : Lavc61.19.101 png
+[3c468.1-rms] [image2 @ 0x12c705d20] The specified filename '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/cumulative_frames/palette.png' does not contain an image sequence pattern or a pattern is invalid.
+[3c468.1-rms] [image2 @ 0x12c705d20] Use a pattern such as %03d for an image sequence or use the -update option (with -frames:v 1 if needed) to write a single image.
+[3c468.1-rms] [out#0/image2 @ 0x12c704f60] video:1KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+[3c468.1-rms] frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.25 bitrate=N/A speed=3.01x    
+[3c468.1-rms] ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+[3c468.1-rms]   built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+[3c468.1-rms]   configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+[3c468.1-rms]   libavutil      59. 39.100 / 59. 39.100
+[3c468.1-rms]   libavcodec     61. 19.101 / 61. 19.101
+[3c468.1-rms]   libavformat    61.  7.100 / 61.  7.100
+[3c468.1-rms]   libavdevice    61.  3.100 / 61.  3.100
+[3c468.1-rms]   libavfilter    10.  4.100 / 10.  4.100
+[3c468.1-rms]   libswscale      8.  3.100 /  8.  3.100
+[3c468.1-rms]   libswresample   5.  3.100 /  5.  3.100
+[3c468.1-rms]   libpostproc    58.  3.100 / 58.  3.100
+[3c468.1-rms] Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/cumulative_frames/frame_%04d.png':
+[3c468.1-rms]   Duration: 00:00:09.50, start: 0.000000, bitrate: N/A
+[3c468.1-rms]   Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 864x864 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+[3c468.1-rms] Input #1, png_pipe, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/cumulative_frames/palette.png':
+[3c468.1-rms]   Duration: N/A, bitrate: N/A
+[3c468.1-rms]   Stream #1:0: Video: png, rgba(pc, gbr/unknown/unknown), 16x16 [SAR 1:1 DAR 1:1], 25 fps, 25 tbr, 25 tbn
+[3c468.1-rms] Stream mapping:
+[3c468.1-rms]   Stream #0:0 (png) -> fps:default
+[3c468.1-rms]   Stream #1:0 (png) -> paletteuse
+[3c468.1-rms]   paletteuse:default -> Stream #0:0 (gif)
+[3c468.1-rms] Press [q] to stop, [?] for help
+[3c468.1-rms] Output #0, gif, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_scan05_stk1_cumulative_coadd.gif':
+[3c468.1-rms]   Metadata:
+[3c468.1-rms]     encoder         : Lavf61.7.100
+[3c468.1-rms]   Stream #0:0: Video: gif, pal8(pc, gbr/unknown/unknown, progressive), 864x864 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 100 tbn
+[3c468.1-rms]       Metadata:
+[3c468.1-rms]         encoder         : Lavc61.19.101 gif
+[3c468.1-rms] frame=   32 fps=0.0 q=-0.0 size=    7168KiB time=00:00:08.00 bitrate=7340.0kbits/s speed=  16x    [out#0/gif @ 0x136637c40] video:8572KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000228%
+[3c468.1-rms] frame=   38 fps=0.0 q=-0.0 Lsize=    8572KiB time=00:00:09.50 bitrate=7391.7kbits/s speed=16.2x    
+[3c468.1-rms] ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+[3c468.1-rms]   built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+[3c468.1-rms]   configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+[3c468.1-rms]   libavutil      59. 39.100 / 59. 39.100
+[3c468.1-rms]   libavcodec     61. 19.101 / 61. 19.101
+[3c468.1-rms]   libavformat    61.  7.100 / 61.  7.100
+[3c468.1-rms]   libavdevice    61.  3.100 / 61.  3.100
+[3c468.1-rms]   libavfilter    10.  4.100 / 10.  4.100
+[3c468.1-rms]   libswscale      8.  3.100 /  8.  3.100
+[3c468.1-rms]   libswresample   5.  3.100 /  5.  3.100
+[3c468.1-rms]   libpostproc    58.  3.100 / 58.  3.100
+[3c468.1-rms] Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/cumulative_frames/frame_%04d.png':
+[3c468.1-rms]   Duration: 00:00:09.50, start: 0.000000, bitrate: N/A
+[3c468.1-rms]   Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 864x864 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+[3c468.1-rms] Stream mapping:
+[3c468.1-rms]   Stream #0:0 -> #0:0 (png (native) -> prores (prores_ks))
+[3c468.1-rms] Press [q] to stop, [?] for help
+[3c468.1-rms] Output #0, mov, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_scan05_stk1_cumulative_coadd.mov':
+[3c468.1-rms]   Metadata:
+[3c468.1-rms]     encoder         : Lavf61.7.100
+[3c468.1-rms]   Stream #0:0: Video: prores (HQ) (apch / 0x68637061), yuv422p10le(tv, progressive), 864x864 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 16384 tbn
+[3c468.1-rms]       Metadata:
+[3c468.1-rms]         encoder         : Lavc61.19.101 prores_ks
+[3c468.1-rms] [out#0/mov @ 0x147707f60] video:11094KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.008389%
+[3c468.1-rms] frame=   38 fps=0.0 q=-0.0 Lsize=   11095KiB time=00:00:09.50 bitrate=9567.6kbits/s speed=62.2x    
+[3c468.1-rms] [cum-coadd] frame_shift  00 (3c468p1_int0130_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  01 (3c468p1_int0131_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  02 (3c468p1_int0132_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  03 (3c468p1_int0133_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  04 (3c468p1_int0134_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  05 (3c468p1_int0135_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  06 (3c468p1_int0136_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  07 (3c468p1_int0137_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  08 (3c468p1_int0138_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  09 (3c468p1_int0139_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  10 (3c468p1_int0140_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  11 (3c468p1_int0141_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  12 (3c468p1_int0142_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  13 (3c468p1_int0143_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  14 (3c468p1_int0144_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  15 (3c468p1_int0145_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  16 (3c468p1_int0146_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  17 (3c468p1_int0147_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  18 (3c468p1_int0148_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  19 (3c468p1_int0149_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  20 (3c468p1_int0150_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  21 (3c468p1_int0151_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  22 (3c468p1_int0152_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  23 (3c468p1_int0153_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  24 (3c468p1_int0154_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  25 (3c468p1_int0155_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  26 (3c468p1_int0156_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  27 (3c468p1_int0157_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  28 (3c468p1_int0158_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  29 (3c468p1_int0159_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  30 (3c468p1_int0160_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  31 (3c468p1_int0161_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  32 (3c468p1_int0162_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  33 (3c468p1_int0163_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  34 (3c468p1_int0164_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  35 (3c468p1_int0165_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  36 (3c468p1_int0166_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] frame_shift  37 (3c468p1_int0167_final.fits): dr=+0.000px  dc=+0.000px
+[3c468.1-rms] [cum-coadd] source_center : cy=511.5px  cx=511.5px  (image centre: cy=511.5  cx=511.5)
+[3c468.1-rms] [cum-coadd] rms_strategy   : image-center
+[3c468.1-rms] [cum-coadd] rms_exclude_r  : 400.00px (600.0arcsec; source=source-mask-radius-arcmin (10.00arcmin))
+[3c468.1-rms] [cum-coadd] image_shape    : 1024x1024
+[3c468.1-rms] [cum-coadd] offsource_px   : 545924 (52.06% of image)
+[3c468.1-rms] [cum-coadd] selfcal_dir : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1
+[3c468.1-rms] [cum-coadd] frames      : 38
+[3c468.1-rms] [cum-coadd] reg_mode    : none
+[3c468.1-rms] [cum-coadd] reg_backend : none
+[3c468.1-rms] [cum-coadd] upsample    : 10
+[3c468.1-rms] [cum-coadd] ref_idx     : 18
+[3c468.1-rms] [cum-coadd] ref_file    : 3c468p1_int0148_final.fits
+[3c468.1-rms] [cum-coadd] ref_jd      : 2459421.36679411 (mean=2459421.36684072)
+[3c468.1-rms] [cum-coadd] frame_dir   : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/cumulative_frames
+[3c468.1-rms] [cum-coadd] out_mp4     : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_scan05_stk1_cumulative_coadd.mp4
+[3c468.1-rms] [cum-coadd] out_gif     : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_scan05_stk1_cumulative_coadd.gif
+[3c468.1-rms] [cum-coadd] out_mov     : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_scan05_stk1_cumulative_coadd.mov
+[3c468.1-rms] [cum-coadd] out_rms_png : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_cumulative_rms_evolution.png
+[3c468.1-rms] [cum-coadd] out_rms_csv : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_cumulative_rms_evolution.csv
+[3c468.1-diag] wrote 190 filtered rows to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_per_integration.csv
+[3c468.1-diag] wrote panel plot to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_panel_5x5.png
+[3c468.1-diag] wrote summary stats to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_summary_stats.csv
+[3c468.1-post] done
+[2026-05-19 15:00:16] STEP 17 DONE  (optional): 3C468.1 post-selfcal artifacts (stack + movie + RMS)
+[2026-05-19 15:00:16] GMRT 40_014 calibration workflow complete
+[2026-05-19 15:00:17] PRODUCTS TO AUDIT (full paths):
+[2026-05-19 15:00:17]   GMRT 40_014 products to audit
+[2026-05-19 15:00:17]   Generated: 2026-05-19 15:00:16
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Workflow log:
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260519_135646.log
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 2: primary calibration
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/primary_calibration/flag/3c48_flag_table_session.json
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 3: primary split
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/split/3c48/3c48_calibrated_flagged.uvfits
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 4: primary vis plot
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/primary/3c48/selfcheck/plotvis_3c48.pdf
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 5: 3C468.1 primary-only split
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_calibrated.uvfits
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 6: 3C468.1 primary-only plot
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1.pdf
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 7: clustering flags + products
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/flag/3c468.1_split_clustering_flag_table_session.json
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_after.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_before.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_after.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_before.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_summary_20260513_102341.pdf
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_after.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_before.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 8: secondary calibration tables
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan01.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan02.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan03.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan04.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan05.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan06.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan07.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan08.npz
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan09.npz
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 9: 3C468.1 primary+secondary split
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_secondary_calibrated_flagged.uvfits
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 10: final 3C468.1 plot
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1.pdf
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 11: moon split (all variants, all sources)
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged.uvfits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0545_primary_secondary_calibrated_flagged.uvfits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0605_primary_secondary_calibrated_flagged.uvfits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0625_primary_secondary_calibrated_flagged.uvfits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0635_primary_secondary_calibrated_flagged.uvfits
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 12: moon visibility plots
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0520/final_qa/plotvis_moon0520.pdf
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0545/final_qa/plotvis_moon0545.pdf
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0605/final_qa/plotvis_moon0605.pdf
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0625/final_qa/plotvis_moon0625.pdf
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0635/final_qa/plotvis_moon0635.pdf
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 13: moon selfcal imaging outputs
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0000_n10/moon0520_stk0000_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0010_n10/moon0520_stk0010_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0020_n10/moon0520_stk0020_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0030_n10/moon0520_stk0030_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0040_n10/moon0520_stk0040_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0050_n10/moon0520_stk0050_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0060_n10/moon0520_stk0060_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0070_n10/moon0520_stk0070_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0080_n10/moon0520_stk0080_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0090_n10/moon0520_stk0090_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0100_n13/moon0520_stk0100_n13_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0000_n10/moon0520_stk0000_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0010_n10/moon0520_stk0010_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0020_n10/moon0520_stk0020_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0030_n10/moon0520_stk0030_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0040_n10/moon0520_stk0040_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0050_n10/moon0520_stk0050_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0060_n10/moon0520_stk0060_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0070_n10/moon0520_stk0070_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0080_n10/moon0520_stk0080_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0090_n10/moon0520_stk0090_n10_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0100_n13/moon0520_stk0100_n13_final.fits
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 14: moon imaging diagnostics (trajectory plot)
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/moon_imaging/moon0520_trajectory.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 15: moon post-selfcal artifacts (destripe + movies)
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_before_after_compare.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_before_after_compare.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_before_after_compare.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_rms_evolution.csv
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_rms_evolution.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_rms_evolution.csv
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_rms_evolution.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/destripe_debug:
+[2026-05-19 15:00:17]   moon0520_stk0000_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0010_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0020_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0030_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0040_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0050_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0060_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0070_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0080_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0090_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0100_n13_final
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_compare:
+[2026-05-19 15:00:17]   frame_0000.png
+[2026-05-19 15:00:17]   frame_0001.png
+[2026-05-19 15:00:17]   frame_0002.png
+[2026-05-19 15:00:17]   frame_0003.png
+[2026-05-19 15:00:17]   frame_0004.png
+[2026-05-19 15:00:17]   frame_0005.png
+[2026-05-19 15:00:17]   frame_0006.png
+[2026-05-19 15:00:17]   frame_0007.png
+[2026-05-19 15:00:17]   frame_0008.png
+[2026-05-19 15:00:17]   frame_0009.png
+[2026-05-19 15:00:17]   frame_0010.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_cumulative:
+[2026-05-19 15:00:17]   frame_0000.png
+[2026-05-19 15:00:17]   frame_0001.png
+[2026-05-19 15:00:17]   frame_0002.png
+[2026-05-19 15:00:17]   frame_0003.png
+[2026-05-19 15:00:17]   frame_0004.png
+[2026-05-19 15:00:17]   frame_0005.png
+[2026-05-19 15:00:17]   frame_0006.png
+[2026-05-19 15:00:17]   frame_0007.png
+[2026-05-19 15:00:17]   frame_0008.png
+[2026-05-19 15:00:17]   frame_0009.png
+[2026-05-19 15:00:17]   frame_0010.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_destriped:
+[2026-05-19 15:00:17]   frame_0000.png
+[2026-05-19 15:00:17]   frame_0001.png
+[2026-05-19 15:00:17]   frame_0002.png
+[2026-05-19 15:00:17]   frame_0003.png
+[2026-05-19 15:00:17]   frame_0004.png
+[2026-05-19 15:00:17]   frame_0005.png
+[2026-05-19 15:00:17]   frame_0006.png
+[2026-05-19 15:00:17]   frame_0007.png
+[2026-05-19 15:00:17]   frame_0008.png
+[2026-05-19 15:00:17]   frame_0009.png
+[2026-05-19 15:00:17]   frame_0010.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal:
+[2026-05-19 15:00:17]   frame_0000.png
+[2026-05-19 15:00:17]   frame_0001.png
+[2026-05-19 15:00:17]   frame_0002.png
+[2026-05-19 15:00:17]   frame_0003.png
+[2026-05-19 15:00:17]   frame_0004.png
+[2026-05-19 15:00:17]   frame_0005.png
+[2026-05-19 15:00:17]   frame_0006.png
+[2026-05-19 15:00:17]   frame_0007.png
+[2026-05-19 15:00:17]   frame_0008.png
+[2026-05-19 15:00:17]   frame_0009.png
+[2026-05-19 15:00:17]   frame_0010.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/provenance:
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260516_224545.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260516_224545.log
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_165440.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_165440.log
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_183628.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_183628.log
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_184648.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_184648.log
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_195031.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_195031.log
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_205147.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_205147.log
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_rms_evolution.csv
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_rms_evolution.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_rms_evolution.csv
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_rms_evolution.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_before_after_compare.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_before_after_compare.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_before_after_compare.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mp4
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_raw_selfcal.gif
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_raw_selfcal.mov
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_raw_selfcal.mp4
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/destripe_debug:
+[2026-05-19 15:00:17]   moon0520_stk0000_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0010_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0020_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0030_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0040_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0050_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0060_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0070_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0080_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0090_n10_final
+[2026-05-19 15:00:17]   moon0520_stk0100_n13_final
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/movie_frames_compare:
+[2026-05-19 15:00:17]   frame_0000.png
+[2026-05-19 15:00:17]   frame_0001.png
+[2026-05-19 15:00:17]   frame_0002.png
+[2026-05-19 15:00:17]   frame_0003.png
+[2026-05-19 15:00:17]   frame_0004.png
+[2026-05-19 15:00:17]   frame_0005.png
+[2026-05-19 15:00:17]   frame_0006.png
+[2026-05-19 15:00:17]   frame_0007.png
+[2026-05-19 15:00:17]   frame_0008.png
+[2026-05-19 15:00:17]   frame_0009.png
+[2026-05-19 15:00:17]   frame_0010.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/movie_frames_cumulative:
+[2026-05-19 15:00:17]   frame_0000.png
+[2026-05-19 15:00:17]   frame_0001.png
+[2026-05-19 15:00:17]   frame_0002.png
+[2026-05-19 15:00:17]   frame_0003.png
+[2026-05-19 15:00:17]   frame_0004.png
+[2026-05-19 15:00:17]   frame_0005.png
+[2026-05-19 15:00:17]   frame_0006.png
+[2026-05-19 15:00:17]   frame_0007.png
+[2026-05-19 15:00:17]   frame_0008.png
+[2026-05-19 15:00:17]   frame_0009.png
+[2026-05-19 15:00:17]   frame_0010.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/movie_frames_destriped:
+[2026-05-19 15:00:17]   frame_0000.png
+[2026-05-19 15:00:17]   frame_0001.png
+[2026-05-19 15:00:17]   frame_0002.png
+[2026-05-19 15:00:17]   frame_0003.png
+[2026-05-19 15:00:17]   frame_0004.png
+[2026-05-19 15:00:17]   frame_0005.png
+[2026-05-19 15:00:17]   frame_0006.png
+[2026-05-19 15:00:17]   frame_0007.png
+[2026-05-19 15:00:17]   frame_0008.png
+[2026-05-19 15:00:17]   frame_0009.png
+[2026-05-19 15:00:17]   frame_0010.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/movie_frames_raw_selfcal:
+[2026-05-19 15:00:17]   frame_0000.png
+[2026-05-19 15:00:17]   frame_0001.png
+[2026-05-19 15:00:17]   frame_0002.png
+[2026-05-19 15:00:17]   frame_0003.png
+[2026-05-19 15:00:17]   frame_0004.png
+[2026-05-19 15:00:17]   frame_0005.png
+[2026-05-19 15:00:17]   frame_0006.png
+[2026-05-19 15:00:17]   frame_0007.png
+[2026-05-19 15:00:17]   frame_0008.png
+[2026-05-19 15:00:17]   frame_0009.png
+[2026-05-19 15:00:17]   frame_0010.png
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/provenance:
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260516_225608.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260516_225608.log
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_185719.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_185719.log
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_200055.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_200055.log
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_210217.cmd
+[2026-05-19 15:00:17]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_210217.log
+[2026-05-19 15:00:17]   
+[2026-05-19 15:00:17]   Step 16: 3C468.1 selfcal imaging outputs
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_final.fits
+[2026-05-19 15:00:17]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_final.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_final.fits
+[2026-05-19 15:00:18]   
+[2026-05-19 15:00:18]   Step 17: 3C468.1 post-selfcal artifacts (stack + movie)
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.fits
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.gif
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mov
+[2026-05-19 15:00:18]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4
+[2026-05-19 15:00:18] Product manifest file: /Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_products_20260519_135646.txt

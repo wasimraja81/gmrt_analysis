@@ -1,0 +1,4 @@
+2026-05-13 10:27:12,970  INFO      [visSplit] flag tables applied: dropped_rows=7684 kept_rows=35030 zeroed_cells=0 tables=2
+Loaded row index cache: /Users/raj030/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
+[visSplit] source=MOON0520 rows_out=35030 flag_tables=2 cal_tables=0
+[visSplit] wrote /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_raw_flagged.uvfits

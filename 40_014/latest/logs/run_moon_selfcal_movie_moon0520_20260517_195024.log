@@ -1,0 +1,142 @@
+ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal/frame_%04d.png':
+  Duration: 00:00:02.75, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 720x720 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (png (native) -> h264 (libx264))
+Press [q] to stop, [?] for help
+[libx264 @ 0x147006ed0] using SAR=1/1
+[libx264 @ 0x147006ed0] using cpu capabilities: ARMv8 NEON
+[libx264 @ 0x147006ed0] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x147006ed0] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=21 lookahead_threads=3 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=4 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
+Output #0, mp4, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 720x720 [SAR 1:1 DAR 1:1], q=2-31, 4 fps, 16384 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 libx264
+      Side data:
+        cpb: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
+[out#0/mp4 @ 0x147005300] video:503KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.195631%
+frame=   11 fps=0.0 q=-1.0 Lsize=     504KiB time=00:00:02.25 bitrate=1835.6kbits/s speed=36.8x    
+[libx264 @ 0x147006ed0] frame I:1     Avg QP:16.48  size: 64050
+[libx264 @ 0x147006ed0] frame P:3     Avg QP:19.94  size: 47115
+[libx264 @ 0x147006ed0] frame B:7     Avg QP:22.16  size: 44167
+[libx264 @ 0x147006ed0] consecutive B-frames:  9.1% 18.2%  0.0% 72.7%
+[libx264 @ 0x147006ed0] mb I  I16..4: 33.6% 44.8% 21.6%
+[libx264 @ 0x147006ed0] mb P  I16..4:  0.7% 23.7% 11.1%  P16..4:  6.3% 11.5%  7.7%  0.0%  0.0%    skip:39.1%
+[libx264 @ 0x147006ed0] mb B  I16..4:  0.1% 10.8%  6.6%  B16..8: 13.3% 17.7%  9.2%  direct: 3.0%  skip:39.2%  L0:32.8% L1:34.2% BI:32.9%
+[libx264 @ 0x147006ed0] 8x8 transform intra:58.2% inter:83.3%
+[libx264 @ 0x147006ed0] coded y,uvDC,uvAC intra: 87.3% 87.3% 87.2% inter: 43.1% 42.1% 35.8%
+[libx264 @ 0x147006ed0] i16 v,h,dc,p: 85%  9%  6%  0%
+[libx264 @ 0x147006ed0] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu:  1%  7%  9%  1%  0%  0%  1%  1% 79%
+[libx264 @ 0x147006ed0] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu:  7%  9%  8%  1%  1%  0%  1%  1% 70%
+[libx264 @ 0x147006ed0] i8c dc,h,v,p: 73% 14%  5%  9%
+[libx264 @ 0x147006ed0] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x147006ed0] ref P L0: 44.7% 17.4% 22.3% 15.6%
+[libx264 @ 0x147006ed0] ref B L0: 79.2% 19.8%  1.0%
+[libx264 @ 0x147006ed0] ref B L1: 87.5% 12.5%
+[libx264 @ 0x147006ed0] kb/s:1496.92
+ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal/frame_%04d.png':
+  Duration: 00:00:02.75, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 720x720 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (png (native) -> png (native))
+Press [q] to stop, [?] for help
+[Parsed_palettegen_1 @ 0x14b105f50] 255(+1) colors generated out of 10364 colors; ratio=0.024604
+[Parsed_palettegen_1 @ 0x14b105f50] Duped color: FF401071
+[Parsed_palettegen_1 @ 0x14b105f50] Duped color: FF491267
+Output #0, image2, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal/palette.png':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown, progressive), 16x16 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 4 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 png
+[image2 @ 0x14a707260] The specified filename '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal/palette.png' does not contain an image sequence pattern or a pattern is invalid.
+[image2 @ 0x14a707260] Use a pattern such as %03d for an image sequence or use the -update option (with -frames:v 1 if needed) to write a single image.
+[out#0/image2 @ 0x14a706e10] video:1KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.25 bitrate=N/A speed=11.7x    
+ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal/frame_%04d.png':
+  Duration: 00:00:02.75, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 720x720 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+Input #1, png_pipe, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal/palette.png':
+  Duration: N/A, bitrate: N/A
+  Stream #1:0: Video: png, rgba(pc, gbr/unknown/unknown), 16x16 [SAR 1:1 DAR 1:1], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 (png) -> fps:default
+  Stream #1:0 (png) -> paletteuse
+  paletteuse:default -> Stream #0:0 (gif)
+Press [q] to stop, [?] for help
+Output #0, gif, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.gif':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: gif, pal8(pc, gbr/unknown/unknown, progressive), 720x720 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 100 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 gif
+[out#0/gif @ 0x153804860] video:2552KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000765%
+frame=   11 fps=0.0 q=-0.0 Lsize=    2552KiB time=00:00:02.75 bitrate=7602.0kbits/s speed=23.6x    
+ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, image2, from '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal/frame_%04d.png':
+  Duration: 00:00:02.75, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 720x720 [SAR 4724:4724 DAR 1:1], 4 fps, 4 tbr, 4 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (png (native) -> prores (prores_ks))
+Press [q] to stop, [?] for help
+Output #0, mov, to '/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mov':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: prores (HQ) (apch / 0x68637061), yuv422p10le(tv, progressive), 720x720 [SAR 1:1 DAR 1:1], q=2-31, 200 kb/s, 4 fps, 16384 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 prores_ks
+[out#0/mov @ 0x140707790] video:2437KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.032256%
+frame=   11 fps=0.0 q=-0.0 Lsize=    2438KiB time=00:00:02.75 bitrate=7262.4kbits/s speed=74.2x    
+[moon-selfcal-movie] selfcal_dir : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10
+[moon-selfcal-movie] frames     : 11
+[moon-selfcal-movie] frames_dir : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal
+[moon-selfcal-movie] scale      : vmin=-0.00725303, vmax=0.0236221
+[moon-selfcal-movie] out_mp4    : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4
+[moon-selfcal-movie] out_gif    : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.gif
+[moon-selfcal-movie] out_mov    : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mov
+[moon-selfcal-movie] done. duration≈2.75s

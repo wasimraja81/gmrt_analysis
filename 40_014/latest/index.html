@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GMRT 40_014 Calibration Diagnostics — 20260519_135646</title>
+  <style>
+    :root { color-scheme: light dark; }
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 1160px; padding: 0 1rem; line-height: 1.5; }
+    h1, h2 { line-height: 1.2; }
+    h1 { margin-bottom: 0.45rem; }
+    h2 { margin-bottom: 0.55rem; }
+    .meta { padding: 1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
+		.summary { margin-top: 1rem; padding: 1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
+		.scheme { width: 100%; border-collapse: collapse; margin-top: 0.8rem; }
+		.scheme th, .scheme td { border: 1px solid #8884; padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
+		.scheme th { background: #8882; }
+		.stage { margin-top: 1.2rem; padding: 1.1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
+		.stage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+		.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; align-items: start; }
+		.moon-section .panel-grid { align-items: stretch; }
+    .card { border: 1px solid #8884; border-radius: 10px; padding: 0.9rem; background: #8881; }
+		.panel-card { border: 1px solid #8884; border-radius: 10px; padding: 0.75rem; background: #8881; }
+		.moon-section .panel-card { display: flex; flex-direction: column; }
+		.moon-section .panel-card > a { flex: 1; display: flex; align-items: center; justify-content: center; }
+		.moon-section { margin-top: 1rem; border: 1px solid #8884; border-radius: 12px; background: #8881; padding: 1rem; }
+		.moon-section h3 { margin-top: 0; margin-bottom: 0.25rem; }
+		.card p { margin: 0.35rem 0; }
+		.panel-card p { margin: 0.2rem 0 0.5rem 0; }
+    img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
+		.panel-card img, .panel-card video { width: 100%; border-radius: 8px; }
+		.moon-section .panel-card img { width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
+		.panel-card video { cursor: pointer; }
+    a { text-decoration: none; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+		ul { padding-left: 1.1rem; }
+		.tiny { opacity: 0.9; font-size: 0.92rem; }
+		.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.9rem; }
+		.gallery-item { border: 1px solid #8884; border-radius: 10px; padding: 0.55rem; background: #8881; }
+		.caption { margin-top: 0.4rem; font-size: 0.85rem; opacity: 0.88; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <h1>GMRT 40_014 Calibration Diagnostics</h1>
+  <p class="tiny"><strong>Published:</strong> 2026-05-21 14:41:33 AEST</p>
+  <div class="meta">
+    <p><strong>Run timestamp:</strong> <code>20260519_135646</code></p>
+		<p><strong>Workflow run ID:</strong> <code>20260519_135646_p61377_r22611</code></p>
+    <p><strong>Published at:</strong> <code>2026-05-21 14:41:33 AEST</code></p>
+    <p><strong>Source branch:</strong> <code>40_014</code></p>
+    <p><strong>Source commit:</strong> <code>c9798f50833f464fc418da3a0dd13434480352d9</code></p>
+    <p><strong>Published folder:</strong> <code>40_014/latest</code></p>
+    <p><strong>Manifest:</strong> <a href="logs/run_gmrt_40_014_products_20260519_135646.txt">run_gmrt_40_014_products_20260519_135646.txt</a></p>
+    <p><strong>Workflow log:</strong> <a href="logs/run_gmrt_40_014_calibration_workflow_20260519_135646.log">run_gmrt_40_014_calibration_workflow_20260519_135646.log</a></p>
+  </div>
+
+	<div class="summary">
+		<h2>What this report shows</h2>
+		<p>This page summarizes how the GMRT 40_014 visibility data evolves through calibration. Each section contains inline previews and direct links to full-resolution files for zooming and detailed inspection.</p>
+		<table class="scheme">
+			<thead>
+				<tr>
+					<th>Section</th>
+					<th>Calibrator / Product</th>
+					<th>What is shown</th>
+					<th>Why it matters</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td>Primary bandpass calibration diagnostics</td>
+					<td>3C48</td>
+					<td>Iterative solution-solving process: baseline-averaged spectra, Stokes-V and spectral deviation flags, bandpass solution plots</td>
+					<td>Establishes robust instrumental bandpass calibration and RFI rejection baseline</td>
+				</tr>
+				<tr>
+					<td>Primary calibration self-check</td>
+					<td>3C48</td>
+					<td>Calibrated visibility plots after applying primary solutions back to 3C48</td>
+					<td>Verifies that the primary calibration solutions are self-consistent and well-behaved</td>
+				</tr>
+				<tr>
+					<td>Primary calibration transfer check</td>
+					<td>3C468.1</td>
+					<td>Calibrated visibility plots after transferring primary solutions to 3C468.1</td>
+					<td>Checks that primary calibration transfers cleanly to the target field calibrator</td>
+				</tr>
+				<tr>
+					<td>Advanced flagging diagnostics — clustering algorithm</td>
+					<td>3C468.1</td>
+					<td>Before/after views of the clustering algorithm on spectrum, Stokes-V, and uv-distance</td>
+					<td>Quantifies the impact of advanced flagging before secondary phase solving</td>
+				</tr>
+				<tr>
+					<td>Full calibration QA</td>
+					<td>3C468.1</td>
+					<td>Final calibrated visibility plots after applying both primary and secondary solutions with clustering-derived flags</td>
+					<td>Represents the end-to-end calibration quality of the target field data products</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+
+	<div class="stage">
+		<h2>Primary bandpass calibration diagnostics (3C48)</h2>
+		<p>These plots show the solution-solving process for the primary bandpass calibration using 3C48. We iteratively solve for the bandpass, identify and flag bad data based on two criteria — high Stokes-V emission (a proxy for RFI) and deviation of the baseline-averaged spectrum from the Perley–Butler source model — and repeat until stable, well-behaved solutions are reached. The section includes both the per-iteration flagging diagnostic plots and the final bandpass solution plots.</p>
+		<div class="stage-grid">
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iter00.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter00.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter00.png" alt="3c48_bandpass_diagnostics_iter00.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter00.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iter01.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter01.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter01.png" alt="3c48_bandpass_diagnostics_iter01.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter01.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iter02.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter02.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter02.png" alt="3c48_bandpass_diagnostics_iter02.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter02.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iter03.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter03.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter03.png" alt="3c48_bandpass_diagnostics_iter03.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter03.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iter04.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter04.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter04.png" alt="3c48_bandpass_diagnostics_iter04.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter04.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iter05.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter05.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter05.png" alt="3c48_bandpass_diagnostics_iter05.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter05.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iter06.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter06.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter06.png" alt="3c48_bandpass_diagnostics_iter06.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter06.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iter07.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter07.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter07.png" alt="3c48_bandpass_diagnostics_iter07.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iter07.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_diagnostics_iterfinal_clustering.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iterfinal_clustering.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iterfinal_clustering.png" alt="3c48_bandpass_diagnostics_iterfinal_clustering.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_iterfinal_clustering.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_gains_iter01.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter01.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter01.png" alt="3c48_bandpass_gains_iter01.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter01.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_gains_iter02.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter02.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter02.png" alt="3c48_bandpass_gains_iter02.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter02.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_gains_iter03.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter03.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter03.png" alt="3c48_bandpass_gains_iter03.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter03.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_gains_iter04.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter04.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter04.png" alt="3c48_bandpass_gains_iter04.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter04.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_gains_iter05.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter05.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter05.png" alt="3c48_bandpass_gains_iter05.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter05.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_gains_iter06.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter06.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter06.png" alt="3c48_bandpass_gains_iter06.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter06.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c48_bandpass_gains_iter07.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter07.png"><img src="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter07.png" alt="3c48_bandpass_gains_iter07.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_gains_iter07.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Primary calibration self-check (3C48)</h2>
+    <p>These diagnostic plots probe the quality of the primary calibration by applying the derived solutions back to 3C48 itself. Good calibration should yield clean, well-structured visibilities consistent with the expected source behaviour. Residual structure or anomalous baselines here indicate issues in the primary solve.</p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>plotvis_3c48_page01.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page01.png" alt="plotvis_3c48_page01.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>plotvis_3c48_page02.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page02.png" alt="plotvis_3c48_page02.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>plotvis_3c48_page03.png</strong></p>
+      <a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page03.png" alt="plotvis_3c48_page03.png"></a>
+      <p><a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Primary calibration transfer check (3C468.1)</h2>
+    <p>These plots show the QA for the primary calibration when its solutions are transferred to and applied to 3C468.1, the secondary calibrator. This tests whether the primary calibration is stable and transferable across sources before any secondary self-calibration is attempted.</p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>plotvis_3c468.1_page01.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page01.png" alt="plotvis_3c468.1_page01.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>plotvis_3c468.1_page02.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page02.png" alt="plotvis_3c468.1_page02.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>plotvis_3c468.1_page03.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page03.png" alt="plotvis_3c468.1_page03.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Advanced flagging diagnostics — clustering algorithm (3C468.1)</h2>
+    <p>These plots show the effect of the clustering-based advanced flagging algorithm applied to 3C468.1. Side-by-side before/after views are shown for the baseline-averaged spectrum, Stokes-V, and uv-distance diagnostic planes. This flagging step is applied prior to secondary phase calibration to remove residual RFI and outlier baselines that survived the primary flagging iterations.</p>
+    <div class="stage-grid">
+  <div style="grid-column:1/-1;font-weight:600;border-bottom:1px solid #8884;padding-bottom:0.3rem;margin-bottom:0.2rem">Before flagging</div>
+    <div class="card">
+      <p><strong>3c468.1_clustering_spectrum_before.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_before.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_before.png" alt="3c468.1_clustering_spectrum_before.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_before.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c468.1_clustering_stokesV_before.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_before.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_before.png" alt="3c468.1_clustering_stokesV_before.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_before.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c468.1_clustering_uvdist_before.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_before.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_before.png" alt="3c468.1_clustering_uvdist_before.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_before.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+  <div style="grid-column:1/-1;font-weight:600;border-bottom:1px solid #8884;padding-bottom:0.3rem;margin-bottom:0.2rem;margin-top:0.6rem">After flagging</div>
+    <div class="card">
+      <p><strong>3c468.1_clustering_spectrum_after.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_after.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_after.png" alt="3c468.1_clustering_spectrum_after.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_after.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c468.1_clustering_stokesV_after.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_after.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_after.png" alt="3c468.1_clustering_stokesV_after.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_after.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    <div class="card">
+      <p><strong>3c468.1_clustering_uvdist_after.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_after.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_after.png" alt="3c468.1_clustering_uvdist_after.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_after.png" target="_blank" rel="noopener">Open full-resolution PNG</a></p>
+    </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Full calibration QA (3C468.1)</h2>
+    <p>These plots show the end-to-end calibration quality for 3C468.1 after applying both the primary bandpass/gain solutions and the secondary phase calibration derived post-clustering. This is the final QA checkpoint: well-calibrated data should show clean, phase-coherent visibilities across all baselines and channels.</p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>plotvis_3c468.1_page01.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page01.png" alt="plotvis_3c468.1_page01.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>plotvis_3c468.1_page02.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page02.png" alt="plotvis_3c468.1_page02.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>plotvis_3c468.1_page03.png</strong></p>
+      <a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page03.png" alt="plotvis_3c468.1_page03.png"></a>
+      <p><a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Target QA — Moon scans</h2>
+    <p>Visibility diagnostics for each Moon scan, shown in three calibration states: raw (flags only), primary-calibrated (bandpass/gain applied), and fully calibrated (primary + secondary phase solutions). All variants have both the primary flag table and the secondary clustering flag table applied at split time.</p>
+    <h3 style="margin-top:1.2rem">MOON0520</h3>
+    <p style="margin-top:0.8rem"><strong>Raw (flags only)</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0520 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page01.png" alt="plotvis_moon0520_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0520 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page02.png" alt="plotvis_moon0520_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0520 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page03.png" alt="plotvis_moon0520_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0520 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page01.png" alt="plotvis_moon0520_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0520 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page02.png" alt="plotvis_moon0520_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0520 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page03.png" alt="plotvis_moon0520_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary + secondary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0520 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page01.png" alt="plotvis_moon0520_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0520 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page02.png" alt="plotvis_moon0520_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0520 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page03.png" alt="plotvis_moon0520_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <h3 style="margin-top:1.2rem">MOON0545</h3>
+    <p style="margin-top:0.8rem"><strong>Raw (flags only)</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0545 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page01.png" alt="plotvis_moon0545_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0545 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page02.png" alt="plotvis_moon0545_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0545 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page03.png" alt="plotvis_moon0545_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0545 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page01.png" alt="plotvis_moon0545_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0545 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page02.png" alt="plotvis_moon0545_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0545 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page03.png" alt="plotvis_moon0545_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary + secondary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0545 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page01.png" alt="plotvis_moon0545_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0545 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page02.png" alt="plotvis_moon0545_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0545 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page03.png" alt="plotvis_moon0545_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <h3 style="margin-top:1.2rem">MOON0605</h3>
+    <p style="margin-top:0.8rem"><strong>Raw (flags only)</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0605 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page01.png" alt="plotvis_moon0605_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0605 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page02.png" alt="plotvis_moon0605_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0605 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page03.png" alt="plotvis_moon0605_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0605 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page01.png" alt="plotvis_moon0605_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0605 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page02.png" alt="plotvis_moon0605_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0605 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page03.png" alt="plotvis_moon0605_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary + secondary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0605 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page01.png" alt="plotvis_moon0605_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0605 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page02.png" alt="plotvis_moon0605_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0605 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page03.png" alt="plotvis_moon0605_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <h3 style="margin-top:1.2rem">MOON0625</h3>
+    <p style="margin-top:0.8rem"><strong>Raw (flags only)</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0625 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page01.png" alt="plotvis_moon0625_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0625 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page02.png" alt="plotvis_moon0625_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0625 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page03.png" alt="plotvis_moon0625_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0625 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page01.png" alt="plotvis_moon0625_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0625 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page02.png" alt="plotvis_moon0625_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0625 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page03.png" alt="plotvis_moon0625_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary + secondary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0625 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page01.png" alt="plotvis_moon0625_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0625 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page02.png" alt="plotvis_moon0625_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0625 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page03.png" alt="plotvis_moon0625_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <h3 style="margin-top:1.2rem">MOON0635</h3>
+    <p style="margin-top:0.8rem"><strong>Raw (flags only)</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0635 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page01.png" alt="plotvis_moon0635_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0635 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page02.png" alt="plotvis_moon0635_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0635 — Raw (flags only)</strong></p>
+      <a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page03.png" alt="plotvis_moon0635_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0635 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page01.png" alt="plotvis_moon0635_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0635 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page02.png" alt="plotvis_moon0635_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0635 — Primary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page03.png" alt="plotvis_moon0635_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+    <p style="margin-top:0.8rem"><strong>Primary + secondary calibrated</strong></p>
+    <div class="stage-grid">
+    <div class="card">
+      <p><strong>MOON0635 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page01.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page01.png" alt="plotvis_moon0635_page01.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page01.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0635 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page02.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page02.png" alt="plotvis_moon0635_page02.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page02.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    <div class="card">
+      <p><strong>MOON0635 — Primary + secondary calibrated</strong></p>
+      <a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page03.png" target="_blank" rel="noopener"><img src="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page03.png" alt="plotvis_moon0635_page03.png"></a>
+      <p><a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635_page03.png" target="_blank" rel="noopener">Open full-resolution PNG</a> · <a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635.pdf" target="_blank" rel="noopener">Open PDF</a></p>
+    </div>
+    </div>
+  </div>
+
+  <h2>Moon imaging diagnostics</h2>
+  <p class="tiny">Per-integration trajectory and selfcal products for the MOON0520 scan.</p>
+  <div class="gallery">
+    <div class="gallery-item">
+      <a href="diagnostics_out/moon_imaging/moon0520_trajectory.png"><img src="diagnostics_out/moon_imaging/moon0520_trajectory.png" alt="moon0520_trajectory" loading="lazy"></a>
+      <div class="caption">moon0520_trajectory</div>
+    </div>
+  </div>
+
+  <h2>Provenance & reproducibility</h2>
+  <p class="tiny">Stage command and log manifests kept in structured directories for clean audit trail.</p>
+  <ul>
+    <li><a href="logs/">Browse command/log manifests →</a></li>
+  </ul>
+
+  <div class="stage">
+    <h2>Moon post-selfcal imaging & stacking summary</h2>
+    <p>Four imaging/processing modes organized by geometry, then processing stage. Each section shows the observation movie, stacked image, and RMS evolution diagnostics. Detailed destriping diagnostics are linked separately at the bottom of each section.</p>
+    <div class="moon-section">
+      <h3>1. Observed phase-centre – Raw selfcal</h3>
+      <p class="tiny">Moon drifts across the image. Stacking uses shift-then-add to align moon before co-adding.</p>
+      <div class="panel-grid">
+        <div class="panel-card">
+          <p><strong>Movie</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="panel-card">
+          <p><strong>Stacked image</strong></p>
+          <a href="casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png"><img src="casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png" alt="1. Observed phase-centre – Raw selfcal stacked image" loading="lazy"></a>
+        </div>
+        <div class="panel-card">
+          <p><strong>RMS evolution</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4" type="video/mp4">
+          </video>
+        </div>
+    </div>
+    <div class="moon-section">
+      <h3>2. Moon-centred – Raw selfcal</h3>
+      <p class="tiny">Moon stays near image center. Stacking uses direct (no-shift) co-addition.</p>
+      <div class="panel-grid">
+        <div class="panel-card">
+          <p><strong>Movie</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_raw_selfcal.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_raw_selfcal.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="panel-card">
+          <p><strong>Stacked image</strong></p>
+          <a href="casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png"><img src="casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png" alt="2. Moon-centred – Raw selfcal stacked image" loading="lazy"></a>
+        </div>
+        <div class="panel-card">
+          <p><strong>RMS evolution</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4" type="video/mp4">
+          </video>
+        </div>
+    </div>
+    <div class="moon-section">
+      <h3>3. Observed phase-centre – Destriped</h3>
+      <p class="tiny">Same geometry as Section 1, but with striping artifacts removed.</p>
+      <p class="tiny"><strong>Caution:</strong> residual destriping artifacts can bias the automatic image-alignment shifts. Registration here uses FFT-based phase-correlation, so non-astronomical stripe power can introduce alignment error.</p>
+      <div class="panel-grid">
+        <div class="panel-card">
+          <p><strong>Movie</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_destriped.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_destriped.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="panel-card">
+          <p><strong>Stacked image</strong></p>
+          <a href="casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png"><img src="casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png" alt="3. Observed phase-centre – Destriped stacked image" loading="lazy"></a>
+        </div>
+        <div class="panel-card">
+          <p><strong>RMS evolution</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4" type="video/mp4">
+          </video>
+        </div>
+    </div>
+    <div class="moon-section">
+      <h3>4. Moon-centred – Destriped</h3>
+      <p class="tiny">Same geometry as Section 2, but with striping artifacts removed.</p>
+      <div class="panel-grid">
+        <div class="panel-card">
+          <p><strong>Movie</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_destriped.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_destriped.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="panel-card">
+          <p><strong>Stacked image</strong></p>
+          <a href="casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png"><img src="casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png" alt="4. Moon-centred – Destriped stacked image" loading="lazy"></a>
+        </div>
+        <div class="panel-card">
+          <p><strong>RMS evolution</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4" type="video/mp4">
+          </video>
+        </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>Post-selfcal imaging summary: 3C468.1</h2>
+    <p>Per-scan post-selfcal products for 3C468.1, rendered from the layout manifest in the same panel order as the Moon sections.</p>
+    <div class="moon-section">
+      <h3>Post-selfcal imaging summary: 3C468.1</h3>
+      <p class="tiny">Source 3C468.1 · scan05 · imaged per integration (stack size = 1) · static target tracked at phase-tracking centre (unlike moving-target Moon)</p>
+      <div class="panel-grid">
+        <div class="panel-card">
+          <p><strong>Movie</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="panel-card">
+          <p><strong>Stacked image</strong></p>
+          <a href="casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.png"><img src="casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.png" alt="Post-selfcal imaging summary: 3C468.1 stacked image" loading="lazy"></a>
+        </div>
+        <div class="panel-card">
+          <p><strong>RMS evolution</strong></p>
+          <video controls preload="metadata" onclick="window.open('casa_selfcal/3c468.1_scan05_stk1/3c468.1_scan05_stk1_cumulative_coadd.mp4','_blank')" title="Click to open full-size">
+            <source src="casa_selfcal/3c468.1_scan05_stk1/3c468.1_scan05_stk1_cumulative_coadd.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="panel-card">
+          <p><strong>Selfcal diagnostics</strong></p>
+          <a href="casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_panel_5x5.png"><img src="casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_panel_5x5.png" alt="Post-selfcal imaging summary: 3C468.1 selfcal diagnostics panel" loading="lazy"></a>
+          <a href="casa_selfcal/3c468.1_scan05_stk1/scan05_selfcal_gain_panel_6x5.png"><img src="casa_selfcal/3c468.1_scan05_stk1/scan05_selfcal_gain_panel_6x5.png" alt="Post-selfcal imaging summary: 3C468.1 selfcal gain panel" loading="lazy"></a>
+          <p>
+            <a href="casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_per_integration.table.html">Per-integration table</a> · <a href="casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_per_integration.csv">CSV</a>
+            ·
+            <a href="casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_summary_stats.table.html">Summary stats table</a> · <a href="casa_selfcal/3c468.1_scan05_stk1/scan05_clean_cycle_metrics_summary_stats.csv">CSV</a>
+          </p>
+        </div>
+        <div class="panel-card">
+          <p><strong>MS FLAG diagnostics</strong></p>
+          <p class="tiny">Total flagged fraction vs integration</p>
+          <a href="casa_selfcal/3c468.1_scan05_stk1/scan05_flag_total_vs_integration.png"><img src="casa_selfcal/3c468.1_scan05_stk1/scan05_flag_total_vs_integration.png" alt="Post-selfcal imaging summary: 3C468.1 flag total vs integration" loading="lazy"></a>
+          <p class="tiny">Per-antenna flag diagnostics (6×5 panel)</p>
+          <a href="casa_selfcal/3c468.1_scan05_stk1/scan05_flag_antenna_panel_6x5.png"><img src="casa_selfcal/3c468.1_scan05_stk1/scan05_flag_antenna_panel_6x5.png" alt="Post-selfcal imaging summary: 3C468.1 per-antenna flag panel" loading="lazy"></a>
+        </div>
+    </div>
+  </div>
+
+  <h2>All PDF products</h2>
+  <p class="tiny">Useful for high-quality zoom/export and documentation snapshots.</p>
+  <ul>
+    <li><a href="diagnostics_out/primary/3c48/selfcheck/plotvis_3c48.pdf">plotvis_3c48.pdf</a></li>
+    <li><a href="diagnostics_out/primary/3c48/solve/3c48_bandpass_diagnostics_all_iters.pdf">3c48_bandpass_diagnostics_all_iters.pdf</a></li>
+    <li><a href="diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1.pdf">plotvis_3c468.1.pdf</a></li>
+    <li><a href="diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_summary_20260513_102341.pdf">3c468.1_clustering_summary_20260513_102341.pdf</a></li>
+    <li><a href="diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1.pdf">plotvis_3c468.1.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0520/final_qa/plotvis_moon0520.pdf">plotvis_moon0520.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0520/flagging/dev/moon0520_clustering_summary_20260513_115650.pdf">moon0520_clustering_summary_20260513_115650.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0520/flagging/moon0520_clustering_summary_20260513_105612.pdf">moon0520_clustering_summary_20260513_105612.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0520/raw/plotvis_moon0520.pdf">plotvis_moon0520.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0520/transfer/plotvis_moon0520.pdf">plotvis_moon0520.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0520/vis_dev/plotvis_moon0520.pdf">plotvis_moon0520.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0545/final_qa/plotvis_moon0545.pdf">plotvis_moon0545.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0545/raw/plotvis_moon0545.pdf">plotvis_moon0545.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0545/transfer/plotvis_moon0545.pdf">plotvis_moon0545.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0605/final_qa/plotvis_moon0605.pdf">plotvis_moon0605.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0605/raw/plotvis_moon0605.pdf">plotvis_moon0605.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0605/transfer/plotvis_moon0605.pdf">plotvis_moon0605.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0625/final_qa/plotvis_moon0625.pdf">plotvis_moon0625.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0625/raw/plotvis_moon0625.pdf">plotvis_moon0625.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0625/transfer/plotvis_moon0625.pdf">plotvis_moon0625.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0635/final_qa/plotvis_moon0635.pdf">plotvis_moon0635.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0635/raw/plotvis_moon0635.pdf">plotvis_moon0635.pdf</a></li>
+    <li><a href="diagnostics_out/target/moon0635/transfer/plotvis_moon0635.pdf">plotvis_moon0635.pdf</a></li>
+  </ul>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Post-selfcal imaging summary: 3C468.1 · Clean-cycle summary statistics</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 1rem auto; max-width: 96vw; padding: 0 1rem; line-height: 1.45; }
+    .meta { margin-bottom: 0.9rem; font-size: 0.92rem; opacity: 0.9; }
+    .table-wrap { overflow: auto; border: 1px solid #8884; border-radius: 8px; }
+    table { border-collapse: collapse; width: max-content; min-width: 100%; }
+    th, td { border: 1px solid #8884; padding: 0.35rem 0.5rem; font-size: 0.86rem; white-space: nowrap; }
+    th { position: sticky; top: 0; background: #f6f8fa; text-align: left; }
+    tr:nth-child(even) td { background: #8881; }
+    @media (prefers-color-scheme: dark) { th { background: #1f2328; } }
+  </style>
+</head>
+<body>
+  <h1>Post-selfcal imaging summary: 3C468.1 · Clean-cycle summary statistics</h1>
+  <p class="meta"><a href="scan05_clean_cycle_metrics_summary_stats.csv">Download raw CSV</a> · Rows: 5 · Columns: 18</p>
+  <h2>Quantity index</h2>
+  <ul>
+    <li><strong>cycle</strong>: Cycle label summarised across integrations.</li>
+    <li><strong>n</strong>: Number of independent selfcal runs / time snapshots contributing to the cycle; the table reports descriptive statistics across these 38 per-run measurements, and does not use stacked or combined images.</li>
+    <li><strong>*_min</strong>: Minimum value across the rows contributing to this cycle.</li>
+    <li><strong>*_max</strong>: Maximum value across the rows contributing to this cycle.</li>
+    <li><strong>*_std</strong>: Sample standard deviation across the rows contributing to this cycle.</li>
+    <li><strong>*_median</strong>: Median across the rows contributing to this cycle.</li>
+    <li><strong>dr_peak_over_residual_*</strong>: Peak-to-residual dynamic range summary; not peak/off-source RMS.</li>
+  </ul>
+  <p class="meta"><strong>Note:</strong> the DR column shown here is the table’s internal peak/residual metric. It is <em>not</em> the peak-to-off-source-RMS value shown in the cumulative movie inset.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>cycle</th><th>n</th><th>peak_jy_per_beam_min</th><th>peak_jy_per_beam_max</th><th>peak_jy_per_beam_std</th><th>peak_jy_per_beam_median</th><th>residual_peak_jy_per_beam_min</th><th>residual_peak_jy_per_beam_max</th><th>residual_peak_jy_per_beam_std</th><th>residual_peak_jy_per_beam_median</th><th>model_sum_jy_min</th><th>model_sum_jy_max</th><th>model_sum_jy_std</th><th>model_sum_jy_median</th><th>dr_peak_over_residual_min</th><th>dr_peak_over_residual_max</th><th>dr_peak_over_residual_std</th><th>dr_peak_over_residual_median</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>sc1</td><td>38</td><td>18.09611701965332</td><td>21.672264099121094</td><td>1.0702356552369043</td><td>19.78140926361084</td><td>0.17165429890155792</td><td>0.26844921708106995</td><td>0.01943518242055463</td><td>0.2014189213514328</td><td>22.10351360589266</td><td>24.71812092140317</td><td>0.5558718053363594</td><td>23.111054264009</td><td>79.86821351291972</td><td>112.16078934039163</td><td>8.569742096149154</td><td>98.8742809868103</td></tr>
+        <tr><td>sc2</td><td>38</td><td>17.967443466186523</td><td>21.68156623840332</td><td>1.1348491194677837</td><td>19.771080017089844</td><td>0.068643718957901</td><td>0.11786042898893356</td><td>0.012277234432123673</td><td>0.07656987756490707</td><td>22.533124978654087</td><td>26.39357845671475</td><td>0.7294335086390842</td><td>23.705460008932278</td><td>157.4754930460342</td><td>304.01217730552804</td><td>39.67441671631377</td><td>254.56862042815396</td></tr>
+        <tr><td>sc3</td><td>38</td><td>17.9290828704834</td><td>21.693204879760742</td><td>1.1508390453988935</td><td>19.777594566345215</td><td>0.036348626017570496</td><td>0.07689633220434189</td><td>0.01037644526703872</td><td>0.04167816415429115</td><td>20.731296572368592</td><td>26.00792558118701</td><td>0.9077349497211448</td><td>23.284212067024782</td><td>240.95231061857206</td><td>574.2518108567364</td><td>95.77341367202682</td><td>474.5892494269725</td></tr>
+        <tr><td>sc4</td><td>38</td><td>17.895435333251953</td><td>21.678625106811523</td><td>1.1569566601021384</td><td>19.79256534576416</td><td>0.011486933566629887</td><td>0.032318729907274246</td><td>0.005644027061082221</td><td>0.014099168591201305</td><td>15.635203835554421</td><td>25.47639731527306</td><td>1.6993424368784238</td><td>21.7964356385055</td><td>572.2648476576489</td><td>1815.7104258382985</td><td>398.74869975565446</td><td>1466.0992915095717</td></tr>
+        <tr><td>final</td><td>38</td><td>17.852157592773438</td><td>21.679115295410156</td><td>1.1594324619394805</td><td>19.792092323303223</td><td>0.006625608541071415</td><td>0.02091139741241932</td><td>0.0037775020161370213</td><td>0.008195430971682072</td><td>13.43830546317622</td><td>25.1819551345543</td><td>2.0467718380403137</td><td>21.288914427364944</td><td>884.8381613830076</td><td>3156.843550814118</td><td>739.1071491259985</td><td>2477.0471551148485</td></tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

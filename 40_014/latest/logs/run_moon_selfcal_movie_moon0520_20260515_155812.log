@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/Users/raj030/github-wasimraja81/gmrt_analysis/experimental/moon_selfcal_movie.py", line 410, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/Users/raj030/github-wasimraja81/gmrt_analysis/experimental/moon_selfcal_movie.py", line 328, in main
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: no matching frame pairs found between /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10 and /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/destriped_finals with glob 'moon0520_stk*_n*/moon0520_stk*_n*_final.fits'

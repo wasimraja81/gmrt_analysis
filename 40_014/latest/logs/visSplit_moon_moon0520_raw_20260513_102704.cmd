@@ -1,0 +1,3 @@
+# timestamp=20260513_102704
+# cwd=/Users/raj030/github-wasimraja81/gmrt_analysis
+python /Users/raj030/github-wasimraja81/gmrt_analysis/src/visSplit.py --config /Users/raj030/github-wasimraja81/gmrt_analysis/preprocess_ugmrt.cfg --fits /Users/raj030/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS --index-cache /Users/raj030/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz --source MOON0520 --chan-range 64 191 --stokes RR LL --flag-tables /Users/raj030/DATA/gmrt_40_014/work/primary_calibration/flag/3c48_flag_table_session.json /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/flag/3c468.1_split_clustering_flag_table_session.json --out /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_raw_flagged.uvfits --overwrite 
