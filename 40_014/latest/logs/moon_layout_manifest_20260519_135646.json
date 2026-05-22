@@ -1,6 +1,6 @@
 {
   "schema": "gmrt-ghpages-layout-v2",
-  "generated_at": "2026-05-21T23:54:10+00:00",
+  "generated_at": "2026-05-22T00:02:05+00:00",
   "run_ts": "20260519_135646",
   "workflow_run_id": "20260519_135646_p61377_r22611",
   "moon": {
@@ -81,6 +81,7 @@
         },
         "ms_flag": {
           "representative_heatmap_rel": "casa_selfcal/3c468.1_scan05_stk1/scan05_flag_baseline_grid_all_integrations.png",
+          "heatmap_movie_rel": "",
           "full_observation_heatmap_rel": "casa_selfcal/3c468.1_scan05_stk1/scan05_flag_baseline_grid_full_ms.png",
           "total_vs_integration_rel": "casa_selfcal/3c468.1_scan05_stk1/scan05_flag_total_vs_integration.png",
           "antenna_panel_rel": "casa_selfcal/3c468.1_scan05_stk1/scan05_flag_antenna_panel_6x5.png"
@@ -93,6 +94,7 @@
       "diag_flag_total_rel": "casa_selfcal/3c468.1_scan05_stk1/scan05_flag_total_vs_integration.png",
       "diag_flag_ant_panel_rel": "casa_selfcal/3c468.1_scan05_stk1/scan05_flag_antenna_panel_6x5.png",
       "diag_flag_heatmap_rel": "casa_selfcal/3c468.1_scan05_stk1/scan05_flag_baseline_grid_all_integrations.png",
+      "diag_flag_heatmap_movie_rel": "",
       "diag_flag_heatmap_full_rel": "casa_selfcal/3c468.1_scan05_stk1/scan05_flag_baseline_grid_full_ms.png"
     }
   ]
