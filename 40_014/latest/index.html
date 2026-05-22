@@ -18,18 +18,18 @@
 		.stage { margin-top: 1.2rem; padding: 1.1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
 		.stage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
 		.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; align-items: start; }
-		.moon-section .panel-grid { align-items: stretch; }
+		.post-selfcal-section .panel-grid { align-items: stretch; }
     .card { border: 1px solid #8884; border-radius: 10px; padding: 0.9rem; background: #8881; }
 		.panel-card { border: 1px solid #8884; border-radius: 10px; padding: 0.75rem; background: #8881; }
-		.moon-section .panel-card { display: flex; flex-direction: column; }
-		.moon-section .panel-card > a { flex: 1; display: flex; align-items: center; justify-content: center; }
-		.moon-section { margin-top: 1rem; border: 1px solid #8884; border-radius: 12px; background: #8881; padding: 1rem; }
-		.moon-section h3 { margin-top: 0; margin-bottom: 0.25rem; }
+		.post-selfcal-section .panel-card { display: flex; flex-direction: column; }
+		.post-selfcal-section .panel-card > a { flex: 1; display: flex; align-items: center; justify-content: center; }
+		.post-selfcal-section { margin-top: 1rem; border: 1px solid #8884; border-radius: 12px; background: #8881; padding: 1rem; }
+		.post-selfcal-section h3 { margin-top: 0; margin-bottom: 0.25rem; }
 		.card p { margin: 0.35rem 0; }
 		.panel-card p { margin: 0.2rem 0 0.5rem 0; }
     img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
 		.panel-card img, .panel-card video { width: 100%; border-radius: 8px; }
-		.moon-section .panel-card img { width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
+		.post-selfcal-section .panel-card img { width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
 		.panel-card video { cursor: pointer; }
     a { text-decoration: none; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -42,11 +42,11 @@
 </head>
 <body>
   <h1>GMRT 40_014 Calibration Diagnostics</h1>
-  <p class="tiny"><strong>Published:</strong> 2026-05-22 10:19:51 AEST</p>
+  <p class="tiny"><strong>Published:</strong> 2026-05-22 10:21:30 AEST</p>
   <div class="meta">
     <p><strong>Run timestamp:</strong> <code>20260519_135646</code></p>
 		<p><strong>Workflow run ID:</strong> <code>20260519_135646_p61377_r22611</code></p>
-    <p><strong>Published at:</strong> <code>2026-05-22 10:19:51 AEST</code></p>
+    <p><strong>Published at:</strong> <code>2026-05-22 10:21:30 AEST</code></p>
     <p><strong>Source branch:</strong> <code>40_014</code></p>
     <p><strong>Source commit:</strong> <code>c9798f50833f464fc418da3a0dd13434480352d9</code></p>
     <p><strong>Published folder:</strong> <code>40_014/latest</code></p>
@@ -590,7 +590,7 @@
   <div class="stage">
     <h2>Moon post-selfcal imaging & stacking summary</h2>
     <p>Four imaging/processing modes organized by geometry, then processing stage. Each section shows the observation movie, stacked image, and RMS evolution diagnostics. Detailed destriping diagnostics are linked separately at the bottom of each section.</p>
-    <div class="moon-section">
+	<div class="post-selfcal-section">
       <h3>1. Observed phase-centre – Raw selfcal</h3>
       <p class="tiny">Moon drifts across the image. Stacking uses shift-then-add to align moon before co-adding.</p>
       <div class="panel-grid">
@@ -612,7 +612,7 @@
         </div>
     </div>
 	</div>
-    <div class="moon-section">
+	<div class="post-selfcal-section">
       <h3>2. Moon-centred – Raw selfcal</h3>
       <p class="tiny">Moon stays near image center. Stacking uses direct (no-shift) co-addition.</p>
       <div class="panel-grid">
@@ -634,7 +634,7 @@
         </div>
     </div>
 	</div>
-    <div class="moon-section">
+	<div class="post-selfcal-section">
       <h3>3. Observed phase-centre – Destriped</h3>
       <p class="tiny">Same geometry as Section 1, but with striping artifacts removed.</p>
       <p class="tiny"><strong>Caution:</strong> residual destriping artifacts can bias the automatic image-alignment shifts. Registration here uses FFT-based phase-correlation, so non-astronomical stripe power can introduce alignment error.</p>
@@ -657,7 +657,7 @@
         </div>
     </div>
 	</div>
-    <div class="moon-section">
+	<div class="post-selfcal-section">
       <h3>4. Moon-centred – Destriped</h3>
       <p class="tiny">Same geometry as Section 2, but with striping artifacts removed.</p>
       <div class="panel-grid">
@@ -684,7 +684,7 @@
   <div class="stage">
 		<h2>Post-selfcal imaging summary: 3c468.1</h2>
 		<p>Per-scan post-selfcal products for 3c468.1, rendered from the layout manifest with scan-wise subsections.</p>
-    <div class="moon-section">
+	<div class="post-selfcal-section">
       <h3>scan05</h3>
       <p class="tiny">Source 3c468.1 · scan05 · imaged per integration (stack size = 1) · static target tracked at phase-tracking centre (unlike moving-target Moon)</p>
       <div class="panel-grid">
@@ -732,7 +732,7 @@
         </div>
     </div>
 	</div>
-    <div class="moon-section">
+		<div class="post-selfcal-section">
       <h3>All scans MS FLAG overview</h3>
       <div class="panel-grid">
         <div class="panel-card">
