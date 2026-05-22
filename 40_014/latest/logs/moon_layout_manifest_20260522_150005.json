@@ -1,8 +1,8 @@
 {
   "schema": "gmrt-ghpages-layout-v2",
-  "generated_at": "2026-05-22T04:53:17+00:00",
-  "run_ts": "20260522_103607",
-  "workflow_run_id": "20260522_103607_p78725_r14090",
+  "generated_at": "2026-05-22T05:01:00+00:00",
+  "run_ts": "20260522_150005",
+  "workflow_run_id": "20260522_150005_p15957_r25461",
   "moon": {
     "products_root": "casa_selfcal/ghpages_products/moon0520",
     "no_phasecenter_dir": "casa_selfcal/ghpages_products/moon0520/no_phasecenter",
@@ -105,9 +105,9 @@
       "stack_size": "1",
       "section_title": "Post-selfcal imaging summary: 3c468.1",
       "section_context": "Source 3c468.1 \u00b7 scan06 \u00b7 imaged per integration (stack size = 1) \u00b7 static target tracked at phase-tracking centre (unlike moving-target Moon)",
-      "movie_rel": "",
-      "stack_rel": "",
-      "rms_movie_rel": "",
+      "movie_rel": "casa_selfcal/3c468.1_scan06_stk1/3c468.1_selfcal_movie.mp4",
+      "stack_rel": "casa_selfcal/3c468.1_scan06_stk1/3c468.1_stack_mean.png",
+      "rms_movie_rel": "casa_selfcal/3c468.1_scan06_stk1/3c468.1_scan06_stk1_cumulative_coadd.mp4",
       "diagnostics": {
         "selfcal": {
           "metrics_panel_rel": "",

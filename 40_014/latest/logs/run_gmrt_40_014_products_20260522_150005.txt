@@ -1,8 +1,8 @@
 GMRT 40_014 products to audit
-Generated: 2026-05-22 12:02:20
+Generated: 2026-05-22 15:00:26
 
 Workflow log:
-/Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260522_103607.log
+/Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260522_150005.log
 
 Step 2: primary calibration
 /Users/raj030/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz
@@ -365,6 +365,10 @@ Step 16: 3C468.1 selfcal imaging outputs
 
 Step 17: 3C468.1 post-selfcal artifacts (stack + movie)
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_stack_mean.fits
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.gif
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mov
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_selfcal_movie.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_selfcal_movie.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_selfcal_movie.mp4
