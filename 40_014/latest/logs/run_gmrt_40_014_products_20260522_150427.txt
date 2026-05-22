@@ -1,8 +1,8 @@
 GMRT 40_014 products to audit
-Generated: 2026-05-22 15:00:26
+Generated: 2026-05-22 15:04:51
 
 Workflow log:
-/Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260522_150005.log
+/Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260522_150427.log
 
 Step 2: primary calibration
 /Users/raj030/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz

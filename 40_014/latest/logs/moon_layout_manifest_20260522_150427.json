@@ -1,8 +1,8 @@
 {
   "schema": "gmrt-ghpages-layout-v2",
-  "generated_at": "2026-05-22T05:01:00+00:00",
-  "run_ts": "20260522_150005",
-  "workflow_run_id": "20260522_150005_p15957_r25461",
+  "generated_at": "2026-05-22T05:05:13+00:00",
+  "run_ts": "20260522_150427",
+  "workflow_run_id": "20260522_103607_p78725_r14090",
   "moon": {
     "products_root": "casa_selfcal/ghpages_products/moon0520",
     "no_phasecenter_dir": "casa_selfcal/ghpages_products/moon0520/no_phasecenter",
@@ -110,28 +110,28 @@
       "rms_movie_rel": "casa_selfcal/3c468.1_scan06_stk1/3c468.1_scan06_stk1_cumulative_coadd.mp4",
       "diagnostics": {
         "selfcal": {
-          "metrics_panel_rel": "",
-          "gain_panel_rel": "",
-          "metrics_csv_rel": "",
-          "summary_csv_rel": ""
+          "metrics_panel_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_panel_5x5.png",
+          "gain_panel_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_selfcal_gain_panel_6x5.png",
+          "metrics_csv_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_per_integration.csv",
+          "summary_csv_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_summary_stats.csv"
         },
         "ms_flag": {
-          "representative_heatmap_rel": "",
-          "heatmap_movie_rel": "",
-          "full_observation_heatmap_rel": "",
-          "total_vs_integration_rel": "",
-          "antenna_panel_rel": ""
+          "representative_heatmap_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_all_integrations.png",
+          "heatmap_movie_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_movie.mp4",
+          "full_observation_heatmap_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_full_ms.png",
+          "total_vs_integration_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_total_vs_integration.png",
+          "antenna_panel_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_antenna_panel_6x5.png"
         }
       },
-      "diag_panel_rel": "",
-      "diag_gain_panel_rel": "",
-      "diag_csv_rel": "",
-      "diag_stats_rel": "",
-      "diag_flag_total_rel": "",
-      "diag_flag_ant_panel_rel": "",
-      "diag_flag_heatmap_rel": "",
-      "diag_flag_heatmap_movie_rel": "",
-      "diag_flag_heatmap_full_rel": ""
+      "diag_panel_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_panel_5x5.png",
+      "diag_gain_panel_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_selfcal_gain_panel_6x5.png",
+      "diag_csv_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_per_integration.csv",
+      "diag_stats_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_summary_stats.csv",
+      "diag_flag_total_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_total_vs_integration.png",
+      "diag_flag_ant_panel_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_antenna_panel_6x5.png",
+      "diag_flag_heatmap_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_all_integrations.png",
+      "diag_flag_heatmap_movie_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_movie.mp4",
+      "diag_flag_heatmap_full_rel": "casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_full_ms.png"
     }
   ]
 }

@@ -1,0 +1,432 @@
+[2026-05-22 15:04:27] GMRT 40_014 calibration workflow start
+[2026-05-22 15:04:27] cwd=/Users/raj030/github-wasimraja81/gmrt_analysis
+[2026-05-22 15:04:27] chain_log=/Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260522_150427.log
+[2026-05-22 15:04:27] INVOCATION PROVENANCE (effective values)
+[2026-05-22 15:04:27]   FORCE_FROM_STEP=17
+[2026-05-22 15:04:27]   RUN_ID=20260522_103607_p78725_r14090
+[2026-05-22 15:04:27]   SMART_RESUME=1
+[2026-05-22 15:04:27]   RUN_CLEAN_STAGE=0
+[2026-05-22 15:04:27]   RUN_3C468_SELFCAL_STAGE=0
+[2026-05-22 15:04:27]   RUN_3C468_SCAN_TAGS=1 2 3 4 5 6 7 8 9
+[2026-05-22 15:04:27]   RUN_3C468_POSTSELFCAL_ARTIFACTS=1
+[2026-05-22 15:04:27]   RUN_MOON_SELFCAL_STAGE=0
+[2026-05-22 15:04:27]   RUN_MOON_POSTSELFCAL_ARTIFACTS=0
+[2026-05-22 15:04:27]   STACK_SIZE=<unset>
+[2026-05-22 15:04:27]   NO_MASK=<unset>
+[2026-05-22 15:04:27]   MASK_RADIUS_ARCMIN=<unset>
+[2026-05-22 15:04:27]   PYTHON_CMD=<unset>
+[2026-05-22 15:04:27]   NITER_PER_CYCLE=<unset>
+[2026-05-22 15:04:27]   NITER_FINAL=<unset>
+[2026-05-22 15:04:27] SMART_RESUME: executing strict downstream rerun from step 17
+[2026-05-22 15:04:27] SMART_RESUME: skipping clean step to preserve existing products
+[2026-05-22 15:04:27] INFO: optional moon selfcal stage disabled (RUN_MOON_SELFCAL_STAGE=0)
+[2026-05-22 15:04:27] WARNING: optional moon trajectory step skipped; MS not found: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_dev/moon0520_full.ms
+[2026-05-22 15:04:27] WARNING: continuing workflow so pre-selfcal products remain publishable
+[2026-05-22 15:04:27] INFO: optional moon post-selfcal artifacts step disabled (RUN_MOON_POSTSELFCAL_ARTIFACTS=0)
+[2026-05-22 15:04:27] INFO: optional 3C468.1 selfcal stage disabled (RUN_3C468_SELFCAL_STAGE=0)
+[2026-05-22 15:04:27] STEP 17 START (optional): 3C468.1 post-selfcal artifacts (stack + movie + RMS)
+[2026-05-22 15:04:27] COMMAND: env WORK_SELFCAL_ROOT=/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal RUN_ID=20260522_103607_p78725_r14090 SELFCAL_GLOB=3c468.1_scan*_stk* bash /Users/raj030/github-wasimraja81/gmrt_analysis/bin/run_3c468.1_post_selfcal_artifacts.sh
+[3c468.1-post] python            : /Users/raj030/github-wasimraja81/gmrt_analysis/gmrt/bin/python
+[3c468.1-post] selfcal root       : /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal
+[3c468.1-post] selfcal glob       : 3c468.1_scan*_stk*
+[3c468.1-post] run id            : 20260522_103607_p78725_r14090
+[3c468.1-post] force rebuild      : 0
+[3c468.1-post] --- processing: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1
+[3c468.1-post] SKIP movie (already exists): /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4
+[3c468.1-post] SKIP stack (already exists): /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.fits
+[3c468.1-post] SKIP RMS progression (already exists): /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_cumulative_rms_evolution.png
+[3c468.1-diag] no rows matched requested selection
+[3c468.1-post] WARNING: diagnostics unavailable for 3c468.1_scan05_stk1 with run-id 20260522_103607_p78725_r14090; continuing
+[3c468.1-post] --- processing: /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1
+[3c468.1-post] SKIP movie (already exists): /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_selfcal_movie.mp4
+[3c468.1-post] SKIP stack (already exists): /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_stack_mean.fits
+[3c468.1-post] SKIP RMS progression (already exists): /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_cumulative_rms_evolution.png
+[3c468.1-diag] wrote 195 filtered rows to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_per_integration.csv
+[3c468.1-diag] wrote selfcal gain panel to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_selfcal_gain_panel_6x5.png
+[3c468.1-diag] wrote 78 per-integration MS flag plots under /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_flag_diagnostics
+[3c468.1-diag] wrote per-integration heatmap movie to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_movie.mp4
+[3c468.1-diag] wrote total MS flag% vs integration plot to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_flag_total_vs_integration.png
+[3c468.1-diag] wrote per-antenna MS flag panel to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_flag_antenna_panel_6x5.png
+[3c468.1-diag] wrote all-integrations baseline heatmap to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_all_integrations.png
+[3c468.1-diag] wrote full-MS baseline heatmap to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_flag_baseline_grid_full_ms.png
+[3c468.1-diag] wrote panel plot to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_panel_5x5.png
+[3c468.1-diag] wrote summary stats to /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/scan06_clean_cycle_metrics_summary_stats.csv
+[3c468.1-post] done
+[2026-05-22 15:04:51] STEP 17 DONE  (optional): 3C468.1 post-selfcal artifacts (stack + movie + RMS)
+[2026-05-22 15:04:51] GMRT 40_014 calibration workflow complete
+[2026-05-22 15:04:51] PRODUCTS TO AUDIT (full paths):
+[2026-05-22 15:04:51]   GMRT 40_014 products to audit
+[2026-05-22 15:04:51]   Generated: 2026-05-22 15:04:51
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Workflow log:
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260522_150427.log
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 2: primary calibration
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/primary_calibration/flag/3c48_flag_table_session.json
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 3: primary split
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/split/3c48/3c48_calibrated_flagged.uvfits
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 4: primary vis plot
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/primary/3c48/selfcheck/plotvis_3c48.pdf
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 5: 3C468.1 primary-only split
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_calibrated.uvfits
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 6: 3C468.1 primary-only plot
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/transfer/plotvis_3c468.1.pdf
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 7: clustering flags + products
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/flag/3c468.1_split_clustering_flag_table_session.json
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_after.png
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_spectrum_before.png
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_after.png
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_stokesV_before.png
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_summary_20260513_102341.pdf
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_after.png
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/flagging/3c468.1_clustering_uvdist_before.png
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 8: secondary calibration tables
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan01.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan02.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan03.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan04.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan05.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan06.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan07.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan08.npz
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/secondary_calibration/3c468.1_secondary_phase_only_scan09.npz
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 9: 3C468.1 primary+secondary split
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_secondary_calibrated_flagged.uvfits
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 10: final 3C468.1 plot
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/final_qa/plotvis_3c468.1.pdf
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 11: moon split (all variants, all sources)
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0520_primary_secondary_calibrated_flagged.uvfits
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0545_primary_secondary_calibrated_flagged.uvfits
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0605_primary_secondary_calibrated_flagged.uvfits
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0625_primary_secondary_calibrated_flagged.uvfits
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/split/moon/moon0635_primary_secondary_calibrated_flagged.uvfits
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 12: moon visibility plots
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0520/final_qa/plotvis_moon0520.pdf
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0545/final_qa/plotvis_moon0545.pdf
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0605/final_qa/plotvis_moon0605.pdf
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0625/final_qa/plotvis_moon0625.pdf
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/target/moon0635/final_qa/plotvis_moon0635.pdf
+[2026-05-22 15:04:51]   
+[2026-05-22 15:04:51]   Step 13: moon selfcal imaging outputs
+[2026-05-22 15:04:51]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0000_n10/moon0520_stk0000_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0010_n10/moon0520_stk0010_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0020_n10/moon0520_stk0020_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0030_n10/moon0520_stk0030_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0040_n10/moon0520_stk0040_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0050_n10/moon0520_stk0050_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0060_n10/moon0520_stk0060_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0070_n10/moon0520_stk0070_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0080_n10/moon0520_stk0080_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0090_n10/moon0520_stk0090_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10/moon0520_stk0100_n13/moon0520_stk0100_n13_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0000_n10/moon0520_stk0000_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0010_n10/moon0520_stk0010_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0020_n10/moon0520_stk0020_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0030_n10/moon0520_stk0030_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0040_n10/moon0520_stk0040_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0050_n10/moon0520_stk0050_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0060_n10/moon0520_stk0060_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0070_n10/moon0520_stk0070_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0080_n10/moon0520_stk0080_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0090_n10/moon0520_stk0090_n10_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/moon0520_stk10_phasecenter/moon0520_stk0100_n13/moon0520_stk0100_n13_final.fits
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   Step 14: moon imaging diagnostics (trajectory plot)
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/moon_imaging/moon0520_trajectory.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   Step 15: moon post-selfcal artifacts (destripe + movies)
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_before_after_compare.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_before_after_compare.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_before_after_compare.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_destriped.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_destriped.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_destriped.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_rms_evolution.csv
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_rms_evolution.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_rms_evolution.csv
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_rms_evolution.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/destripe_debug:
+[2026-05-22 15:04:52]   moon0520_stk0000_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0010_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0020_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0030_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0040_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0050_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0060_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0070_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0080_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0090_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0100_n13_final
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/movie_frames_compare:
+[2026-05-22 15:04:52]   frame_0000.png
+[2026-05-22 15:04:52]   frame_0001.png
+[2026-05-22 15:04:52]   frame_0002.png
+[2026-05-22 15:04:52]   frame_0003.png
+[2026-05-22 15:04:52]   frame_0004.png
+[2026-05-22 15:04:52]   frame_0005.png
+[2026-05-22 15:04:52]   frame_0006.png
+[2026-05-22 15:04:52]   frame_0007.png
+[2026-05-22 15:04:52]   frame_0008.png
+[2026-05-22 15:04:52]   frame_0009.png
+[2026-05-22 15:04:52]   frame_0010.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/movie_frames_cumulative:
+[2026-05-22 15:04:52]   frame_0000.png
+[2026-05-22 15:04:52]   frame_0001.png
+[2026-05-22 15:04:52]   frame_0002.png
+[2026-05-22 15:04:52]   frame_0003.png
+[2026-05-22 15:04:52]   frame_0004.png
+[2026-05-22 15:04:52]   frame_0005.png
+[2026-05-22 15:04:52]   frame_0006.png
+[2026-05-22 15:04:52]   frame_0007.png
+[2026-05-22 15:04:52]   frame_0008.png
+[2026-05-22 15:04:52]   frame_0009.png
+[2026-05-22 15:04:52]   frame_0010.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/movie_frames_destriped:
+[2026-05-22 15:04:52]   frame_0000.png
+[2026-05-22 15:04:52]   frame_0001.png
+[2026-05-22 15:04:52]   frame_0002.png
+[2026-05-22 15:04:52]   frame_0003.png
+[2026-05-22 15:04:52]   frame_0004.png
+[2026-05-22 15:04:52]   frame_0005.png
+[2026-05-22 15:04:52]   frame_0006.png
+[2026-05-22 15:04:52]   frame_0007.png
+[2026-05-22 15:04:52]   frame_0008.png
+[2026-05-22 15:04:52]   frame_0009.png
+[2026-05-22 15:04:52]   frame_0010.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/movie_frames_raw_selfcal:
+[2026-05-22 15:04:52]   frame_0000.png
+[2026-05-22 15:04:52]   frame_0001.png
+[2026-05-22 15:04:52]   frame_0002.png
+[2026-05-22 15:04:52]   frame_0003.png
+[2026-05-22 15:04:52]   frame_0004.png
+[2026-05-22 15:04:52]   frame_0005.png
+[2026-05-22 15:04:52]   frame_0006.png
+[2026-05-22 15:04:52]   frame_0007.png
+[2026-05-22 15:04:52]   frame_0008.png
+[2026-05-22 15:04:52]   frame_0009.png
+[2026-05-22 15:04:52]   frame_0010.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/provenance:
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260520_132714.cmd
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260520_132714.log
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260520_153046.cmd
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260520_153046.log
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260522_103608.cmd
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260522_103608.log
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_rms_evolution.csv
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_rms_evolution.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_rms_evolution.csv
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_rms_evolution.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_before_after_compare.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_before_after_compare.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_before_after_compare.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_destriped.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_destriped.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_destriped.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_raw_selfcal.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_raw_selfcal.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_raw_selfcal.mp4
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/destripe_debug:
+[2026-05-22 15:04:52]   moon0520_stk0000_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0010_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0020_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0030_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0040_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0050_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0060_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0070_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0080_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0090_n10_final
+[2026-05-22 15:04:52]   moon0520_stk0100_n13_final
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/movie_frames_compare:
+[2026-05-22 15:04:52]   frame_0000.png
+[2026-05-22 15:04:52]   frame_0001.png
+[2026-05-22 15:04:52]   frame_0002.png
+[2026-05-22 15:04:52]   frame_0003.png
+[2026-05-22 15:04:52]   frame_0004.png
+[2026-05-22 15:04:52]   frame_0005.png
+[2026-05-22 15:04:52]   frame_0006.png
+[2026-05-22 15:04:52]   frame_0007.png
+[2026-05-22 15:04:52]   frame_0008.png
+[2026-05-22 15:04:52]   frame_0009.png
+[2026-05-22 15:04:52]   frame_0010.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/movie_frames_cumulative:
+[2026-05-22 15:04:52]   frame_0000.png
+[2026-05-22 15:04:52]   frame_0001.png
+[2026-05-22 15:04:52]   frame_0002.png
+[2026-05-22 15:04:52]   frame_0003.png
+[2026-05-22 15:04:52]   frame_0004.png
+[2026-05-22 15:04:52]   frame_0005.png
+[2026-05-22 15:04:52]   frame_0006.png
+[2026-05-22 15:04:52]   frame_0007.png
+[2026-05-22 15:04:52]   frame_0008.png
+[2026-05-22 15:04:52]   frame_0009.png
+[2026-05-22 15:04:52]   frame_0010.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/movie_frames_destriped:
+[2026-05-22 15:04:52]   frame_0000.png
+[2026-05-22 15:04:52]   frame_0001.png
+[2026-05-22 15:04:52]   frame_0002.png
+[2026-05-22 15:04:52]   frame_0003.png
+[2026-05-22 15:04:52]   frame_0004.png
+[2026-05-22 15:04:52]   frame_0005.png
+[2026-05-22 15:04:52]   frame_0006.png
+[2026-05-22 15:04:52]   frame_0007.png
+[2026-05-22 15:04:52]   frame_0008.png
+[2026-05-22 15:04:52]   frame_0009.png
+[2026-05-22 15:04:52]   frame_0010.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/movie_frames_raw_selfcal:
+[2026-05-22 15:04:52]   frame_0000.png
+[2026-05-22 15:04:52]   frame_0001.png
+[2026-05-22 15:04:52]   frame_0002.png
+[2026-05-22 15:04:52]   frame_0003.png
+[2026-05-22 15:04:52]   frame_0004.png
+[2026-05-22 15:04:52]   frame_0005.png
+[2026-05-22 15:04:52]   frame_0006.png
+[2026-05-22 15:04:52]   frame_0007.png
+[2026-05-22 15:04:52]   frame_0008.png
+[2026-05-22 15:04:52]   frame_0009.png
+[2026-05-22 15:04:52]   frame_0010.png
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/provenance:
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260520_133822.cmd
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260520_133822.log
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260520_154036.cmd
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260520_154036.log
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260522_104615.cmd
+[2026-05-22 15:04:52]   run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260522_104615.log
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   Step 16: 3C468.1 selfcal imaging outputs
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0131/3c468p1_int0131_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0132/3c468p1_int0132_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0133/3c468p1_int0133_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0134/3c468p1_int0134_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0135/3c468p1_int0135_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0136/3c468p1_int0136_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0137/3c468p1_int0137_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0138/3c468p1_int0138_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0139/3c468p1_int0139_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0140/3c468p1_int0140_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0141/3c468p1_int0141_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0142/3c468p1_int0142_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0143/3c468p1_int0143_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0144/3c468p1_int0144_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0145/3c468p1_int0145_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0146/3c468p1_int0146_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0147/3c468p1_int0147_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0148/3c468p1_int0148_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0149/3c468p1_int0149_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0150/3c468p1_int0150_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0151/3c468p1_int0151_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0152/3c468p1_int0152_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0153/3c468p1_int0153_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0154/3c468p1_int0154_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0155/3c468p1_int0155_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0156/3c468p1_int0156_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0157/3c468p1_int0157_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0158/3c468p1_int0158_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0159/3c468p1_int0159_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0160/3c468p1_int0160_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0161/3c468p1_int0161_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0162/3c468p1_int0162_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0163/3c468p1_int0163_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0164/3c468p1_int0164_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0168/3c468p1_int0168_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0169/3c468p1_int0169_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0170/3c468p1_int0170_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0171/3c468p1_int0171_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0172/3c468p1_int0172_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0173/3c468p1_int0173_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0174/3c468p1_int0174_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0175/3c468p1_int0175_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0176/3c468p1_int0176_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0177/3c468p1_int0177_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0178/3c468p1_int0178_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0179/3c468p1_int0179_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0180/3c468p1_int0180_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0181/3c468p1_int0181_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0182/3c468p1_int0182_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0183/3c468p1_int0183_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0184/3c468p1_int0184_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0185/3c468p1_int0185_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0186/3c468p1_int0186_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0187/3c468p1_int0187_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0188/3c468p1_int0188_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0189/3c468p1_int0189_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0190/3c468p1_int0190_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0191/3c468p1_int0191_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0192/3c468p1_int0192_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0193/3c468p1_int0193_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0194/3c468p1_int0194_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0195/3c468p1_int0195_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0196/3c468p1_int0196_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0197/3c468p1_int0197_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0198/3c468p1_int0198_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0199/3c468p1_int0199_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0200/3c468p1_int0200_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0201/3c468p1_int0201_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0202/3c468p1_int0202_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0203/3c468p1_int0203_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0204/3c468p1_int0204_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0205/3c468p1_int0205_final.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0206/3c468p1_int0206_final.fits
+[2026-05-22 15:04:52]   
+[2026-05-22 15:04:52]   Step 17: 3C468.1 post-selfcal artifacts (stack + movie)
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_stack_mean.fits
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_selfcal_movie.mp4
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_selfcal_movie.gif
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_selfcal_movie.mov
+[2026-05-22 15:04:52]   /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468.1_selfcal_movie.mp4
+[2026-05-22 15:04:52] Product manifest file: /Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_products_20260522_150427.txt
