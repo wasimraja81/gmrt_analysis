@@ -1,8 +1,8 @@
 GMRT 40_014 products to audit
-Generated: 2026-05-19 15:00:16
+Generated: 2026-05-22 12:02:20
 
 Workflow log:
-/Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260519_135646.log
+/Users/raj030/DATA/gmrt_40_014/work/logs/run_gmrt_40_014_calibration_workflow_20260522_103607.log
 
 Step 2: primary calibration
 /Users/raj030/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz
@@ -89,32 +89,32 @@ Step 14: moon imaging diagnostics (trajectory plot)
 /Users/raj030/DATA/gmrt_40_014/work/diagnostics_out/moon_imaging/moon0520_trajectory.png
 
 Step 15: moon post-selfcal artifacts (destripe + movies)
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_before_after_compare.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_before_after_compare.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_before_after_compare.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_destriped.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.fits
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_rms_evolution.csv
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_destriped_cumulative_rms_evolution.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_rms_evolution.csv
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/moon0520_observed_center_raw_cumulative_rms_evolution.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_before_after_compare.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_before_after_compare.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_before_after_compare.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_destriped.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_destriped.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_destriped.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_destriped.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack_original.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_destriped_stack.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_phasecorr_raw_selfcal_stack.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_no_phasecenter_raw_selfcal.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_coadd.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_rms_evolution.csv
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_destriped_cumulative_rms_evolution.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_coadd.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_rms_evolution.csv
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/moon0520_observed_center_raw_cumulative_rms_evolution.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/destripe_debug:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/destripe_debug:
 moon0520_stk0000_n10_final
 moon0520_stk0010_n10_final
 moon0520_stk0020_n10_final
@@ -127,7 +127,7 @@ moon0520_stk0080_n10_final
 moon0520_stk0090_n10_final
 moon0520_stk0100_n13_final
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_compare:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/movie_frames_compare:
 frame_0000.png
 frame_0001.png
 frame_0002.png
@@ -140,7 +140,7 @@ frame_0008.png
 frame_0009.png
 frame_0010.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_cumulative:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/movie_frames_cumulative:
 frame_0000.png
 frame_0001.png
 frame_0002.png
@@ -153,7 +153,7 @@ frame_0008.png
 frame_0009.png
 frame_0010.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_destriped:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/movie_frames_destriped:
 frame_0000.png
 frame_0001.png
 frame_0002.png
@@ -166,7 +166,7 @@ frame_0008.png
 frame_0009.png
 frame_0010.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/movie_frames_raw_selfcal:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/movie_frames_raw_selfcal:
 frame_0000.png
 frame_0001.png
 frame_0002.png
@@ -179,45 +179,39 @@ frame_0008.png
 frame_0009.png
 frame_0010.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/no_phasecenter/provenance:
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260516_224545.cmd
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260516_224545.log
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_165440.cmd
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_165440.log
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_183628.cmd
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_183628.log
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_184648.cmd
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_184648.log
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_195031.cmd
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_195031.log
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_205147.cmd
-run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260517_205147.log
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_rms_evolution.csv
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_destriped_cumulative_rms_evolution.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_rms_evolution.csv
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_moon_centered_raw_cumulative_rms_evolution.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_before_after_compare.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_before_after_compare.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_before_after_compare.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_destriped.mp4
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.fits
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_raw_selfcal.gif
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_raw_selfcal.mov
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/moon0520_phasecenter_raw_selfcal.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/no_phasecenter/provenance:
+run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260520_132714.cmd
+run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260520_132714.log
+run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260520_153046.cmd
+run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260520_153046.log
+run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260522_103608.cmd
+run_stack_moon_snapshots_moon0520_no_phasecenter_phasecorr_destriped_stack_20260522_103608.log
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_coadd.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_rms_evolution.csv
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_destriped_cumulative_rms_evolution.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_coadd.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_rms_evolution.csv
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_moon_centered_raw_cumulative_rms_evolution.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_before_after_compare.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_before_after_compare.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_before_after_compare.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_destriped.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_destriped.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_destriped.mp4
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack_destriped.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack_original.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_destriped_stack.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_noshift_raw_selfcal_stack.png
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_raw_selfcal.gif
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_raw_selfcal.mov
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/moon0520_phasecenter_raw_selfcal.mp4
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/destripe_debug:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/destripe_debug:
 moon0520_stk0000_n10_final
 moon0520_stk0010_n10_final
 moon0520_stk0020_n10_final
@@ -230,7 +224,7 @@ moon0520_stk0080_n10_final
 moon0520_stk0090_n10_final
 moon0520_stk0100_n13_final
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/movie_frames_compare:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/movie_frames_compare:
 frame_0000.png
 frame_0001.png
 frame_0002.png
@@ -243,7 +237,7 @@ frame_0008.png
 frame_0009.png
 frame_0010.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/movie_frames_cumulative:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/movie_frames_cumulative:
 frame_0000.png
 frame_0001.png
 frame_0002.png
@@ -256,7 +250,7 @@ frame_0008.png
 frame_0009.png
 frame_0010.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/movie_frames_destriped:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/movie_frames_destriped:
 frame_0000.png
 frame_0001.png
 frame_0002.png
@@ -269,7 +263,7 @@ frame_0008.png
 frame_0009.png
 frame_0010.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/movie_frames_raw_selfcal:
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/movie_frames_raw_selfcal:
 frame_0000.png
 frame_0001.png
 frame_0002.png
@@ -282,15 +276,13 @@ frame_0008.png
 frame_0009.png
 frame_0010.png
 
-/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/phasecenter/provenance:
-run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260516_225608.cmd
-run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260516_225608.log
-run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_185719.cmd
-run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_185719.log
-run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_200055.cmd
-run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_200055.log
-run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_210217.cmd
-run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260517_210217.log
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/ghpages_products/moon0520/phasecenter/provenance:
+run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260520_133822.cmd
+run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260520_133822.log
+run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260520_154036.cmd
+run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260520_154036.log
+run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260522_104615.cmd
+run_stack_moon_snapshots_moon0520_phasecenter_noshift_destriped_stack_20260522_104615.log
 
 Step 16: 3C468.1 selfcal imaging outputs
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0130/3c468p1_int0130_final.fits
@@ -331,6 +323,45 @@ Step 16: 3C468.1 selfcal imaging outputs
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0165/3c468p1_int0165_final.fits
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0166/3c468p1_int0166_final.fits
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468p1_int0167/3c468p1_int0167_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0168/3c468p1_int0168_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0169/3c468p1_int0169_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0170/3c468p1_int0170_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0171/3c468p1_int0171_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0172/3c468p1_int0172_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0173/3c468p1_int0173_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0174/3c468p1_int0174_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0175/3c468p1_int0175_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0176/3c468p1_int0176_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0177/3c468p1_int0177_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0178/3c468p1_int0178_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0179/3c468p1_int0179_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0180/3c468p1_int0180_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0181/3c468p1_int0181_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0182/3c468p1_int0182_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0183/3c468p1_int0183_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0184/3c468p1_int0184_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0185/3c468p1_int0185_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0186/3c468p1_int0186_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0187/3c468p1_int0187_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0188/3c468p1_int0188_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0189/3c468p1_int0189_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0190/3c468p1_int0190_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0191/3c468p1_int0191_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0192/3c468p1_int0192_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0193/3c468p1_int0193_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0194/3c468p1_int0194_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0195/3c468p1_int0195_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0196/3c468p1_int0196_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0197/3c468p1_int0197_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0198/3c468p1_int0198_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0199/3c468p1_int0199_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0200/3c468p1_int0200_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0201/3c468p1_int0201_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0202/3c468p1_int0202_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0203/3c468p1_int0203_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0204/3c468p1_int0204_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0205/3c468p1_int0205_final.fits
+/Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan06_stk1/3c468p1_int0206/3c468p1_int0206_final.fits
 
 Step 17: 3C468.1 post-selfcal artifacts (stack + movie)
 /Users/raj030/DATA/gmrt_40_014/work/casa_selfcal/3c468.1_scan05_stk1/3c468.1_stack_mean.fits
