@@ -51,12 +51,22 @@ def detect_moon_root(run_dir: Path) -> str:
 
 
 def detect_static_target_dirs(run_dir: Path) -> list[Path]:
-    roots = sorted(run_dir.glob("casa_selfcal/3c468.1_scan*_stk*"))
+    roots = sorted(run_dir.glob("casa_selfcal/*_scan*_stk*"))
     return [p for p in roots if p.is_dir()]
 
 
 def _first_existing_rel(run_dir: Path, base_dir: str, candidates: list[str]) -> str:
     return select_first_existing_rel(run_dir, base_dir, candidates)
+
+
+def _first_matching_rel(run_dir: Path, base_dir: str, pattern: str) -> str:
+    base_path = run_dir / base_dir
+    if not base_path.is_dir():
+        return ""
+    for match in sorted(base_path.glob(pattern)):
+        if match.is_file():
+            return str(match.relative_to(run_dir)).replace('\\', '/')
+    return ""
 
 
 def build_static_target_sections(run_dir: Path) -> list[dict]:
@@ -70,7 +80,9 @@ def build_static_target_sections(run_dir: Path) -> list[dict]:
         if m := re.search(r"_stk(\d+)", name):
             stack_size = m.group(1)
 
-        source_label = "3C468.1"
+        source_label = name
+        if m := re.match(r"(.+?)_scan\d+_stk\d+", name):
+            source_label = m.group(1)
         context_bits = [f"Source {source_label}"]
         if scan_tag:
             context_bits.append(scan_tag)
@@ -100,15 +112,68 @@ def build_static_target_sections(run_dir: Path) -> list[dict]:
             "3c468.1_cumulative_rms_evolution.gif",
         ])
         diag_panel_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_clean_cycle_metrics_panel_5x5.png" if scan_tag else "",
             "scan05_clean_cycle_metrics_panel_5x5.png",
             "scan05_clean_cycle_metrics_panel.png",
         ])
+        diag_gain_panel_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_selfcal_gain_panel_6x5.png" if scan_tag else "",
+            "scan05_selfcal_gain_panel_6x5.png",
+            "scan05_selfcal_gains_panel_6x5.png",
+        ])
         diag_csv_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_clean_cycle_metrics_per_integration.csv" if scan_tag else "",
             "scan05_clean_cycle_metrics_per_integration.csv",
         ])
         diag_stats_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_clean_cycle_metrics_summary_stats.csv" if scan_tag else "",
             "scan05_clean_cycle_metrics_summary_stats.csv",
         ])
+        diag_flag_total_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_flag_total_vs_integration.png" if scan_tag else "",
+            "scan05_flag_total_vs_integration.png",
+        ])
+        diag_flag_ant_panel_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_flag_antenna_panel_6x5.png" if scan_tag else "",
+            "scan05_flag_antenna_panel_6x5.png",
+        ])
+        diag_flag_heatmap_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_flag_baseline_grid_all_integrations.png" if scan_tag else "",
+            "scan05_flag_baseline_grid_all_integrations.png",
+        ])
+        diag_flag_heatmap_movie_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_flag_baseline_grid_movie.mp4" if scan_tag else "",
+            "scan05_flag_baseline_grid_movie.mp4",
+        ])
+        diag_flag_heatmap_full_rel = _first_existing_rel(run_dir, str(section_dir.relative_to(run_dir)), [
+            f"{scan_tag}_flag_baseline_grid_full_ms.png" if scan_tag else "",
+            "scan05_flag_baseline_grid_full_ms.png",
+        ])
+        if not diag_flag_heatmap_rel:
+            for flag_diag_dir in [f"{scan_tag}_flag_diagnostics" if scan_tag else "", "scan05_flag_diagnostics"]:
+                if not flag_diag_dir:
+                    continue
+                diag_flag_heatmap_rel = _first_matching_rel(
+                    run_dir,
+                    f"{section_dir.relative_to(run_dir)}/{flag_diag_dir}",
+                    "*_flag_baseline_grid.png",
+                )
+                if diag_flag_heatmap_rel:
+                    break
+
+        diagnostics_selfcal = {
+            "metrics_panel_rel": diag_panel_rel,
+            "gain_panel_rel": diag_gain_panel_rel,
+            "metrics_csv_rel": diag_csv_rel,
+            "summary_csv_rel": diag_stats_rel,
+        }
+        diagnostics_ms_flag = {
+            "representative_heatmap_rel": diag_flag_heatmap_rel,
+            "heatmap_movie_rel": diag_flag_heatmap_movie_rel,
+            "full_observation_heatmap_rel": diag_flag_heatmap_full_rel,
+            "total_vs_integration_rel": diag_flag_total_rel,
+            "antenna_panel_rel": diag_flag_ant_panel_rel,
+        }
 
         sections.append({
             "section_id": f"static.{name}",
@@ -121,9 +186,19 @@ def build_static_target_sections(run_dir: Path) -> list[dict]:
             "movie_rel": movie_rel,
             "stack_rel": stack_rel,
             "rms_movie_rel": rms_movie_rel,
+            "diagnostics": {
+                "selfcal": diagnostics_selfcal,
+                "ms_flag": diagnostics_ms_flag,
+            },
             "diag_panel_rel": diag_panel_rel,
+            "diag_gain_panel_rel": diag_gain_panel_rel,
             "diag_csv_rel": diag_csv_rel,
             "diag_stats_rel": diag_stats_rel,
+            "diag_flag_total_rel": diag_flag_total_rel,
+            "diag_flag_ant_panel_rel": diag_flag_ant_panel_rel,
+            "diag_flag_heatmap_rel": diag_flag_heatmap_rel,
+            "diag_flag_heatmap_movie_rel": diag_flag_heatmap_movie_rel,
+            "diag_flag_heatmap_full_rel": diag_flag_heatmap_full_rel,
         })
     return sections
 

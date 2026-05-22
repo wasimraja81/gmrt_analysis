@@ -286,6 +286,9 @@ out['static_count'] = str(len(static_targets))
 for idx, section in enumerate(static_targets, start=1):
 	if not isinstance(section, dict):
 		continue
+	diagnostics = section.get('diagnostics', {}) if isinstance(section.get('diagnostics', {}), dict) else {}
+	selfcal_diag = diagnostics.get('selfcal', {}) if isinstance(diagnostics.get('selfcal', {}), dict) else {}
+	ms_flag_diag = diagnostics.get('ms_flag', {}) if isinstance(diagnostics.get('ms_flag', {}), dict) else {}
 	prefix = f'static_{idx}_'
 	out[prefix + 'section_id'] = str(section.get('section_id', ''))
 	out[prefix + 'section_name'] = str(section.get('section_name', ''))
@@ -297,9 +300,15 @@ for idx, section in enumerate(static_targets, start=1):
 	out[prefix + 'movie_rel'] = str(section.get('movie_rel', ''))
 	out[prefix + 'stack_rel'] = str(section.get('stack_rel', ''))
 	out[prefix + 'rms_movie_rel'] = str(section.get('rms_movie_rel', ''))
-	out[prefix + 'diag_panel_rel'] = str(section.get('diag_panel_rel', ''))
-	out[prefix + 'diag_csv_rel'] = str(section.get('diag_csv_rel', ''))
-	out[prefix + 'diag_stats_rel'] = str(section.get('diag_stats_rel', ''))
+	out[prefix + 'diag_panel_rel'] = str(selfcal_diag.get('metrics_panel_rel', section.get('diag_panel_rel', '')))
+	out[prefix + 'diag_gain_panel_rel'] = str(selfcal_diag.get('gain_panel_rel', section.get('diag_gain_panel_rel', '')))
+	out[prefix + 'diag_csv_rel'] = str(selfcal_diag.get('metrics_csv_rel', section.get('diag_csv_rel', '')))
+	out[prefix + 'diag_stats_rel'] = str(selfcal_diag.get('summary_csv_rel', section.get('diag_stats_rel', '')))
+	out[prefix + 'diag_flag_total_rel'] = str(ms_flag_diag.get('total_vs_integration_rel', section.get('diag_flag_total_rel', '')))
+	out[prefix + 'diag_flag_ant_panel_rel'] = str(ms_flag_diag.get('antenna_panel_rel', section.get('diag_flag_ant_panel_rel', '')))
+	out[prefix + 'diag_flag_heatmap_rel'] = str(ms_flag_diag.get('representative_heatmap_rel', section.get('diag_flag_heatmap_rel', '')))
+	out[prefix + 'diag_flag_heatmap_movie_rel'] = str(ms_flag_diag.get('heatmap_movie_rel', section.get('diag_flag_heatmap_movie_rel', '')))
+	out[prefix + 'diag_flag_heatmap_full_rel'] = str(ms_flag_diag.get('full_observation_heatmap_rel', section.get('diag_flag_heatmap_full_rel', '')))
 
 for key, val in out.items():
     print(f"{key}\t{val}")
@@ -341,8 +350,14 @@ PY
 			static_*_stack_rel) eval "$key=\"$val\"" ;;
 			static_*_rms_movie_rel) eval "$key=\"$val\"" ;;
 			static_*_diag_panel_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_gain_panel_rel) eval "$key=\"$val\"" ;;
 			static_*_diag_csv_rel) eval "$key=\"$val\"" ;;
 			static_*_diag_stats_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_flag_total_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_flag_ant_panel_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_flag_heatmap_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_flag_heatmap_movie_rel) eval "$key=\"$val\"" ;;
+			static_*_diag_flag_heatmap_full_rel) eval "$key=\"$val\"" ;;
 		esac
 	done <<< "$fields"
 
@@ -455,6 +470,14 @@ collect_publish_files() {
 				find "$selfcal_dir" -type f \( \
 					-name '*.gif' -o -name '*.mp4' -o -name '*.mov' -o \
 					-name 'scan*_clean_cycle_metrics_panel*.png' -o \
+					-name 'scan*_selfcal_gain_panel*.png' -o \
+					-name 'scan*_flag_total_vs_integration.png' -o \
+					-name 'scan*_flag_antenna_panel*.png' -o \
+					-name 'scan*_flag_baseline_grid_all_integrations.png' -o \
+					-name 'scan*_flag_baseline_grid_movie.mp4' -o \
+					-name 'scan*_flag_baseline_grid_full_ms.png' -o \
+					-name '*_flag_baseline_grid.png' -o \
+					-name '*_flag_vs_channel.png' -o \
 					-name 'scan*_clean_cycle_metrics*.csv' -o \
 					-name '*destripe*.png' -o -name '*destrip*.png' -o \
 					-name '*convergence*.png' -o -name '*iter_progression*.png' -o \
@@ -583,20 +606,26 @@ render_post_selfcal_section() {
 	local stack_rel="$5"
 	local rms_movie_rel="$6"
 	local diag_panel_rel="$7"
-	local diag_csv_rel="$8"
-	local diag_stats_rel="$9"
-	local diag_csv_table_rel="${10}"
-	local diag_stats_table_rel="${11}"
-	local section_note_html="${12}"
-	local footer_link="${13}"
-	local footer_label="${14}"
+	local diag_gain_panel_rel="$8"
+	local diag_csv_rel="$9"
+	local diag_stats_rel="${10}"
+	local diag_csv_table_rel="${11}"
+	local diag_stats_table_rel="${12}"
+	local section_note_html="${13}"
+	local footer_link="${14}"
+	local footer_label="${15}"
+	local diag_flag_total_rel="${16:-}"
+	local diag_flag_ant_panel_rel="${17:-}"
+	local diag_flag_heatmap_rel="${18:-}"
+	local diag_flag_heatmap_movie_rel="${19:-}"
+	local diag_flag_heatmap_full_rel="${20:-}"
 	local html_section_title html_section_context
 
 	html_section_title="$(escape_html "$section_title")"
 	html_section_context="$(escape_html "$section_context")"
 
 	cat >> "$tmp_file" <<EOF
-    <div class="moon-section">
+	<div class="post-selfcal-section">
       <h3>${html_section_title}</h3>
       <p class="tiny">${html_section_context}</p>
 EOF
@@ -659,7 +688,7 @@ EOF
         </div>
 EOF
 
-	if [[ -n "$diag_panel_rel" || -n "$diag_csv_rel" || -n "$diag_stats_rel" || -n "$diag_csv_table_rel" || -n "$diag_stats_table_rel" ]]; then
+	if [[ -n "$diag_panel_rel" || -n "$diag_gain_panel_rel" || -n "$diag_csv_rel" || -n "$diag_stats_rel" || -n "$diag_csv_table_rel" || -n "$diag_stats_table_rel" ]]; then
 		cat >> "$tmp_file" <<'EOF'
         <div class="panel-card">
           <p><strong>Selfcal diagnostics</strong></p>
@@ -667,6 +696,11 @@ EOF
 		if [[ -n "$diag_panel_rel" ]]; then
 			cat >> "$tmp_file" <<EOF
           <a href="${diag_panel_rel}"><img src="${diag_panel_rel}" alt="${html_section_title} selfcal diagnostics panel" loading="lazy"></a>
+EOF
+		fi
+		if [[ -n "$diag_gain_panel_rel" ]]; then
+			cat >> "$tmp_file" <<EOF
+          <a href="${diag_gain_panel_rel}"><img src="${diag_gain_panel_rel}" alt="${html_section_title} selfcal gain panel" loading="lazy"></a>
 EOF
 		fi
 		if [[ -n "$diag_csv_rel" || -n "$diag_stats_rel" ]]; then
@@ -704,7 +738,7 @@ EOF
           </p>
 EOF
 		fi
-		if [[ -z "$diag_panel_rel" && -z "$diag_csv_rel" && -z "$diag_stats_rel" ]]; then
+		if [[ -z "$diag_panel_rel" && -z "$diag_gain_panel_rel" && -z "$diag_csv_rel" && -z "$diag_stats_rel" ]]; then
 			cat >> "$tmp_file" <<'EOF'
           <p class="tiny">Not generated for this source/run.</p>
 EOF
@@ -714,19 +748,62 @@ EOF
 EOF
 	fi
 
-	cat >> "$tmp_file" <<'EOF'
-      </div>
+	if [[ -n "$diag_flag_total_rel" || -n "$diag_flag_ant_panel_rel" || -n "$diag_flag_heatmap_rel" || -n "$diag_flag_heatmap_movie_rel" || -n "$diag_flag_heatmap_full_rel" ]]; then
+		cat >> "$tmp_file" <<'EOF'
+        <div class="panel-card">
+          <p><strong>MS FLAG diagnostics</strong></p>
 EOF
-	if [[ -n "$footer_link" && -n "$footer_label" ]]; then
-		local html_footer_label
-		html_footer_label="$(escape_html "$footer_label")"
-		cat >> "$tmp_file" <<EOF
-      <p class="tiny"><a href="${footer_link}">${html_footer_label}</a></p>
+		if [[ -n "$diag_flag_heatmap_rel" ]]; then
+			cat >> "$tmp_file" <<EOF
+          <p class="tiny">Scan-level baseline flag summary (${html_section_title})</p>
+          <a href="${diag_flag_heatmap_rel}" target="_blank" rel="noopener"><img src="${diag_flag_heatmap_rel}" alt="${html_section_title} baseline flag heatmap" loading="lazy"></a>
+EOF
+		fi
+		if [[ -n "$diag_flag_heatmap_movie_rel" ]]; then
+			cat >> "$tmp_file" <<EOF
+          <p class="tiny">Per-integration heatmap movie</p>
+          <video controls preload="metadata" onclick="window.open('${diag_flag_heatmap_movie_rel}','_blank')" title="Click to open full-size">
+            <source src="${diag_flag_heatmap_movie_rel}" type="video/mp4">
+          </video>
+EOF
+		fi
+		cat >> "$tmp_file" <<'EOF'
+          <p>
+EOF
+		if [[ -n "$diag_flag_total_rel" ]]; then
+			cat >> "$tmp_file" <<EOF
+            <a href="${diag_flag_total_rel}" target="_blank" rel="noopener">Total flagged fraction vs integration</a>
+EOF
+		fi
+		if [[ -n "$diag_flag_total_rel" && -n "$diag_flag_ant_panel_rel" ]]; then
+			cat >> "$tmp_file" <<'EOF'
+            ·
+EOF
+		fi
+		if [[ -n "$diag_flag_ant_panel_rel" ]]; then
+			cat >> "$tmp_file" <<EOF
+            <a href="${diag_flag_ant_panel_rel}" target="_blank" rel="noopener">Per-antenna flag diagnostics (6×5 panel)</a>
+EOF
+		fi
+		if [[ -n "$diag_flag_heatmap_full_rel" ]]; then
+			cat >> "$tmp_file" <<'EOF'
+            ·
+EOF
+			cat >> "$tmp_file" <<EOF
+            <a href="${diag_flag_heatmap_full_rel}" target="_blank" rel="noopener">All scans baseline heatmap (_full.ms)</a>
+EOF
+		fi
+		cat >> "$tmp_file" <<'EOF'
+          </p>
+EOF
+		cat >> "$tmp_file" <<'EOF'
+        </div>
 EOF
 	fi
 
 	cat >> "$tmp_file" <<'EOF'
     </div>
+	</div>
 EOF
 }
 
@@ -781,18 +858,18 @@ PY
 		.stage { margin-top: 1.2rem; padding: 1.1rem; border: 1px solid #8884; border-radius: 10px; background: #8881; }
 		.stage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
 		.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; align-items: start; }
-		.moon-section .panel-grid { align-items: stretch; }
+		.post-selfcal-section .panel-grid { align-items: stretch; }
     .card { border: 1px solid #8884; border-radius: 10px; padding: 0.9rem; background: #8881; }
 		.panel-card { border: 1px solid #8884; border-radius: 10px; padding: 0.75rem; background: #8881; }
-		.moon-section .panel-card { display: flex; flex-direction: column; }
-		.moon-section .panel-card > a { flex: 1; display: flex; align-items: center; justify-content: center; }
-		.moon-section { margin-top: 1rem; border: 1px solid #8884; border-radius: 12px; background: #8881; padding: 1rem; }
-		.moon-section h3 { margin-top: 0; margin-bottom: 0.25rem; }
+		.post-selfcal-section .panel-card { display: flex; flex-direction: column; }
+		.post-selfcal-section .panel-card > a { flex: 1; display: flex; align-items: center; justify-content: center; }
+		.post-selfcal-section { margin-top: 1rem; border: 1px solid #8884; border-radius: 12px; background: #8881; padding: 1rem; }
+		.post-selfcal-section h3 { margin-top: 0; margin-bottom: 0.25rem; }
 		.card p { margin: 0.35rem 0; }
 		.panel-card p { margin: 0.2rem 0 0.5rem 0; }
     img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
 		.panel-card img, .panel-card video { width: 100%; border-radius: 8px; }
-		.moon-section .panel-card img { width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
+		.post-selfcal-section .panel-card img { width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
 		.panel-card video { cursor: pointer; }
     a { text-decoration: none; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -1175,7 +1252,7 @@ EOF
 	if (cd "$run_dir" && find logs -maxdepth 1 -type f \( -name '*moon0520*.cmd' -o -name '*moon0520*.log' -o -name '*moon_selfcal*.cmd' -o -name '*moon_selfcal*.log' -o -name 'clustering_moon0520*.cmd' -o -name 'clustering_moon0520*.log' \) 2>/dev/null | grep -q .); then
 		cat >> "$tmp_file" <<'EOF'
 
-  <h2>Provenance & reproducibility</h2>
+	<h2>Provenance &amp; reproducibility</h2>
   <p class="tiny">Stage command and log manifests kept in structured directories for clean audit trail.</p>
   <ul>
     <li><a href="logs/">Browse command/log manifests →</a></li>
@@ -1231,9 +1308,8 @@ EOF
 
 		cat >> "$tmp_file" <<'EOF'
 
-  <div class="stage">
-    <h2>Moon post-selfcal imaging & stacking summary</h2>
-    <p>Four imaging/processing modes organized by geometry, then processing stage. Each section shows the observation movie, stacked image, and RMS evolution diagnostics. Detailed destriping diagnostics are linked separately at the bottom of each section.</p>
+	<h2>Moon post-selfcal imaging &amp; stacking summary</h2>
+	<p>Four imaging/processing modes organized by geometry, then processing stage. Each section shows the observation movie, stacked image, and RMS evolution diagnostics. Detailed destriping diagnostics are linked separately at the bottom of each section.</p>
 EOF
 
 		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
@@ -1241,7 +1317,7 @@ EOF
 				"1. Observed phase-centre – Raw selfcal" \
 				"Moon drifts across the image. Stacking uses shift-then-add to align moon before co-adding." \
 				"$no_raw_mp4_rel" "$no_raw_stack_rel" "$no_raw_cum_mp4_rel" \
-				"" "" "" "" "" "" "" ""
+				"" "" "" "" "" "" "" "" ""
 		fi
 
 		if [[ "$moon_has_phasecenter" == "1" ]]; then
@@ -1249,7 +1325,7 @@ EOF
 				"2. Moon-centred – Raw selfcal" \
 				"Moon stays near image center. Stacking uses direct (no-shift) co-addition." \
 				"$pc_raw_mp4_rel" "$pc_raw_stack_rel" "$pc_raw_cum_mp4_rel" \
-				"" "" "" "" "" "" "" ""
+				"" "" "" "" "" "" "" "" ""
 		fi
 
 		if [[ "$moon_has_no_phasecenter" == "1" ]]; then
@@ -1257,7 +1333,7 @@ EOF
 				"3. Observed phase-centre – Destriped" \
 				"Same geometry as Section 1, but with striping artifacts removed." \
 				"$no_dst_mp4_rel" "$no_dst_stack_rel" "$no_dst_cum_mp4_rel" \
-				"" "" "" "" "" "$moon_section3_note" "${moon_no_phasecenter_dir}/debug.html" "→ Destriping debug details"
+				"" "" "" "" "" "" "$moon_section3_note" "${moon_no_phasecenter_dir}/debug.html" "→ Destriping debug details"
 		fi
 
 		if [[ "$moon_has_phasecenter" == "1" ]]; then
@@ -1265,40 +1341,74 @@ EOF
 				"4. Moon-centred – Destriped" \
 				"Same geometry as Section 2, but with striping artifacts removed." \
 				"$pc_dst_mp4_rel" "$pc_dst_stack_rel" "$pc_dst_cum_mp4_rel" \
-				"" "" "" "" "" "" "${moon_phasecenter_dir}/debug.html" "→ Destriping debug details"
+				"" "" "" "" "" "" "" "${moon_phasecenter_dir}/debug.html" "→ Destriping debug details"
 		fi
 
-		cat >> "$tmp_file" <<'EOF'
-  </div>
-EOF
 	fi
 
 	# ── Manifest-driven static-target sections ───────────────────────────────
 	if [[ "$static_count" =~ ^[0-9]+$ ]] && [[ "$static_count" -gt 0 ]]; then
-		cat >> "$tmp_file" <<'EOF'
-
-  <div class="stage">
-    <h2>Post-selfcal imaging summary: 3C468.1</h2>
-    <p>Per-scan post-selfcal products for 3C468.1, rendered from the layout manifest in the same panel order as the Moon sections.</p>
+		local first_source_var="static_1_source_label"
+		local first_source_label="${!first_source_var-}"
+		local stage_heading="Post-selfcal imaging summary: static targets"
+		local stage_desc="Per-scan post-selfcal products for static calibrator/target sources, rendered from the layout manifest in the same panel order as the Moon sections."
+		if [[ -n "$first_source_label" ]]; then
+			stage_heading="Post-selfcal imaging summary: ${first_source_label}"
+			stage_desc="Per-scan post-selfcal products for ${first_source_label}, rendered from the layout manifest with scan-wise subsections."
+		fi
+		cat >> "$tmp_file" <<EOF
+		<h2>$(escape_html "$stage_heading")</h2>
+		<p>$(escape_html "$stage_desc")</p>
 EOF
+		local first_full_heatmap_rel=""
+		local full_heatmap_links=""
+		for ((i=1; i<=static_count; i++)); do
+			local pfx_full="static_${i}_"
+			local full_rel_var="${pfx_full}diag_flag_heatmap_full_rel"
+			local full_rel="${!full_rel_var-}"
+			if [[ -n "$full_rel" ]]; then
+				if [[ -z "$first_full_heatmap_rel" ]]; then
+					first_full_heatmap_rel="$full_rel"
+				fi
+				if [[ -z "$full_heatmap_links" ]]; then
+					full_heatmap_links="<a href=\"${full_rel}\" target=\"_blank\" rel=\"noopener\">Open full-observation heatmap</a>"
+				else
+					full_heatmap_links="${full_heatmap_links} · <a href=\"${full_rel}\" target=\"_blank\" rel=\"noopener\">Open full-observation heatmap</a>"
+				fi
+			fi
+		done
 		for ((i=1; i<=static_count; i++)); do
 			local pfx="static_${i}_"
+			local scan_tag_var="${pfx}scan_tag"
 			local section_title_var="${pfx}section_title"
 			local section_context_var="${pfx}section_context"
 			local movie_var="${pfx}movie_rel"
 			local stack_var="${pfx}stack_rel"
 			local rms_movie_var="${pfx}rms_movie_rel"
 			local diag_panel_var="${pfx}diag_panel_rel"
+			local diag_gain_panel_var="${pfx}diag_gain_panel_rel"
 			local diag_csv_var="${pfx}diag_csv_rel"
 			local diag_stats_var="${pfx}diag_stats_rel"
+			local diag_flag_total_var="${pfx}diag_flag_total_rel"
+			local diag_flag_ant_panel_var="${pfx}diag_flag_ant_panel_rel"
+			local diag_flag_heatmap_var="${pfx}diag_flag_heatmap_rel"
+			local diag_flag_heatmap_movie_var="${pfx}diag_flag_heatmap_movie_rel"
+			local diag_flag_heatmap_full_var="${pfx}diag_flag_heatmap_full_rel"
 			local section_title="${!section_title_var}"
+			local scan_tag="${!scan_tag_var-}"
 			local section_context="${!section_context_var}"
 			local movie_rel="${!movie_var}"
 			local stack_rel="${!stack_var}"
 			local rms_movie_rel="${!rms_movie_var}"
 			local diag_panel_rel="${!diag_panel_var}"
+			local diag_gain_panel_rel="${!diag_gain_panel_var-}"
 			local diag_csv_rel="${!diag_csv_var}"
 			local diag_stats_rel="${!diag_stats_var}"
+			local diag_flag_total_rel="${!diag_flag_total_var-}"
+			local diag_flag_ant_panel_rel="${!diag_flag_ant_panel_var-}"
+			local diag_flag_heatmap_rel="${!diag_flag_heatmap_var-}"
+			local diag_flag_heatmap_movie_rel="${!diag_flag_heatmap_movie_var-}"
+			local diag_flag_heatmap_full_rel="${!diag_flag_heatmap_full_var-}"
 			local diag_csv_table_rel=""
 			local diag_stats_table_rel=""
 			if [[ -n "$diag_csv_rel" && -f "$run_dir/$diag_csv_rel" ]]; then
@@ -1307,16 +1417,32 @@ EOF
 			if [[ -n "$diag_stats_rel" && -f "$run_dir/$diag_stats_rel" ]]; then
 				diag_stats_table_rel="$(render_csv_table_page "$run_dir" "$diag_stats_rel" "${section_title} · Clean-cycle summary statistics")" || diag_stats_table_rel=""
 			fi
+			local scan_heading="$section_title"
+			if [[ -n "$scan_tag" ]]; then
+				scan_heading="$scan_tag"
+			fi
 
 			render_post_selfcal_section "$tmp_file" \
-				"$section_title" "$section_context" \
+				"$scan_heading" "$section_context" \
 				"$movie_rel" "$stack_rel" "$rms_movie_rel" \
-				"$diag_panel_rel" "$diag_csv_rel" "$diag_stats_rel" \
-				"$diag_csv_table_rel" "$diag_stats_table_rel" "" "" ""
+				"$diag_panel_rel" "$diag_gain_panel_rel" "$diag_csv_rel" "$diag_stats_rel" \
+				"$diag_csv_table_rel" "$diag_stats_table_rel" "" "" "" \
+				"$diag_flag_total_rel" "$diag_flag_ant_panel_rel" "$diag_flag_heatmap_rel" "$diag_flag_heatmap_movie_rel" "$diag_flag_heatmap_full_rel"
 		done
-		cat >> "$tmp_file" <<'EOF'
-  </div>
+		if [[ -n "$first_full_heatmap_rel" ]]; then
+			cat >> "$tmp_file" <<EOF
+		<div class="post-selfcal-section">
+      <h3>All scans MS FLAG overview</h3>
+      <div class="panel-grid">
+        <div class="panel-card">
+          <p><strong>All scans baseline heatmap (_full.ms)</strong></p>
+          <a href="${first_full_heatmap_rel}" target="_blank" rel="noopener"><img src="${first_full_heatmap_rel}" alt="all scans baseline flag heatmap" loading="lazy"></a>
+          <p>${full_heatmap_links}</p>
+        </div>
+      </div>
+    </div>
 EOF
+		fi
 	fi
 
 	cat >> "$tmp_file" <<'EOF'

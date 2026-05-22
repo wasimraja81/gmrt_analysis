@@ -98,22 +98,39 @@ for d in "${DIRS[@]}"; do
     if [[ "$d" =~ (scan[0-9][0-9]) ]]; then
       scan_tag="${BASH_REMATCH[1]}"
     fi
+    diag_prefix="${scan_tag:-scan05}"
 
-    diag_csv="$d/scan05_clean_cycle_metrics_per_integration.csv"
-    diag_stats="$d/scan05_clean_cycle_metrics_summary_stats.csv"
-    diag_png="$d/scan05_clean_cycle_metrics_panel_5x5.png"
+    diag_csv="$d/${diag_prefix}_clean_cycle_metrics_per_integration.csv"
+    diag_stats="$d/${diag_prefix}_clean_cycle_metrics_summary_stats.csv"
+    diag_png="$d/${diag_prefix}_clean_cycle_metrics_panel_5x5.png"
+    diag_gain_png="$d/${diag_prefix}_selfcal_gain_panel_6x5.png"
+    diag_flag_dir="$d/${diag_prefix}_flag_diagnostics"
+    diag_flag_movie_mp4="$d/${diag_prefix}_flag_baseline_grid_movie.mp4"
+    diag_flag_total_png="$d/${diag_prefix}_flag_total_vs_integration.png"
+    diag_flag_ant_panel_png="$d/${diag_prefix}_flag_antenna_panel_6x5.png"
+    diag_flag_heatmap_all_png="$d/${diag_prefix}_flag_baseline_grid_all_integrations.png"
+    diag_flag_heatmap_full_png="$d/${diag_prefix}_flag_baseline_grid_full_ms.png"
 
-    "$PYTHON" "$REPO_ROOT/src/selfcal_diagnostics.py" plot-micro \
+    if ! "$PYTHON" "$REPO_ROOT/src/selfcal_diagnostics.py" plot-micro \
       --root "$WORK_SELFCAL_ROOT" \
       --run-id "$RUN_ID" \
       ${scan_tag:+--scan-tag "$scan_tag"} \
       --selfcal-name "$(basename "$d")" \
       --require-single-integration \
       --out-panel-png "$diag_png" \
+      --out-gain-panel-png "$diag_gain_png" \
+      --out-flag-dir "$diag_flag_dir" \
+      --out-flag-heatmap-movie-mp4 "$diag_flag_movie_mp4" \
+      --out-flag-total-vs-n-png "$diag_flag_total_png" \
+      --out-flag-antenna-panel-png "$diag_flag_ant_panel_png" \
+      --out-flag-heatmap-all-png "$diag_flag_heatmap_all_png" \
+      --out-flag-heatmap-full-png "$diag_flag_heatmap_full_png" \
       --out-stats-csv "$diag_stats" \
       --out-csv "$diag_csv" \
       --title-prefix "$(basename "$d")" \
-      2>&1 | sed 's/^/[3c468.1-diag] /'
+      2>&1 | sed 's/^/[3c468.1-diag] /'; then
+      echo "[3c468.1-post] WARNING: diagnostics unavailable for $(basename "$d") with run-id $RUN_ID; continuing"
+    fi
   fi
 done
 
