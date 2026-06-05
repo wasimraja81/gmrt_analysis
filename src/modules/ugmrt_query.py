@@ -2539,6 +2539,10 @@ def load_vis_for_source(
 _PB2017_3C48_COEFFS  = np.array([1.3253, -0.7553, -0.1914,  0.0498], dtype=np.float64)
 # Perley & Butler 2017 (ApJS 230, 7), Table 2 — 3C286 / J1331+3030, valid 0.05–50 GHz
 _PB2017_3C286_COEFFS = np.array([1.2481, -0.4507, -0.1798,  0.0357], dtype=np.float64)
+# Riseley et al. 2017 (A&A 597, A96), Appendix A, Eq. (A.1), Table A.2
+# 3C468.1 fourth-order model coefficients, with x = log10(nu / 150 MHz):
+# S[mJy] = A0 * 10^(A1*x + A2*x^2 + A3*x^3 + A4*x^4)
+_R2017_3C4681_ORDER4_COEFFS = np.array([40.093, -0.420, -0.830, 0.389, -0.084], dtype=np.float64)
 
 
 def _norm_antenna_name(name):
@@ -3480,6 +3484,25 @@ def flux_model_3c286_perley_butler_2017(freq_hz):
     return np.power(10.0, c[0] + c[1]*x + c[2]*x**2 + c[3]*x**3)
 
 
+def flux_model_3c4681_riseley_2017(freq_hz):
+    """Return the 3C468.1 Riseley et al. 2017 flux model in Jy.
+
+    Reference: Riseley et al. 2017, A&A 597, A96, Appendix A,
+    Eq. (A.1) and Table A.2 (fourth-order model selected by the authors).
+
+    S[Jy] = A0 * 10^(A1*x + A2*x² + A3*x³ + A4*x⁴),
+    where x = log10(nu / 150 MHz).
+    Coefficients: [40.093, -0.420, -0.830, 0.389, -0.084].
+    """
+    freq_hz = np.asarray(freq_hz, dtype=np.float64)
+    if np.any(freq_hz <= 0):
+        raise ValueError('All frequencies must be positive.')
+    x = np.log10(freq_hz / 150e6)
+    c = _R2017_3C4681_ORDER4_COEFFS
+    flux_jy = c[0] * np.power(10.0, c[1]*x + c[2]*x**2 + c[3]*x**3 + c[4]*x**4)
+    return flux_jy
+
+
 # ── Flux model registry ────────────────────────────────────────────────────────
 # Maps uppercase source name → flux-model callable (freq_hz → flux Jy array).
 # Model-based outlier metrics ('RR', 'LL') can only be used when the calibrator
@@ -3487,6 +3510,8 @@ def flux_model_3c286_perley_butler_2017(freq_hz):
 _FLUX_MODEL_REGISTRY: dict = {
     '3C48':  flux_model_3c48_perley_butler_2017,
     '3C286': flux_model_3c286_perley_butler_2017,
+    '3C468.1': flux_model_3c4681_riseley_2017,
+    '3C4681': flux_model_3c4681_riseley_2017,
 }
 # Metrics that require a flux-model entry from _FLUX_MODEL_REGISTRY.
 _MODEL_BASED_METRICS: frozenset = frozenset({'RR', 'LL'})
