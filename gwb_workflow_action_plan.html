@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GMRT 40_014 GWB Workflow Action Plan</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --card: #ffffff;
+      --ink: #1f2937;
+      --muted: #4b5563;
+      --accent: #0f766e;
+      --warn: #9a3412;
+      --ok: #166534;
+      --line: #d1d5db;
+      --shadow: 0 6px 18px rgba(31, 41, 55, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(120deg, #eef4ff 0%, var(--bg) 45%, #f2fbf8 100%);
+      line-height: 1.45;
+    }
+    .wrap {
+      max-width: 1050px;
+      margin: 30px auto 60px;
+      padding: 0 16px;
+    }
+    .hero {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 18px 20px;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.7rem;
+      letter-spacing: 0.2px;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 14px 14px 12px;
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      color: var(--accent);
+    }
+    .small {
+      font-size: 0.93rem;
+      color: var(--muted);
+    }
+    code {
+      background: #f3f4f6;
+      padding: 2px 5px;
+      border-radius: 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    .facts {
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }
+    .facts li { margin: 4px 0; }
+    .section {
+      margin-top: 16px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+    .section h2 {
+      margin: 0 0 8px;
+      font-size: 1.2rem;
+    }
+    .checklist {
+      margin: 0;
+      padding-left: 0;
+      list-style: none;
+    }
+    .checklist li {
+      margin: 8px 0;
+      padding: 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fcfcfd;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    .t-high { color: #991b1b; border-color: #fca5a5; background: #fef2f2; }
+    .t-med  { color: #92400e; border-color: #fcd34d; background: #fffbeb; }
+    .t-low  { color: #14532d; border-color: #86efac; background: #f0fdf4; }
+    .mono-list {
+      margin-top: 6px;
+      padding-left: 16px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88rem;
+    }
+    .warn {
+      border-left: 4px solid var(--warn);
+      padding: 10px 10px;
+      background: #fff7ed;
+      color: #7c2d12;
+      border-radius: 6px;
+      margin: 10px 0;
+    }
+    .ok {
+      border-left: 4px solid var(--ok);
+      padding: 10px 10px;
+      background: #f0fdf4;
+      color: #14532d;
+      border-radius: 6px;
+      margin: 10px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.93rem;
+    }
+    th, td {
+      border: 1px solid #e5e7eb;
+      padding: 7px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f9fafb; }
+    .next {
+      margin-top: 12px;
+      font-weight: 600;
+      color: #0b4f4a;
+    }
+    .decision-box {
+      border: 1px solid #dbe4ea;
+      border-radius: 10px;
+      padding: 10px;
+      margin: 10px 0;
+      background: #fbfdff;
+    }
+    .decision-title {
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .yn {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin: 6px 0 8px;
+      font-size: 0.94rem;
+    }
+    .comment {
+      width: 100%;
+      min-height: 64px;
+      border: 1px solid #cfd8e3;
+      border-radius: 8px;
+      padding: 8px;
+      font-family: "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
+      font-size: 0.92rem;
+      resize: vertical;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>GMRT 40_014: GWB Migration Action Plan</h1>
+      <div class="meta">Prepared on 2026-06-12 · Purpose: convert the current GSB-oriented workflow into a safe, explicit GWB + 4-correlation run plan without touching code yet.</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Verified Inputs (from existing repo routines)</h2>
+        <ul class="facts">
+          <li>Parent UVFITS: <code>/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS</code></li>
+          <li><code>NAXIS3=4</code> (4 correlations) and <code>NAXIS4=2048</code> channels.</li>
+          <li>Channel width: <code>-97656.25 Hz</code> (descending frequency axis).</li>
+          <li>Known sources include <code>3C48</code>, <code>3C468.1</code>, and <code>MOON0520..0635</code>.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Environment Status</h2>
+        <div class="ok">Local venv <code>gmrt</code> is created and usable.</div>
+        <div class="small">Installed runtime stack: numpy, astropy, scipy, matplotlib, pillow, scikit-image.</div>
+        <div class="small" style="margin-top:8px;">Activate with:</div>
+        <div><code>source gmrt/bin/activate</code></div>
+        <div><code>export PYTHONPATH=src</code></div>
+        <div class="warn" style="margin-top:10px;">Index-cache note: no persistent index file is currently present beside the data file. Decide below whether to force index creation next to data.</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Decision Checklist (Actionable)</h2>
+      <ul class="checklist">
+        <li>
+          <span class="tag t-high">Required</span>
+          <strong>File-path migration to GWB parent FITS</strong>
+          <div class="small">Replace old <code>40_014_25jul2021_gsb.FITS</code> and associated index stem in config/wrappers.</div>
+          <ul class="mono-list">
+            <li>preprocess_ugmrt.cfg</li>
+            <li>bin/visSplit_3c48_example.sh</li>
+            <li>bin/visSplit_3c468.1_primary_example.sh</li>
+            <li>bin/visSplit_3c468.1_example.sh</li>
+            <li>bin/visSplit_moon_example.sh</li>
+            <li>bin/plotVis_3c48_example.sh</li>
+            <li>bin/plotVis_3c468.1_example.sh</li>
+            <li>bin/clustering_3c468.1_split_example.sh</li>
+          </ul>
+        </li>
+
+        <li>
+          <span class="tag t-high">Required</span>
+          <strong>Channel-range strategy for 2048 channels</strong>
+          <div class="small">Current scripts assume legacy 128-channel windows (<code>64..191</code> input, then <code>0..127</code> after split). Pick one of these now:</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Meaning</th>
+                <th>Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>A</td>
+                <td>Keep narrow window first (quick validation run).</td>
+                <td>May miss edge-RFI / wideband behavior.</td>
+              </tr>
+              <tr>
+                <td>B</td>
+                <td>Use broad science band (recommended for GWB confidence).</td>
+                <td>Higher runtime and memory pressure.</td>
+              </tr>
+              <tr>
+                <td>C</td>
+                <td>Two-phase: narrow smoke test then full-band production.</td>
+                <td>More orchestration, safest path.</td>
+              </tr>
+            </tbody>
+          </table>
+        </li>
+
+        <li>
+          <span class="tag t-high">Required</span>
+          <strong>Polarization policy (RR/LL solve vs 4-corr products)</strong>
+          <div class="small">Current solver flow is RR/LL-tuned. Decide and document:</div>
+          <ul class="mono-list">
+            <li>Default safe policy: solve on RR/LL, preserve/export RR/RL/LR/LL in split products.</li>
+            <li>If full cross-hand calibration is desired, add dedicated RL/LR calibration plan (not currently configured).</li>
+          </ul>
+        </li>
+
+        <li>
+          <span class="tag t-med">Recommended</span>
+          <strong>Plot products to include RL/LR/Q/U</strong>
+          <div class="small">Core plotting can compute Q/U if RL/LR are loaded, but wrappers currently request RR/LL only.</div>
+        </li>
+
+        <li>
+          <span class="tag t-med">Recommended</span>
+          <strong>Increase solve/diagnostic row caps for high-time-resolution GWB</strong>
+          <div class="small">Legacy caps likely under-sample this dataset; tune <code>MAX_ROWS_SOLVE</code>/<code>MAX_ROWS_DIAG</code> for representativeness.</div>
+        </li>
+
+        <li>
+          <span class="tag t-low">Optional now</span>
+          <strong>CASA-dependent selfcal stages</strong>
+          <div class="small">Pre-selfcal chain can proceed in this venv. CASA modules are only needed for selfcal/post-selfcal stages.</div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Yes/No Decision Form</h2>
+      <div class="small">Mark Yes or No for each item. If Yes/No is not appropriate, use the comment box.</div>
+
+      <div class="decision-box">
+        <div class="decision-title">1) Approve path migration to GWB parent FITS everywhere?</div>
+        <div class="yn">
+          <label><input type="radio" name="d1" /> Yes</label>
+          <label><input type="radio" name="d1" /> No</label>
+        </div>
+        <textarea class="comment" placeholder="Comment if needed..."></textarea>
+      </div>
+
+      <div class="decision-box">
+        <div class="decision-title">2) Use channel strategy C (narrow smoke test, then full-band run)?</div>
+        <div class="yn">
+          <label><input type="radio" name="d2" /> Yes</label>
+          <label><input type="radio" name="d2" /> No</label>
+        </div>
+        <textarea class="comment" placeholder="If No, specify A or B and exact channel ranges..."></textarea>
+      </div>
+
+      <div class="decision-box">
+        <div class="decision-title">3) Keep solver on RR/LL, but preserve/export all RR/RL/LR/LL in split products?</div>
+        <div class="yn">
+          <label><input type="radio" name="d3" /> Yes</label>
+          <label><input type="radio" name="d3" /> No</label>
+        </div>
+        <textarea class="comment" placeholder="If No, describe required cross-hand calibration approach..."></textarea>
+      </div>
+
+      <div class="decision-box">
+        <div class="decision-title">4) Expand plotting to include RL/LR and Q/U diagnostics?</div>
+        <div class="yn">
+          <label><input type="radio" name="d4" /> Yes</label>
+          <label><input type="radio" name="d4" /> No</label>
+        </div>
+        <textarea class="comment" placeholder="Comment if selective products are preferred..."></textarea>
+      </div>
+
+      <div class="decision-box">
+        <div class="decision-title">5) Increase row caps for solve/diagnostics for high-time-resolution data?</div>
+        <div class="yn">
+          <label><input type="radio" name="d5" /> Yes</label>
+          <label><input type="radio" name="d5" /> No</label>
+        </div>
+        <textarea class="comment" placeholder="If Yes, note target limits or resource constraints..."></textarea>
+      </div>
+
+      <div class="decision-box">
+        <div class="decision-title">6) Force index cache location to be next to the parent data file?</div>
+        <div class="yn">
+          <label><input type="radio" name="d6" /> Yes</label>
+          <label><input type="radio" name="d6" /> No</label>
+        </div>
+        <textarea class="comment" placeholder="If Yes, set explicit index path policy and permissions note..."></textarea>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Why Current Workflow Will Misbehave on This Machine Without Edits</h2>
+      <div class="warn">Primary blocker: many wrappers/config values still point to old GSB file name and a 128-channel mental model. The run would fail early or silently process the wrong selection.</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Current Assumption</th>
+            <th>Needed for New Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Input file</td>
+            <td>Hardcoded gsb filename/stem</td>
+            <td>Use gwb parent FITS and derived cache stem</td>
+          </tr>
+          <tr>
+            <td>Spectral setup</td>
+            <td>64..191 input, 0..127 in split plots</td>
+            <td>Define 2048-channel handling policy</td>
+          </tr>
+          <tr>
+            <td>Polarization</td>
+            <td>RR/LL-only default almost everywhere</td>
+            <td>Explicit 4-correlation preservation policy</td>
+          </tr>
+          <tr>
+            <td>Sampling</td>
+            <td>Legacy max-rows caps</td>
+            <td>Retune for higher time resolution</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Execution Plan Once You Approve</h2>
+      <ol>
+        <li>Apply only path/channel/polarization policy edits (no algorithm redesign).</li>
+        <li>Run a fast smoke test chain (primary → split → plot) on selected channels.</li>
+        <li>Run full pre-selfcal workflow (steps 2-12) with logging and product checks.</li>
+        <li>If successful, decide on CASA/selfcal stage separately.</li>
+      </ol>
+      <p class="next">Decision needed from you: choose channel policy (A/B/C) and polarization policy (RR/LL-solve + 4-corr export vs deeper cross-hand calibration).</p>
+    </div>
+  </div>
+</body>
+</html>
