@@ -16,9 +16,11 @@ _HOSTNAME="$(hostname -s)"
 if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     WORK_DIR=/data1/gmrt/40_014/work
     _CHAN_END_CALIB=170
+    PYTHON_CMD="${PYTHON_CMD:-${REPO_ROOT}/gmrt/bin/python}"
 else
     WORK_DIR=~/DATA/gmrt_40_014/work
     _CHAN_END_CALIB=127
+    PYTHON_CMD="${PYTHON_CMD:-python}"
 fi
 # ───────────────────────────────────────────────────────────────────────────────
 

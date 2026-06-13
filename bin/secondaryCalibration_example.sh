@@ -23,9 +23,11 @@ _HOSTNAME="$(hostname -s)"
 if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     WORK_DIR=/data1/gmrt/40_014/work
     _DATA_TAG=gwb
+    PYTHON_CMD="${PYTHON_CMD:-${REPO_ROOT}/gmrt/bin/python}"
 else
     WORK_DIR="$HOME/DATA/gmrt_40_014/work"
     _DATA_TAG=gsb
+    PYTHON_CMD="${PYTHON_CMD:-python}"
 fi
 # ───────────────────────────────────────────────────────────────────────────
 SC_DIR="$WORK_DIR/secondary_calibration"  # all secondary-cal outputs live here

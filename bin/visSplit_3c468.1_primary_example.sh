@@ -19,12 +19,14 @@ if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     WORK_DIR=/data1/gmrt/40_014/work
     CHAN_START=1731; CHAN_END=1901
     _DATA_TAG=gwb
+    PYTHON_CMD="${PYTHON_CMD:-${REPO_ROOT}/gmrt/bin/python}"
 else
     FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
     INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
     WORK_DIR=~/DATA/gmrt_40_014/work
     CHAN_START=64; CHAN_END=191
     _DATA_TAG=gsb
+    PYTHON_CMD="${PYTHON_CMD:-python}"
 fi
 # ───────────────────────────────────────────────────────────────────────────────
 SOURCE=3C468.1

@@ -21,11 +21,13 @@ if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     RAW_FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
     _CHAN_RANGE="(1731,1901)"
     _DATA_TAG=gwb
+    PYTHON_CMD="${PYTHON_CMD:-${REPO_ROOT}/gmrt/bin/python}"
 else
     WORK_DIR="$HOME/DATA/gmrt_40_014/work"
     RAW_FITS="$HOME/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS"
     _CHAN_RANGE="(64,191)"
     _DATA_TAG=gsb
+    PYTHON_CMD="${PYTHON_CMD:-python}"
 fi
 # ───────────────────────────────────────────────────────────────────────────
 PRIMARY_BPCAL="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_${_DATA_TAG}_iterfinal_clustering.npz"

@@ -14,14 +14,16 @@ if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
     INDEX=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.index.npz
     WORK_DIR=/data1/gmrt/40_014/work
-    CHAN_START=1731; CHAN_END=1901  # 171 ch = 314.4–330.9 MHz, matches GSB science window exactly
+    CHAN_START=1731; CHAN_END=1901  # 171 ch = 314.4-330.9 MHz, matches GSB science window exactly
     _DATA_TAG=gwb
+    PYTHON_CMD="${PYTHON_CMD:-${REPO_ROOT}/gmrt/bin/python}"
 else
     FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
     INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
     WORK_DIR=~/DATA/gmrt_40_014/work
-    CHAN_START=64; CHAN_END=191     # 128 ch ≈ 16 MHz, GSB science window
+    CHAN_START=64; CHAN_END=191     # 128 ch = 16 MHz, GSB science window
     _DATA_TAG=gsb
+    PYTHON_CMD="${PYTHON_CMD:-python}"
 fi
 # ───────────────────────────────────────────────────────────────────────────
 FLAG="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"

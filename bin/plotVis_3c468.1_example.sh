@@ -17,6 +17,7 @@ if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     _CHAN_START_RAW=1731; _CHAN_END_RAW=1901
     _CHAN_END_CALIB=170
     _DATA_TAG=gwb
+    PYTHON_CMD="${PYTHON_CMD:-${REPO_ROOT}/gmrt/bin/python}"
 else
     _RAW_FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
     _RAW_INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
@@ -24,6 +25,7 @@ else
     _CHAN_START_RAW=64; _CHAN_END_RAW=191
     _CHAN_END_CALIB=127
     _DATA_TAG=gsb
+    PYTHON_CMD="${PYTHON_CMD:-python}"
 fi
 # ───────────────────────────────────────────────────────────────────────────────
 
