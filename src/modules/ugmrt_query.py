@@ -4666,6 +4666,73 @@ def run_bandpass_diagnostics(
             )
             _pol_cleaned['V'] = v_sp
 
+    # ── Outlier channel markers (red × at y=0) ────────────────────────────────
+    # Detect globally-bad channels fresh from the already-plotted spectra using
+    # the same MAD logic as the convergence guard.  Mark them on ax_resid and
+    # ax_spec so the user can see which channels were excluded from the rms.
+    # Y-axes are then clipped to the good-channel range for a sensible scale.
+    def _diag_mad_mask(spec: np.ndarray, k: float = 5.0) -> np.ndarray:
+        finite = spec[np.isfinite(spec)]
+        if finite.size < 4:
+            return ~np.isfinite(spec)
+        med = float(np.median(finite))
+        mad = float(np.median(np.abs(finite - med)))
+        if mad == 0.0:
+            return ~np.isfinite(spec)
+        return ~np.isfinite(spec) | (np.abs(spec - med) > k * mad)
+
+    # Collect union of bad channels across all available spectra
+    _bad_ch_union = np.zeros(freqs_mhz.size, dtype=bool)
+    for _diag_pol, _diag_key in [
+        ('V',  'coherent_v_spectrum_jy'),
+        ('RR', 'residual_spectrum_jy'),
+        ('LL', 'residual_spectrum_jy'),
+    ]:
+        _diag_spec = pol_results.get(_diag_pol, {}).get(_diag_key)
+        if _diag_spec is not None:
+            _s = np.asarray(_diag_spec, dtype=np.float64)
+            if _diag_pol in ('RR', 'LL'):
+                # Detrend before outlier detection (same as convergence path)
+                _ok = np.isfinite(_s)
+                if _ok.sum() >= 3:
+                    _x = np.arange(_s.size, dtype=np.float64)
+                    _slope, _intercept = np.polyfit(_x[_ok], _s[_ok], 1)
+                    _s = _s - (_intercept + _slope * _x)
+            _bad_ch_union |= _diag_mad_mask(_s)
+
+    # Only mark channels that are within chan_mask (edge-skipped channels are
+    # already invisible — no need to mark them twice)
+    _bad_in_window = _bad_ch_union & chan_mask
+    _n_bad = int(_bad_in_window.sum())
+
+    if _n_bad > 0:
+        _bad_freqs = freqs_mhz[_bad_in_window]
+        # Red × markers at y=0 on residuals panel
+        ax_resid.plot(
+            _bad_freqs, np.zeros(_n_bad),
+            marker='x', color='red', ms=7, mew=1.5, ls='none',
+            zorder=5, label=f'outlier ch ({_n_bad})',
+        )
+        # Same markers on spectrum panel at y=0
+        ax_spec.plot(
+            _bad_freqs, np.zeros(_n_bad),
+            marker='x', color='red', ms=7, mew=1.5, ls='none',
+            zorder=5,
+        )
+        # Clip y-limits on ax_resid to good-channel range so outliers do not
+        # stretch the axis.  Gather all finite values from non-bad channels only.
+        _good_vals: list = []
+        for _cp in _pol_cleaned.values():
+            if _cp is not None:
+                _gv = np.asarray(_cp, dtype=np.float64)[~_bad_in_window & chan_mask]
+                _good_vals.extend(float(v) for v in _gv[np.isfinite(_gv)])
+        if len(_good_vals) > 4:
+            _glo, _ghi = float(np.percentile(_good_vals, 1)), float(np.percentile(_good_vals, 99))
+            _margin = max(abs(_ghi - _glo) * 0.15, 0.05)
+            ax_resid.set_ylim(_glo - _margin, _ghi + _margin)
+            ax_clean.set_ylim(_glo - _margin, _ghi + _margin)
+        ax_resid.legend(fontsize=8, loc='upper right', framealpha=0.85)
+
     # ── Fit summary text box inside residuals panel ────────────────────────────
     # Format each fit line with explicit labels for clarity, then place in a
     # light-green rounded box in the lower-left corner.  Y-axis limits are
