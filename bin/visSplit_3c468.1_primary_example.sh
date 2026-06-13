@@ -11,22 +11,33 @@ cd "$REPO_ROOT"
 # Pre-secondary split for 3C468.1
 # Produces primary-calibrated + primary-flagged visibilities used for diagnostics and clustering context.
 
-FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
-INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
+# ── Machine-specific settings ─────────────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
+    INDEX=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.index.npz
+    WORK_DIR=/data1/gmrt/40_014/work
+    CHAN_START=942; CHAN_END=1105
+    _DATA_TAG=gwb
+else
+    FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
+    INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
+    WORK_DIR=~/DATA/gmrt_40_014/work
+    CHAN_START=64; CHAN_END=191
+    _DATA_TAG=gsb
+fi
+# ───────────────────────────────────────────────────────────────────────────────
 SOURCE=3C468.1
 SRC_TAG="$(printf '%s' "$SOURCE" | tr '[:upper:]' '[:lower:]')"
-PRIMARY=~/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz
-PRIMARY_FLAG=~/DATA/gmrt_40_014/work/primary_calibration/flag/3c48_flag_table_session.json
+PRIMARY="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_${_DATA_TAG}_iterfinal_clustering.npz"
+PRIMARY_FLAG="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"
 CONFIG="$REPO_ROOT/preprocess_ugmrt.cfg"
-CHAN_START=64
-CHAN_END=191
-STOKES=(RR LL)
-#STOKES=(RR LL RL LR)
+STOKES=(RR LL RL LR)
 
-OUTDIR=~/DATA/gmrt_40_014/work/split/"${SRC_TAG}"
+OUTDIR="$WORK_DIR/split/${SRC_TAG}"
 mkdir -p "$OUTDIR"
 OUTPUT="$OUTDIR/${SRC_TAG}_primary_calibrated.uvfits"
-LOG_DIR=~/DATA/gmrt_40_014/work/logs
+LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 

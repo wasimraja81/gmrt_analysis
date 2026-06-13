@@ -8,6 +8,25 @@ PYTHON_CMD="${PYTHON_CMD:-python}"
 
 cd "$REPO_ROOT"
 
+# ── Machine-specific settings ─────────────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    _RAW_FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
+    _RAW_INDEX=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.index.npz
+    WORK_DIR=/data1/gmrt/40_014/work
+    _CHAN_START_RAW=942; _CHAN_END_RAW=1105
+    _CHAN_END_CALIB=163   # 164-ch split output (0-indexed)
+    _DATA_TAG=gwb
+else
+    _RAW_FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
+    _RAW_INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
+    WORK_DIR=~/DATA/gmrt_40_014/work
+    _CHAN_START_RAW=64; _CHAN_END_RAW=191
+    _CHAN_END_CALIB=127   # 128-ch split output (0-indexed)
+    _DATA_TAG=gsb
+fi
+# ───────────────────────────────────────────────────────────────────────────────
+
 # Choose data mode:
 #   raw        -> apply --bpcal and --flag tables
 #   calibrated -> do NOT apply tables again
@@ -16,25 +35,25 @@ cd "$REPO_ROOT"
 DATA_MODE="${DATA_MODE:-calibrated}"
 #DATA_MODE=raw
 if [[ "$DATA_MODE" == "raw" ]]; then
-  FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
-  INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
-  CHAN_START=64
-  CHAN_END=191
-  OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/primary/3c48/selfcheck
+  FITS="$_RAW_FITS"
+  INDEX="$_RAW_INDEX"
+  CHAN_START="$_CHAN_START_RAW"
+  CHAN_END="$_CHAN_END_RAW"
+  OUTROOT="$WORK_DIR/diagnostics_out/primary/3c48/selfcheck"
 elif [[ "$DATA_MODE" == "calibrated" ]]; then
-  FITS=~/DATA/gmrt_40_014/work/split/3c48/3c48_calibrated_flagged.uvfits
-  INDEX=~/DATA/gmrt_40_014/work/split/3c48/3c48_calibrated_flagged.uvfits.row_index_cache.npz
+  FITS="$WORK_DIR/split/3c48/3c48_calibrated_flagged.uvfits"
+  INDEX="$WORK_DIR/split/3c48/3c48_calibrated_flagged.uvfits.row_index_cache.npz"
   CHAN_START=0
-  CHAN_END=127
-  OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/primary/3c48/selfcheck
+  CHAN_END="$_CHAN_END_CALIB"
+  OUTROOT="$WORK_DIR/diagnostics_out/primary/3c48/selfcheck"
 else
   echo "Invalid DATA_MODE='$DATA_MODE' (use: raw or calibrated)"
   exit 1
 fi
 
-FLAG=~/DATA/gmrt_40_014/work/primary_calibration/flag/3c48_flag_table_session.json
+FLAG="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"
 SOURCE=3C48
-PRIMARY=~/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb.npz
+PRIMARY="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_${_DATA_TAG}.npz"
 CONFIG="$REPO_ROOT/preprocess_ugmrt.cfg"
 
 if (( CHAN_START > CHAN_END )); then
@@ -43,7 +62,7 @@ if (( CHAN_START > CHAN_END )); then
 fi
 
 mkdir -p "$OUTROOT"
-LOG_DIR=~/DATA/gmrt_40_014/work/logs
+LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 

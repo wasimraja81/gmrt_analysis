@@ -11,16 +11,27 @@ cd "$REPO_ROOT"
 # Plot diagnostics for 3C468.1 primary-only calibrated split data
 # Run this after visSplit_3c468.1_primary_example.sh
 
-FITS=~/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_calibrated.uvfits
-INDEX=~/DATA/gmrt_40_014/work/split/3c468.1/3c468.1_primary_calibrated.uvfits.row_index_cache.npz
+# ── Machine-specific settings ─────────────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    WORK_DIR=/data1/gmrt/40_014/work
+    _CHAN_END_CALIB=163
+else
+    WORK_DIR=~/DATA/gmrt_40_014/work
+    _CHAN_END_CALIB=127
+fi
+# ───────────────────────────────────────────────────────────────────────────────
+
+FITS="$WORK_DIR/split/3c468.1/3c468.1_primary_calibrated.uvfits"
+INDEX="$WORK_DIR/split/3c468.1/3c468.1_primary_calibrated.uvfits.row_index_cache.npz"
 SOURCE=3C468.1
 CONFIG="$REPO_ROOT/preprocess_ugmrt.cfg"
 
 CHAN_START=0
-CHAN_END=127
-OUTROOT=~/DATA/gmrt_40_014/work/diagnostics_out/secondary/3c468.1/transfer
+CHAN_END="$_CHAN_END_CALIB"
+OUTROOT="$WORK_DIR/diagnostics_out/secondary/3c468.1/transfer"
 
-LOG_DIR=~/DATA/gmrt_40_014/work/logs
+LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$OUTROOT" "$LOG_DIR"
 

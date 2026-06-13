@@ -17,7 +17,17 @@ cd "$REPO_ROOT"
 
 SOURCE="3C468.1"
 SRC_TAG="$(printf '%s' "$SOURCE" | tr '[:upper:]' '[:lower:]')"
-WORK_DIR="$HOME/DATA/gmrt_40_014/work"
+
+# ── Machine-specific settings ───────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    WORK_DIR=/data1/gmrt/40_014/work
+    _DATA_TAG=gwb
+else
+    WORK_DIR="$HOME/DATA/gmrt_40_014/work"
+    _DATA_TAG=gsb
+fi
+# ───────────────────────────────────────────────────────────────────────────
 SC_DIR="$WORK_DIR/secondary_calibration"  # all secondary-cal outputs live here
 FLAG_DIR="$SC_DIR/flag"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
@@ -29,7 +39,7 @@ if compgen -G "$SC_DIR/${SRC_TAG}_secondary_phase_only_scan*.npz" > /dev/null; t
 fi
 
 # Primary table is an INPUT transfer table (can remain 3C48-derived if desired)
-PRIMARY_BPCAL=~/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz
+PRIMARY_BPCAL="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_${_DATA_TAG}_iterfinal_clustering.npz"
 
 CMD=(
 "$PYTHON_CMD" "$REPO_ROOT/src/pipeline_cli.py" secondary

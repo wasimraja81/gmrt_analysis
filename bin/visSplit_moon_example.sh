@@ -16,20 +16,32 @@ cd "$REPO_ROOT"
 # All variants are split from the original raw FITS (no pre-split file used).
 # Both the primary flag table and the secondary clustering flag table are always applied.
 
-FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
-INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
-PRIMARY=~/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz
-PRIMARY_FLAG=~/DATA/gmrt_40_014/work/primary_calibration/flag/3c48_flag_table_session.json
-SECONDARY_FLAG=~/DATA/gmrt_40_014/work/secondary_calibration/flag/3c468.1_split_clustering_flag_table_session.json
+# ── Machine-specific settings ───────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
+    INDEX=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.index.npz
+    WORK_DIR=/data1/gmrt/40_014/work
+    CHAN_START=942; CHAN_END=1105
+    _DATA_TAG=gwb
+else
+    FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
+    INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
+    WORK_DIR=~/DATA/gmrt_40_014/work
+    CHAN_START=64; CHAN_END=191
+    _DATA_TAG=gsb
+fi
+# ───────────────────────────────────────────────────────────────────────────
+PRIMARY="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_${_DATA_TAG}_iterfinal_clustering.npz"
+PRIMARY_FLAG="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"
+SECONDARY_FLAG="$WORK_DIR/secondary_calibration/flag/3c468.1_split_clustering_flag_table_session.json"
 CONFIG="$REPO_ROOT/preprocess_ugmrt.cfg"
-CHAN_START=64
-CHAN_END=191
-STOKES=(RR LL)
+STOKES=(RR LL RL LR)
 
 MOON_SOURCES=(MOON0520 MOON0545 MOON0605 MOON0625 MOON0635)
 
-OUTDIR=~/DATA/gmrt_40_014/work/split/moon
-LOG_DIR=~/DATA/gmrt_40_014/work/logs
+OUTDIR="$WORK_DIR/split/moon"
+LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$OUTDIR" "$LOG_DIR"
 

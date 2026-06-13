@@ -16,7 +16,17 @@ cd "$REPO_ROOT"
 
 SOURCE="3C48"
 SRC_TAG="$(printf '%s' "$SOURCE" | tr '[:upper:]' '[:lower:]')"
-WORK_DIR="$HOME/DATA/gmrt_40_014/work"
+
+# ── Machine-specific settings ───────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    WORK_DIR=/data1/gmrt/40_014/work
+    _DATA_TAG=gwb
+else
+    WORK_DIR="$HOME/DATA/gmrt_40_014/work"
+    _DATA_TAG=gsb
+fi
+# ───────────────────────────────────────────────────────────────────────────
 PC_DIR="$WORK_DIR/primary_calibration"    # all primary-cal outputs live here
 BP_DIR="$PC_DIR/bandpass"                  # bandpass/gain table npz files
 FLAG_DIR="$PC_DIR/flag"                    # flag table json files
@@ -28,8 +38,8 @@ MPLBACKEND="Agg"  # Headless plotting (no live popups). Set to MacOSX (macOS) or
 mkdir -p "$WORK_DIR" "$BP_DIR" "$FLAG_DIR" "$DIAG_DIR"
 mkdir -p "$LOG_DIR"
 
-if [[ -f "${BP_DIR}/${SRC_TAG}_bandpass_25jul_gsb.npz" ]]; then
-	echo "[primaryCalibration-example] WARNING: existing primary bandpass output will be replaced: ${BP_DIR}/${SRC_TAG}_bandpass_25jul_gsb.npz"
+if [[ -f "${BP_DIR}/${SRC_TAG}_bandpass_25jul_${_DATA_TAG}.npz" ]]; then
+	echo "[primaryCalibration-example] WARNING: existing primary bandpass output will be replaced: ${BP_DIR}/${SRC_TAG}_bandpass_25jul_${_DATA_TAG}.npz"
 fi
 
 if compgen -G "${DIAG_DIR}/${SRC_TAG}_bandpass_*" > /dev/null; then

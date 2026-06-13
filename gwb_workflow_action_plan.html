@@ -167,24 +167,24 @@
       font-weight: 600;
       margin-bottom: 6px;
     }
-    .yn {
+    .yn-row {
       display: flex;
-      gap: 14px;
+      gap: 18px;
       flex-wrap: wrap;
       margin: 6px 0 8px;
-      font-size: 0.94rem;
+      font-size: 0.95rem;
     }
-    .comment {
+    .comment-line {
       width: 100%;
-      min-height: 64px;
+      padding: 7px 10px;
       border: 1px solid #cfd8e3;
-      border-radius: 8px;
-      padding: 8px;
-      font-family: "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
+      border-radius: 7px;
       font-size: 0.92rem;
-      resize: vertical;
+      font-family: "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
       background: #fff;
+      margin-top: 4px;
     }
+
   </style>
 </head>
 <body>
@@ -296,63 +296,167 @@
       </ul>
     </div>
 
-    <div class="section">
-      <h2>Yes/No Decision Form</h2>
-      <div class="small">Mark Yes or No for each item. If Yes/No is not appropriate, use the comment box.</div>
+    <div class="section" id="decision-form">
+      <h2>Decision Form</h2>
+      <div class="small" style="margin-bottom:14px;">Fill in the form below, then click <strong>Copy decisions to clipboard</strong> and paste the result into the chat.</div>
 
       <div class="decision-box">
         <div class="decision-title">1) Approve path migration to GWB parent FITS everywhere?</div>
-        <div class="yn">
-          <label><input type="radio" name="d1" /> Yes</label>
-          <label><input type="radio" name="d1" /> No</label>
+        <div class="yn-row">
+          <label><input type="radio" name="d1" value="Yes" /> Yes</label>
+          <label><input type="radio" name="d1" value="No" /> No</label>
         </div>
-        <textarea class="comment" placeholder="Comment if needed..."></textarea>
+        <input class="comment-line" id="c1" type="text" placeholder="Comment (optional)…" />
       </div>
 
       <div class="decision-box">
-        <div class="decision-title">2) Use channel strategy C (narrow smoke test, then full-band run)?</div>
-        <div class="yn">
-          <label><input type="radio" name="d2" /> Yes</label>
-          <label><input type="radio" name="d2" /> No</label>
+        <div class="decision-title">2) Channel strategy — A (narrow first, validate), B (full band immediately), or C (narrow smoke test then full band)?</div>
+        <div class="yn-row">
+          <label><input type="radio" name="d2" value="A" /> A — narrow only</label>
+          <label><input type="radio" name="d2" value="B" /> B — full band</label>
+          <label><input type="radio" name="d2" value="C" /> C — two-phase</label>
         </div>
-        <textarea class="comment" placeholder="If No, specify A or B and exact channel ranges..."></textarea>
+        <input class="comment-line" id="c2" type="text" placeholder="Exact channel range if known, e.g. 128..1919 for science band…" />
       </div>
 
       <div class="decision-box">
-        <div class="decision-title">3) Keep solver on RR/LL, but preserve/export all RR/RL/LR/LL in split products?</div>
-        <div class="yn">
-          <label><input type="radio" name="d3" /> Yes</label>
-          <label><input type="radio" name="d3" /> No</label>
+        <div class="decision-title">3) Solve on RR/LL, but preserve and export all four correlations (RR/RL/LR/LL) in every split product?</div>
+        <div class="yn-row">
+          <label><input type="radio" name="d3" value="Yes" /> Yes</label>
+          <label><input type="radio" name="d3" value="No" /> No</label>
         </div>
-        <textarea class="comment" placeholder="If No, describe required cross-hand calibration approach..."></textarea>
+        <input class="comment-line" id="c3" type="text" placeholder="Comment or alternative approach…" />
       </div>
 
       <div class="decision-box">
-        <div class="decision-title">4) Expand plotting to include RL/LR and Q/U diagnostics?</div>
-        <div class="yn">
-          <label><input type="radio" name="d4" /> Yes</label>
-          <label><input type="radio" name="d4" /> No</label>
+        <div class="decision-title">4) Expand diagnostic plots to include RL/LR and Stokes Q/U panels?</div>
+        <div class="yn-row">
+          <label><input type="radio" name="d4" value="Yes" /> Yes</label>
+          <label><input type="radio" name="d4" value="No" /> No</label>
         </div>
-        <textarea class="comment" placeholder="Comment if selective products are preferred..."></textarea>
+        <input class="comment-line" id="c4" type="text" placeholder="Comment…" />
       </div>
 
       <div class="decision-box">
-        <div class="decision-title">5) Increase row caps for solve/diagnostics for high-time-resolution data?</div>
-        <div class="yn">
-          <label><input type="radio" name="d5" /> Yes</label>
-          <label><input type="radio" name="d5" /> No</label>
+        <div class="decision-title">5) Increase MAX_ROWS_SOLVE / MAX_ROWS_DIAG for high time-resolution GWB data?</div>
+        <div class="yn-row">
+          <label><input type="radio" name="d5" value="Yes" /> Yes</label>
+          <label><input type="radio" name="d5" value="No" /> No</label>
         </div>
-        <textarea class="comment" placeholder="If Yes, note target limits or resource constraints..."></textarea>
+        <input class="comment-line" id="c5" type="text" placeholder="Suggested values e.g. MAX_ROWS_SOLVE=500000, MAX_ROWS_DIAG=200000…" />
       </div>
 
       <div class="decision-box">
-        <div class="decision-title">6) Force index cache location to be next to the parent data file?</div>
-        <div class="yn">
-          <label><input type="radio" name="d6" /> Yes</label>
-          <label><input type="radio" name="d6" /> No</label>
+        <div class="decision-title">6) Parent UVFITS index sits next to parent data; split indexes next to each split file?</div>
+        <div class="yn-row">
+          <label><input type="radio" name="d6" value="Yes" /> Yes</label>
+          <label><input type="radio" name="d6" value="No" /> No</label>
         </div>
-        <textarea class="comment" placeholder="If Yes, set explicit index path policy and permissions note..."></textarea>
+        <input class="comment-line" id="c6" type="text" placeholder="Comment…" />
       </div>
+
+      <div class="decision-box">
+        <div class="decision-title">7) Workdir root on HDD — full path?</div>
+        <input class="comment-line" id="c7" type="text" placeholder="/path/to/hdd/gmrt_40_014/work" />
+      </div>
+
+      <div style="margin-top:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <button onclick="copyDecisions()" style="padding:10px 22px;background:#0f766e;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;font-weight:600;">
+          📋 Copy decisions to clipboard
+        </button>
+        <span id="copy-status" style="color:#166534;font-weight:600;font-size:0.95rem;"></span>
+      </div>
+
+      <pre id="decisions-out" style="display:none;margin-top:12px;background:#f3f4f6;padding:12px;border-radius:8px;font-size:0.88rem;white-space:pre-wrap;"></pre>
+    </div>
+
+    <script>
+    function copyDecisions() {
+      var items = [
+        { name: 'd1', q: 'Path migration to GWB FITS', comment: 'c1' },
+        { name: 'd2', q: 'Channel strategy (A/B/C)',   comment: 'c2' },
+        { name: 'd3', q: 'RR/LL solve + 4-corr export', comment: 'c3' },
+        { name: 'd4', q: 'Add RL/LR/Q/U plots',        comment: 'c4' },
+        { name: 'd5', q: 'Increase row caps',           comment: 'c5' },
+        { name: 'd6', q: 'Index next to data file',     comment: 'c6' },
+        { name: 'd7', q: 'Workdir path',                comment: 'c7' },
+      ];
+      var lines = ['GMRT GWB DECISIONS', '==================', ''];
+      items.forEach(function(item, i) {
+        var radio   = document.querySelector('input[name="' + item.name + '"]:checked');
+        var comment = (document.getElementById(item.comment) || {}).value || '';
+        lines.push((i + 1) + ') ' + item.q);
+        lines.push('   DECISION: ' + (radio ? radio.value : '(not selected)'));
+        if (comment.trim()) lines.push('   COMMENT:  ' + comment.trim());
+        lines.push('');
+      });
+      var text = lines.join('\n');
+      var out = document.getElementById('decisions-out');
+      out.textContent = text;
+      out.style.display = 'block';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+          document.getElementById('copy-status').textContent = '✓ Copied! Paste into the chat.';
+        }).catch(function() {
+          document.getElementById('copy-status').textContent = 'Auto-copy failed — select the text box below and copy manually.';
+        });
+      } else {
+        document.getElementById('copy-status').textContent = 'Select the text box below and copy manually (Ctrl+A, Ctrl+C).';
+      }
+    }
+    </script>
+
+    <div class="section">
+      <h2>Final Agreed Decisions</h2>
+      <div class="ok">All decisions locked on 2026-06-13. Implementation follows in the same commit.</div>
+      <table>
+        <thead><tr><th>#</th><th>Decision</th><th>Answer</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Path migration to GWB FITS</td>
+            <td><strong>Configurable, not hardcoded</strong></td>
+            <td>Hostname-detected defaults: wasim-desktop → GWB paths; all other hosts → GSB paths. Same key names on both machines so only base_dir changes.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Channel strategy</td>
+            <td><strong>C — two-phase</strong></td>
+            <td>Smoke test uses same ~16 MHz bandwidth as GSB (164 ch @ 97.656 kHz/ch ≈ 16 MHz, centred ~400 MHz). Full-band follows. CHAN_RANGE, CHAN_START, CHAN_END, and the post-split 0-indexed range all updated consistently.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Polarisation: solve vs export</td>
+            <td><strong>Yes — RR/LL solve, 4-corr export</strong></td>
+            <td>Solve and calibrate on RR/LL. Flag, split, and export all four (RR/RL/LR/LL). If any correlation flagged, all four flagged for that visibility.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Add RL/LR/Q/U diagnostic plots</td>
+            <td><strong>Yes — provision added</strong></td>
+            <td>plotVis.py now loads all correlations present in the file. Default --products in wrappers unchanged (RR,LL) for now.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Increase row caps</td>
+            <td><strong>Yes — no cap on wasim-desktop</strong></td>
+            <td>MAX_ROWS_SOLVE=0, MAX_ROWS_DIAG=0 on wasim-desktop (64 GB RAM). Original caps retained on other hosts.</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Index cache location</td>
+            <td><strong>Yes — next to its FITS file</strong></td>
+            <td>Parent UVFITS index beside parent data. Split product indexes beside each split file. INDEX_CACHE set explicitly in config.</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>Workdir root on HDD</td>
+            <td><strong>/data1/gmrt/40_014/work</strong></td>
+            <td>Mirrors mac pattern (~/DATA/gmrt_40_014/work). Completely separate from /data1/gmrt/40_014_25JUL2021/ (raw data). Parent UVFITS is never inside workdir.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="warn">Safety guardrail: no workflow outputs go into /data1/gmrt/40_014_25JUL2021/ except its own index sidecar.</div>
     </div>
 
     <div class="section">

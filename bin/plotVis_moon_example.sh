@@ -19,15 +19,26 @@ cd "$REPO_ROOT"
 #   diagnostics_out/target/<tag>/transfer/    ← primary-only calibrated plots
 #   diagnostics_out/target/<tag>/final_qa/    ← primary+secondary calibrated plots
 
-SPLIT_DIR=~/DATA/gmrt_40_014/work/split/moon
-DIAG_BASE=~/DATA/gmrt_40_014/work/diagnostics_out/target
+# ── Machine-specific settings ─────────────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    WORK_DIR=/data1/gmrt/40_014/work
+    _CHAN_END_CALIB=163
+else
+    WORK_DIR=~/DATA/gmrt_40_014/work
+    _CHAN_END_CALIB=127
+fi
+# ───────────────────────────────────────────────────────────────────────────────
+
+SPLIT_DIR="$WORK_DIR/split/moon"
+DIAG_BASE="$WORK_DIR/diagnostics_out/target"
 CONFIG="$REPO_ROOT/preprocess_ugmrt.cfg"
 CHAN_START=0
-CHAN_END=127
+CHAN_END="$_CHAN_END_CALIB"
 
 MOON_SOURCES=(MOON0520 MOON0545 MOON0605 MOON0625 MOON0635)
 
-LOG_DIR=~/DATA/gmrt_40_014/work/logs
+LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 

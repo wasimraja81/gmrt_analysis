@@ -14,9 +14,21 @@ cd "$REPO_ROOT"
 SOURCE="3C468.1"
 SRC_TAG="$(printf '%s' "$SOURCE" | tr '[:upper:]' '[:lower:]')"
 
-WORK_DIR="$HOME/DATA/gmrt_40_014/work"
-RAW_FITS="$HOME/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS"
-PRIMARY_BPCAL="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz"
+# ── Machine-specific settings ───────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    WORK_DIR=/data1/gmrt/40_014/work
+    RAW_FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
+    _CHAN_RANGE="(942,1105)"
+    _DATA_TAG=gwb
+else
+    WORK_DIR="$HOME/DATA/gmrt_40_014/work"
+    RAW_FITS="$HOME/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS"
+    _CHAN_RANGE="(64,191)"
+    _DATA_TAG=gsb
+fi
+# ───────────────────────────────────────────────────────────────────────────
+PRIMARY_BPCAL="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_${_DATA_TAG}_iterfinal_clustering.npz"
 PRIMARY_FLAG_TABLE="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"
 
 SC_DIR="$WORK_DIR/secondary_calibration"
@@ -69,8 +81,8 @@ CMD=(
 --set "CLUSTERING_THRESHOLD_JY={'V':5.0,'RR':50.0,'LL':50.0}"
 --set "CLUSTERING_THRESHOLD_LOW_JY={'RR':10.0,'LL':10.0}"
 --set "CLUSTERING_GLOBAL_ANT_FLAG_FRACTION=0.80"
---set "CHAN_RANGE=(64,191)"
---set "PLOT_CHAN_RANGE=(64,191)"
+--set "CHAN_RANGE=${_CHAN_RANGE}"
+--set "PLOT_CHAN_RANGE=${_CHAN_RANGE}"
 )
 
 CMD_FILE="$LOG_DIR/clustering_3c468.1_split_example_${RUN_TS}.cmd"

@@ -1297,7 +1297,7 @@ def main():
     vis = q.load_vis_for_source(
         index,
         source=source_name,
-        stokes=('RR', 'LL'),
+        stokes=list(index.get('stokes_labels', ('RR', 'LL'))),  # load all available correlations
         ant_list=ant_list if ant_list else None,
         chan_range=chan_range,
         timerange=timerange,

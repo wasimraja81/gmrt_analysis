@@ -7,13 +7,22 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$REPO_ROOT"
 
-WORK_DIR="$HOME/DATA/gmrt_40_014/work"
+# ── Machine-specific settings ───────────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    WORK_DIR=/data1/gmrt/40_014/work
+    _DATA_TAG=gwb
+else
+    WORK_DIR="$HOME/DATA/gmrt_40_014/work"
+    _DATA_TAG=gsb
+fi
+# ────────────────────────────────────────────────────────────────────────────
 LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 RUN_ID="${RUN_ID:-${RUN_TS}_p$$_r${RANDOM}}"
 CHAIN_LOG="$LOG_DIR/run_gmrt_40_014_calibration_workflow_${RUN_TS}.log"
 
-PRIMARY_BANDPASS="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_gsb_iterfinal_clustering.npz"
+PRIMARY_BANDPASS="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_${_DATA_TAG}_iterfinal_clustering.npz"
 PRIMARY_FLAGS="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"
 SPLIT_3C48="$WORK_DIR/split/3c48/3c48_calibrated_flagged.uvfits"
 PLOT_3C48_PDF="$WORK_DIR/diagnostics_out/primary/3c48/selfcheck/plotvis_3c48.pdf"

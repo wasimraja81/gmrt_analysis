@@ -8,22 +8,33 @@ PYTHON_CMD="${PYTHON_CMD:-python}"
 
 cd "$REPO_ROOT"
 
-FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
-INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
-FLAG=~/DATA/gmrt_40_014/work/primary_calibration/flag/3c48_flag_table_session.json
+# ── Machine-specific settings ───────────────────────────────────────────
+_HOSTNAME="$(hostname -s)"
+if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
+    FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
+    INDEX=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.index.npz
+    WORK_DIR=/data1/gmrt/40_014/work
+    CHAN_START=942; CHAN_END=1105   # 164 ch ≈ 16 MHz around 400 MHz, matches GSB science BW
+    _DATA_TAG=gwb
+else
+    FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS
+    INDEX=~/DATA/gmrt_40_014/work/40_014_25jul2021_gsb.index.npz
+    WORK_DIR=~/DATA/gmrt_40_014/work
+    CHAN_START=64; CHAN_END=191     # 128 ch ≈ 16 MHz, GSB science window
+    _DATA_TAG=gsb
+fi
+# ───────────────────────────────────────────────────────────────────────────
+FLAG="$WORK_DIR/primary_calibration/flag/3c48_flag_table_session.json"
 SOURCE=3C48
 SRC_TAG="$(printf '%s' "$SOURCE" | tr '[:upper:]' '[:lower:]')"
-PRIMARY=~/DATA/gmrt_40_014/work/primary_calibration/bandpass/3c48_bandpass_25jul_gsb.npz
+PRIMARY="$WORK_DIR/primary_calibration/bandpass/3c48_bandpass_25jul_${_DATA_TAG}.npz"
 CONFIG="$REPO_ROOT/preprocess_ugmrt.cfg"
-CHAN_START=64
-CHAN_END=191
-STOKES=(RR LL)
-#STOKES=(RR LL RL LR)
+STOKES=(RR LL RL LR)
 
-OUTDIR=~/DATA/gmrt_40_014/work/split/"${SRC_TAG}"  # lower-case source name for directory
+OUTDIR="$WORK_DIR/split/${SRC_TAG}"  # lower-case source name for directory
 mkdir -p "$OUTDIR"
 OUTPUT="$OUTDIR/${SRC_TAG}_calibrated_flagged.uvfits"
-LOG_DIR=~/DATA/gmrt_40_014/work/logs
+LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 
