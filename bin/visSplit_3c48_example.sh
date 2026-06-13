@@ -14,7 +14,7 @@ if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
     INDEX=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.index.npz
     WORK_DIR=/data1/gmrt/40_014/work
-    CHAN_START=942; CHAN_END=1105   # 164 ch ≈ 16 MHz around 400 MHz, matches GSB science BW
+    CHAN_START=1731; CHAN_END=1901  # 171 ch = 314.4–330.9 MHz, matches GSB science window exactly
     _DATA_TAG=gwb
 else
     FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS

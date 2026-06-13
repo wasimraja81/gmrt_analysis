@@ -23,7 +23,7 @@ cd "$REPO_ROOT"
 _HOSTNAME="$(hostname -s)"
 if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     WORK_DIR=/data1/gmrt/40_014/work
-    _CHAN_END_CALIB=163
+    _CHAN_END_CALIB=170
 else
     WORK_DIR=~/DATA/gmrt_40_014/work
     _CHAN_END_CALIB=127

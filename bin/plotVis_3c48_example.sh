@@ -14,8 +14,8 @@ if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     _RAW_FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
     _RAW_INDEX=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.index.npz
     WORK_DIR=/data1/gmrt/40_014/work
-    _CHAN_START_RAW=942; _CHAN_END_RAW=1105
-    _CHAN_END_CALIB=163   # 164-ch split output (0-indexed)
+    _CHAN_START_RAW=1731; _CHAN_END_RAW=1901
+    _CHAN_END_CALIB=170   # 171-ch split output (0-indexed)
     _DATA_TAG=gwb
 else
     _RAW_FITS=~/DATA/gmrt_40_014/data/40_014_25jul2021_gsb.FITS

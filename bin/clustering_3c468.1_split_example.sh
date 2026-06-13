@@ -19,7 +19,7 @@ _HOSTNAME="$(hostname -s)"
 if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     WORK_DIR=/data1/gmrt/40_014/work
     RAW_FITS=/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
-    _CHAN_RANGE="(942,1105)"
+    _CHAN_RANGE="(1731,1901)"
     _DATA_TAG=gwb
 else
     WORK_DIR="$HOME/DATA/gmrt_40_014/work"
