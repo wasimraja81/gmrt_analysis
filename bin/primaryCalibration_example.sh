@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PYTHON_CMD="${PYTHON_CMD:-python}"
+# PYTHON_CMD is set in the machine-specific block below
 
 cd "$REPO_ROOT"
 
