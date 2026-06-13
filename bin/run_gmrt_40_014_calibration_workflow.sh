@@ -12,10 +12,14 @@ _HOSTNAME="$(hostname -s)"
 if [[ "$_HOSTNAME" == "wasim-desktop" ]]; then
     WORK_DIR=/data1/gmrt/40_014/work
     _DATA_TAG=gwb
+    # Point all child scripts at the local gmrt venv; exported so they inherit it
+    PYTHON_CMD="${PYTHON_CMD:-${REPO_ROOT}/gmrt/bin/python}"
 else
     WORK_DIR="$HOME/DATA/gmrt_40_014/work"
     _DATA_TAG=gsb
+    PYTHON_CMD="${PYTHON_CMD:-python}"
 fi
+export PYTHON_CMD
 # ────────────────────────────────────────────────────────────────────────────
 LOG_DIR="$WORK_DIR/logs"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
