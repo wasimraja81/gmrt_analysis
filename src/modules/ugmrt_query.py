@@ -5317,6 +5317,7 @@ def run_iterative_bandpass_workflow(
     _prev_ll_rms      = None   # C4 state: LL residual rms
     _warned_no_model  = False  # warn once if 'Model' requested but no flux model
     _stop_reason      = None   # set on early exit; None means ran to completion
+    _write_birdies    = False  # set True only at the final converged/exhausted iteration
     _canonical_ant_ids   = None  # fixed antenna order for gain plots (set from first solve)
     _canonical_ant_names = None
 
@@ -5509,18 +5510,45 @@ def run_iterative_bandpass_workflow(
         _prev_flag_key = _curr_flag_key
 
         # ── C3 / C4: epsilon-based convergence ──────────────────────────────
-        # _converged_criteria maps criterion name → human-readable detail string.
-        # _active_criteria tracks which metrics had data this iteration.
+        # Bad channels are detected fresh each iteration via MAD on the
+        # already-computed baseline-averaged spectra (no state carried forward).
+        # Convergence rms is computed only over clean channels.
+        # -------------------------------------------------------------------
+        def _mad_outlier_mask(spec: np.ndarray, k: float = 5.0) -> np.ndarray:
+            """Return boolean mask of outlier channels (True = bad).
+            Uses median absolute deviation; channels with |x - median| > k*MAD.
+            NaN channels are always marked bad.
+            """
+            finite = spec[np.isfinite(spec)]
+            if finite.size < 4:
+                return ~np.isfinite(spec)
+            med = float(np.median(finite))
+            mad = float(np.median(np.abs(finite - med)))
+            if mad == 0.0:
+                return ~np.isfinite(spec)
+            return ~np.isfinite(spec) | (np.abs(spec - med) > k * mad)
+
+        def _detrend_linear(spec: np.ndarray) -> np.ndarray:
+            """Subtract a least-squares linear fit from spec (NaN channels skipped)."""
+            ok = np.isfinite(spec)
+            if ok.sum() < 3:
+                return spec
+            x = np.arange(spec.size, dtype=np.float64)
+            xok, yok = x[ok], spec[ok]
+            slope, intercept = np.polyfit(xok, yok, 1)
+            return spec - (intercept + slope * x)
+
         _converged_criteria: dict = {}
         _active_criteria:    set  = set()
 
         if convergence_epsilon > 0 and _n_done >= convergence_min_iters:
 
-            # C3: coherent Stokes-V rms at phase centre
+            # C3: coherent Stokes-V rms at phase centre — outlier-robust
             if 'V' in _compare_metrics:
                 _v_spec = diag.get('pol_results', {}).get('V', {}).get('coherent_v_spectrum_jy')
                 if _v_spec is not None:
-                    _finite_v = _v_spec[np.isfinite(_v_spec)]
+                    _v_bad = _mad_outlier_mask(np.asarray(_v_spec, dtype=np.float64))
+                    _finite_v = np.asarray(_v_spec, dtype=np.float64)[~_v_bad]
                     if _finite_v.size > 0:
                         _curr_v_rms = float(np.sqrt(np.mean(_finite_v ** 2)))
                         _active_criteria.add('C3')
@@ -5552,7 +5580,9 @@ def run_iterative_bandpass_workflow(
                     _c4_ll_conv = False
                     _c4_details: list = []
                     if _rr_spec is not None:
-                        _finite_rr = _rr_spec[np.isfinite(_rr_spec)]
+                        _rr_detrend = _detrend_linear(np.asarray(_rr_spec, dtype=np.float64))
+                        _rr_bad = _mad_outlier_mask(_rr_detrend)
+                        _finite_rr = _rr_detrend[~_rr_bad]
                         if _finite_rr.size > 0:
                             _curr_rr_rms = float(np.sqrt(np.mean(_finite_rr ** 2)))
                             if _prev_rr_rms is not None and _prev_rr_rms > 0:
@@ -5563,7 +5593,9 @@ def run_iterative_bandpass_workflow(
                                     print(f'[convergence] C4-RR: |ΔRR_rms|/RR_prev={_rr_frac*100:.2f}% < {convergence_epsilon*100:.1f}% after {iter_tag}')
                             _prev_rr_rms = _curr_rr_rms
                     if _ll_spec is not None:
-                        _finite_ll = _ll_spec[np.isfinite(_ll_spec)]
+                        _ll_detrend = _detrend_linear(np.asarray(_ll_spec, dtype=np.float64))
+                        _ll_bad = _mad_outlier_mask(_ll_detrend)
+                        _finite_ll = _ll_detrend[~_ll_bad]
                         if _finite_ll.size > 0:
                             _curr_ll_rms = float(np.sqrt(np.mean(_finite_ll ** 2)))
                             if _prev_ll_rms is not None and _prev_ll_rms > 0:
@@ -5600,6 +5632,7 @@ def run_iterative_bandpass_workflow(
                 f'C1 — flag set identical to previous iteration ({iter_tag}): '
                 f'another solve would produce the same result.'
             )
+            _write_birdies = True
             break
         if _epsilon_converged:
             _fired = sorted(_converged_criteria.keys())
@@ -5609,6 +5642,7 @@ def run_iterative_bandpass_workflow(
                 f'epsilon={convergence_epsilon * 100:.1f}%) after {iter_tag} — '
                 f'{_details}.'
             )
+            _write_birdies = True
             break
 
     # ── Final stop-reason banner (always printed) ────────────────────────────
@@ -5619,8 +5653,83 @@ def run_iterative_bandpass_workflow(
                 f'Completed all {n_iterations} requested iteration(s) '
                 f'without early convergence.'
             )
+            _write_birdies = True
         else:
             _stop_reason = f'Loop ended after {_n_ran} iteration(s) (undetermined reason).'
+
+    # ── Birdies file ─────────────────────────────────────────────────────────
+    # Written once, at the final converged (or exhausted) iteration.
+    # Records globally-bad channels detected via MAD on V-spectrum and
+    # detrended RR/LL residual in the last diagnostic pass.
+    _birdies_path = None
+    if _write_birdies and bandpass_out_base is not None and last_diag is not None:
+        import json as _json
+        import datetime as _dt
+        _pol_res_final = last_diag.get('pol_results', {})
+        _freqs_final   = last_diag.get('freqs_hz', np.array([]))
+        _chan_idx_final = last_diag.get('chan_indices', np.arange(len(_freqs_final)))
+        _bad_channels: dict = {}   # chan_index → {freq_hz, metrics}
+
+        def _collect_birdies(spec, metric_name, detrend=False):
+            if spec is None:
+                return
+            s = np.asarray(spec, dtype=np.float64)
+            if detrend:
+                ok = np.isfinite(s)
+                if ok.sum() >= 3:
+                    x = np.arange(s.size, dtype=np.float64)
+                    slope, intercept = np.polyfit(x[ok], s[ok], 1)
+                    s = s - (intercept + slope * x)
+            finite = s[np.isfinite(s)]
+            if finite.size < 4:
+                return
+            med = float(np.median(finite))
+            mad = float(np.median(np.abs(finite - med)))
+            if mad == 0.0:
+                return
+            for i, val in enumerate(s):
+                if not np.isfinite(val) or abs(val - med) > 5.0 * mad:
+                    ch = int(_chan_idx_final[i]) if i < len(_chan_idx_final) else i
+                    freq = float(_freqs_final[i]) if i < len(_freqs_final) else float('nan')
+                    entry = _bad_channels.setdefault(ch, {'freq_hz': freq, 'metrics': []})
+                    entry['metrics'].append(metric_name)
+
+        _collect_birdies(
+            _pol_res_final.get('V', {}).get('coherent_v_spectrum_jy'), 'StokesV')
+        _collect_birdies(
+            _pol_res_final.get('RR', {}).get('residual_spectrum_jy'), 'RR_residual', detrend=True)
+        _collect_birdies(
+            _pol_res_final.get('LL', {}).get('residual_spectrum_jy'), 'LL_residual', detrend=True)
+
+        if _bad_channels:
+            _bp_base = Path(bandpass_out_base)
+            _birdies_path = _bp_base.parent / f'{_bp_base.stem}_birdies.json'
+            _birdies_path.parent.mkdir(parents=True, exist_ok=True)
+            _birdies_record = {
+                'created_utc': _dt.datetime.utcnow().isoformat(),
+                'source': source,
+                'fits_path': str(fits_path),
+                'stop_reason': _stop_reason,
+                'n_bad_channels': len(_bad_channels),
+                'bad_channels': [
+                    {
+                        'chan_index': ch,
+                        'freq_hz': info['freq_hz'],
+                        'freq_mhz': round(info['freq_hz'] / 1e6, 6),
+                        'metrics': info['metrics'],
+                        'reason': 'MAD outlier in: ' + ', '.join(info['metrics']),
+                    }
+                    for ch, info in sorted(_bad_channels.items())
+                ],
+            }
+            if not dry_run_bandpass:
+                with open(_birdies_path, 'w') as _bf:
+                    _json.dump(_birdies_record, _bf, indent=2)
+                print(f'[birdies] {len(_bad_channels)} bad channel(s) written to {_birdies_path}')
+            else:
+                print(f'[birdies] dry-run: {len(_bad_channels)} bad channel(s) detected (not written)')
+        else:
+            print('[birdies] no outlier channels detected in final iteration')
     return {
         'index': index,
         'history': history,
@@ -5629,6 +5738,7 @@ def run_iterative_bandpass_workflow(
         'last_diagnostics': last_diag,
         'last_flag_update': last_flag_update,
         'stop_reason': _stop_reason,
+        'birdies_path': str(_birdies_path) if _birdies_path is not None else None,
     }
 
 
