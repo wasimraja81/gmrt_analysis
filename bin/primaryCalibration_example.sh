@@ -56,7 +56,7 @@ CMD=(
 --config preprocess_ugmrt.cfg
 --set "WORK_DIR=Path('${WORK_DIR}')"
 --set "SOURCE='${SOURCE}'"
---set "BANDPASS_OUT=Path('${BP_DIR}/${SRC_TAG}_bandpass_25jul_gsb.npz')"
+--set "BANDPASS_OUT=Path('${BP_DIR}/${SRC_TAG}_bandpass_25jul_${_DATA_TAG}.npz')"
 --set "DIAG_PLOT_BASE=Path('${DIAG_DIR}/${SRC_TAG}_bandpass_diagnostics.png')"
 --set "DIAG_PLOT_UNFLAGGED=Path('${DIAG_DIR}/${SRC_TAG}_bandpass_diagnostics_unflagged.png')"
 --set "GAIN_PLOT_BASE=Path('${DIAG_DIR}/${SRC_TAG}_bandpass_gains.png')"
