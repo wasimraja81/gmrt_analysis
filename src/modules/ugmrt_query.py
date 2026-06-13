@@ -4719,15 +4719,27 @@ def run_bandpass_diagnostics(
             marker='x', color='red', ms=7, mew=1.5, ls='none',
             zorder=5,
         )
-        # Clip y-limits on ax_resid to good-channel range so outliers do not
-        # stretch the axis.  Gather all finite values from non-bad channels only.
-        _good_vals: list = []
+        # Clip all three axes to the good-channel range so outlier values
+        # cannot squash the useful data toward zero.
+        _good_mask = ~_bad_in_window & chan_mask
+
+        # ax_spec: use model values at good channels as the reference scale
+        if model is not None and _good_mask.any():
+            _m_good = model[_good_mask]
+            _m_good = _m_good[np.isfinite(_m_good)]
+            if _m_good.size > 0:
+                _spec_hi = float(np.max(_m_good)) * 1.25
+                ax_spec.set_ylim(bottom=0.0, top=_spec_hi)
+
+        # ax_resid and ax_clean: use cleaned residual values at good channels
+        _good_resid_vals: list = []
         for _cp in _pol_cleaned.values():
             if _cp is not None:
-                _gv = np.asarray(_cp, dtype=np.float64)[~_bad_in_window & chan_mask]
-                _good_vals.extend(float(v) for v in _gv[np.isfinite(_gv)])
-        if len(_good_vals) > 4:
-            _glo, _ghi = float(np.percentile(_good_vals, 1)), float(np.percentile(_good_vals, 99))
+                _gv = np.asarray(_cp, dtype=np.float64)[_good_mask]
+                _good_resid_vals.extend(float(v) for v in _gv[np.isfinite(_gv)])
+        if len(_good_resid_vals) > 4:
+            _glo = float(np.percentile(_good_resid_vals, 1))
+            _ghi = float(np.percentile(_good_resid_vals, 99))
             _margin = max(abs(_ghi - _glo) * 0.15, 0.05)
             ax_resid.set_ylim(_glo - _margin, _ghi + _margin)
             ax_clean.set_ylim(_glo - _margin, _ghi + _margin)
