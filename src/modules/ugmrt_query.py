@@ -4350,6 +4350,8 @@ def run_bandpass_diagnostics(
 
     pol_results = {}
     _pol_cleaned: dict = {}   # sinusoid-subtracted residual spectra keyed by pol name
+    _resid_fit_components: list = []  # sinusoid components drawn on ax_resid
+    _fit_pending: dict = {}  # raw residual spectra queued for post-mask fitting
 
     def _fit_sinusoid(
         f_mhz: np.ndarray,
@@ -4406,6 +4408,16 @@ def run_bandpass_diagnostics(
         except Exception:
             return None
 
+    def _diag_mad_mask(spec: np.ndarray, k: float = 5.0) -> np.ndarray:
+        finite = spec[np.isfinite(spec)]
+        if finite.size < 4:
+            return ~np.isfinite(spec)
+        med = float(np.median(finite))
+        mad = float(np.median(np.abs(finite - med)))
+        if mad == 0.0:
+            return ~np.isfinite(spec)
+        return ~np.isfinite(spec) | (np.abs(spec - med) > k * mad)
+
     unique_pairs, inv = np.unique(np.column_stack([ant1, ant2]), axis=0, return_inverse=True)
 
     for pol_idx, pol in enumerate(stokes_labels):
@@ -4442,48 +4454,10 @@ def run_bandpass_diagnostics(
             freqs_mhz, np.where(chan_mask, resid_spec, np.nan),
             lw=1.0, label=pol)[0]
         _lc = _resid_line.get_color()
-        _fit_annot_lines = []   # collect annotation strings for this pol
-        _popt_r = _fit_sinusoid(freqs_mhz[chan_mask], resid_spec[chan_mask])
-        if _popt_r is not None:
-            _a_r, _A_r, _P_r, _phi_r = _popt_r
-            _sinu_r = _a_r + _A_r * np.sin(2.0 * np.pi * freqs_mhz / _P_r + _phi_r)
-            ax_resid.plot(
-                freqs_mhz, np.where(chan_mask, _sinu_r, np.nan),
-                lw=1.4, ls='--', color=_lc, alpha=0.75,
-            )
-            _fit_annot_lines.append(f'{pol}₁: {_A_r:.2f}Jy, {_P_r:.1f}MHz')
-            _cleaned_r = resid_spec - _sinu_r
-            # ── Pass 2: if pass 1 found a long-period component (P > 4 MHz),
-            # search for a secondary short-period ripple in the 0.5–4 MHz window.
-            if _P_r > 4.0:
-                _popt_r2 = _fit_sinusoid(
-                    freqs_mhz[chan_mask], _cleaned_r[chan_mask],
-                    period_range_mhz=(0.5, 4.0),
-                )
-                if _popt_r2 is not None:
-                    _a_r2, _A_r2, _P_r2, _phi_r2 = _popt_r2
-                    _sinu_r2 = _a_r2 + _A_r2 * np.sin(2.0 * np.pi * freqs_mhz / _P_r2 + _phi_r2)
-                    ax_resid.plot(
-                        freqs_mhz, np.where(chan_mask, _sinu_r2, np.nan),
-                        lw=1.4, ls=':', color=_lc, alpha=0.60,
-                    )
-                    _fit_annot_lines.append(f'{pol}₂: {_A_r2:.2f}Jy, {_P_r2:.1f}MHz')
-                    _cleaned_r = _cleaned_r - _sinu_r2
-            ax_clean.plot(
-                freqs_mhz, np.where(chan_mask, _cleaned_r, np.nan),
-                lw=1.0, color=_lc, label=pol,
-            )
-            _pol_cleaned[pol] = _cleaned_r
-        else:
-            ax_clean.plot(
-                freqs_mhz, np.where(chan_mask, resid_spec, np.nan),
-                lw=1.0, ls='--', color=_lc, label=f'{pol} (no fit)',
-            )
-            _pol_cleaned[pol] = resid_spec
-        # Store annotation lines for this pol so we can add a text box after all pols
-        if not hasattr(ax_resid, '_fit_annot'):
-            ax_resid._fit_annot = []
-        ax_resid._fit_annot.extend(_fit_annot_lines)
+        _fit_pending[pol] = {
+            'resid_spec': np.asarray(resid_spec, dtype=np.float64),
+            'color': _lc,
+        }
 
         baseline_records = []
         for base_idx, (a1, a2) in enumerate(unique_pairs):
@@ -4621,67 +4595,21 @@ def run_bandpass_diagnostics(
     ax_resid.axhline(0.0, color='k', lw=0.8, ls='--', alpha=0.5)
     ax_clean.axhline(0.0, color='k', lw=0.8, ls='--', alpha=0.5)
 
-    # ── Stokes-V: fit in residuals panel (light), cleaned trace in cleaned panel ──
+    # ── Stokes-V: queue for post-mask fitting, then fit RR/LL/V on final mask ──
     _v_fit_annot_lines = []
     if 'V' in pol_results:
-        v_sp = pol_results['V']['coherent_v_spectrum_jy']
+        v_sp = np.asarray(pol_results['V']['coherent_v_spectrum_jy'], dtype=np.float64)
         # V data shown on residuals panel — thin dashed, visually subordinate
         ax_resid.plot(
             freqs_mhz, np.where(chan_mask, v_sp, np.nan),
             lw=0.8, ls='--', color='tab:purple', alpha=0.7, label='V',
         )
-        _popt_v = _fit_sinusoid(freqs_mhz[chan_mask], v_sp[chan_mask])
-        if _popt_v is not None:
-            _a_v, _A_v, _P_v, _phi_v = _popt_v
-            _sinu_v = _a_v + _A_v * np.sin(2.0 * np.pi * freqs_mhz / _P_v + _phi_v)
-            ax_resid.plot(
-                freqs_mhz, np.where(chan_mask, _sinu_v, np.nan),
-                lw=1.4, ls=':', color='tab:purple', alpha=0.55,
-            )
-            _v_fit_annot_lines.append(f'V₁: {_A_v:.2f}Jy, {_P_v:.1f}MHz')
-            _cleaned_v = v_sp - _sinu_v
-            if _P_v > 4.0:
-                _popt_v2 = _fit_sinusoid(
-                    freqs_mhz[chan_mask], _cleaned_v[chan_mask],
-                    period_range_mhz=(0.5, 4.0),
-                )
-                if _popt_v2 is not None:
-                    _a_v2, _A_v2, _P_v2, _phi_v2 = _popt_v2
-                    _sinu_v2 = _a_v2 + _A_v2 * np.sin(2.0 * np.pi * freqs_mhz / _P_v2 + _phi_v2)
-                    ax_resid.plot(
-                        freqs_mhz, np.where(chan_mask, _sinu_v2, np.nan),
-                        lw=1.4, ls=(0, (3, 1, 1, 1)), color='tab:purple', alpha=0.45,
-                    )
-                    _v_fit_annot_lines.append(f'V₂: {_A_v2:.2f}Jy, {_P_v2:.1f}MHz')
-                    _cleaned_v = _cleaned_v - _sinu_v2
-            ax_clean.plot(
-                freqs_mhz, np.where(chan_mask, _cleaned_v, np.nan),
-                lw=0.8, ls='--', color='tab:purple', label='V',
-            )
-            _pol_cleaned['V'] = _cleaned_v
-        else:
-            ax_clean.plot(
-                freqs_mhz, np.where(chan_mask, v_sp, np.nan),
-                lw=0.8, ls='--', color='tab:purple', label='V (no fit)',
-            )
-            _pol_cleaned['V'] = v_sp
+        _fit_pending['V'] = {
+            'resid_spec': v_sp,
+            'color': 'tab:purple',
+        }
 
-    # ── Outlier channel markers (red × at y=0) ────────────────────────────────
-    # Detect globally-bad channels fresh from the already-plotted spectra using
-    # the same MAD logic as the convergence guard.  Mark them on ax_resid and
-    # ax_spec so the user can see which channels were excluded from the rms.
-    # Y-axes are then clipped to the good-channel range for a sensible scale.
-    def _diag_mad_mask(spec: np.ndarray, k: float = 5.0) -> np.ndarray:
-        finite = spec[np.isfinite(spec)]
-        if finite.size < 4:
-            return ~np.isfinite(spec)
-        med = float(np.median(finite))
-        mad = float(np.median(np.abs(finite - med)))
-        if mad == 0.0:
-            return ~np.isfinite(spec)
-        return ~np.isfinite(spec) | (np.abs(spec - med) > k * mad)
-
-    # Collect union of bad channels across all available spectra
+    # Detect globally-bad channels from RR/LL residual and coherent-V spectra.
     _bad_ch_union = np.zeros(freqs_mhz.size, dtype=bool)
     for _diag_pol, _diag_key in [
         ('V',  'coherent_v_spectrum_jy'),
@@ -4705,50 +4633,188 @@ def run_bandpass_diagnostics(
     _bad_in_window = _bad_ch_union & chan_mask
     _n_bad = int(_bad_in_window.sum())
 
+    # Final fitter mask: channel window AND not red-cross bad channels.
+    _fit_mask = (~_bad_in_window) & chan_mask
+    if int(_fit_mask.sum()) < 20:
+        _fit_mask = chan_mask.copy()
+
+    if not hasattr(ax_resid, '_fit_annot'):
+        ax_resid._fit_annot = []
+
+    for _fit_pol in ('RR', 'LL'):
+        if _fit_pol not in _fit_pending:
+            continue
+        _spec = np.asarray(_fit_pending[_fit_pol]['resid_spec'], dtype=np.float64)
+        _lc = _fit_pending[_fit_pol]['color']
+        _fit_annot_lines = []
+
+        _popt_r = _fit_sinusoid(freqs_mhz[_fit_mask], _spec[_fit_mask])
+        if _popt_r is not None:
+            _a_r, _A_r, _P_r, _phi_r = _popt_r
+            _sinu_r = _a_r + _A_r * np.sin(2.0 * np.pi * freqs_mhz / _P_r + _phi_r)
+            _resid_fit_components.append(np.asarray(_sinu_r, dtype=np.float64))
+            ax_resid.plot(
+                freqs_mhz, np.where(chan_mask, _sinu_r, np.nan),
+                lw=1.4, ls='--', color=_lc, alpha=0.75,
+            )
+            _fit_annot_lines.append(f'{_fit_pol}₁: {_A_r:.2f}Jy, {_P_r:.1f}MHz')
+            _cleaned_r = _spec - _sinu_r
+            if _P_r > 4.0:
+                _popt_r2 = _fit_sinusoid(
+                    freqs_mhz[_fit_mask], _cleaned_r[_fit_mask],
+                    period_range_mhz=(0.5, 4.0),
+                )
+                if _popt_r2 is not None:
+                    _a_r2, _A_r2, _P_r2, _phi_r2 = _popt_r2
+                    _sinu_r2 = _a_r2 + _A_r2 * np.sin(2.0 * np.pi * freqs_mhz / _P_r2 + _phi_r2)
+                    _resid_fit_components.append(np.asarray(_sinu_r2, dtype=np.float64))
+                    ax_resid.plot(
+                        freqs_mhz, np.where(chan_mask, _sinu_r2, np.nan),
+                        lw=1.4, ls=':', color=_lc, alpha=0.60,
+                    )
+                    _fit_annot_lines.append(f'{_fit_pol}₂: {_A_r2:.2f}Jy, {_P_r2:.1f}MHz')
+                    _cleaned_r = _cleaned_r - _sinu_r2
+            ax_clean.plot(
+                freqs_mhz, np.where(chan_mask, _cleaned_r, np.nan),
+                lw=1.0, color=_lc, label=_fit_pol,
+            )
+            _pol_cleaned[_fit_pol] = _cleaned_r
+        else:
+            ax_clean.plot(
+                freqs_mhz, np.where(chan_mask, _spec, np.nan),
+                lw=1.0, ls='--', color=_lc, label=f'{_fit_pol} (no fit)',
+            )
+            _pol_cleaned[_fit_pol] = _spec
+        ax_resid._fit_annot.extend(_fit_annot_lines)
+
+    if 'V' in _fit_pending:
+        _v_spec = np.asarray(_fit_pending['V']['resid_spec'], dtype=np.float64)
+        _popt_v = _fit_sinusoid(freqs_mhz[_fit_mask], _v_spec[_fit_mask])
+        if _popt_v is not None:
+            _a_v, _A_v, _P_v, _phi_v = _popt_v
+            _sinu_v = _a_v + _A_v * np.sin(2.0 * np.pi * freqs_mhz / _P_v + _phi_v)
+            _resid_fit_components.append(np.asarray(_sinu_v, dtype=np.float64))
+            ax_resid.plot(
+                freqs_mhz, np.where(chan_mask, _sinu_v, np.nan),
+                lw=1.4, ls=':', color='tab:purple', alpha=0.55,
+            )
+            _v_fit_annot_lines.append(f'V₁: {_A_v:.2f}Jy, {_P_v:.1f}MHz')
+            _cleaned_v = _v_spec - _sinu_v
+            if _P_v > 4.0:
+                _popt_v2 = _fit_sinusoid(
+                    freqs_mhz[_fit_mask], _cleaned_v[_fit_mask],
+                    period_range_mhz=(0.5, 4.0),
+                )
+                if _popt_v2 is not None:
+                    _a_v2, _A_v2, _P_v2, _phi_v2 = _popt_v2
+                    _sinu_v2 = _a_v2 + _A_v2 * np.sin(2.0 * np.pi * freqs_mhz / _P_v2 + _phi_v2)
+                    _resid_fit_components.append(np.asarray(_sinu_v2, dtype=np.float64))
+                    ax_resid.plot(
+                        freqs_mhz, np.where(chan_mask, _sinu_v2, np.nan),
+                        lw=1.4, ls=(0, (3, 1, 1, 1)), color='tab:purple', alpha=0.45,
+                    )
+                    _v_fit_annot_lines.append(f'V₂: {_A_v2:.2f}Jy, {_P_v2:.1f}MHz')
+                    _cleaned_v = _cleaned_v - _sinu_v2
+            ax_clean.plot(
+                freqs_mhz, np.where(chan_mask, _cleaned_v, np.nan),
+                lw=0.8, ls='--', color='tab:purple', label='V',
+            )
+            _pol_cleaned['V'] = _cleaned_v
+        else:
+            ax_clean.plot(
+                freqs_mhz, np.where(chan_mask, _v_spec, np.nan),
+                lw=0.8, ls='--', color='tab:purple', label='V (no fit)',
+            )
+            _pol_cleaned['V'] = _v_spec
+
+    # ── Outlier channel markers + robust y-limits for row-1 panels ───────────
+    # Use only good channels to set y-limits for ax_spec, ax_resid, and ax_clean.
+    # If bad channels exist, mark them as red × at panel ymin (not at y=0).
+
+    # Compute good-channel mask for plotting limits.  If MAD detection marks
+    # almost everything bad, fall back to chan_mask-only to keep plots usable.
+    _good_mask = (~_bad_in_window) & chan_mask
+    if int(_good_mask.sum()) < 8:
+        _good_mask = chan_mask.copy()
+
+    # ax_spec: robust limits from good-channel RR/LL spectra (+ model when present)
+    _good_spec_vals: list = []
+    for _diag_pol in ('RR', 'LL'):
+        _sp = pol_results.get(_diag_pol, {}).get('real_spectrum_jy')
+        if _sp is not None:
+            _sv = np.asarray(_sp, dtype=np.float64)[_good_mask]
+            _good_spec_vals.extend(float(v) for v in _sv[np.isfinite(_sv)])
+    if model is not None:
+        _mv = np.asarray(model, dtype=np.float64)[_good_mask]
+        _good_spec_vals.extend(float(v) for v in _mv[np.isfinite(_mv)])
+    if len(_good_spec_vals) > 4:
+        _slo = float(np.percentile(_good_spec_vals, 1))
+        _shi = float(np.percentile(_good_spec_vals, 99))
+        _smargin = max(abs(_shi - _slo) * 0.10, 0.05)
+        ax_spec.set_ylim(max(0.0, _slo - _smargin), _shi + _smargin)
+
+    # ax_resid: limits from the raw residual spectra (data - model) that are
+    # actually plotted on that panel, including RR, LL, and V residuals.
+    # ax_clean: limits from the sinusoid-cleaned residuals (_pol_cleaned).
+    # Both use only good channels.
+
+    _good_rawresid_vals: list = []
+    for _rp_key in ('RR', 'LL', 'V'):
+        _rp = pol_results.get(_rp_key, {})
+        _rs = _rp.get('residual_spectrum_jy')
+        if _rs is None:
+            _rs = _rp.get('coherent_v_spectrum_jy')
+        if _rs is not None:
+            _rv = np.asarray(_rs, dtype=np.float64)[_good_mask]
+            _good_rawresid_vals.extend(float(v) for v in _rv[np.isfinite(_rv)])
+    # Include fitted sinusoid components as well so fit curves are never clipped.
+    for _fit_arr in _resid_fit_components:
+        _fv = np.asarray(_fit_arr, dtype=np.float64)[_good_mask]
+        _good_rawresid_vals.extend(float(v) for v in _fv[np.isfinite(_fv)])
+    if len(_good_rawresid_vals) > 4:
+        _rlo = float(np.min(_good_rawresid_vals))
+        _rhi = float(np.max(_good_rawresid_vals))
+        _rmargin = max(abs(_rhi - _rlo) * 0.15, 0.05)
+        ax_resid.set_ylim(_rlo - _rmargin, _rhi + _rmargin)
+
+    _good_resid_vals: list = []
+    for _cp in _pol_cleaned.values():
+        if _cp is not None:
+            _gv = np.asarray(_cp, dtype=np.float64)[_good_mask]
+            _good_resid_vals.extend(float(v) for v in _gv[np.isfinite(_gv)])
+    if len(_good_resid_vals) > 4:
+        _glo = float(np.min(_good_resid_vals))
+        _ghi = float(np.max(_good_resid_vals))
+        _margin = max(abs(_ghi - _glo) * 0.15, 0.05)
+        ax_clean.set_ylim(_glo - _margin, _ghi + _margin)
+
     if _n_bad > 0:
         _bad_freqs = freqs_mhz[_bad_in_window]
-        # Red × markers at y=0 on residuals panel
+        _resid_ymin = float(ax_resid.get_ylim()[0])
+        _spec_ymin = float(ax_spec.get_ylim()[0])
+        _clean_ymin = float(ax_clean.get_ylim()[0])
         ax_resid.plot(
-            _bad_freqs, np.zeros(_n_bad),
+            _bad_freqs, np.full(_n_bad, _resid_ymin),
             marker='x', color='red', ms=7, mew=1.5, ls='none',
             zorder=5, label=f'outlier ch ({_n_bad})',
         )
-        # Same markers on spectrum panel at y=0
         ax_spec.plot(
-            _bad_freqs, np.zeros(_n_bad),
+            _bad_freqs, np.full(_n_bad, _spec_ymin),
             marker='x', color='red', ms=7, mew=1.5, ls='none',
             zorder=5,
         )
-        # Clip all three axes to the good-channel range so outlier values
-        # cannot squash the useful data toward zero.
-        _good_mask = ~_bad_in_window & chan_mask
+        ax_clean.plot(
+            _bad_freqs, np.full(_n_bad, _clean_ymin),
+            marker='x', color='red', ms=7, mew=1.5, ls='none',
+            zorder=5,
+        )
+    ax_resid.legend(fontsize=8, loc='upper right', framealpha=0.85)
 
-        # ax_spec: use model values at good channels as the reference scale
-        if model is not None and _good_mask.any():
-            _m_good = model[_good_mask]
-            _m_good = _m_good[np.isfinite(_m_good)]
-            if _m_good.size > 0:
-                _spec_hi = float(np.max(_m_good)) * 1.25
-                ax_spec.set_ylim(bottom=0.0, top=_spec_hi)
-
-        # ax_resid and ax_clean: use cleaned residual values at good channels
-        _good_resid_vals: list = []
-        for _cp in _pol_cleaned.values():
-            if _cp is not None:
-                _gv = np.asarray(_cp, dtype=np.float64)[_good_mask]
-                _good_resid_vals.extend(float(v) for v in _gv[np.isfinite(_gv)])
-        if len(_good_resid_vals) > 4:
-            _glo = float(np.percentile(_good_resid_vals, 1))
-            _ghi = float(np.percentile(_good_resid_vals, 99))
-            _margin = max(abs(_ghi - _glo) * 0.15, 0.05)
-            ax_resid.set_ylim(_glo - _margin, _ghi + _margin)
-            ax_clean.set_ylim(_glo - _margin, _ghi + _margin)
-        ax_resid.legend(fontsize=8, loc='upper right', framealpha=0.85)
-
-    # ── Fit summary text box inside residuals panel ────────────────────────────
-    # Format each fit line with explicit labels for clarity, then place in a
-    # light-green rounded box in the lower-left corner.  Y-axis limits are
-    # expanded downward to guarantee the box never overlaps the data traces.
+    # ── Fit summary text box — figure-level, top-right, anchored at top-right ──
+    # Placed in figure coordinates just below the suptitle and to the right,
+    # in the gap above row 1.  Anchored at top-right (va='top', ha='right') so
+    # the box grows downward when more components are present, never into data.
+    # clip_on=False ensures it is never clipped by any axes boundary.
     _all_annot = getattr(ax_resid, '_fit_annot', []) + _v_fit_annot_lines
 
     if source_has_flux_model:
@@ -4762,30 +4828,29 @@ def run_bandpass_diagnostics(
     ax_resid.legend(fontsize=8, loc='upper right', framealpha=0.85)
 
     if _all_annot:
-        # Expand the lower y-limit by ~30% of the current data range so the
-        # box sits in clear whitespace below the traces.
-        _yr_lo, _yr_hi = ax_resid.get_ylim()
-        _yr_span = _yr_hi - _yr_lo
-        ax_resid.set_ylim(_yr_lo - 0.30 * _yr_span, _yr_hi)
-        # Rebuild text with explicit "A=" and "P=" labels now that space is clear
         _box_lines = []
         for _s in _all_annot:
-            # _s is e.g. "RR₁: 0.22Jy, 1.7MHz"  →  reformat to "RR₁  A=0.22 Jy  P=1.7 MHz"
             _pol_tag, _vals = (_s.split(': ', 1) + [''])[:2]
             _parts = [p.strip() for p in _vals.split(',')]
             _a_str = _parts[0] if len(_parts) > 0 else ''
             _p_str = _parts[1] if len(_parts) > 1 else ''
             _box_lines.append(f'{_pol_tag:<5s}  A={_a_str:<9s}  P={_p_str}')
         _box_text = '\n'.join(_box_lines)
+        # Anchored above the top-right corner of the residual axes panel.
+        # va='bottom' fixes the box bottom at y, so additional lines grow
+        # upward toward the suptitle gap, never into the data area.
+        # y=1.10 gives enough clearance above the secondary 'Channel' axis
+        # tick labels (which sit at ~y=1.02–1.06 in axes coordinates).
         ax_resid.text(
-            0.015, 0.04, _box_text,
+            1.0, 1.25, _box_text,
             transform=ax_resid.transAxes,
-            fontsize=6.5, va='bottom', ha='left', family='monospace',
+            fontsize=6.5, va='bottom', ha='right', family='monospace',
             color='#1a3a1a',
+            clip_on=False,
             bbox=dict(
                 boxstyle='round,pad=0.5',
-                facecolor='#d4edda',    # light mint-green
-                edgecolor='#7fba7f',    # medium green border
+                facecolor='#d4edda',
+                edgecolor='#7fba7f',
                 alpha=0.82,
             ),
         )
@@ -4806,9 +4871,9 @@ def run_bandpass_diagnostics(
     _metric_order = [m for m in ('RR', 'LL', 'V') if m in pol_results]
     _metric_colors  = {'RR': 'tab:blue',   'LL': 'tab:orange', 'V': 'tab:purple'}
     _metric_ylabels = {
-        'RR': 'RR mean absolute residual',
-        'LL': 'LL mean absolute residual',
-        'V':  '|RR − LL| mean absolute (per-baseline outlier score)',
+        'RR': 'mean |RR residual|',
+        'LL': 'mean |LL residual|',
+        'V':  'mean |RR − LL|',
     }
     # Normalise ranking_metric to a frozenset of strings
     if ranking_metric is None:
