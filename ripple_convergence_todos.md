@@ -213,6 +213,158 @@ When the source has no PB2017 entry (C3/C4 unavailable):
 
 ---
 
+---
+
+## Step 1b — Ripple characterisation and bandpass correction via 3C468.1
+
+### Motivation
+
+Once primary + secondary calibration is applied to 3C468.1, the baseline-averaged
+spectrum should be a smooth power law (spectral index + curvature).  Any residual
+standing-wave ripple sits on top of that power law as a **multiplicative modulation**
+of the antenna gain bandpass:
+
+$$V_{ij}(\nu) = g_i(\nu)\,g_j^*(\nu)\,V_{ij}^{\text{true}}(\nu)$$
+
+where $g_a(\nu)$ contains both the smooth bandpass envelope and the standing-wave
+ripple arising from cable reflections in the signal chain.  The ripple is
+**multiplicative** (not additive) because it enters through the transfer function of
+the receiving chain before correlation.  This means it can be corrected by
+manipulating the bandpass gain table.
+
+Since 3C468.1 has no Perley-Butler model, the power law must be fitted empirically.
+The ripple is then the multiplicative residual after the power law is divided out.
+
+---
+
+### Physical model
+
+$$S(\nu) = S_{\text{PL}}(\nu)\times\bigl[1 + r(\nu)\bigr]$$
+
+where:
+- $S_{\text{PL}}(\nu)$ is the smooth power-law spectrum with spectral index and
+  curvature: $\log S_{\text{PL}} = a_0 + a_1 \log\nu + a_2(\log\nu)^2$ (fit
+  globally over all antennas / baseline-averaged spectrum).
+- $r(\nu)$ is the harmonic ripple modulation — zero-mean oscillations after the
+  power law is divided out.
+- Fitting: divide $S(\nu)/S_{\text{PL}}(\nu) - 1 = r(\nu)$, then fit a harmonic
+  expansion (multiple sine + cosine terms) to $r(\nu)$.
+
+**Why global power law:**  The source spectral shape is common to all baselines; the
+per-antenna ripple appears on top of it.  Since the ripple is shown to be largely
+common across antennas (derived from the baseline-averaged spectrum), we assume a
+single global power-law + a single global harmonic ripple model as the starting
+point.
+
+---
+
+### Harmonic ripple model
+
+Standing waves have harmonics.  Use a Fourier (poly-harmonic) expansion rather than
+a single sinusoid:
+
+$$r(\nu) = \sum_{k=1}^{N}\Bigl[A_k\sin\!\Bigl(\frac{2\pi k\nu}{P}\Bigr)
+  + B_k\cos\!\Bigl(\frac{2\pi k\nu}{P}\Bigr)\Bigr]$$
+
+Parameters to fit: fundamental period $P$, and amplitudes $(A_k, B_k)$ for
+$k = 1 \ldots N$.
+
+| Parameter | Default | Notes |
+|---|---|---|
+| $N$ (harmonic order) | 3 | Captures fundamental + first two harmonics.  Expose as `RIPPLE_HARMONIC_ORDER`. |
+| $P$ search range | `RIPPLE_PERIOD_RANGE_MHZ` = [5, 20] MHz | Use existing config key. |
+| Auto-detect $N$ | Optional | Increment $N$ while BIC decreases; stop when adding a harmonic is not justified. |
+
+Fitting strategy:
+1. Grid-search or coarse scan over $P$ to find the dominant period.
+2. Given $P$, the $(A_k, B_k)$ are linear parameters — solve via ordinary least
+   squares (no nonlinear iteration needed once $P$ is fixed).
+3. Optionally iterate: refine $P$ with nonlinear fit, then re-solve $(A_k, B_k)$.
+
+---
+
+### Workflow: input → output
+
+```
+Input:   3c468.1_primary_secondary_calibrated_flagged.uvfits
+         (primary + secondary calibrated and flagged split data)
+
+Step 1:  Load visibilities; compute baseline-averaged real spectrum per polarisation
+         (use existing plot_corrected_vector_avg_spectrum computation pathway,
+         but return data, not a plot).
+
+Step 2:  Fit global power law in log-log space over unflagged channels:
+         log(S) = a0 + a1*log(ν) + a2*(log(ν))^2
+         → yields S_PL(ν)
+
+Step 3:  Compute normalised residual: r(ν) = S(ν)/S_PL(ν) - 1
+         r(ν) should be zero-mean if the power law fit is good.
+
+Step 4:  Fit harmonic expansion to r(ν):
+         - Grid-search for dominant period P in RIPPLE_PERIOD_RANGE_MHZ
+         - Solve (A_k, B_k) via linear least squares for k = 1..N
+         - Store fitted model r_hat(ν) and residual r_clean(ν) = r(ν) - r_hat(ν)
+
+Step 5:  Diagnostics (plot):
+         - S(ν) vs S_PL(ν) overlay
+         - r(ν) vs r_hat(ν) overlay
+         - r_clean(ν) residual (should approach noise floor)
+         - FFT of r(ν) and r_clean(ν) to verify ripple suppression
+
+Step 6:  Build bandpass correction gains:
+         g_ripple(ν) = 1 / sqrt(1 + r_hat(ν))
+         (square root splits the correction symmetrically across both antennas of
+         each baseline: baseline response = g_i * g_j* → each antenna gets 1/sqrt)
+
+Step 7:  Apply to existing bandpass solution:
+         g_corrected(ν) = g_existing(ν) * g_ripple(ν)
+         Save as new bandpass NPZ table.
+
+Step 8:  Apply corrected bandpass to split data → write:
+         3c468.1_ripple_calib.uvfits
+         (should show clean power-law spectrum in baseline-averaged view)
+```
+
+---
+
+### Implementation location
+
+| Component | Where |
+|---|---|
+| Data extraction (vector-avg spectrum as array) | `ugmrt_query.get_vector_avg_spectrum(vis, solution)` — new thin function, reuses existing weighted-avg logic from `plot_corrected_vector_avg_spectrum` |
+| Power-law fit | `ugmrt_query.fit_power_law_spectrum(freqs_hz, spectrum)` → returns `(a0, a1, a2)` |
+| Harmonic ripple fit | `ugmrt_query.fit_harmonic_ripple(freqs_mhz, residual, period_range_mhz, n_harmonics)` → returns `(P, A_k, B_k)` |
+| Bandpass correction | `ugmrt_query.apply_ripple_correction_to_bandpass(solution, g_ripple)` → returns new solution dict |
+| Top-level entry point | `ugmrt_query.characterise_and_correct_ripple(vis, solution, ...)` → returns corrected solution + diagnostics dict |
+| CLI / script driver | New script `bin/run_ripple_correction_3c468.1.sh` calling `src/ripple_correction.py` |
+| Output UVFITS | `work/split/3c468.1/3c468.1_ripple_calib.uvfits` |
+
+---
+
+### Acceptance criteria
+
+- Baseline-averaged spectrum of `3c468.1_ripple_calib.uvfits` shows a smooth power
+  law with no visible periodic modulation.
+- `r_clean(ν)` RMS is at or near the thermal noise floor estimate $\hat{\sigma}$.
+- FFT of `r_clean(ν)` shows no dominant peak in the ripple period range.
+- Fitted ripple amplitude $A_1 / \hat{\sigma} < \tau_{\text{ripple}}$ (default 2.0).
+
+---
+
+### Open questions / decisions deferred
+
+- **Time dependence**: the current plan uses a single time-averaged spectrum.  If
+  the ripple drifts with time or elevation, a per-scan or per-elevation-bin fit may
+  be needed in a follow-up pass.
+- **Per-antenna vs global**: assuming uniform ripple across antennas for now
+  (same $g_{\text{ripple}}$ applied to all).  If antenna-specific ripple signatures
+  are revealed by per-baseline fits, this becomes a Level-2 refinement.
+- **Route choice**: bandpass manipulation is the primary route.  Direct visibility
+  subtraction (additive) is not applicable here because the ripple is multiplicative
+  in origin (cable reflections in the signal chain).
+
+---
+
 ## Step 2 — Medium term: per-antenna ripple subtraction (Level-2 feedback)
 
 Fit sinusoids per-antenna (not just for the baseline average) and subtract the
