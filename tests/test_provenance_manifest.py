@@ -250,3 +250,52 @@ def test_manifest_logger_handlers_are_closed_after_exit():
         logger = manifest.logger
 
     assert logger.handlers == []
+
+
+def test_manifest_appends_an_entry_to_the_run_index():
+    scratch = make_scratch_dir("manifest_run_index_single")
+    repo = scratch / "repo"
+    repo.mkdir()
+    _init_scratch_repo(repo)
+    work_dir = scratch / "work"
+    work_dir.mkdir()
+    input_file = _make_input_file(scratch, "raw_input.fits", "fake fits bytes")
+
+    with RunManifest(
+        stage="unit_test_stage",
+        work_dir=work_dir,
+        parameters={"chan_start": 1731},
+        inputs=[input_file],
+        repo_root=repo,
+    ) as manifest:
+        run_id = manifest.run_id
+
+    index_lines = (work_dir / "runs_index.jsonl").read_text().splitlines()
+    assert len(index_lines) == 1
+    entry = json.loads(index_lines[0])
+    assert entry["run_id"] == run_id
+    assert entry["stage"] == "unit_test_stage"
+    assert entry["parameters"] == {"chan_start": 1731}
+    assert entry["outcome_status"] == "success"
+    assert entry["manifest_path"] == str(manifest.manifest_path)
+
+
+def test_run_index_accumulates_across_multiple_stages_in_the_same_work_dir():
+    scratch = make_scratch_dir("manifest_run_index_multi")
+    repo = scratch / "repo"
+    repo.mkdir()
+    _init_scratch_repo(repo)
+    work_dir = scratch / "work"
+    work_dir.mkdir()
+    input_file = _make_input_file(scratch, "raw_input.fits", "fake fits bytes")
+
+    for stage in ("primary_calibration", "secondary_calibration"):
+        with RunManifest(
+            stage=stage, work_dir=work_dir, parameters={}, inputs=[input_file], repo_root=repo
+        ):
+            pass
+
+    index_lines = (work_dir / "runs_index.jsonl").read_text().splitlines()
+    assert len(index_lines) == 2
+    stages_seen = [json.loads(line)["stage"] for line in index_lines]
+    assert stages_seen == ["primary_calibration", "secondary_calibration"]

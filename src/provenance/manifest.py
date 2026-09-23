@@ -23,7 +23,8 @@ from pathlib import Path
 import logging
 
 from data_io.raw_data_access import guard_output_path
-from provenance.logging_setup import close_logger, setup_stage_logger
+from provenance.logging_setup import close_logger, setup_stage_logger, stage_log_path
+from provenance.run_index import append_to_run_index
 
 
 class RunManifest:
@@ -117,6 +118,22 @@ class RunManifest:
             manifest_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 
         self.manifest_path = manifest_path
+
+        self.index_entry = {
+            "run_id": self.run_id,
+            "stage": self.stage,
+            "started_at_utc": self.started_at_utc,
+            "finished_at_utc": finished_at_utc,
+            "git_commit": self.git_state["commit"],
+            "git_dirty": self.git_state["dirty"],
+            "parameters": self.parameters,
+            "outcome_status": outcome["status"],
+            "error_type": outcome["error_type"],
+            "manifest_path": str(manifest_path),
+            "log_path": str(stage_log_path(self.work_dir, self.stage, self.run_id)),
+        }
+        append_to_run_index(self.work_dir, self.index_entry)
+
         close_logger(self.logger)
         return False  # never suppress the exception
 

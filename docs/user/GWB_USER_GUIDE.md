@@ -9,6 +9,7 @@ pipeline.
 - [Run records (provenance)](#run-records-provenance)
 - [Reading raw data safely](#reading-raw-data-safely)
 - [Finding out what a run did (logs)](#finding-out-what-a-run-did-logs)
+- [Finding past runs (the run index)](#finding-past-runs-the-run-index)
 
 ---
 
@@ -116,3 +117,34 @@ tells you the parameters and outcome; the log tells you the story of how it got 
 >   at one, you can find the other by name.
 > - If a run fails, the log's last lines say what went wrong, in the same place you'd
 >   look to see what the run was doing right before that.
+
+---
+
+## Finding past runs (the run index)
+
+Every run — every stage, from the beginning of the pipeline's use — adds one line to a
+single file: `<work_dir>/runs_index.jsonl`. Where the run record and the log are about
+one run, this file is about all of them: a running history you can search across.
+
+### Example queries
+
+```bash
+# Every run of a given stage, most recent last
+grep '"stage": "primary_calibration"' work/runs_index.jsonl
+
+# Only the ones that failed
+grep '"stage": "primary_calibration"' work/runs_index.jsonl | grep '"outcome_status": "failed"'
+
+# With jq: stage, clustering threshold, and outcome, side by side
+jq -r '[.stage, .parameters.clustering_threshold_jy, .outcome_status] | @tsv' work/runs_index.jsonl
+```
+
+> [!TIP]
+> **What this gives you**
+> - A single place to ask "what did I try, and what happened" across the whole pipeline's
+>   history, instead of opening one file per run.
+> - Each line points back to its full run record and log file for more detail.
+
+> [!NOTE]
+> This file only ever has lines added to it — never rewritten — so it's safe to keep
+> around and grow for as long as you use the pipeline.

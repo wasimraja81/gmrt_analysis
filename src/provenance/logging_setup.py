@@ -30,9 +30,8 @@ def setup_stage_logger(
     so that running the same stage repeatedly in one process (as tests do)
     never accumulates handlers on a shared logger object.
     """
-    log_dir = Path(work_dir) / "logs" / stage
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{run_id}.log"
+    log_path = stage_log_path(work_dir, stage, run_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(f"gwb_pipeline.{stage}.{run_id}")
     logger.setLevel(logging.DEBUG)
@@ -50,9 +49,16 @@ def setup_stage_logger(
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    _update_latest_symlink(log_dir, stage, log_path)
+    _update_latest_symlink(log_path.parent, stage, log_path)
 
     return logger
+
+
+def stage_log_path(work_dir: Path, stage: str, run_id: str) -> Path:
+    """Where a given (stage, run_id)'s log file lives -- a pure function of
+    its inputs, so callers (e.g. the run index) can compute it without
+    needing a live logger object."""
+    return Path(work_dir) / "logs" / stage / f"{run_id}.log"
 
 
 def close_logger(logger: logging.Logger) -> None:

@@ -1,6 +1,6 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0, T1, T2, T3 done (2026-09-23). T4 next.
+**Status line:** T0-T4 done (2026-09-23), Phase A (Foundation) complete. Phase B (T5) next.
 
 ## Objective
 
@@ -98,8 +98,14 @@ legacy paths.
   across `tests/test_provenance_logging_setup.py` and the `manifest_logger_*` tests in
   `tests/test_provenance_manifest.py`. User-facing:
   `../user/GWB_USER_GUIDE.md#finding-out-what-a-run-did-logs`.
-- **T4 — Run index.** Append-only JSON-lines log every stage appends to on completion —
-  the queryable "lab notebook," separate from the curated gh-pages report.
+- **T4 — Run index — DONE (2026-09-23).** `src/provenance/run_index.py`:
+  `append_to_run_index`, one JSON-lines file at `<work_dir>/runs_index.jsonl` spanning
+  every stage and run. Wired into `RunManifest.__exit__` (a compact entry: run_id, stage,
+  timestamps, git commit/dirty, parameters, outcome status, plus pointers to the full
+  manifest and log file — not a duplicate of the full manifest). Queried directly with
+  `grep`/`jq`, no bespoke API. 4 tests (`tests/test_provenance_run_index.py` +
+  `manifest_run_index_*` in `tests/test_provenance_manifest.py`). Closes Phase A.
+  User-facing: `../user/GWB_USER_GUIDE.md#finding-past-runs-the-run-index`.
 
 ### Phase B — Primary Calibration (3C48)
 
