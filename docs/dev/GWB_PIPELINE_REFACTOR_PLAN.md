@@ -1,7 +1,9 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0-T4, T5a done (2026-09-23), Phase A complete. T5b in progress —
-antenna table + DUD resolution done; row-index building, channel-range mapping, and vis
+**Status line:** T0-T4, T5a done (2026-09-23), Phase A complete. T5c (GMRT data adapter)
+in progress — antenna table + DUD resolution done; row-index building, channel-range
+mapping, and vis loading still pending, now blocked on T5b (correlation-type audit,
+2026-09-24) until that's done. T5b is next.
 loading for one source still pending.
 
 ## Objective
@@ -66,7 +68,21 @@ standing rule 8) supplied as data/config to that generic core, not woven into it
    does (concrete example: DUD antennas — GMRT antennas present in the antenna
    table but hardware-dead for this observation, contributing zero rows to the raw FITS
    file; not something derivable from any calibration textbook, and not optional to
-   handle correctly for real GMRT data — see T5b).
+   handle correctly for real GMRT data — see T5c).
+
+   **A stricter reading of step (1), added 2026-09-23 after being caught reasoning too
+   narrowly:** "check how the archived code did it" means checking every consumer of a
+   shared layer before designing it, not just the one ticket currently in front of you.
+   Designing T5c's vis-loading around only what the solver needs — cross-correlations —
+   would have broken `plotVis.py`, which plots whatever the general loader returns and
+   has no autocorrelation filtering anywhere in it; autocorrelations reach it today
+   simply because nothing excludes them. Confirmed by reading `plotVis.py` directly, not
+   assumed. Before designing a shared piece (a loader, an index, a config schema), list
+   every place in `legacy_gsb_40_014/` that currently uses the equivalent thing, not just
+   the one motivating the current ticket. See T5b for where this went further: the
+   cached index used to check "does this dataset have autocorrelations" may itself have
+   been built by code that drops them, which would make that check say nothing reliable
+   about the raw file at all.
 
 ## Reference material
 
@@ -90,7 +106,7 @@ Moved all existing code/docs into `legacy_gsb_40_014/` intact (git mv, history p
 categorized in `ARCHIVE_INDEX.md`, and created the empty skeleton (`bin/`, `src/engine/`,
 `src/data_io/`, `src/provenance/`, `src/cli/`, `config/`, `tests/`, `docs/dev/`,
 `docs/user/`) with per-directory READMEs stating intent. `.gitignore` updated for the new
-legacy paths. `src/instruments/gmrt/` added later, T5b, per standing rule 8 (not part of
+legacy paths. `src/instruments/gmrt/` added later, T5c, per standing rule 8 (not part of
 the original T0 skeleton — the generic-core/instrument-specific split wasn't decided yet
 at that point).
 
@@ -144,30 +160,83 @@ at that point).
   caught a derivation error (a conjugate placed wrong in one update term) before it
   went anywhere. Two preconditions on its input, both enforced or documented rather than
   assumed:
-  - **Cross-correlations only.** An autocorrelation (`ant1 == ant2`) is a different
-    physical quantity (total power, no phase) that doesn't fit `V_ab = g_a·conj(g_b)·M_ab`
-    at all — including one would silently corrupt the solve, not raise an error, so
-    `solve_channel_gains` now raises `ValueError` if it finds one. Confirmed: the
-    archived engine tracks autocorrelation row counts as a statistic separate from
-    baseline counts (`ugmrt_query.py:791-793`), and its own solve path already filters
-    them explicitly via `ant1 != ant2` (`_build_channel_visibility_matrix`,
-    `ugmrt_query.py:3547`) — a previously-validated pattern, not a guess.
+  - **Cross-correlations only.** `solve_channel_gains` solves `V_ab = g_a·conj(g_b)·M_ab`
+    — a cross-correlation equation. An autocorrelation (`ant1_idx[k] == ant2_idx[k]`)
+    doesn't fit this equation: it measures total power, with no phase information. If the
+    function is ever given one, it raises an error immediately, since including it would
+    silently produce wrong gains.
+
+    This filtering happens late, just before the solve — not in general data loading.
+    Checked directly in the archived engine: its general loader, `load_vis_for_source`,
+    filters by antenna/time-range/UV-distance/elevation, nothing about autocorrelations
+    at all. The cross-only filter lives in a separate, later function,
+    `_build_channel_visibility_matrix` (`ugmrt_query.py:3547`), which is called
+    specifically to prepare input for the solve. T5c should follow the same split: load
+    everything for a source (cross and auto together, if autocorrelations exist), and
+    filter to cross-only only when preparing input for `solve_channel_gains`. This keeps
+    autocorrelation data available for whatever else needs it — including applying the
+    solved gains to it afterward (a separate, later step, Phase C, not built yet — the
+    gains are per-antenna, so they apply to autocorrelation visibilities too, even though
+    they weren't solved from them).
+
+    Unrelated to any of this: checking the two cached index files for this observation on
+    2026-09-23 showed neither file's data contains any autocorrelation rows.
   - **An antenna with zero baselines in a call keeps its untouched initial gain**, never
     solved or phase-rotated. This is a robustness fallback for whatever hands it a
     zero-baseline antenna — it is *not* DUD-antenna handling by itself. DUD antennas
     must be excluded from the antenna list before `n_ant` or any baseline count is
-    computed anywhere in the pipeline (see T5b) — every independent piece of code that
+    computed anywhere in the pipeline (see T5c) — every independent piece of code that
     computes a baseline-count denominator (flagging percentages, coverage stats, etc.)
     would otherwise be wrong on its own, not just the solve.
   5 tests in `tests/test_engine_bandpass_solve.py`. No user-guide section yet (rule 7):
-  this is a library function with no directly observable output of its own until T5c/a
+  this is a library function with no directly observable output of its own until T5d/a
   `bin/` script wires it into something runnable — adding one now would describe nothing
   a reader could go do.
-- **T5b — GMRT data adapter (`src/instruments/gmrt/`) — IN PROGRESS.** Antenna table
-  reading, DUD-antenna resolution, row-index building, GWB channel-range/frequency
-  mapping, vis loading for one source. This is where GMRT-specific FITS-format knowledge
-  belongs — not in `src/engine/`. Produces the vis/model/antenna-index arrays T5a's
-  solver consumes.
+- **T5b — Correlation-type (auto vs. cross) audit across the archived pipeline — NOT
+  STARTED.** Before finishing T5c, determine, for every archived function/script that
+  operates on baseline-level visibility data, what it does with correlation type today:
+  hardcodes excluding one type, hardcodes including both, or exposes a flag letting the
+  caller choose. Checked against the code (and, only where code alone can't answer it,
+  data) — never inferred from a function's name or docstring alone.
+
+  Raised because designing T5c's vis-loading around only what the solver needs would
+  have silently broken `plotVis.py`'s ability to show autocorrelations, which exists
+  today only because nothing in its path excludes them.
+
+  Already checked, before this ticket existed as such:
+  - `load_vis_for_source` (general loader): no correlation-type filtering at all —
+    antenna/time/UV-distance/elevation only. Both types, if present, pass through.
+  - `_build_channel_visibility_matrix` (solve-prep): an explicit `ignore_autos=True`
+    parameter, defaulting to exclude but overridable — a flag, not a hardcoded rule.
+  - `plotVis.py`: no correlation-type filtering anywhere in the file.
+
+  Still to check — a starting list, not the full scope:
+  - `build_row_index` (the index-cache builder) — does it drop or keep autocorrelation
+    rows while building the cache? This decides whether "the cached index for this
+    observation has zero autocorrelation rows" (checked 2026-09-23) says anything about
+    the raw file, or is an artifact of how the cache itself was built.
+  - `visSplit.py` (writes calibrated UVFITS output).
+  - `outlier_detection.py` / `run_clustering.py` (flagging/clustering).
+  - Anything else in `legacy_gsb_40_014/` that touches `ant1`/`ant2`/`BASELINE` —
+    found by grepping the whole archived tree, not just the files already suspected.
+
+  Secondary, not yet understood: one integration of one source in the GWB cached index
+  has 378 rows, matching the cross-only formula for 28 antennas, not GMRT's fixed 30 —
+  worth a quick look during this audit (a scan-specific detail, most likely, not a
+  question about how many antennas GMRT has), not something to chase down before this
+  ticket starts.
+
+  **Definition of done:** one row per archived function/script that operates on
+  baseline-level data, stating what it does with correlation type today (with a
+  file:line citation) and what the new pipeline's equivalent should do — decided with
+  standing rule 8's general-vs-GMRT-specific test, not assumed from the examples above.
+- **T5c — GMRT data adapter (`src/instruments/gmrt/`) — IN PROGRESS, blocked on T5b.**
+  Antenna table reading, DUD-antenna resolution, row-index building, GWB
+  channel-range/frequency mapping, vis loading for one source. This is where
+  GMRT-specific FITS-format knowledge belongs — not in `src/engine/`. Produces the
+  vis/model/antenna-index arrays T5a's solver consumes. Row-index building and vis
+  loading can't be designed correctly until T5b's audit says what each consumer actually
+  needs.
 
   **First slice done (2026-09-23): `src/instruments/gmrt/antenna_table.py`**
   (`read_antenna_table`, `resolve_active_antennas`). Matches a configured DUD name
@@ -205,11 +274,10 @@ at that point).
     statistics.
   - *Total correlations including autocorrelations*: cross-baselines + `n_ant`
     autocorrelation rows — for anything about raw data volume/row counts per
-    integration, since GMRT records both. Confirmed present in this dataset (see T5a's
-    autocorrelation note above); needed for any expected-row-count check, not for
-    anything solver-facing.
+    integration, if this observation's raw output includes autocorrelations at all.
+    T5b settles that; don't use this formula against real row counts until it does.
 
-  **Sanity checks in scope for this ticket** (load-bearing for T5b's own correctness —
+  **Sanity checks in scope for this ticket** (load-bearing for T5c's own correctness —
   if antenna/DUD resolution is wrong, everything downstream is silently wrong too):
   - `TELESCOP == 'GMRT'` in the primary header (catches pointing the pipeline at the
     wrong file).
@@ -226,12 +294,12 @@ at that point).
   - Row-count consistency: total `GCOUNT` decomposes cleanly into
     `n_integrations × (cross-baselines + autocorrelations)` — the two-count distinction
     above, made executable.
-- **T5c — Outer iteration loop** (solve → diagnose → propose flags → re-solve), wrapping
-  T5a via T5b's data adapter. Was originally scoped together with T5a as one ticket;
+- **T5d — Outer iteration loop** (solve → diagnose → propose flags → re-solve), wrapping
+  T5a via T5c's data adapter. Was originally scoped together with T5a as one ticket;
   split out so the core solve could be tested and verified on its own first.
-- **T5d — Data-content sanity checks (`src/data_io/`, GMRT-specific thresholds supplied
+- **T5e — Data-content sanity checks (`src/data_io/`, GMRT-specific thresholds supplied
   by `src/instruments/gmrt/`) — scoped now, not deferred silently, after being raised
-  2026-09-23.** Broader statistical checks deliberately left out of T5b's scope so T5b
+  2026-09-23.** Broader statistical checks deliberately left out of T5c's scope so T5c
   isn't gold-plated before it has a first working version, but tracked here rather than
   left as a verbal intention:
   - No all-NaN/all-zero visibility blocks (a corrupted or truncated read).
@@ -241,7 +309,7 @@ at that point).
   Generic structural checks (`GroupsHDU` present, `AN`/`FQ`/`SU` tables present,
   `GCOUNT`/`PCOUNT`/`NAXIS` internally consistent) belong in `src/data_io/` too, but are
   basic enough to fold into T2's existing module rather than warrant their own ticket —
-  add them there when first needed, not necessarily as part of T5d.
+  add them there when first needed, not necessarily as part of T5e.
 - **T6 — Two distinct threshold knobs, named so they can't be confused**: the coarse
   per-iteration wholesale antenna/baseline flagging threshold, and the per-channel
   clustering threshold, as two differently named config keys.
@@ -282,6 +350,6 @@ at that point).
 
 ## Sequencing
 
-T0 → A (T1-T4) → B (T5a-T5d, T6-T8, the live pain point) → C → D → E → F → G → H, with a
+T0 → A (T1-T4) → B (T5a-T5e, T6-T8, the live pain point) → C → D → E → F → G → H, with a
 dev-test checkpoint after each ticket. Each ticket gets its own commit(s); nothing merges to
 `develop` without its test passing against real (or realistic fixture) data.
