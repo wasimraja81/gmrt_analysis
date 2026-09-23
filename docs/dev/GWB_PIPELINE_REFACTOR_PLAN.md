@@ -188,9 +188,40 @@ at that point).
     integration, since GMRT records both. Confirmed present in this dataset (see T5a's
     autocorrelation note above); needed for any expected-row-count check, not for
     anything solver-facing.
+
+  **Sanity checks in scope for this ticket** (load-bearing for T5b's own correctness —
+  if antenna/DUD resolution is wrong, everything downstream is silently wrong too):
+  - `TELESCOP == 'GMRT'` in the primary header (catches pointing the pipeline at the
+    wrong file).
+  - Antenna count is plausible, not just present (0 or an absurd value fails loudly).
+  - The DUD-antenna cross-check `FLAGGING_DESIGN_NOTES.md` already specified: after
+    excluding the configured DUD list, the *observed* active-baseline set must match the
+    *expected* one — fail if some antenna not on the DUD list still has zero data (a
+    stale config or a hardware problem — either way, fail loudly rather than work
+    around it silently).
+  - Frequency axis (`AIPS FQ` table) falls inside the expected band for the active
+    profile (GSB vs GWB) — catches a channel-range/profile mismatch immediately, not
+    three stages downstream.
+  - Expected calibrators/targets are present in the `AIPS SU` table by name.
+  - Row-count consistency: total `GCOUNT` decomposes cleanly into
+    `n_integrations × (cross-baselines + autocorrelations)` — the two-count distinction
+    above, made executable.
 - **T5c — Outer iteration loop** (solve → diagnose → propose flags → re-solve), wrapping
   T5a via T5b's data adapter. Was originally scoped together with T5a as one ticket;
   split out so the core solve could be tested and verified on its own first.
+- **T5d — Data-content sanity checks (`src/data_io/`, GMRT-specific thresholds supplied
+  by `src/instruments/gmrt/`) — scoped now, not deferred silently, after being raised
+  2026-09-23.** Broader statistical checks deliberately left out of T5b's scope so T5b
+  isn't gold-plated before it has a first working version, but tracked here rather than
+  left as a verbal intention:
+  - No all-NaN/all-zero visibility blocks (a corrupted or truncated read).
+  - Weight column has some nonzero values (there's unflagged data to work with).
+  - UV coverage isn't degenerate — baselines aren't all sitting at zero (an
+    antenna-position/geometry bug).
+  Generic structural checks (`GroupsHDU` present, `AN`/`FQ`/`SU` tables present,
+  `GCOUNT`/`PCOUNT`/`NAXIS` internally consistent) belong in `src/data_io/` too, but are
+  basic enough to fold into T2's existing module rather than warrant their own ticket —
+  add them there when first needed, not necessarily as part of T5d.
 - **T6 — Two distinct threshold knobs, named so they can't be confused**: the coarse
   per-iteration wholesale antenna/baseline flagging threshold, and the per-channel
   clustering threshold, as two differently named config keys.
@@ -231,6 +262,6 @@ at that point).
 
 ## Sequencing
 
-T0 → A (T1-T4) → B (T5-T8, the live pain point) → C → D → E → F → G → H, with a dev-test
-checkpoint after each ticket. Each ticket gets its own commit(s); nothing merges to
+T0 → A (T1-T4) → B (T5a-T5d, T6-T8, the live pain point) → C → D → E → F → G → H, with a
+dev-test checkpoint after each ticket. Each ticket gets its own commit(s); nothing merges to
 `develop` without its test passing against real (or realistic fixture) data.
