@@ -262,6 +262,26 @@ Recovers `alpha_nu0`/`beta` exactly on clean synthetic data; raises
   blow up `np.log`).
 - All-NaN spectrum → raises `ValueError`.
 
+### Open questions / decisions deferred
+
+**Finding from unit testing:** curvature (`beta`) is only well-constrained
+when the data spans a wide fractional bandwidth — `x = log10(nu/nu0)` must
+vary enough that `x^2` carries real signal above the noise. GMRT's actual
+GSB band (~16 MHz around ~300-330 MHz, ~5% fractional bandwidth) is far too
+narrow for this: over that span `x` only ranges ~±0.02, so `beta*x^2`
+contributes ~1e-4 to `log10(S)` — well below realistic per-channel noise.
+Confirmed directly: a synthetic test using GMRT's real bandwidth recovered a
+`beta` off by orders of magnitude under 1% log-space noise, while the same
+test over a wide (100-800 MHz) synthetic band recovered `beta` accurately.
+**Implication for RC-10/RC-14:** on real 3C468.1 data, `beta` (curvature)
+fitted from a single 16 MHz sub-band should be treated as essentially
+unconstrained/noise-dominated, not a genuine physical measurement — the
+engineer report (RC-14) and any JSON consumer should not over-interpret a
+nonzero fitted `beta` from this data as evidence of real spectral curvature.
+This compounds the existing known-model-vs-local-fit `alpha` discrepancy
+already flagged for 3C468.1 — RC-10's crosscheck output should be read with
+this caveat in mind.
+
 ---
 
 ## RC-05 — `derive_fourier_period_bounds()` + `find_ripple_period_candidates()`
