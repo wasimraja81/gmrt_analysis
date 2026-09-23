@@ -1,6 +1,7 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0-T4 done (2026-09-23), Phase A (Foundation) complete. Phase B (T5) next.
+**Status line:** T0-T4, T5a done (2026-09-23), Phase A complete. T5b (GMRT data adapter,
+`src/instruments/gmrt/`) next.
 
 ## Objective
 
@@ -9,6 +10,10 @@ A reproducible pipeline that ingests raw GMRT GWB data and produces science outp
 book-keeping of every interim stage — data curation, calibration, flagging, imaging. This
 is the north star every ticket below serves; if a design choice doesn't serve
 reproducibility, book-keeping, or correctness, it's scope creep.
+
+The calibration/imaging algorithms themselves should be written generic enough to run on
+any interferometric dataset, not hardcoded to GMRT — with GMRT's own quirks (see
+standing rule 8) supplied as data/config to that generic core, not woven into it.
 
 ## Standing rules (apply to every ticket, no exceptions)
 
@@ -43,6 +48,24 @@ reproducibility, book-keeping, or correctness, it's scope creep.
    same turn a ticket lands — what it does, what you get out of it, where to find the
    output. It must never fall behind what's built, the way `pipeline_review.md` fell
    behind the GSB-era engine.
+8. **Generic core, GMRT specifics kept separate — a required process, not a one-off
+   decision.** `src/engine/` holds telescope-agnostic algorithms: no hardcoded antenna
+   counts, names, or FITS-format assumptions. GMRT-specific knowledge (antenna table
+   quirks, DUD-antenna handling, channel-to-frequency mapping, calibrator naming
+   conventions) lives in `src/instruments/gmrt/` and is supplied to the generic core as
+   data, not baked into its logic. Before writing any new piece of engine/data-handling
+   code: (1) check how the archived GSB code did it — grep `legacy_gsb_40_014/`, don't
+   assume; (2) understand *why* it did it that way (read `FLAGGING_DESIGN_NOTES.md` and
+   similar docs, not just the code); (3) classify what was found as a general
+   interferometry concern (any telescope would need this) or a GMRT-specific quirk
+   (learned the hard way, specific to this instrument/observation); (4) design so the
+   generic core handles the general case and `src/instruments/gmrt/` supplies the
+   specifics — never skip straight to writing code from general algorithmic knowledge
+   alone, since that knowledge has no way of knowing what a real telescope's data
+   does (concrete example: DUD antennas — GMRT antennas present in the antenna
+   table but hardware-dead for this observation, contributing zero rows to the raw FITS
+   file; not something derivable from any calibration textbook, and not optional to
+   handle correctly for real GMRT data — see T5b).
 
 ## Reference material
 
@@ -66,7 +89,9 @@ Moved all existing code/docs into `legacy_gsb_40_014/` intact (git mv, history p
 categorized in `ARCHIVE_INDEX.md`, and created the empty skeleton (`bin/`, `src/engine/`,
 `src/data_io/`, `src/provenance/`, `src/cli/`, `config/`, `tests/`, `docs/dev/`,
 `docs/user/`) with per-directory READMEs stating intent. `.gitignore` updated for the new
-legacy paths.
+legacy paths. `src/instruments/gmrt/` added later, T5b, per standing rule 8 (not part of
+the original T0 skeleton — the generic-core/instrument-specific split wasn't decided yet
+at that point).
 
 ### Phase A — Foundation
 
@@ -109,7 +134,63 @@ legacy paths.
 
 ### Phase B — Primary Calibration (3C48)
 
-- **T5 — Bandpass solve + iteration loop**, GWB channel range/paths/venv.
+- **T5a — Core per-channel gain solve (generic, `src/engine/bandpass_solve.py`) — DONE
+  (2026-09-23).** StefCal-style alternating-least-squares antenna gain solve, per channel.
+  Telescope-agnostic: takes visibility/model/antenna-index arrays, returns gains — no
+  GMRT-specific assumptions (antenna count, names, FITS structure) anywhere in it.
+  Correctness gate: a synthetic recovery test (inject known gains, corrupt visibilities,
+  verify the solver recovers them), not just "runs on real data without crashing" — this
+  caught a derivation error (a conjugate placed wrong in one update term) before it
+  went anywhere. Two preconditions on its input, both enforced or documented rather than
+  assumed:
+  - **Cross-correlations only.** An autocorrelation (`ant1 == ant2`) is a different
+    physical quantity (total power, no phase) that doesn't fit `V_ab = g_a·conj(g_b)·M_ab`
+    at all — including one would silently corrupt the solve, not raise an error, so
+    `solve_channel_gains` now raises `ValueError` if it finds one. Confirmed: the
+    archived engine tracks autocorrelation row counts as a statistic separate from
+    baseline counts (`ugmrt_query.py:791-793`), and its own solve path already filters
+    them explicitly via `ant1 != ant2` (`_build_channel_visibility_matrix`,
+    `ugmrt_query.py:3547`) — a previously-validated pattern, not a guess.
+  - **An antenna with zero baselines in a call keeps its untouched initial gain**, never
+    solved or phase-rotated. This is a robustness fallback for whatever hands it a
+    zero-baseline antenna — it is *not* DUD-antenna handling by itself. DUD antennas
+    must be excluded from the antenna list before `n_ant` or any baseline count is
+    computed anywhere in the pipeline (see T5b) — every independent piece of code that
+    computes a baseline-count denominator (flagging percentages, coverage stats, etc.)
+    would otherwise be wrong on its own, not just the solve.
+  5 tests in `tests/test_engine_bandpass_solve.py`. No user-guide section yet (rule 7):
+  this is a library function with no directly observable output of its own until T5c/a
+  `bin/` script wires it into something runnable — adding one now would describe nothing
+  a reader could go do.
+- **T5b — GMRT data adapter (`src/instruments/gmrt/`) — NEW, not yet started.** Antenna
+  table reading, DUD-antenna resolution (GMRT antennas present in the antenna table but
+  hardware-dead for this observation, contributing zero rows — see standing rule 8; same
+  list confirmed by the user to apply to both GSB and GWB), row-index building, GWB
+  channel-range/frequency mapping, vis loading for one source. This is where GMRT-specific
+  FITS-format knowledge belongs — not in `src/engine/`. Produces the vis/model/
+  antenna-index arrays T5a's solver consumes.
+
+  **Design requirement, not optional:** the active (non-DUD) antenna list is resolved
+  once, immediately after reading the antenna table, before anything else is computed
+  from it — matching the archived code's own pattern (`n_ant = len(active_antennas)`
+  computed *before* `cross_th = n_ant*(n_ant-1)//2`, `ugmrt_query.py:752-753`). Every
+  downstream consumer (the solver, flagging statistics, coverage plots) uses this one
+  resolved set — never independently re-derives "the antenna list" or "the baseline
+  count" from the raw antenna table, which is exactly how one consumer excluding DUDs
+  correctly and another not doing so would produce silently inconsistent statistics.
+
+  **Two distinct counts, kept explicitly separate, not conflated:**
+  - *Cross-correlation baselines*: `n_ant × (n_ant-1) / 2` — for anything about
+    interferometric fringes: the solver's input, UV coverage, visibility-based flagging
+    statistics.
+  - *Total correlations including autocorrelations*: cross-baselines + `n_ant`
+    autocorrelation rows — for anything about raw data volume/row counts per
+    integration, since GMRT records both. Confirmed present in this dataset (see T5a's
+    autocorrelation note above); needed for any expected-row-count check, not for
+    anything solver-facing.
+- **T5c — Outer iteration loop** (solve → diagnose → propose flags → re-solve), wrapping
+  T5a via T5b's data adapter. Was originally scoped together with T5a as one ticket;
+  split out so the core solve could be tested and verified on its own first.
 - **T6 — Two distinct threshold knobs, named so they can't be confused**: the coarse
   per-iteration wholesale antenna/baseline flagging threshold, and the per-channel
   clustering threshold, as two differently named config keys.
