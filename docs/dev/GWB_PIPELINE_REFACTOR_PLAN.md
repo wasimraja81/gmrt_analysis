@@ -1,7 +1,8 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0-T4, T5a done (2026-09-23), Phase A complete. T5b (GMRT data adapter,
-`src/instruments/gmrt/`) next.
+**Status line:** T0-T4, T5a done (2026-09-23), Phase A complete. T5b in progress —
+antenna table + DUD resolution done; row-index building, channel-range mapping, and vis
+loading for one source still pending.
 
 ## Objective
 
@@ -162,13 +163,32 @@ at that point).
   this is a library function with no directly observable output of its own until T5c/a
   `bin/` script wires it into something runnable — adding one now would describe nothing
   a reader could go do.
-- **T5b — GMRT data adapter (`src/instruments/gmrt/`) — NEW, not yet started.** Antenna
-  table reading, DUD-antenna resolution (GMRT antennas present in the antenna table but
-  hardware-dead for this observation, contributing zero rows — see standing rule 8; same
-  list confirmed by the user to apply to both GSB and GWB), row-index building, GWB
-  channel-range/frequency mapping, vis loading for one source. This is where GMRT-specific
-  FITS-format knowledge belongs — not in `src/engine/`. Produces the vis/model/
-  antenna-index arrays T5a's solver consumes.
+- **T5b — GMRT data adapter (`src/instruments/gmrt/`) — IN PROGRESS.** Antenna table
+  reading, DUD-antenna resolution, row-index building, GWB channel-range/frequency
+  mapping, vis loading for one source. This is where GMRT-specific FITS-format knowledge
+  belongs — not in `src/engine/`. Produces the vis/model/antenna-index arrays T5a's
+  solver consumes.
+
+  **First slice done (2026-09-23): `src/instruments/gmrt/antenna_table.py`**
+  (`read_antenna_table`, `resolve_active_antennas`). Matches a configured DUD name
+  ("C07") against the table's "code:station" naming ("C07:08") by exact match or
+  `"<name>:"` prefix — deliberately narrower than the archived engine's own matcher,
+  which also accepted a bare substring prefix with no colon required (risking matching
+  more than one antenna for a short name); an unmatched configured name is reported, not
+  silently dropped. 8 tests, including real-data checks against **both** raw files, which
+  surfaced something not previously known:
+  - **GSB's AN table has 32 rows** — the 30 real antennas, plus two placeholder entries
+    appended at the end, `C07:31` and `S05:32`, matching `FLAGGING_DESIGN_NOTES.md`'s
+    description exactly (present in the table, zero data rows).
+  - **GWB's AN table has only 30 rows** — its correlator doesn't emit placeholder
+    entries for C07/S05 at all; they're simply absent, not present-with-zero-data.
+    Resolving the same DUD list against it correctly reports both names as unmatched,
+    which is the expected, benign outcome for GWB, not a stale-config warning sign the
+    way an unmatched name would be for GSB.
+  Same physical antennas, same DUD list, **same code with no GSB/GWB branching** —
+  verified handling both table layouts correctly, not assumed. "DUD antennas are the
+  same for both" (confirmed by the user) is true of which antennas are dead; it is not
+  true that the two correlators represent that fact in the data the same way.
 
   **Design requirement, not optional:** the active (non-DUD) antenna list is resolved
   once, immediately after reading the antenna table, before anything else is computed
