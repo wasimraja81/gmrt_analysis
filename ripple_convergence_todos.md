@@ -217,6 +217,12 @@ When the source has no PB2017 entry (C3/C4 unavailable):
 
 ## Step 1b — Ripple characterisation and bandpass correction via 3C468.1
 
+> **Implementation ticket breakdown:** see `ripple_characterisation_tickets.md`.
+> Steps 6–8 below (bandpass correction: build `g_ripple(ν)`, merge into the
+> bandpass gain table, write a corrected UVFITS) are **deferred to a future
+> branch** — the ticketed work covers characterisation, diagnostics, and
+> reporting only.
+
 ### Motivation
 
 Once primary + secondary calibration is applied to 3C468.1, the baseline-averaged
