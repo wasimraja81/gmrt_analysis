@@ -6190,6 +6190,80 @@ def plot_bandpass_corrected_vis_amp_vs_uvdist(
     return plot_vis_amp_vs_uvdist(plot_payload, title=title, amp_ylim=amp_ylim, **kwargs)
 
 
+def get_vector_avg_spectrum(
+    vis_corrected: dict,
+    pol_label: str,
+    chan_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Weighted vector-average of Re(V) per channel, for one polarisation.
+
+    Reuses the same weighting/flagging convention as
+    ``plot_corrected_vector_avg_spectrum``: for each channel, unflagged,
+    finite, positive-weight samples across all rows are combined as
+    ``sum(w*z) / sum(w)``, then the real part is returned. This is data, not
+    a plot — callers that need the plot should use
+    ``plot_corrected_vector_avg_spectrum``, which now calls this function
+    internally.
+
+    Parameters
+    ----------
+    vis_corrected : dict
+        A vis dict as returned by ``apply_bandpass_solution()`` (preferred;
+        uses ``vis_complex_corrected``/``flagged_corrected`` when present) or
+        a raw vis dict from ``load_vis_for_source()`` (falls back to
+        ``vis_complex``/``flagged``). Must contain ``weight`` and
+        ``stokes_labels``.
+    pol_label : str
+        Polarisation label to extract; must be present in
+        ``vis_corrected['stokes_labels']``.
+    chan_mask : np.ndarray, optional
+        Boolean mask of shape ``(nchan,)``. Channels where ``chan_mask`` is
+        False are set to NaN in the output (matches the
+        ``skip_edge_channels`` semantics used elsewhere). If omitted, no
+        channels are masked.
+
+    Returns
+    -------
+    np.ndarray
+        Real-valued weighted vector-average spectrum, shape ``(nchan,)``.
+        NaN where no unflagged/finite/positive-weight samples exist for a
+        channel, or where masked out by ``chan_mask``.
+    """
+    stokes_labels = list(vis_corrected['stokes_labels'])
+    if pol_label not in stokes_labels:
+        raise ValueError(f'pol_label {pol_label!r} not in stokes_labels {stokes_labels}.')
+    pol_idx = stokes_labels.index(pol_label)
+
+    vis_complex = np.asarray(
+        vis_corrected.get('vis_complex_corrected', vis_corrected.get('vis_complex')),
+        dtype=np.complex128,
+    )
+    weights = np.asarray(vis_corrected['weight'], dtype=np.float64)
+    flagged = np.asarray(
+        vis_corrected.get('flagged_corrected', vis_corrected.get('flagged')),
+        dtype=bool,
+    )
+
+    z = vis_complex[:, :, pol_idx]
+    w = weights[:, :, pol_idx]
+    fl = flagged[:, :, pol_idx]
+
+    good = (~fl) & np.isfinite(z.real) & np.isfinite(z.imag) & np.isfinite(w) & (w > 0)
+
+    num = np.nansum(np.where(good, w * z, 0.0), axis=0)
+    den = np.nansum(np.where(good, w, 0.0), axis=0)
+
+    nchan = z.shape[1]
+    vec = np.full(nchan, np.nan + 1j * np.nan, dtype=np.complex128)
+    ok = den > 0
+    vec[ok] = num[ok] / den[ok]
+
+    real_spec = np.real(vec)
+    if chan_mask is not None:
+        real_spec = np.where(chan_mask, real_spec, np.nan)
+    return real_spec
+
+
 def plot_corrected_vector_avg_spectrum(
     vis: dict,
     solution: dict,
@@ -6234,9 +6308,6 @@ def plot_corrected_vector_avg_spectrum(
     if skip_end > 0:
         chan_mask[max(0, chan_mask.size - skip_end):] = False
 
-    vis_corr = np.asarray(corrected['vis_complex_corrected'], dtype=np.complex128)
-    weights = np.asarray(corrected['weight'], dtype=np.float64)
-    flagged = np.asarray(corrected.get('flagged_corrected', corrected.get('flagged')), dtype=bool)
     stokes_labels = list(corrected['stokes_labels'])
 
     fig, (ax_top, ax_bot) = plt.subplots(
@@ -6248,18 +6319,8 @@ def plot_corrected_vector_avg_spectrum(
         model_plot = np.where(chan_mask, model, np.nan)
         ax_top.plot(freqs_mhz, model_plot, color='k', lw=2.0, label=f'Perley-Butler 2017 ({_model_source})')
 
-    for pol_idx, pol in enumerate(stokes_labels):
-        z = vis_corr[:, :, pol_idx]
-        w = weights[:, :, pol_idx]
-        good = (~flagged[:, :, pol_idx]) & np.isfinite(z.real) & np.isfinite(z.imag) & np.isfinite(w) & (w > 0)
-
-        num = np.nansum(np.where(good, w * z, 0.0), axis=0)
-        den = np.nansum(np.where(good, w, 0.0), axis=0)
-        vec = np.full(freqs_hz.size, np.nan + 1j * np.nan, dtype=np.complex128)
-        ok = den > 0
-        vec[ok] = num[ok] / den[ok]
-
-        real_spec = np.real(vec)
+    for pol in stokes_labels:
+        real_spec = get_vector_avg_spectrum(corrected, pol, chan_mask=None)
         real_plot = np.where(chan_mask, real_spec, np.nan)
 
         ax_top.plot(freqs_mhz, real_plot, lw=1.4, label=f'{pol} vector-avg Re(V)')
