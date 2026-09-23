@@ -1,10 +1,8 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0-T4, T5a done (2026-09-23), Phase A complete. T5c (GMRT data adapter)
-in progress — antenna table + DUD resolution done; row-index building, channel-range
-mapping, and vis loading still pending, now blocked on T5b (correlation-type audit,
-2026-09-24) until that's done. T5b is next.
-loading for one source still pending.
+**Status line:** T0-T4, T5a, T5b done (2026-09-24), Phase A complete. T5c (GMRT data
+adapter) in progress — antenna table + DUD resolution done; row-index building,
+channel-range mapping, and vis loading for one source still pending.
 
 ## Objective
 
@@ -192,51 +190,41 @@ at that point).
   this is a library function with no directly observable output of its own until T5d/a
   `bin/` script wires it into something runnable — adding one now would describe nothing
   a reader could go do.
-- **T5b — Correlation-type (auto vs. cross) audit across the archived pipeline — NOT
-  STARTED.** Before finishing T5c, determine, for every archived function/script that
-  operates on baseline-level visibility data, what it does with correlation type today:
-  hardcodes excluding one type, hardcodes including both, or exposes a flag letting the
-  caller choose. Checked against the code (and, only where code alone can't answer it,
-  data) — never inferred from a function's name or docstring alone.
+- **T5b — Correlation-type (auto vs. cross) audit across the archived pipeline — DONE
+  (2026-09-24).** For every archived function/script that operates on baseline-level
+  visibility data, what it does with correlation type today, checked by reading the code
+  directly, with a file:line citation for each:
 
-  Raised because designing T5c's vis-loading around only what the solver needs would
-  have silently broken `plotVis.py`'s ability to show autocorrelations, which exists
-  today only because nothing in its path excludes them.
+  | Function/script | What it does today | What T5c should do |
+  |---|---|---|
+  | `load_vis_for_source`, general loader (`ugmrt_query.py:2217`) | Filters by antenna/time/UV-distance/elevation only. Both correlation types pass through if present. | Same: a general loader, filtering on those same terms only. |
+  | `_build_channel_visibility_matrix`, solve-prep (`ugmrt_query.py:3529-3577`) | Takes an `ignore_autos` parameter (default `True`) that filters `ant1 != ant2` when set. Threaded through `derive_point_source_bandpass` (:3703) and the outer workflow (:5339); every call site in the production chain leaves it at the default. | Filter to cross-only immediately before calling `solve_channel_gains`, and only there. |
+  | `build_row_index` (`ugmrt_query.py:222-389`) + `_decode_baseline_array` (:213-219) | Indexes every one of `gcount` rows unconditionally, decoding `ant1`/`ant2` for all of them. | Same: index everything. This also settles the earlier open question — the "zero autocorrelation rows in the cached GWB/GSB index" finding is now established as a fact about the raw data itself, since the code that built that cache never filters anything out. |
+  | `visSplit.py` (`:304-355`) | Passes `ant1`/`ant2` straight from the index to the output UVFITS file. | Same, so autocorrelation data survives into split output for later use. |
+  | `outlier_detection.py` / `run_clustering.py` | Baseline/antenna selection queries operate on whatever rows are present, with no correlation-type filter. | Same. |
+  | `plotVis.py` | Has no correlation-type filter anywhere in the file — confirms the concern that started this ticket. | Same. |
 
-  Already checked, before this ticket existed as such:
-  - `load_vis_for_source` (general loader): no correlation-type filtering at all —
-    antenna/time/UV-distance/elevation only. Both types, if present, pass through.
-  - `_build_channel_visibility_matrix` (solve-prep): an explicit `ignore_autos=True`
-    parameter, defaulting to exclude but overridable — a flag, not a hardcoded rule.
-  - `plotVis.py`: no correlation-type filtering anywhere in the file.
+  One consistent pattern across the whole archived pipeline: every consumer except the
+  solve itself is correlation-type-agnostic; only the stefCal solve excludes
+  autocorrelations, applied right at the point of calling it. T5c's design (drafted
+  under T5a before this audit ran) already matches that shape — a general loader, with
+  the cross-only filter applied immediately before `solve_channel_gains` and nowhere
+  else — now confirmed against the whole pipeline.
 
-  Still to check — a starting list, not the full scope:
-  - `build_row_index` (the index-cache builder) — does it drop or keep autocorrelation
-    rows while building the cache? This decides whether "the cached index for this
-    observation has zero autocorrelation rows" (checked 2026-09-23) says anything about
-    the raw file, or is an artifact of how the cache itself was built.
-  - `visSplit.py` (writes calibrated UVFITS output).
-  - `outlier_detection.py` / `run_clustering.py` (flagging/clustering).
-  - Anything else in `legacy_gsb_40_014/` that touches `ant1`/`ant2`/`BASELINE` —
-    found by grepping the whole archived tree, not just the files already suspected.
+  This ticket's correctness gate is the file:line citations above, each checked directly
+  against the code. Its output is the audit finding itself; there is no test file for it.
 
-  Secondary, not yet understood: one integration of one source in the GWB cached index
-  has 378 rows, matching the cross-only formula for 28 antennas, not GMRT's fixed 30 —
-  worth a quick look during this audit (a scan-specific detail, most likely, not a
-  question about how many antennas GMRT has), not something to chase down before this
-  ticket starts.
-
-  **Definition of done:** one row per archived function/script that operates on
-  baseline-level data, stating what it does with correlation type today (with a
-  file:line citation) and what the new pipeline's equivalent should do — decided with
-  standing rule 8's general-vs-GMRT-specific test, not assumed from the examples above.
-- **T5c — GMRT data adapter (`src/instruments/gmrt/`) — IN PROGRESS, blocked on T5b.**
-  Antenna table reading, DUD-antenna resolution, row-index building, GWB
-  channel-range/frequency mapping, vis loading for one source. This is where
-  GMRT-specific FITS-format knowledge belongs — not in `src/engine/`. Produces the
-  vis/model/antenna-index arrays T5a's solver consumes. Row-index building and vis
-  loading can't be designed correctly until T5b's audit says what each consumer actually
-  needs.
+  Still open: one integration of one source in the GWB cached index has 378 rows,
+  matching the cross-only formula for 28 antennas — GMRT has 30. Worth a look later,
+  most likely a scan-specific detail: some antennas may have still been slewing onto
+  source for that particular integration.
+- **T5c — GMRT data adapter (`src/instruments/gmrt/`) — IN PROGRESS.** Antenna table
+  reading, DUD-antenna resolution, row-index building, GWB channel-range/frequency
+  mapping, vis loading for one source. This is where GMRT-specific FITS-format knowledge
+  belongs — not in `src/engine/`. Produces the vis/model/antenna-index arrays T5a's
+  solver consumes. T5b's audit is done: the row-index builder loads everything
+  unconditionally (no correlation-type filtering), matching every other consumer except
+  the solve itself — that's the design to follow here.
 
   **First slice done (2026-09-23): `src/instruments/gmrt/antenna_table.py`**
   (`read_antenna_table`, `resolve_active_antennas`). Matches a configured DUD name
