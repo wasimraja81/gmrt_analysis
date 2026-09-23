@@ -1,0 +1,13 @@
+# Development/test dependencies for this repository.
+#
+# Install into the existing project venv (gmrt/) — do not create a separate
+# Python environment:
+#
+#   gmrt/bin/pip install -r requirements-dev.txt
+#
+# Run tests with:
+#
+#   gmrt/bin/python -m pytest -q
+
+pytest>=7.0
+pytest-cov>=4.0
