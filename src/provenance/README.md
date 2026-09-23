@@ -1,9 +1,11 @@
 # src/provenance/
 
-Reproducibility foundation used by every stage: per-invocation manifest capture (git
-commit + dirty-diff, resolved parameters, RUN_ID, input-data identity, outcome), the
-append-only run index (the "lab notebook" layer), and the unified logging setup (one
-`logging`-based convention, per-run timestamped file + `_latest` symlink, used by every
-stage script — no stage relies on a shell wrapper's `tee` for persistence).
+Reproducibility foundation used by every stage.
 
-Empty until T1/T3/T4 land — see `../../docs/dev/GWB_PIPELINE_REFACTOR_PLAN.md`.
+- `manifest.py` (`RunManifest`) — per-invocation manifest capture: git commit + dirty-diff,
+  resolved parameters, `run_id`, input-data identity, outcome. T1.
+- `logging_setup.py` — the unified logging convention: per-run timestamped file + a
+  `<stage>_latest.log` symlink, wired into `RunManifest` so the log shares the manifest's
+  `run_id`. No stage relies on a shell wrapper's `tee` for persistence. T3.
+
+Still empty: the append-only run index (the "lab notebook" layer) — T4.

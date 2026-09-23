@@ -152,10 +152,9 @@ def test_input_fingerprint_uses_size_and_mtime_not_a_checksum():
 
 
 def test_add_output_refuses_to_register_an_output_matching_a_raw_input():
-    # This is the actual enforcement behind the user guide's claim that the pipeline
-    # "refuses to run" rather than let a stage's output land on a raw input file --
-    # it must be automatic here, in the one place every stage registers its outputs,
-    # not something each stage author has to remember to check separately.
+    # This is the enforcement behind the user guide's claim that the pipeline
+    # "refuses to run" rather than let a stage's output land on a raw input file:
+    # automatic, in the one place every stage registers its outputs.
     scratch = make_scratch_dir("manifest_raw_data_guard")
     repo = scratch / "repo"
     repo.mkdir()
@@ -172,9 +171,82 @@ def test_add_output_refuses_to_register_an_output_matching_a_raw_input():
             inputs=[input_file],
             repo_root=repo,
         ) as manifest:
-            manifest.add_output(input_file)  # must be rejected, not recorded
+            manifest.add_output(input_file)  # must be rejected
 
     record = json.loads(manifest.manifest_path.read_text())
     assert record["outcome"]["status"] == "failed"
     assert record["outcome"]["error_type"] == "RawDataProtectionError"
     assert record["outputs"] == []
+
+
+def test_manifest_logger_writes_to_a_log_file_sharing_the_run_id():
+    scratch = make_scratch_dir("manifest_logger_success")
+    repo = scratch / "repo"
+    repo.mkdir()
+    _init_scratch_repo(repo)
+    work_dir = scratch / "work"
+    work_dir.mkdir()
+    input_file = _make_input_file(scratch, "raw_input.fits", "fake fits bytes")
+
+    with RunManifest(
+        stage="unit_test_stage",
+        work_dir=work_dir,
+        parameters={},
+        inputs=[input_file],
+        repo_root=repo,
+    ) as manifest:
+        manifest.logger.info("doing the stage's work")
+        run_id = manifest.run_id
+
+    log_path = work_dir / "logs" / "unit_test_stage" / f"{run_id}.log"
+    contents = log_path.read_text()
+    assert "doing the stage's work" in contents
+    assert "completed" in contents  # the automatic success log line
+
+
+def test_manifest_logger_records_the_failure_before_reraising():
+    scratch = make_scratch_dir("manifest_logger_failure")
+    repo = scratch / "repo"
+    repo.mkdir()
+    _init_scratch_repo(repo)
+    work_dir = scratch / "work"
+    work_dir.mkdir()
+    input_file = _make_input_file(scratch, "raw_input.fits", "fake fits bytes")
+
+    run_id_holder = {}
+    with pytest.raises(ValueError):
+        with RunManifest(
+            stage="unit_test_stage",
+            work_dir=work_dir,
+            parameters={},
+            inputs=[input_file],
+            repo_root=repo,
+        ) as manifest:
+            run_id_holder["run_id"] = manifest.run_id
+            raise ValueError("deliberate failure")
+
+    log_path = work_dir / "logs" / "unit_test_stage" / f"{run_id_holder['run_id']}.log"
+    contents = log_path.read_text()
+    assert "failed" in contents
+    assert "deliberate failure" in contents
+
+
+def test_manifest_logger_handlers_are_closed_after_exit():
+    scratch = make_scratch_dir("manifest_logger_close")
+    repo = scratch / "repo"
+    repo.mkdir()
+    _init_scratch_repo(repo)
+    work_dir = scratch / "work"
+    work_dir.mkdir()
+    input_file = _make_input_file(scratch, "raw_input.fits", "fake fits bytes")
+
+    with RunManifest(
+        stage="unit_test_stage",
+        work_dir=work_dir,
+        parameters={},
+        inputs=[input_file],
+        repo_root=repo,
+    ) as manifest:
+        logger = manifest.logger
+
+    assert logger.handlers == []

@@ -1,6 +1,6 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0, T1, T2 done (2026-09-23). T3 next.
+**Status line:** T0, T1, T2, T3 done (2026-09-23). T4 next.
 
 ## Objective
 
@@ -77,8 +77,9 @@ legacy paths.
   exception). Written automatically on every run via a context manager; `add_output`
   calls `data_io.guard_output_path` automatically (added 2026-09-23 after the user
   guide's raw-data-safety claim was checked and found not yet enforced — see
-  T2). 5 tests in `tests/test_provenance_manifest.py`. User-facing:
-  `../user/GWB_USER_GUIDE.md#run-records-provenance`.
+  T2). `manifest.logger` (wired in T3) is the stage's logger, sharing this run's
+  `run_id` with its log file. 5 tests in `tests/test_provenance_manifest.py`.
+  User-facing: `../user/GWB_USER_GUIDE.md#run-records-provenance`.
 - **T2 — Read-only data-access layer — DONE (2026-09-23).** `src/data_io/raw_data_access.py`:
   `open_fits_readonly`/`open_raw_memmap` (no `mode` parameter exposed — a writable open
   isn't a code path that exists), `guard_output_path` (resolves symlinks/relative paths
@@ -87,9 +88,16 @@ legacy paths.
   `tests/test_data_io_raw_data_access.py`, including one against the real 389GB GWB FITS
   file (skipped where that file isn't present). User-facing:
   `../user/GWB_USER_GUIDE.md#reading-raw-data-safely`.
-- **T3 — Unified logging.** One `logging`-based convention for every stage: per-run
-  timestamped file + `_latest` symlink. No stage may rely on a shell wrapper's `tee` for
-  persistence, and no core engine module uses bare `print()` for anything worth keeping.
+- **T3 — Unified logging — DONE (2026-09-23).** `src/provenance/logging_setup.py`:
+  `setup_stage_logger` (per-run file at DEBUG + console at a configurable level + a
+  `<stage>_latest.log` symlink) and `close_logger`. Wired directly into
+  `RunManifest.__init__`/`__exit__`, sharing the manifest's `run_id` as the log filename
+  and logging the stage's success/failure automatically. This makes the "no bare
+  `print()`" half of this ticket a property of using `RunManifest` at all for future
+  engine code (T5+); it doesn't retroactively touch the archived GSB engine. 8 tests
+  across `tests/test_provenance_logging_setup.py` and the `manifest_logger_*` tests in
+  `tests/test_provenance_manifest.py`. User-facing:
+  `../user/GWB_USER_GUIDE.md#finding-out-what-a-run-did-logs`.
 - **T4 — Run index.** Append-only JSON-lines log every stage appends to on completion —
   the queryable "lab notebook," separate from the curated gh-pages report.
 

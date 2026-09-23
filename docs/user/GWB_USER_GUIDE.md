@@ -8,6 +8,7 @@ pipeline.
 
 - [Run records (provenance)](#run-records-provenance)
 - [Reading raw data safely](#reading-raw-data-safely)
+- [Finding out what a run did (logs)](#finding-out-what-a-run-did-logs)
 
 ---
 
@@ -91,3 +92,27 @@ read — a stage cannot register an output that would land on top of its own inp
 
 > [!IMPORTANT]
 > This check runs automatically the moment a stage registers an output.
+
+---
+
+## Finding out what a run did (logs)
+
+Every run writes its own log file — a plain-text, timestamped record of what the stage
+did while it ran, separate from the JSON run record described above. The run record
+tells you the parameters and outcome; the log tells you the story of how it got there.
+
+### Where to find it
+
+| Location | What's there |
+|---|---|
+| `<work_dir>/logs/<stage name>/<run's ID>.log` | The full log for one run, from start to finish. |
+| `<work_dir>/logs/<stage name>/<stage name>_latest.log` | Always points at the most recent run for that stage. |
+
+> [!TIP]
+> **What this gives you**
+> - `tail -f <work_dir>/logs/primary_calibration/primary_calibration_latest.log` follows
+>   whichever run is currently in progress, without you needing to know its run ID.
+> - The log and the run record for the same run share the same ID, so if you're looking
+>   at one, you can find the other by name.
+> - If a run fails, the log's last lines say what went wrong, in the same place you'd
+>   look to see what the run was doing right before that.

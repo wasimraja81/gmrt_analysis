@@ -20,7 +20,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import logging
+
 from data_io.raw_data_access import guard_output_path
+from provenance.logging_setup import close_logger, setup_stage_logger
 
 
 class RunManifest:
@@ -29,13 +32,17 @@ class RunManifest:
     Usage:
         with RunManifest(stage="primary_calibration", work_dir=WORK_DIR,
                           parameters=resolved_config, inputs=[raw_fits_path]) as manifest:
-            ...  # do the stage's work
+            manifest.logger.info("starting bandpass solve")  # not print()
             manifest.add_output(bandpass_path)
 
     On exit, writes ``<work_dir>/provenance/<stage>/<run_id>.json`` (and, if the
     repo has uncommitted changes, a sibling ``<run_id>.diff``) whether the block
     succeeded or raised. Exceptions are recorded, never swallowed -- the ``with``
     block re-raises exactly as it would without the manifest.
+
+    ``manifest.logger`` is a stage-scoped logger sharing this run's ``run_id``
+    with its log file (``<work_dir>/logs/<stage>/<run_id>.log``), so the log
+    and the manifest can be cross-referenced by filename alone.
     """
 
     def __init__(
@@ -45,6 +52,7 @@ class RunManifest:
         parameters: dict,
         inputs: list[Path | str],
         repo_root: Path | None = None,
+        console_log_level: int = logging.INFO,
     ) -> None:
         self.stage = stage
         self.work_dir = Path(work_dir)
@@ -56,6 +64,7 @@ class RunManifest:
         self.input_fingerprints = [_describe_input_file(p) for p in self._input_paths]
         self.output_paths: list[str] = []
         self.started_at_utc = _utc_now_iso()
+        self.logger = setup_stage_logger(self.stage, self.work_dir, self.run_id, console_log_level)
 
     def add_output(self, path: Path | str) -> None:
         """Record one output file this run produced.
@@ -74,6 +83,7 @@ class RunManifest:
         finished_at_utc = _utc_now_iso()
         if exc_type is None:
             outcome = {"status": "success", "error_type": None, "error_message": None, "traceback": None}
+            self.logger.info("stage %s completed", self.stage)
         else:
             outcome = {
                 "status": "failed",
@@ -81,6 +91,7 @@ class RunManifest:
                 "error_message": str(exc_val),
                 "traceback": "".join(traceback.format_exception(exc_type, exc_val, exc_tb)),
             }
+            self.logger.error("stage %s failed: %s: %s", self.stage, exc_type.__name__, exc_val)
 
         record = {
             "run_id": self.run_id,
@@ -106,6 +117,7 @@ class RunManifest:
             manifest_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 
         self.manifest_path = manifest_path
+        close_logger(self.logger)
         return False  # never suppress the exception
 
 
