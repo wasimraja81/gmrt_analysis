@@ -41,11 +41,9 @@ Optional:
 import argparse
 from collections import Counter
 import os
-import shlex
 import shutil
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -61,20 +59,7 @@ from modules.moon_registration import (
     phase_cross_correlate as shared_phase_cross_correlate,
     representative_jd_from_header as shared_representative_jd_from_header,
 )
-
-
-class TeeStream:
-    def __init__(self, *streams):
-        self.streams = streams
-
-    def write(self, data):
-        for stream in self.streams:
-            stream.write(data)
-        return len(data)
-
-    def flush(self):
-        for stream in self.streams:
-            stream.flush()
+from modules.workflow_common import start_run
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -1097,30 +1082,9 @@ def main():
 
     # Generate provenance every time with timestamps
     prov_dir_arg = args.provenance_dir.strip()
-    if prov_dir_arg:
-        prov_dir = Path(prov_dir_arg).expanduser().resolve()
-    else:
-        # Default: create ./provenance_logs/ in current directory
-        prov_dir = Path.cwd() / 'provenance_logs'
-    
-    prov_dir.mkdir(parents=True, exist_ok=True)
-    run_ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    provenance_dir = Path(prov_dir_arg).expanduser().resolve() if prov_dir_arg else None
     out_stem = Path(args.output).stem if args.output else 'stack_moon_snapshots'
-    cmd_file = prov_dir / f'run_stack_moon_snapshots_{out_stem}_{run_ts}.cmd'
-    log_file = prov_dir / f'run_stack_moon_snapshots_{out_stem}_{run_ts}.log'
-
-    cmd = ['python', str(Path(__file__).resolve()), *sys.argv[1:]]
-    with open(cmd_file, 'w', encoding='utf-8') as fcmd:
-        fcmd.write(f'# timestamp={run_ts}\n')
-        fcmd.write(f'# cwd={Path.cwd()}\n')
-        fcmd.write(' '.join([shlex.quote(c) for c in cmd]))
-        fcmd.write('\n')
-
-    log_handle = open(log_file, 'w', encoding='utf-8')
-    sys.stdout = TeeStream(sys.stdout, log_handle)
-    sys.stderr = TeeStream(sys.stderr, log_handle)
-    print(f'[provenance] cmd: {cmd_file}')
-    print(f'[provenance] log: {log_file}')
+    start_run(Path(__file__), out_stem, provenance_dir=provenance_dir)
 
     selfcal_dir = Path(args.selfcal_dir).expanduser().resolve()
     if not selfcal_dir.is_dir():

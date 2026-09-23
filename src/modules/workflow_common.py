@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Shared workflow helpers for config loading and CLI overrides."""
+"""Shared workflow helpers for config loading, CLI overrides, and run provenance."""
 
 from __future__ import annotations
 
 import argparse
+import shlex
 import sys
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 
 def load_config_into_globals(config_path: str, target_globals: dict) -> None:
@@ -205,3 +209,118 @@ def format_table_application_note(
         _flag_name = 'none'
 
     return f' [DOCAL={_docal}:{_cal_name} | DOFLAG={_doflag}:{_flag_name}]'
+
+
+class TeeStream:
+    """Fan out writes to multiple streams (e.g. the real stdout + a log file)."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for stream in self.streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+
+@dataclass
+class RunContext:
+    """Handle returned by :func:`start_run`.
+
+    Exposes the timestamp and provenance file paths, and can restore the
+    original ``sys.stdout``/``sys.stderr`` via :meth:`close` or by using the
+    context manager protocol.
+    """
+
+    run_ts: str
+    cmd_file: Path
+    log_file: Path
+    _log_handle: object
+    _orig_stdout: object
+    _orig_stderr: object
+
+    def close(self) -> None:
+        """Restore the original stdout/stderr and close the log file."""
+        sys.stdout = self._orig_stdout
+        sys.stderr = self._orig_stderr
+        self._log_handle.close()
+
+    def __enter__(self) -> 'RunContext':
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+
+def start_run(
+    script_path: Path,
+    out_stem: str,
+    provenance_dir: Optional[Path] = None,
+) -> RunContext:
+    """Write `.cmd`/`.log` provenance files and tee stdout/stderr into the log.
+
+    Reproduces the exact ``provenance_logs/run_<script>_<out_stem>_<run_ts>.{cmd,log}``
+    convention already used by ``stack_moon_snapshots.py``: the ``.cmd`` file
+    records a reproducible command line (timestamp, cwd, quoted argv from
+    ``sys.argv``), and the ``.log`` file receives everything subsequently
+    printed to stdout/stderr (via :class:`TeeStream`), including tracebacks on
+    failure.
+
+    Call this as the very first thing in a script's ``main()``, before any
+    heavy work, so a crash still leaves a `.cmd`/`.log` pair behind.
+
+    Parameters
+    ----------
+    script_path : Path
+        Path to the running script (typically ``Path(__file__).resolve()``),
+        used both for the reproducible command line and to derive the
+        ``<script>`` stem in the output filenames.
+    out_stem : str
+        A short tag identifying this run's output (e.g. the output file's
+        stem), used in the provenance filenames.
+    provenance_dir : Path, optional
+        Directory to write the `.cmd`/`.log` files into. Defaults to
+        ``./provenance_logs`` (created if missing), matching the existing
+        convention.
+
+    Returns
+    -------
+    RunContext
+        Use ``ctx.close()`` (or ``with start_run(...) as ctx:``) to restore
+        the original stdout/stderr when done.
+    """
+    script_path = Path(script_path).resolve()
+    prov_dir = Path(provenance_dir).expanduser().resolve() if provenance_dir else Path.cwd() / 'provenance_logs'
+    prov_dir.mkdir(parents=True, exist_ok=True)
+
+    run_ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    script_stem = script_path.stem
+    cmd_file = prov_dir / f'run_{script_stem}_{out_stem}_{run_ts}.cmd'
+    log_file = prov_dir / f'run_{script_stem}_{out_stem}_{run_ts}.log'
+
+    cmd = ['python', str(script_path), *sys.argv[1:]]
+    with open(cmd_file, 'w', encoding='utf-8') as fcmd:
+        fcmd.write(f'# timestamp={run_ts}\n')
+        fcmd.write(f'# cwd={Path.cwd()}\n')
+        fcmd.write(' '.join(shlex.quote(c) for c in cmd))
+        fcmd.write('\n')
+
+    log_handle = open(log_file, 'w', encoding='utf-8')
+    orig_stdout, orig_stderr = sys.stdout, sys.stderr
+    sys.stdout = TeeStream(orig_stdout, log_handle)
+    sys.stderr = TeeStream(orig_stderr, log_handle)
+    print(f'[provenance] cmd: {cmd_file}')
+    print(f'[provenance] log: {log_file}')
+
+    return RunContext(
+        run_ts=run_ts,
+        cmd_file=cmd_file,
+        log_file=log_file,
+        _log_handle=log_handle,
+        _orig_stdout=orig_stdout,
+        _orig_stderr=orig_stderr,
+    )
