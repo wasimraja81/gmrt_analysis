@@ -25,11 +25,18 @@ work/uvfits_ms_audit/
 TempLattice*/
 *.tablelock
 
-# Local/generated artifacts not ready for versioning
-experimental/*.png
-experimental/*.gif
+# Local/generated artifacts not ready for versioning (legacy GSB tree)
+legacy_gsb_40_014/experimental/*.png
+legacy_gsb_40_014/experimental/*.gif
 share/*.png
 handy_commands.txt
-preprocess_ugmrt.ipynb
+legacy_gsb_40_014/preprocess_ugmrt.ipynb
 ugmrt_fits_metadata_queries.ipynb
 
+
+# pytest
+.pytest_cache/
+
+# Python virtualenv (rebuilt 2026-09-23 with stdlib venv, which -- unlike the
+# original virtualenv-created one -- doesn't drop its own internal .gitignore)
+gmrt/

@@ -89,7 +89,16 @@ if compgen -G "${DIAG_DIR}/${SRC_TAG}_bandpass_*" > /dev/null; then
 	echo "[primaryCalibration-example] WARNING: existing primary diagnostics will be replaced under: $DIAG_DIR"
 fi
 
-rm -f "${FLAG_DIR}/${SRC_TAG}_flag_table_session.json"
+# ── Experiment hooks (override at call site, no code edits needed) ───────
+# V-clustering threshold; default matches committed config (5 Jy)
+_V_THRESH="${CLUSTERING_V_THRESHOLD:-5.0}"
+# Final clustering threshold (used by outlier clustering stage)
+_CLUSTER_THRESH="${CLUSTERING_THRESHOLD_JY:-5.0}"
+# Optional suffix appended to bandpass/flag output filenames (e.g. _v500)
+_BPSUFFIX="${BANDPASS_SUFFIX:-}"
+# ─────────────────────────────────────────────────────────────────────────
+
+rm -f "${FLAG_DIR}/${SRC_TAG}_flag_table_session${_BPSUFFIX}.json"
 
 CMD=(
 "$PYTHON_CMD" "$REPO_ROOT/src/pipeline_cli.py" preprocess --step all --no-dry-run --auto --n-iters 100
@@ -97,16 +106,17 @@ CMD=(
 --config preprocess_ugmrt.cfg
 --set "WORK_DIR=Path('${WORK_DIR}')"
 --set "SOURCE='${SOURCE}'"
---set "BANDPASS_OUT=Path('${BP_DIR}/${SRC_TAG}_bandpass_25jul_${_DATA_TAG}.npz')"
+--set "BANDPASS_OUT=Path('${BP_DIR}/${SRC_TAG}_bandpass_25jul_${_DATA_TAG}${_BPSUFFIX}.npz')"
 --set "DIAG_PLOT_BASE=Path('${DIAG_DIR}/${SRC_TAG}_bandpass_diagnostics.png')"
 --set "DIAG_PLOT_UNFLAGGED=Path('${DIAG_DIR}/${SRC_TAG}_bandpass_diagnostics_unflagged.png')"
 --set "GAIN_PLOT_BASE=Path('${DIAG_DIR}/${SRC_TAG}_bandpass_gains.png')"
---set "FLAG_TABLE_SESSION=Path('${FLAG_DIR}/${SRC_TAG}_flag_table_session.json')"
+--set "FLAG_TABLE_SESSION=Path('${FLAG_DIR}/${SRC_TAG}_flag_table_session${_BPSUFFIX}.json')"
 --set "SOLVE_ELEVATION_MIN_DEG=25.0"
 --set "OUTLIER_METRIC='V'"
 --set "OUTLIER_METRIC_MERGE_STRATEGY='union'"
---set "ANTENNA_FLAG_THRESHOLD_JY={'V': 5.0}"
---set "BASELINE_FLAG_THRESHOLD_JY={'V': 5.0}"
+--set "ANTENNA_FLAG_THRESHOLD_JY={'V': ${_V_THRESH}}"
+--set "BASELINE_FLAG_THRESHOLD_JY={'V': ${_V_THRESH}}"
+--set "CLUSTERING_THRESHOLD_JY=${_CLUSTER_THRESH}"
 --set "COMPARE_METRICS_FOR_CONVERGENCE=['V','Model']"
 --set "CONVERGENCE_MIN_ITERS=3"
 --set "CONVERGENCE_EPSILON=0.005"
