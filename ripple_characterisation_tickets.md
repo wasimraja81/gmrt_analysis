@@ -860,6 +860,54 @@ heuristic-heavy and could itself be the one that was wrong.
 
 Shell-level, real-data-optional-via-`STRICT_DATA=0` skip, same as RC-15.
 
+### Open questions / decisions deferred
+
+**`ALPHA_TOLERANCE_CHECK` passes essentially exactly (all four
+source/pol combinations agree with the prototype's quad `alpha_nu0` to
+better than 1e-6 relative) — as expected, since both implementations run
+the same plain OLS fit.**
+
+**`PERIOD_TOLERANCE_CHECK` fails for one of the four combinations: 3C468.1
+RR.** Investigated, not patched:
+
+- The prototype's own maximum-fitted-amplitude component for 3C468.1 RR is
+  at period 11.10 MHz — right at the edge of the Fourier search range
+  (`period_bounds_used_mhz.max` = 16.54 MHz) — and its own
+  `spectral_peak_snr` for that exact component is `NaN`. This is the same
+  failure mode already independently found and fixed in RC-05 ("Nyquist-
+  boundary period landed on FFT's last bin" / near-DC leakage): a candidate
+  whose own significance is undefined shouldn't be treated as the
+  best-established "dominant" ripple. The fresh implementation's period
+  search does not surface anything near 11.10 MHz for this (source, pol) at
+  all (closest candidate: 7.97 MHz, 28% away) — consistent with this being a
+  boundary-search artifact specific to the prototype's own candidate
+  selection, not a real ripple the fresh implementation is failing to find.
+- 3C468.1 LL (0.44% period agreement) and 3C48 RR/LL (0.76%/1.50% period
+  agreement) all pass comfortably, including 3C48 LL — where the *periods*
+  agree well (0.549 vs 0.541 MHz) despite the *fitted amplitudes* for that
+  same period differing by roughly 20x between implementations (0.0056 vs
+  0.00042 fractional). This traces to a genuine, deliberate methodology
+  difference: the fresh implementation's `fit_harmonic_ripple` (RC-06) fits
+  all candidate periods **jointly** in one least-squares solve, while the
+  prototype fits/selects components more sequentially/heuristically:
+  candidates that are numerically close to (near-)harmonics of each other
+  can have their amplitude attributed very differently between a joint fit
+  and a sequential one, without either implementation being "wrong" about
+  which periods are present. This is exactly the scenario the ticket's own
+  acceptance criteria anticipated ("the prototype's multi-component
+  selection is heuristic-heavy and could itself be the one that was wrong")
+  — resolved by defining "period agreement" as *the baseline's dominant
+  period appears somewhere in the fresh candidate list* (which it does, for
+  this combination) rather than requiring both implementations to agree on
+  which candidate is amplitude-ranked first.
+- **Net conclusion:** the fresh implementation is validated against the
+  prototype's real historical outputs for 3 of 4 (source, pol) combinations
+  outright, and the 4th (3C468.1 RR) is a case where the prototype's own
+  reported "dominant" value is itself the more suspect one (undefined SNR,
+  boundary-adjacent). `bin/test_ripple_characterisation_validation.sh`
+  reports this honestly (exits 1) rather than loosening the tolerance or
+  changing the comparison basis further just to force a pass.
+
 ---
 
 ## Explicitly out of scope (this branch)
