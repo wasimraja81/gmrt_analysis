@@ -640,6 +640,30 @@ case.
 - Output file created and non-empty.
 - Output directory created if missing.
 
+### Open questions / decisions deferred
+
+**Visual confirmation of a leakage/significance interaction flagged in RC-05.**
+Rendering the plot against a near-noiseless synthetic case (known
+`alpha=-0.7` continuum + a single injected 8 MHz/5% ripple, `noise_sigma_jy=
+1e-4`) recovers the injected component accurately (`P=8.01MHz A=0.0490`,
+matching truth), but the harmonic fit also picks up two low-amplitude
+artifacts — a spurious ~42 MHz "independent" component and a ~4 MHz component
+correctly classified as the injected ripple's own 2nd harmonic — and, because
+`tau_ripple` compares component amplitude against `mad_sigma` of the
+post-fit residual, the spurious 42 MHz component still crosses the
+significance threshold in this pathologically low-noise case. This is the
+same mechanism already recorded under RC-05 ("the harmonic fit and/or the
+significance-vs-noise-floor classification must not assume every RC-05
+candidate is real") — now directly visible on the rendered plot rather than
+only in test assertions. Real GMRT data carries substantially more thermal
+noise than this synthetic stress case, so the practical severity is expected
+to be lower, but the plot's per-component text box intentionally shows every
+fitted component (not just ones passing `significant`) precisely so a science
+user can visually judge marginal/likely-spurious components themselves rather
+than have them silently hidden. **Not fixed here** — a more robust fix (e.g.
+BIC-based model selection on the number of harmonics, already noted as
+optional in RC-06's original design) is out of scope for this ticket.
+
 ---
 
 ## RC-12 — JSON + CSV summary schema v2

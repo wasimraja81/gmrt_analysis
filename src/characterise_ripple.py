@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 try:
     from modules import ugmrt_query as q
@@ -235,3 +236,120 @@ def characterise_ripple(
         'freqs_hz': freqs_hz,
         'per_pol': per_pol,
     }
+
+
+def plot_ripple_characterisation(result: dict, save_path, title: str = '') -> 'plt.Figure':
+    """Render the science-user diagnostics plot for a characterisation run.
+
+    Three rows, one column per polarisation present in ``result['per_pol']``
+    (typically RR/LL):
+
+    - Row 1: log-log spectrum with the fitted continuum overlay, annotated
+      with ``(alpha_nu0, beta, rss_log)``.
+    - Row 2: linear fractional ripple residual with the fitted harmonic
+      model overlay, annotated per-component (period, amplitude, cable
+      length, classification).
+    - Row 3: post-fit residual with the noise floor drawn as a shaded
+      +/-2*sigma_hat band, making the significance test
+      (``amplitude / sigma_hat >= tau_ripple``) visible directly on the plot.
+
+    Always renders something informative even when a polarisation has zero
+    fitted components (an explicit "no significant ripple found" note,
+    rather than an empty panel).
+
+    Parameters
+    ----------
+    result : dict
+        Output of :func:`characterise_ripple`.
+    save_path : str or Path
+        Output PNG path. Parent directories are created if missing.
+    title : str
+        Optional custom figure title; defaults to a summary built from
+        ``result['source']``.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    pols = sorted(result['per_pol'].keys())
+    n_cols = max(1, len(pols))
+    freqs_hz = np.asarray(result['freqs_hz'], dtype=np.float64)
+    freqs_mhz = freqs_hz / 1e6
+
+    fig, axes = plt.subplots(3, n_cols, figsize=(7 * n_cols, 11), squeeze=False)
+
+    for col, pol in enumerate(pols):
+        pol_result = result['per_pol'][pol]
+        ax_spec, ax_ripple, ax_clean = axes[0][col], axes[1][col], axes[2][col]
+
+        real_spec = pol_result['real_spectrum_jy']
+        model_jy = pol_result['model_jy']
+        residual = pol_result['residual']
+        harmonic_model = pol_result['harmonic_model']
+        sigma_hat = pol_result['noise_floor_sigma']
+        components = pol_result['components']
+        fit = pol_result['power_law_fit']
+
+        # Row 1: log-log spectrum + continuum overlay.
+        positive = real_spec > 0
+        ax_spec.plot(freqs_mhz[positive], real_spec[positive], lw=1.0, label=f'{pol} data')
+        ax_spec.plot(freqs_mhz, model_jy, lw=1.5, ls='--', color='k', label='continuum')
+        ax_spec.set_xscale('log')
+        ax_spec.set_yscale('log')
+        ax_spec.set_xlabel('Frequency (MHz)')
+        ax_spec.set_ylabel('Flux density (Jy)')
+        ax_spec.set_title(f'{pol}: spectrum + continuum fit')
+        ax_spec.grid(True, alpha=0.3, which='both')
+        ax_spec.legend(fontsize=8, loc='best')
+        ax_spec.text(
+            0.02, 0.02,
+            f"alpha_nu0={fit['alpha_nu0']:.3f}\nbeta={fit['beta']:.3f}\nrss_log={fit['rss_log']:.4g}",
+            transform=ax_spec.transAxes, fontsize=8, va='bottom', ha='left',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.8),
+        )
+
+        # Row 2: fractional ripple residual + harmonic model overlay.
+        ax_ripple.plot(freqs_mhz, residual, lw=1.0, label='residual')
+        ax_ripple.plot(freqs_mhz, harmonic_model, lw=1.4, ls='--', color='crimson', label='harmonic fit')
+        ax_ripple.axhline(0.0, color='k', lw=0.8, ls=':')
+        ax_ripple.set_xlabel('Frequency (MHz)')
+        ax_ripple.set_ylabel('Fractional residual')
+        ax_ripple.set_title(f'{pol}: ripple residual + fit')
+        ax_ripple.grid(True, alpha=0.3)
+        ax_ripple.legend(fontsize=8, loc='best')
+
+        if components:
+            comp_lines = [
+                f"P={c['period_mhz']:.2f}MHz  A={c['amplitude']:.4f}  "
+                f"L={c['cable_length_m']:.2f}m  {c['classification']}"
+                + ('*' if c['significant'] else '')
+                for c in components
+            ]
+        else:
+            comp_lines = ['No ripple components found.']
+        ax_ripple.text(
+            0.02, 0.98, '\n'.join(comp_lines),
+            transform=ax_ripple.transAxes, fontsize=7, va='top', ha='left',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.85),
+        )
+
+        # Row 3: post-fit residual with noise floor band.
+        cleaned = residual - harmonic_model
+        ax_clean.plot(freqs_mhz, cleaned, lw=1.0, color='darkgreen', label='post-fit residual')
+        if np.isfinite(sigma_hat):
+            ax_clean.axhspan(-2 * sigma_hat, 2 * sigma_hat, color='gray', alpha=0.2, label='+/-2*sigma_hat')
+        ax_clean.axhline(0.0, color='k', lw=0.8, ls=':')
+        ax_clean.set_xlabel('Frequency (MHz)')
+        ax_clean.set_ylabel('Fractional residual')
+        ax_clean.set_title(f'{pol}: post-fit residual vs noise floor')
+        ax_clean.grid(True, alpha=0.3)
+        ax_clean.legend(fontsize=8, loc='best')
+
+    default_title = f"Ripple characterisation: {result['source']} ({result['physical_model_mode']} mode)"
+    fig.suptitle(title or default_title, fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(save_path, dpi=180, bbox_inches='tight')
+    return fig
