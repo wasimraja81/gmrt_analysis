@@ -333,3 +333,201 @@ def find_ripple_period_candidates(
         'snrs': snrs,
         'noise_floor_power': noise_floor_power,
     }
+
+
+def _min_harmonic_fit_points(n_harmonics: int) -> int:
+    return max(20, 2 * n_harmonics + 4)
+
+
+def _harmonic_design_columns(freqs_mhz: np.ndarray, period_mhz: float, n_harmonics: int) -> np.ndarray:
+    """Build the sin/cos design columns for one period's harmonic series.
+
+    Returns an array of shape ``(n_points, 2*n_harmonics)``: columns
+    ``[sin(2*pi*1*nu/P), cos(2*pi*1*nu/P), sin(2*pi*2*nu/P), cos(2*pi*2*nu/P), ...]``.
+    """
+    cols = []
+    for k in range(1, n_harmonics + 1):
+        phase = 2.0 * np.pi * k * freqs_mhz / period_mhz
+        cols.append(np.sin(phase))
+        cols.append(np.cos(phase))
+    return np.column_stack(cols)
+
+
+def _joint_design_matrix(freqs_mhz: np.ndarray, periods_mhz: list, n_harmonics: int) -> np.ndarray:
+    """Concatenate each candidate period's harmonic columns into one matrix."""
+    blocks = [_harmonic_design_columns(freqs_mhz, p, n_harmonics) for p in periods_mhz]
+    return np.hstack(blocks) if blocks else np.zeros((freqs_mhz.size, 0))
+
+
+def _fit_for_periods(freqs_mhz: np.ndarray, y: np.ndarray, periods_mhz: list, n_harmonics: int):
+    """Solve the joint OLS fit for a fixed set of periods.
+
+    Returns ``(coeffs, rss)`` where ``coeffs`` has shape
+    ``(n_candidates, n_harmonics, 2)`` (last axis is ``[A_k, B_k]``), and
+    ``rss`` is the residual sum of squares of the fit.
+    """
+    n_candidates = len(periods_mhz)
+    if n_candidates == 0:
+        return np.zeros((0, n_harmonics, 2)), float(np.sum(y**2))
+
+    design = _joint_design_matrix(freqs_mhz, periods_mhz, n_harmonics)
+    coeffs_flat, residuals, _, _ = np.linalg.lstsq(design, y, rcond=None)
+    fitted = design @ coeffs_flat
+    rss = float(np.sum((y - fitted) ** 2))
+    coeffs = coeffs_flat.reshape(n_candidates, n_harmonics, 2)
+    return coeffs, rss
+
+
+def fit_harmonic_ripple(
+    freqs_hz: np.ndarray,
+    residual: np.ndarray,
+    period_candidates: list,
+    n_harmonics: int = 1,
+    period_refine_frac: float = 0.15,
+) -> dict:
+    """Fit a joint multi-component harmonic ripple model.
+
+    Implements the harmonic Fourier ripple model from
+    ``ripple_convergence_todos.md``:
+
+        r(nu) = sum_k [A_k*sin(2*pi*k*nu/P) + B_k*cos(2*pi*k*nu/P)]
+
+    Each entry in ``period_candidates`` (typically seeded by
+    :func:`find_ripple_period_candidates`) gets its own harmonic series
+    (``k=1..n_harmonics`` of its own fundamental frequency); all candidates'
+    harmonic bases are combined into one joint ordinary-least-squares design
+    matrix and solved together, so that one candidate's fit cannot silently
+    absorb power that actually belongs to another. Each candidate's own
+    period is then refined by local coordinate descent: holding every other
+    period fixed, a small grid of trial periods within
+    ``period_i * (1 +/- period_refine_frac)`` is tried, re-solving the joint
+    fit each time, keeping whichever trial period minimises the overall
+    residual sum of squares. A few such passes over all candidates are run.
+
+    Parameters
+    ----------
+    freqs_hz : np.ndarray
+        Frequency grid in Hz.
+    residual : np.ndarray
+        Fractional ripple residual, same shape as ``freqs_hz``. May contain
+        NaN (excluded from the fit).
+    period_candidates : list of float
+        Seed periods in MHz, one per component (e.g. from
+        :func:`find_ripple_period_candidates`).
+    n_harmonics : int
+        Number of harmonics (``k=1..n_harmonics``) fit per candidate.
+    period_refine_frac : float
+        Fractional half-width of each candidate's local period-refinement
+        search window (default 0.15, i.e. +/-15%).
+
+    Returns
+    -------
+    dict with keys:
+        ``components``: list of dicts, one per input candidate period, each
+            with ``period_mhz`` (refined), ``amplitude`` (of the
+            fundamental, k=1), ``phase_rad`` (of the fundamental),
+            ``snr`` (amplitude / overall residual MAD-sigma after fit),
+            ``classification`` (``'primary'``, ``'harmonic'``, or
+            ``'independent'``), ``ratio_to_primary``.
+        ``rms_before``: RMS of the input residual over finite points.
+        ``rms_after``: RMS of the residual after subtracting the full joint
+            fitted model.
+        ``model``: the full joint fitted model, evaluated at every input
+            ``freqs_hz`` (NaN where the model cannot be evaluated, which
+            does not occur here since the model is defined everywhere).
+
+    Raises
+    ------
+    ValueError
+        If fewer than ``max(20, 2*n_harmonics + 4)`` finite residual points
+        are available. Unlike :func:`find_ripple_period_candidates` (which
+        returns empty results on too little data), this function raises —
+        a caller with too few points to reliably fit should not silently
+        receive a fit result.
+    """
+    freqs_hz = np.asarray(freqs_hz, dtype=np.float64)
+    residual = np.asarray(residual, dtype=np.float64)
+    freqs_mhz = freqs_hz / 1e6
+
+    finite = np.isfinite(freqs_hz) & np.isfinite(residual)
+    n_finite = int(np.sum(finite))
+    min_points = _min_harmonic_fit_points(n_harmonics)
+    if n_finite < min_points:
+        raise ValueError(
+            f'fit_harmonic_ripple: need at least {min_points} finite points '
+            f'for n_harmonics={n_harmonics}, got {n_finite}.'
+        )
+
+    x_fit = freqs_mhz[finite]
+    y_fit = residual[finite]
+    rms_before = float(np.sqrt(np.mean(y_fit**2)))
+
+    periods = [float(p) for p in period_candidates]
+
+    if periods:
+        for _ in range(2):  # a couple of coordinate-descent passes
+            for i, p_i in enumerate(periods):
+                lo = max(p_i * (1.0 - period_refine_frac), 1e-6)
+                hi = p_i * (1.0 + period_refine_frac)
+                trial_periods = np.linspace(lo, hi, 21)
+                best_rss = np.inf
+                best_p = p_i
+                for trial in trial_periods:
+                    candidate_periods = list(periods)
+                    candidate_periods[i] = float(trial)
+                    _, rss = _fit_for_periods(x_fit, y_fit, candidate_periods, n_harmonics)
+                    if rss < best_rss:
+                        best_rss = rss
+                        best_p = float(trial)
+                periods[i] = best_p
+
+    coeffs, _ = _fit_for_periods(x_fit, y_fit, periods, n_harmonics)
+
+    model_full = np.zeros_like(freqs_mhz)
+    for i, p_i in enumerate(periods):
+        cols = _harmonic_design_columns(freqs_mhz, p_i, n_harmonics)
+        model_full += cols @ coeffs[i].reshape(-1)
+
+    resid_after = residual - model_full
+    rms_after = float(np.sqrt(np.mean(resid_after[finite] ** 2))) if periods else rms_before
+    sigma_hat = mad_sigma(resid_after[finite]) if periods else mad_sigma(y_fit)
+
+    components = []
+    if periods:
+        amplitudes = [float(np.hypot(coeffs[i, 0, 0], coeffs[i, 0, 1])) for i in range(len(periods))]
+        primary_idx = int(np.argmax(amplitudes))
+        primary_period = periods[primary_idx]
+
+        for i, p_i in enumerate(periods):
+            a1, b1 = coeffs[i, 0, 0], coeffs[i, 0, 1]
+            amplitude = float(np.hypot(a1, b1))
+            phase_rad = float(np.arctan2(b1, a1))
+            snr = amplitude / sigma_hat if (sigma_hat and np.isfinite(sigma_hat) and sigma_hat > 0) else float('inf')
+
+            if i == primary_idx:
+                classification = 'primary'
+                ratio_to_primary = 1.0
+            else:
+                ratio_to_primary = primary_period / p_i
+                nearest_order = round(ratio_to_primary)
+                is_harmonic = (
+                    nearest_order >= 2
+                    and abs(ratio_to_primary - nearest_order) / nearest_order < 0.1
+                )
+                classification = 'harmonic' if is_harmonic else 'independent'
+
+            components.append({
+                'period_mhz': float(p_i),
+                'amplitude': amplitude,
+                'phase_rad': phase_rad,
+                'snr': float(snr),
+                'classification': classification,
+                'ratio_to_primary': float(ratio_to_primary),
+            })
+
+    return {
+        'components': components,
+        'rms_before': rms_before,
+        'rms_after': rms_after,
+        'model': model_full,
+    }
