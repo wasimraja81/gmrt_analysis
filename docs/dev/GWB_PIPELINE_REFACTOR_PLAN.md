@@ -308,6 +308,12 @@ at that point).
 
 ### Phase C — Primary Transfer & Split
 
+**Design requirement for both tickets below, decided 2026-09-24:** split and plot each
+take an explicit correlation-type option (cross, auto, or both), defaulting to cross.
+Selecting autocorrelations is a user choice, always available, never something to
+reconstruct by enumerating antenna pairs by hand the way the archived `plotVis.py`
+required — see T5b's audit, which found neither archived tool has a selector for this.
+
 - **T9 — 3C48 split + diagnostics.**
 - **T10 — 3C468.1 primary-only split + diagnostics.**
 
