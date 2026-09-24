@@ -27,7 +27,7 @@ explicitly deferred to a future branch; see "Explicitly out of scope" below.*
 | RC-10 | `characterise_ripple()` orchestration function | DONE | RC-03…RC-08 | `3f629de` |
 | RC-11 | Diagnostics plot for the science user | DONE | RC-10 | `1bccb47` |
 | RC-12 | JSON + CSV summary schema v2 | DONE | RC-10 | `2cb2639` |
-| RC-13 | CLI driver: `src/characterise_ripple.py` | TODO | RC-10, RC-11, RC-12, RC-02 | |
+| RC-13 | CLI driver: `src/characterise_ripple.py` | DONE | RC-10, RC-11, RC-12, RC-02 | `b32149d` |
 | RC-14 | GMRT-engineer markdown report generator | DONE | RC-10, RC-07, RC-12 | `07caa59` |
 | RC-15 | Shell regression gate (real-data end-to-end) | TODO | RC-13 | |
 | RC-16 | Validation against the prototype's existing JSON outputs | TODO | RC-13 | |
