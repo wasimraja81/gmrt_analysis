@@ -26,7 +26,7 @@ explicitly deferred to a future branch; see "Explicitly out of scope" below.*
 | RC-09 | Relationship to `run_bandpass_diagnostics()`'s inline fit (decision + optional fix) | DONE | — | `f96af64` |
 | RC-10 | `characterise_ripple()` orchestration function | DONE | RC-03…RC-08 | `3f629de` |
 | RC-11 | Diagnostics plot for the science user | DONE | RC-10 | `1bccb47` |
-| RC-12 | JSON + CSV summary schema v2 | TODO | RC-10 | |
+| RC-12 | JSON + CSV summary schema v2 | DONE | RC-10 | `2cb2639` |
 | RC-13 | CLI driver: `src/characterise_ripple.py` | TODO | RC-10, RC-11, RC-12, RC-02 | |
 | RC-14 | GMRT-engineer markdown report generator | TODO | RC-10, RC-07, RC-12 | |
 | RC-15 | Shell regression gate (real-data end-to-end) | TODO | RC-13 | |
