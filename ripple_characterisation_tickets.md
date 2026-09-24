@@ -609,7 +609,13 @@ prototype's custom annotation-collision solver.
 
 ### Implementation location
 
-`src/modules/ripple_characterisation.py::plot_ripple_characterisation(result: dict, save_path, title='') -> Figure`
+`src/characterise_ripple.py::plot_ripple_characterisation(result: dict, save_path, title='') -> Figure`
+
+Deliberately *not* in `modules/ripple_characterisation.py` — that module's
+own docstring promises "no matplotlib, no file I/O" for its pure-numerics
+functions (RC-03…RC-10), so a plotting function with a `save_path` belongs
+alongside the orchestration code in `characterise_ripple.py` instead, per
+the two-layer split in the "Architecture" section above.
 
 Three-row, two-column (RR/LL) layout:
 - Row 1: log-log spectrum + power-law fit overlay + text box of

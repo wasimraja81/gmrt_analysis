@@ -108,12 +108,20 @@ def characterise_ripple(
         ``known_model_local_alpha_crosscheck`` (dict or ``None`` if the
         source has no registered flux model),
         ``period_bounds_mode``, ``period_bounds_used_mhz`` (``{min, max}``),
+        ``freqs_hz`` (the frequency grid, shared across polarisations),
         ``per_pol``: dict keyed by polarisation label, each value a dict
             with ``power_law_fit`` (the local fit, always computed),
             ``noise_floor_sigma``, ``rms_before``, ``rms_after``,
             ``components`` (list of dicts, each with ``period_mhz``,
             ``amplitude``, ``phase_rad``, ``snr``, ``classification``,
-            ``ratio_to_primary``, ``cable_length_m``, ``significant``).
+            ``ratio_to_primary``, ``cable_length_m``, ``significant``),
+            and the per-channel arrays ``real_spectrum_jy`` (measured
+            spectrum), ``model_jy`` (the continuum actually used — local fit
+            or known model, per ``physical_model_mode``), ``residual``
+            (``real_spectrum_jy/model_jy - 1``), and ``harmonic_model`` (the
+            fitted multi-component ripple model). These arrays feed the
+            diagnostics plot (RC-11); the JSON summary (RC-12) stays a
+            compact per-component/scalar record and does not embed them.
 
     Raises
     ------
@@ -208,6 +216,13 @@ def characterise_ripple(
             'rms_before': harmonic_fit['rms_before'],
             'rms_after': harmonic_fit['rms_after'],
             'components': components,
+            # Per-channel arrays needed by the diagnostics plot (RC-11) and
+            # useful for ad hoc inspection; not embedded in the JSON summary
+            # (RC-12), which stays a compact per-component/scalar record.
+            'real_spectrum_jy': real_spec,
+            'model_jy': model_jy,
+            'residual': residual,
+            'harmonic_model': harmonic_fit['model'],
         }
 
     return {
@@ -217,5 +232,6 @@ def characterise_ripple(
         'known_model_local_alpha_crosscheck': known_model_local_alpha_crosscheck,
         'period_bounds_mode': period_bounds_mode,
         'period_bounds_used_mhz': {'min': float(period_min_mhz), 'max': float(period_max_mhz)},
+        'freqs_hz': freqs_hz,
         'per_pol': per_pol,
     }
