@@ -566,7 +566,35 @@ writers need; no matplotlib/file-I/O side effects itself.
 
 Synthetic `vis`-shaped fixture with a known injected power law + known
 injected ripple in `vis_complex_corrected` → recovered period/amplitude/
-cable-length match truth within tolerance, end to end.
+cable-length match truth within tolerance, end to end. Also verified: the
+known-model crosscheck is populated whenever the source has a registry
+entry, *regardless* of `physical_model_mode` (not gated behind
+`mode='known'`); invalid `physical_model_mode`/`period_bounds_mode` and
+`known` mode against an unregistered source all raise `ValueError`.
+
+### Open questions / decisions deferred
+
+**Finding from unit testing — a single-pass power-law fit is measurably
+biased by the ripple it is fit alongside.** Fitting `fit_power_law_spectrum`
+directly against ripple-contaminated data (as this orchestration does in one
+non-iterative pass) recovers a spectral index (`alpha_nu0`) that is
+noticeably biased toward the ripple's own shape — confirmed directly: a
+known `alpha=-0.7` injected alongside a 5%-amplitude, 4-cycle ripple
+recovered `alpha_nu0 ~= -0.47` (bias of ~0.23 in a single pass). This is
+expected for a non-iterative fit (real pipelines iterate: fit, subtract,
+refit), not a bug in RC-04's implementation (which is exact on ripple-free
+data — see RC-04's own tests). **This compounds two other findings already
+recorded in this doc:** RC-04's note that `beta` (curvature) is
+under-constrained over GMRT's narrow (~5%) fractional bandwidth, and the
+pre-existing 3C468.1 known-model-vs-local-fit discrepancy
+(Delta-alpha ~ 0.49) that motivated defaulting to `physical_model_mode='fit'`
+in the first place. **Implication for RC-14 (engineer report):** any
+reported `alpha_nu0`/`beta` from a single characterisation run should be
+presented as approximate/ripple-contaminated, not a precise independent
+spectral measurement — the engineer report's caveats section should note
+this alongside the known-model crosscheck caveat, since both point to the
+same underlying limitation (a single-pass fit cannot cleanly separate
+continuum shape from ripple).
 
 ---
 
