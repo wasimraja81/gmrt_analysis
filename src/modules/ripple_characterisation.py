@@ -531,3 +531,46 @@ def fit_harmonic_ripple(
         'rms_after': rms_after,
         'model': model_full,
     }
+
+
+_SPEED_OF_LIGHT_M_PER_S = 299792458.0
+
+
+def period_to_cable_length_m(period_mhz: float, velocity_factor: float = 1.0) -> float:
+    """Convert a fitted ripple period to an implied round-trip cable length.
+
+    Standing-wave ripple from a cable reflection has a spectral period
+    related to the reflection's round-trip travel time:
+
+        L = (velocity_factor * c) / (2 * f_ripple)
+
+    where ``f_ripple = 1 / period`` and the factor of 2 accounts for the
+    round trip (signal travels to the reflection point and back).
+
+    Parameters
+    ----------
+    period_mhz : float
+        Ripple period in MHz. Non-positive or non-finite values return
+        ``nan`` rather than raising, since this is typically called on a
+        fitted value that may be degenerate.
+    velocity_factor : float
+        Propagation velocity as a fraction of ``c`` (e.g. ~0.66 for typical
+        foam coax). Non-positive or non-finite values return ``nan``.
+
+    Returns
+    -------
+    float
+        Implied cable length in metres, or ``nan`` for invalid inputs.
+    """
+    if not np.isfinite(period_mhz) or period_mhz <= 0:
+        return float('nan')
+    if not np.isfinite(velocity_factor) or velocity_factor <= 0:
+        return float('nan')
+
+    # A ripple period P (MHz) in the frequency domain corresponds to a
+    # round-trip travel-time delay tau = 1/(P * 1e6) seconds between the
+    # direct and reflected paths (a two-path interference completes one
+    # full 2*pi phase cycle every Delta_nu = 1/tau). L = v*tau/2 (round trip).
+    round_trip_delay_s = 1.0 / (period_mhz * 1e6)
+    length_m = (velocity_factor * _SPEED_OF_LIGHT_M_PER_S * round_trip_delay_s) / 2.0
+    return float(length_m)
