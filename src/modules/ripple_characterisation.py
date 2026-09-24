@@ -14,6 +14,8 @@ the underlying physical model.
 
 from __future__ import annotations
 
+import datetime
+
 import numpy as np
 
 _MIN_POWER_LAW_POINTS = 10
@@ -574,3 +576,101 @@ def period_to_cable_length_m(period_mhz: float, velocity_factor: float = 1.0) ->
     round_trip_delay_s = 1.0 / (period_mhz * 1e6)
     length_m = (velocity_factor * _SPEED_OF_LIGHT_M_PER_S * round_trip_delay_s) / 2.0
     return float(length_m)
+
+
+_SUMMARY_SCHEMA = 'gmrt-ripple-characterisation-v1'
+
+
+def _json_safe(value):
+    """Recursively replace non-finite floats with ``None`` (raw ``NaN``/``Inf``
+    are not valid JSON tokens per the spec; ``json.dump`` emits them anyway
+    unless converted first)."""
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def build_summary_dict(
+    result: dict,
+    *,
+    run_ts: str = '',
+    workflow_run_id: str = '',
+    git_commit: str = '',
+    bandpass_solution_path: str | None = None,
+) -> dict:
+    """Build a compact, JSON/CSV-safe summary dict from a ``characterise_ripple()``
+    result (see ``src/characterise_ripple.py``).
+
+    Per-channel arrays (``real_spectrum_jy``, ``model_jy``, ``residual``,
+    ``harmonic_model``, ``freqs_hz``) feed the diagnostics plot (RC-11) and
+    are deliberately *not* included here — this stays a compact
+    per-component/scalar record, matching ``characterise_ripple()``'s own
+    docstring note.
+
+    Parameters
+    ----------
+    result : dict
+        Output of ``characterise_ripple()``.
+    run_ts, workflow_run_id, git_commit : str
+        Provenance fields supplied by the caller. Use ``''`` (not ``None``)
+        when unknown, matching the gh-pages layout-manifest's own
+        "not found" convention — distinct from ``bandpass_solution_path``
+        below, where ``None`` means "genuinely not applicable".
+    bandpass_solution_path : str, optional
+        Path to the bandpass solution used, or ``None`` if the run
+        characterised raw (uncorrected) data.
+
+    Returns
+    -------
+    dict
+        JSON-safe (no raw ``NaN``/``Inf``): ``schema``, ``generated_at``,
+        ``run_ts``, ``workflow_run_id``, ``git_commit``, ``source``,
+        ``physical_model_mode``, ``known_model_used``,
+        ``bandpass_solution_path``, ``period_bounds_mode``,
+        ``period_bounds_used_mhz``, ``known_model_local_alpha_crosscheck``,
+        ``per_pol`` (keyed by polarisation, each with ``power_law_fit``
+        (``coeffs``, ``nu0_hz``, ``alpha_nu0``, ``beta``, ``rss_log``,
+        ``mask_n``), ``noise_floor_sigma``, ``rms_before``, ``rms_after``,
+        and ``components`` (list of per-component dicts)).
+    """
+    per_pol = {}
+    for pol, pol_result in result['per_pol'].items():
+        fit = pol_result['power_law_fit']
+        per_pol[pol] = {
+            'power_law_fit': {
+                'coeffs': list(fit['coeffs']),
+                'nu0_hz': fit['nu0_hz'],
+                'alpha_nu0': fit['alpha_nu0'],
+                'beta': fit['beta'],
+                'rss_log': fit['rss_log'],
+                'mask_n': fit['mask_n'],
+            },
+            'noise_floor_sigma': pol_result['noise_floor_sigma'],
+            'rms_before': pol_result['rms_before'],
+            'rms_after': pol_result['rms_after'],
+            'components': [dict(c) for c in pol_result['components']],
+        }
+
+    summary = {
+        'schema': _SUMMARY_SCHEMA,
+        'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'run_ts': run_ts,
+        'workflow_run_id': workflow_run_id,
+        'git_commit': git_commit,
+        'source': result['source'],
+        'physical_model_mode': result['physical_model_mode'],
+        'known_model_used': result['known_model_used'],
+        'bandpass_solution_path': bandpass_solution_path,
+        'period_bounds_mode': result['period_bounds_mode'],
+        'period_bounds_used_mhz': dict(result['period_bounds_used_mhz']),
+        'known_model_local_alpha_crosscheck': (
+            dict(result['known_model_local_alpha_crosscheck'])
+            if result['known_model_local_alpha_crosscheck'] is not None else None
+        ),
+        'per_pol': per_pol,
+    }
+    return _json_safe(summary)

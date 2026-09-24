@@ -18,6 +18,8 @@ corrected UVFITS (that is explicitly out of scope for this branch; see
 
 from __future__ import annotations
 
+import csv
+import json
 import sys
 from pathlib import Path
 from typing import Optional
@@ -353,3 +355,89 @@ def plot_ripple_characterisation(result: dict, save_path, title: str = '') -> 'p
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_path, dpi=180, bbox_inches='tight')
     return fig
+
+
+def write_summary_json(summary: dict, path) -> Path:
+    """Write a ``build_summary_dict()`` summary to ``path`` as JSON (RC-12).
+
+    ``summary`` must already be JSON-safe (as returned by
+    ``ripple_characterisation.build_summary_dict()``, which replaces raw
+    ``NaN``/``Inf`` with ``None``) — this function does not re-sanitise, so
+    that the sanitisation contract lives in one place.
+
+    Parameters
+    ----------
+    summary : dict
+        Output of ``ripple_characterisation.build_summary_dict()``.
+    path : str or Path
+        Output path. Parent directories are created if missing.
+
+    Returns
+    -------
+    Path
+        The path written to.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump(summary, f, indent=2, allow_nan=False)
+    return path
+
+
+_COMPONENT_CSV_FIELDS = [
+    'source', 'pol', 'period_mhz', 'amplitude', 'phase_rad', 'snr',
+    'classification', 'ratio_to_primary', 'cable_length_m', 'significant',
+    'alpha_nu0', 'beta', 'noise_floor_sigma', 'rms_before', 'rms_after',
+]
+
+
+def write_components_csv(summary: dict, path) -> Path:
+    """Write a flattened per-``(pol, component)`` CSV from a summary dict (RC-12).
+
+    One row per fitted ripple component; a polarisation with zero fitted
+    components still gets exactly one row (component fields blank) so it is
+    never silently absent from the CSV.
+
+    Parameters
+    ----------
+    summary : dict
+        Output of ``ripple_characterisation.build_summary_dict()``.
+    path : str or Path
+        Output path. Parent directories are created if missing.
+
+    Returns
+    -------
+    Path
+        The path written to.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for pol, pol_summary in summary['per_pol'].items():
+        fit = pol_summary['power_law_fit']
+        base_row = {
+            'source': summary['source'],
+            'pol': pol,
+            'alpha_nu0': fit['alpha_nu0'],
+            'beta': fit['beta'],
+            'noise_floor_sigma': pol_summary['noise_floor_sigma'],
+            'rms_before': pol_summary['rms_before'],
+            'rms_after': pol_summary['rms_after'],
+        }
+        components = pol_summary['components']
+        if not components:
+            rows.append({**base_row, **{
+                k: '' for k in
+                ('period_mhz', 'amplitude', 'phase_rad', 'snr', 'classification',
+                 'ratio_to_primary', 'cable_length_m', 'significant')
+            }})
+        else:
+            for comp in components:
+                rows.append({**base_row, **comp})
+
+    with open(path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=_COMPONENT_CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path

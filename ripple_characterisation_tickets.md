@@ -681,8 +681,12 @@ Closes two gaps found in the prior-art prototype's existing JSON output:
 
 ### Implementation location
 
-`src/modules/ripple_characterisation.py::build_summary_dict(result, *, run_ts, workflow_run_id, git_commit, ...) -> dict`,
-`::write_summary_json(summary, path)`, `::write_components_csv(summary, path)`.
+`src/modules/ripple_characterisation.py::build_summary_dict(result, *, run_ts, workflow_run_id, git_commit, bandpass_solution_path=None) -> dict`
+— pure dict construction (including `NaN`/`Inf` → `None` sanitisation), no
+file I/O, so it stays in the pure-numerics module. `write_summary_json(summary,
+path)` and `write_components_csv(summary, path)` do file I/O, so — per the
+same rationale as RC-11's redirect — they live in `src/characterise_ripple.py`
+alongside `plot_ripple_characterisation()` instead.
 
 Schema `gmrt-ripple-characterisation-v1`. Both a nested JSON (full detail,
 one file per run) and a flattened per-`(pol, component)` CSV are written —
