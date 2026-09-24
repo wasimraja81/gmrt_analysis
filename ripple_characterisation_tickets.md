@@ -28,7 +28,7 @@ explicitly deferred to a future branch; see "Explicitly out of scope" below.*
 | RC-11 | Diagnostics plot for the science user | DONE | RC-10 | `1bccb47` |
 | RC-12 | JSON + CSV summary schema v2 | DONE | RC-10 | `2cb2639` |
 | RC-13 | CLI driver: `src/characterise_ripple.py` | TODO | RC-10, RC-11, RC-12, RC-02 | |
-| RC-14 | GMRT-engineer markdown report generator | TODO | RC-10, RC-07, RC-12 | |
+| RC-14 | GMRT-engineer markdown report generator | DONE | RC-10, RC-07, RC-12 | `07caa59` |
 | RC-15 | Shell regression gate (real-data end-to-end) | TODO | RC-13 | |
 | RC-16 | Validation against the prototype's existing JSON outputs | TODO | RC-13 | |
 | RC-17 | gh-pages publishing wiring | DEFERRED (follow-on branch) | — | |
