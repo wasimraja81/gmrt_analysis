@@ -14,16 +14,16 @@ explicitly deferred to a future branch; see "Explicitly out of scope" below.*
 
 | Ticket | Title | Status | Depends on | Commit |
 |---|---|---|---|---|
-| RC-00 | Create this file; cross-link `ripple_convergence_todos.md` | DONE | — | |
-| RC-01 | Introduce pytest: dev-requirements, `pytest.ini`, `tests/` skeleton | TODO | — | |
-| RC-02 | Factor provenance/book-keeping into `workflow_common.start_run()` | TODO | — | |
-| RC-03 | `mad_sigma()` noise-floor estimator | TODO | RC-01 | |
-| RC-04 | `fit_power_law_spectrum()` | TODO | RC-01 | |
-| RC-05 | `derive_fourier_period_bounds()` + `find_ripple_period_candidates()` | TODO | RC-01 | |
-| RC-06 | `fit_harmonic_ripple()` | TODO | RC-01, RC-05 | |
-| RC-07 | `period_to_cable_length_m()` | TODO | RC-01 | |
-| RC-08 | Extract `get_vector_avg_spectrum()` in `ugmrt_query.py` | TODO | RC-01 | |
-| RC-09 | Relationship to `run_bandpass_diagnostics()`'s inline fit (decision + optional fix) | TODO | — | |
+| RC-00 | Create this file; cross-link `ripple_convergence_todos.md` | DONE | — | `5f03a08` |
+| RC-01 | Introduce pytest: dev-requirements, `pytest.ini`, `tests/` skeleton | DONE | — | `8b3fccc` |
+| RC-02 | Factor provenance/book-keeping into `workflow_common.start_run()` | DONE | — | `14b0abf` |
+| RC-03 | `mad_sigma()` noise-floor estimator | DONE | RC-01 | `fb582c0` |
+| RC-04 | `fit_power_law_spectrum()` | DONE | RC-01 | `878ff8c` |
+| RC-05 | `derive_fourier_period_bounds()` + `find_ripple_period_candidates()` | DONE | RC-01 | `caf8244` |
+| RC-06 | `fit_harmonic_ripple()` | DONE | RC-01, RC-05 | `a22991a` |
+| RC-07 | `period_to_cable_length_m()` | DONE | RC-01 | `ac6602f` |
+| RC-08 | Extract `get_vector_avg_spectrum()` in `ugmrt_query.py` | DONE | RC-01 | `e279b1a` |
+| RC-09 | Relationship to `run_bandpass_diagnostics()`'s inline fit (decision + optional fix) | DONE | — | `f96af64` |
 | RC-10 | `characterise_ripple()` orchestration function | TODO | RC-03…RC-08 | |
 | RC-11 | Diagnostics plot for the science user | TODO | RC-10 | |
 | RC-12 | JSON + CSV summary schema v2 | TODO | RC-10 | |
