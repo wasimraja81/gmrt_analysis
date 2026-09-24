@@ -4443,6 +4443,7 @@ def run_bandpass_diagnostics(
             lw=1.0, label=pol)[0]
         _lc = _resid_line.get_color()
         _fit_annot_lines = []   # collect annotation strings for this pol
+        _ripple_fit_components = []   # structured version of the same fit(s); see RC-09
         _popt_r = _fit_sinusoid(freqs_mhz[chan_mask], resid_spec[chan_mask])
         if _popt_r is not None:
             _a_r, _A_r, _P_r, _phi_r = _popt_r
@@ -4452,6 +4453,11 @@ def run_bandpass_diagnostics(
                 lw=1.4, ls='--', color=_lc, alpha=0.75,
             )
             _fit_annot_lines.append(f'{pol}₁: {_A_r:.2f}Jy, {_P_r:.1f}MHz')
+            _ripple_fit_components.append({
+                'amplitude_jy': float(_A_r),
+                'period_mhz': float(_P_r),
+                'phase_rad': float(_phi_r),
+            })
             _cleaned_r = resid_spec - _sinu_r
             # ── Pass 2: if pass 1 found a long-period component (P > 4 MHz),
             # search for a secondary short-period ripple in the 0.5–4 MHz window.
@@ -4468,6 +4474,11 @@ def run_bandpass_diagnostics(
                         lw=1.4, ls=':', color=_lc, alpha=0.60,
                     )
                     _fit_annot_lines.append(f'{pol}₂: {_A_r2:.2f}Jy, {_P_r2:.1f}MHz')
+                    _ripple_fit_components.append({
+                        'amplitude_jy': float(_A_r2),
+                        'period_mhz': float(_P_r2),
+                        'phase_rad': float(_phi_r2),
+                    })
                     _cleaned_r = _cleaned_r - _sinu_r2
             ax_clean.plot(
                 freqs_mhz, np.where(chan_mask, _cleaned_r, np.nan),
@@ -4532,6 +4543,7 @@ def run_bandpass_diagnostics(
             'antenna_records': antenna_records,
             'residual_spectrum_jy': resid_spec,
             'real_spectrum_jy': real_spec,
+            'ripple_fit_components': _ripple_fit_components,
         }
 
     # — Stokes-V proxy: |RR − LL| bad-data detector —
