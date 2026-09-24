@@ -631,7 +631,8 @@ def build_summary_dict(
         ``run_ts``, ``workflow_run_id``, ``git_commit``, ``source``,
         ``physical_model_mode``, ``known_model_used``,
         ``bandpass_solution_path``, ``period_bounds_mode``,
-        ``period_bounds_used_mhz``, ``known_model_local_alpha_crosscheck``,
+        ``period_bounds_used_mhz``, ``velocity_factor``, ``tau_ripple``,
+        ``known_model_local_alpha_crosscheck``,
         ``per_pol`` (keyed by polarisation, each with ``power_law_fit``
         (``coeffs``, ``nu0_hz``, ``alpha_nu0``, ``beta``, ``rss_log``,
         ``mask_n``), ``noise_floor_sigma``, ``rms_before``, ``rms_after``,
@@ -667,6 +668,8 @@ def build_summary_dict(
         'bandpass_solution_path': bandpass_solution_path,
         'period_bounds_mode': result['period_bounds_mode'],
         'period_bounds_used_mhz': dict(result['period_bounds_used_mhz']),
+        'velocity_factor': result['velocity_factor'],
+        'tau_ripple': result['tau_ripple'],
         'known_model_local_alpha_crosscheck': (
             dict(result['known_model_local_alpha_crosscheck'])
             if result['known_model_local_alpha_crosscheck'] is not None else None
@@ -674,3 +677,150 @@ def build_summary_dict(
         'per_pol': per_pol,
     }
     return _json_safe(summary)
+
+
+_CROSSCHECK_CAVEAT_DELTA_THRESHOLD = 0.1
+
+
+def _confidence_rating(snr) -> str:
+    if snr is None or not np.isfinite(snr):
+        return 'unknown'
+    if snr >= 10.0:
+        return 'high'
+    if snr >= 5.0:
+        return 'moderate'
+    return 'low'
+
+
+def render_engineer_report_md(summary: dict) -> str:
+    """Render a GMRT-engineer-facing markdown report from a summary dict (RC-14).
+
+    Pure function (string in, string out; no file I/O — the CLI, RC-13,
+    writes the returned string to disk). Written for a hardware/signal-chain
+    audience: leads with a plain "Bottom line" per polarisation, translates
+    the fitted ripple period into an implied cable length, and always names
+    every polarisation explicitly — a polarisation with nothing significant
+    is stated as such, never silently omitted.
+
+    Parameters
+    ----------
+    summary : dict
+        Output of :func:`build_summary_dict`.
+
+    Returns
+    -------
+    str
+        The full markdown report.
+    """
+    lines = []
+    lines.append(f"# Ripple characterisation report — {summary['source']}")
+    lines.append('')
+    lines.append(f"Generated: {summary['generated_at']}")
+    lines.append('')
+
+    pols = sorted(summary['per_pol'].keys())
+
+    lines.append('## Bottom line')
+    lines.append('')
+    for pol in pols:
+        components = summary['per_pol'][pol]['components']
+        significant = [c for c in components if c['significant']]
+        if not significant:
+            lines.append(f"- **{pol}**: no significant ripple was detected above the noise floor.")
+            continue
+        primary = next((c for c in significant if c['classification'] == 'primary'), significant[0])
+        confidence = _confidence_rating(primary['snr'])
+        lines.append(
+            f"- **{pol}**: a {primary['period_mhz']:.2f} MHz ripple was detected "
+            f"(implied cable length {primary['cable_length_m']:.2f} m at the assumed "
+            f"velocity factor), amplitude {primary['amplitude']:.1%} of the continuum, "
+            f"confidence: **{confidence}** (SNR={primary['snr']:.1f})."
+        )
+        others = [c for c in significant if c is not primary]
+        if others:
+            other_desc = ', '.join(f"{c['period_mhz']:.2f} MHz ({c['classification']})" for c in others)
+            lines.append(f"  Additional significant component(s) on {pol}: {other_desc}.")
+    lines.append('')
+
+    lines.append('## What this means')
+    lines.append('')
+    lines.append(
+        "A standing-wave ripple is a periodic modulation of the measured gain/flux "
+        "versus frequency, caused by a signal reflecting off an impedance mismatch "
+        "somewhere in the receiver chain (e.g. a connector or cable joint) and "
+        "interfering with the direct signal. The period of that modulation in "
+        "frequency maps directly to the round-trip travel time of the reflection, "
+        "and hence to a physical cable length via "
+        f"`L = velocity_factor * c * period / 2` (assumed velocity factor: "
+        f"{summary['velocity_factor']:.3f})."
+    )
+    lines.append('')
+
+    lines.append('## Measured values')
+    lines.append('')
+    lines.append('| Pol | Period (MHz) | Amplitude | Cable length (m) | SNR | Classification | Significant |')
+    lines.append('|---|---|---|---|---|---|---|')
+    for pol in pols:
+        components = summary['per_pol'][pol]['components']
+        if not components:
+            lines.append(f"| {pol} | — | — | — | — | — | no components found |")
+            continue
+        for c in components:
+            lines.append(
+                f"| {pol} | {c['period_mhz']:.2f} | {c['amplitude']:.4f} | "
+                f"{c['cable_length_m']:.2f} | {c['snr']:.1f} | {c['classification']} | "
+                f"{'yes' if c['significant'] else 'no'} |"
+            )
+    lines.append('')
+
+    lines.append('## Caveats')
+    lines.append('')
+    lines.append(
+        "- The reported spectral shape (`alpha_nu0`/`beta`) comes from a single, "
+        "non-iterative power-law fit performed alongside the ripple fit on the "
+        "same data, and is measurably biased by the ripple itself — treat it as "
+        "approximate, not as an independent spectral measurement."
+    )
+    crosscheck = summary.get('known_model_local_alpha_crosscheck')
+    if crosscheck:
+        for pol in sorted(crosscheck.keys()):
+            delta = crosscheck[pol]['delta']
+            if abs(delta) >= _CROSSCHECK_CAVEAT_DELTA_THRESHOLD:
+                lines.append(
+                    f"- **{pol}**: the registered flux model's spectral index disagrees "
+                    f"with the spectral index fit locally from this data by "
+                    f"Delta-alpha = {delta:.3f}. This discrepancy can be mistaken for "
+                    f"ripple if not accounted for — treat any `known`-mode result on "
+                    f"{pol} with this in mind."
+                )
+    lines.append('')
+
+    lines.append('## What would change this measurement')
+    lines.append('')
+    lines.append(
+        f"- **Cable velocity factor**: this report assumed a velocity factor of "
+        f"{summary['velocity_factor']:.3f}. Implied cable length scales linearly with "
+        "this assumption — a different cable type/dielectric would change every "
+        "reported length proportionally, without changing the fitted period itself."
+    )
+    lines.append(
+        "- **Data selection**: the averaged spectrum reflects whichever time-range/ "
+        "elevation-range/channel-range filtering was applied when this run's data "
+        "was loaded. Re-running with a different selection could change the "
+        "measured ripple somewhat."
+    )
+    lines.append('')
+
+    lines.append('## Provenance')
+    lines.append('')
+    bandpass_solution_path = summary.get('bandpass_solution_path')
+    lines.append(
+        f"- Bandpass solution: {bandpass_solution_path if bandpass_solution_path else 'none — raw data'}"
+    )
+    lines.append(f"- Physical model mode: {summary['physical_model_mode']}")
+    lines.append(f"- Run timestamp: {summary['run_ts'] or 'unknown'}")
+    lines.append(f"- Workflow run ID: {summary['workflow_run_id'] or 'unknown'}")
+    lines.append(f"- Git commit: {summary['git_commit'] or 'unknown'}")
+    lines.append('')
+
+    return '\n'.join(lines)

@@ -111,6 +111,8 @@ def characterise_ripple(
         ``known_model_local_alpha_crosscheck`` (dict or ``None`` if the
         source has no registered flux model),
         ``period_bounds_mode``, ``period_bounds_used_mhz`` (``{min, max}``),
+        ``velocity_factor``, ``tau_ripple`` (echoed back from the arguments
+        of the same name, for provenance/reporting),
         ``freqs_hz`` (the frequency grid, shared across polarisations),
         ``per_pol``: dict keyed by polarisation label, each value a dict
             with ``power_law_fit`` (the local fit, always computed),
@@ -235,6 +237,8 @@ def characterise_ripple(
         'known_model_local_alpha_crosscheck': known_model_local_alpha_crosscheck,
         'period_bounds_mode': period_bounds_mode,
         'period_bounds_used_mhz': {'min': float(period_min_mhz), 'max': float(period_max_mhz)},
+        'velocity_factor': float(velocity_factor),
+        'tau_ripple': float(tau_ripple),
         'freqs_hz': freqs_hz,
         'per_pol': per_pol,
     }

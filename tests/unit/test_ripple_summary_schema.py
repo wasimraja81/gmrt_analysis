@@ -23,6 +23,7 @@ _SCHEMA_TOP_LEVEL_KEYS = {
     'schema', 'generated_at', 'run_ts', 'workflow_run_id', 'git_commit',
     'source', 'physical_model_mode', 'known_model_used',
     'bandpass_solution_path', 'period_bounds_mode', 'period_bounds_used_mhz',
+    'velocity_factor', 'tau_ripple',
     'known_model_local_alpha_crosscheck', 'per_pol',
 }
 _PER_POL_KEYS = {'power_law_fit', 'noise_floor_sigma', 'rms_before', 'rms_after', 'components'}

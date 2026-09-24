@@ -768,6 +768,16 @@ confidence rating), a plain-language explanation, a measured-values table, a
 plain language when present (operationalising the 3C468.1 Δα≈0.49 finding as
 actionable text, not just a JSON field), a
 "what-would-change-this-measurement" section, and a provenance footer.
+Confidence rating is a simple SNR-banded heuristic (`>=10` high, `>=5`
+moderate, else low) — not a rigorously derived statistic, documented as such
+in the function's docstring.
+
+Needed `velocity_factor`/`tau_ripple` to be echoed back from
+`characterise_ripple()`'s own arguments so the report's "what would change
+this measurement" section could reference the actual velocity factor used —
+added as two small additive top-level fields to both `characterise_ripple()`'s
+return dict (RC-10) and `build_summary_dict()`'s schema (RC-12); no existing
+key removed or renamed, both tickets' existing tests pass unchanged.
 
 ### Acceptance criteria
 
