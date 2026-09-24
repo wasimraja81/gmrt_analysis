@@ -299,27 +299,62 @@ period-detection idea; implementation is fresh.
 - `derive_fourier_period_bounds(freqs_hz) -> (period_min_mhz, period_max_mhz)`
   — Nyquist-style bound from channel spacing and total bandwidth
   (`period_min = 2·Δν`, `period_max = span`).
-- `find_ripple_period_candidates(freqs_hz, residual, period_min_mhz, period_max_mhz, peak_snr_threshold=3.0) -> dict`
+- `find_ripple_period_candidates(freqs_hz, residual, period_min_mhz, period_max_mhz, peak_snr_threshold=10.0) -> dict`
   returning `{'periods_mhz': [...], 'snrs': [...], 'noise_floor_power': float}`.
 
 ### Acceptance criteria
 
-Single-sinusoid synthetic residual → exactly one candidate within a few % of
-truth; pure-noise input → empty candidate list at the given threshold.
+Single-sinusoid synthetic residual → true period recovered among the
+candidates within a few % of truth; pure-noise input → empty candidate list
+at a suitably strict threshold.
 
 ### Unit / integration tests
 
 - `derive_fourier_period_bounds`: known `Δν`/span → exact `period_min = 2·Δν`,
   `period_max = span`.
-- Single known sinusoid (e.g. `P0=8.0 MHz`, `A0=0.02`) + low noise → one
-  candidate, `|P_recovered - 8.0| / 8.0 < 0.05`, `snr > peak_snr_threshold`.
-- Two independent sinusoids + noise → two candidates recovered, either order.
-- Pure Gaussian noise, no injected sinusoid → empty candidate list (the
-  "don't fit the noise" guarantee from `ripple_convergence_todos.md`).
+- Single known sinusoid (e.g. `P0=8.0 MHz`) + realistic noise → true period
+  recovered among the candidates, `|P_recovered - 8.0| / 8.0 < 0.05`,
+  `snr > 10`.
+- Two independent sinusoids + noise → both true periods recovered among the
+  candidates.
+- Pure Gaussian noise, no injected sinusoid → empty candidate list at a
+  strict threshold (the "don't fit the noise" guarantee from
+  `ripple_convergence_todos.md`).
 - Ripple period exactly at `period_min_mhz` boundary → still detected.
 - Ripple period exactly at `period_max_mhz` boundary → still detected.
 - Fewer than ~16 finite residual points → returns empty lists, does not raise
   (deliberately looser contract than RC-06's).
+
+### Open questions / decisions deferred
+
+**Finding from unit testing — default `peak_snr_threshold` raised from 3.0 to
+10.0:** FFT power of Gaussian noise is exponentially distributed
+(`P(power > k*median) ~= exp(-k*ln2)` per bin). This function searches every
+bin in the requested range at once — for a realistic GMRT channel count
+(~128 channels, ~65 rfft bins), a threshold of 3-5 gives a near-certain
+chance of at least one spurious candidate from pure noise alone (confirmed
+directly: thresholds of 3 and 5 both produced multiple false candidates from
+pure Gaussian noise in testing). A Bonferroni-style budget for ~65-250
+independent bins requires roughly `ln(n_bins/0.05)/ln(2)` ~ 10-12. The
+default is now 10.0; this is a **statistical property of scanning many FFT
+bins at once**, not implementation-specific, and should carry through to
+RC-13's `--peak-snr-threshold` CLI default.
+
+**Finding from unit testing — short-period ripples leak into the near-DC
+(long-period) end of the search range:** a ripple whose period spans only a
+few cycles of the total bandwidth (e.g. an 8 MHz period over a 32 MHz span —
+only 4 cycles; a real GMRT case is worse still, e.g. an 8-20 MHz ripple over
+a 16 MHz GSB band is 1-2 cycles) causes genuine Hann-window mainlobe leakage
+into low-frequency (long-period) bins, which can register as an additional,
+spurious low-confidence candidate near `period_max_mhz`. This is expected
+spectral-leakage behaviour at low cycle counts, not a bug, and is why RC-05
+is explicitly a **candidate-seeding** step: RC-06's proper least-squares
+harmonic fit (using the injected candidates as seeds) is what separates real
+ripple components from seed noise. **Implication for RC-06/RC-10:** the
+harmonic fit and/or the significance-vs-noise-floor classification must not
+assume every RC-05 candidate is real — low-cycle-count ripples (short
+periods relative to a narrow GMRT band) are exactly the regime where this
+matters most.
 
 ---
 
