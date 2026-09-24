@@ -29,7 +29,7 @@ explicitly deferred to a future branch; see "Explicitly out of scope" below.*
 | RC-12 | JSON + CSV summary schema v2 | DONE | RC-10 | `2cb2639` |
 | RC-13 | CLI driver: `src/characterise_ripple.py` | DONE | RC-10, RC-11, RC-12, RC-02 | `b32149d` |
 | RC-14 | GMRT-engineer markdown report generator | DONE | RC-10, RC-07, RC-12 | `07caa59` |
-| RC-15 | Shell regression gate (real-data end-to-end) | TODO | RC-13 | |
+| RC-15 | Shell regression gate (real-data end-to-end) | DONE | RC-13 | `e16bbba` |
 | RC-16 | Validation against the prototype's existing JSON outputs | TODO | RC-13 | |
 | RC-17 | gh-pages publishing wiring | DEFERRED (follow-on branch) | — | |
 | RC-18 | Repo-wide runtime `requirements.txt` | OPTIONAL (not scoped to this branch) | — | |
