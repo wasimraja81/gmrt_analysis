@@ -24,8 +24,8 @@ explicitly deferred to a future branch; see "Explicitly out of scope" below.*
 | RC-07 | `period_to_cable_length_m()` | DONE | RC-01 | `ac6602f` |
 | RC-08 | Extract `get_vector_avg_spectrum()` in `ugmrt_query.py` | DONE | RC-01 | `e279b1a` |
 | RC-09 | Relationship to `run_bandpass_diagnostics()`'s inline fit (decision + optional fix) | DONE | — | `f96af64` |
-| RC-10 | `characterise_ripple()` orchestration function | TODO | RC-03…RC-08 | |
-| RC-11 | Diagnostics plot for the science user | TODO | RC-10 | |
+| RC-10 | `characterise_ripple()` orchestration function | DONE | RC-03…RC-08 | `3f629de` |
+| RC-11 | Diagnostics plot for the science user | DONE | RC-10 | `1bccb47` |
 | RC-12 | JSON + CSV summary schema v2 | TODO | RC-10 | |
 | RC-13 | CLI driver: `src/characterise_ripple.py` | TODO | RC-10, RC-11, RC-12, RC-02 | |
 | RC-14 | GMRT-engineer markdown report generator | TODO | RC-10, RC-07, RC-12 | |
