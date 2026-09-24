@@ -18,8 +18,12 @@ corrected UVFITS (that is explicitly out of scope for this branch; see
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
+import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -30,6 +34,7 @@ import matplotlib.pyplot as plt
 try:
     from modules import ugmrt_query as q
     from modules import ripple_characterisation as rc
+    from modules.workflow_common import start_run
 except ImportError:
     print(
         "ERROR: Could not import modules. Make sure you're running from the "
@@ -445,3 +450,114 @@ def write_components_csv(summary: dict, path) -> Path:
         writer.writeheader()
         writer.writerows(rows)
     return path
+
+
+def _sanitize_for_filename(name: str) -> str:
+    return re.sub(r'[^A-Za-z0-9_.-]+', '_', name.strip())
+
+
+def _git_commit_short() -> str:
+    """Best-effort short git commit hash for provenance, matching the
+    ``git rev-parse`` convention already used by ``bin/publish_gh_pages.sh``.
+    Returns ``''`` (never raises) if not run from inside a git checkout."""
+    try:
+        out = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip() if out.returncode == 0 else ''
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description='Characterise the standing-wave ripple in a source spectrum: '
+                     'fit + plot + JSON/CSV summary + GMRT-engineer report (RC-13).',
+    )
+    p.add_argument('--fits', required=True, help='Path to the UVFITS file.')
+    p.add_argument('--source', required=True, help='Source name to characterise.')
+    p.add_argument('--index-cache', default=None,
+                    help='Row-index cache path (default: derived from --fits).')
+    p.add_argument('--bandpass-solution', default=None,
+                    help='Bandpass solution NPZ path. Omitted -> characterise raw '
+                         '(uncorrected) visibilities directly.')
+    p.add_argument('--chan-range', nargs=2, type=int, metavar=('START', 'END'), default=None,
+                    help='Inclusive channel-number range to load.')
+    p.add_argument('--elevation-min', type=float, default=None, dest='elevation_min')
+    p.add_argument('--elevation-max', type=float, default=None, dest='elevation_max')
+    p.add_argument('--physical-model-mode', choices=['fit', 'known'], default='fit')
+    p.add_argument('--n-harmonics', type=int, default=1)
+    p.add_argument('--peak-snr-threshold', type=float, default=10.0)
+    p.add_argument('--tau-ripple', type=float, default=2.0)
+    p.add_argument('--velocity-factor', type=float, default=1.0)
+    p.add_argument('--period-bounds-mode', choices=['fourier', 'manual'], default='fourier')
+    p.add_argument('--period-min-mhz', type=float, default=None)
+    p.add_argument('--period-max-mhz', type=float, default=None)
+    p.add_argument('--outdir', default='./ripple_characterisation_out')
+    p.add_argument('--outfile-prefix', default=None,
+                    help='Output filename stem. Default: characterise_ripple_<source>.')
+    p.add_argument('--provenance-dir', default='',
+                    help='Write run provenance files (.cmd and .log) to this directory. '
+                         'If not set, defaults to ./provenance_logs/')
+    p.add_argument('--workflow-run-id', default=os.environ.get('GITHUB_RUN_ID', ''),
+                    help='Optional workflow run ID for provenance (default: $GITHUB_RUN_ID '
+                         'if set, else empty).')
+    return p
+
+
+def main(argv=None):
+    p = _build_arg_parser()
+    args = p.parse_args(argv)
+
+    if args.period_bounds_mode == 'manual' and (args.period_min_mhz is None or args.period_max_mhz is None):
+        p.error("--period-bounds-mode=manual requires both --period-min-mhz and --period-max-mhz.")
+
+    prefix = args.outfile_prefix or f'characterise_ripple_{_sanitize_for_filename(args.source)}'
+
+    prov_dir_arg = args.provenance_dir.strip()
+    provenance_dir = Path(prov_dir_arg).expanduser().resolve() if prov_dir_arg else None
+    run_ctx = start_run(Path(__file__), prefix, provenance_dir=provenance_dir)
+
+    index = q.get_or_build_row_index(args.fits, cache_path=args.index_cache, write_cache=True)
+    vis = q.load_vis_for_source(
+        index, source=args.source, stokes=('RR', 'LL'),
+        chan_range=tuple(args.chan_range) if args.chan_range else None,
+        elevation_min_deg=args.elevation_min, elevation_max_deg=args.elevation_max,
+    )
+    solution = q.load_bandpass_solution(args.bandpass_solution) if args.bandpass_solution else None
+
+    result = characterise_ripple(
+        vis, solution, args.source,
+        physical_model_mode=args.physical_model_mode,
+        n_harmonics=args.n_harmonics,
+        peak_snr_threshold=args.peak_snr_threshold,
+        period_bounds_mode=args.period_bounds_mode,
+        period_min_mhz=args.period_min_mhz,
+        period_max_mhz=args.period_max_mhz,
+        velocity_factor=args.velocity_factor,
+        tau_ripple=args.tau_ripple,
+    )
+
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    plot_path = outdir / f'{prefix}.png'
+    plot_ripple_characterisation(result, plot_path)
+
+    summary = rc.build_summary_dict(
+        result, run_ts=run_ctx.run_ts, workflow_run_id=args.workflow_run_id,
+        git_commit=_git_commit_short(), bandpass_solution_path=args.bandpass_solution,
+    )
+    json_path = write_summary_json(summary, outdir / f'{prefix}_summary.json')
+    csv_path = write_components_csv(summary, outdir / f'{prefix}_components.csv')
+
+    report_path = outdir / f'{prefix}_engineer_report.md'
+    report_path.write_text(rc.render_engineer_report_md(summary))
+
+    print(f'Wrote:\n  {plot_path}\n  {json_path}\n  {csv_path}\n  {report_path}')
+
+
+if __name__ == '__main__':
+    main()
