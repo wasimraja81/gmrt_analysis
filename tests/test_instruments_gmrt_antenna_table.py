@@ -2,20 +2,23 @@ import os
 
 import pytest
 
-from instruments.gmrt.antenna_table import Antenna, read_antenna_table, resolve_active_antennas
+from data_io.antenna_table import Antenna, read_antenna_table
+from instruments.gmrt.antenna_table import resolve_active_antennas
 
 REAL_GWB_FITS = "/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS"
 REAL_GSB_FITS = "/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_gsb.FITS"
 
 
 def _sample_antennas():
+    # Positions are irrelevant to these tests (name-matching only) -- 0.0
+    # placeholders, not meant to be realistic.
     return [
-        Antenna(station_number=1, name="C00:01"),
-        Antenna(station_number=2, name="C01:02"),
-        Antenna(station_number=8, name="C07:08"),
-        Antenna(station_number=20, name="S01:20"),
-        Antenna(station_number=24, name="S05:24"),
-        Antenna(station_number=25, name="W01:25"),
+        Antenna(station_number=1, name="C00:01", x_m=0.0, y_m=0.0, z_m=0.0),
+        Antenna(station_number=2, name="C01:02", x_m=0.0, y_m=0.0, z_m=0.0),
+        Antenna(station_number=8, name="C07:08", x_m=0.0, y_m=0.0, z_m=0.0),
+        Antenna(station_number=20, name="S01:20", x_m=0.0, y_m=0.0, z_m=0.0),
+        Antenna(station_number=24, name="S05:24", x_m=0.0, y_m=0.0, z_m=0.0),
+        Antenna(station_number=25, name="W01:25", x_m=0.0, y_m=0.0, z_m=0.0),
     ]
 
 
@@ -47,7 +50,7 @@ def test_resolve_active_antennas_reports_unmatched_names_instead_of_ignoring_the
 
 
 def test_resolve_active_antennas_matches_an_exact_full_name_too():
-    antennas = _sample_antennas() + [Antenna(station_number=30, name="NOCOLON")]
+    antennas = _sample_antennas() + [Antenna(station_number=30, name="NOCOLON", x_m=0.0, y_m=0.0, z_m=0.0)]
     result = resolve_active_antennas(antennas, dud_names=["NOCOLON"])
 
     assert {a.name for a in result.dud_antennas} == {"NOCOLON"}

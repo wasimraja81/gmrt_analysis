@@ -56,8 +56,12 @@ def _make_synthetic_gwb_file(path, extra_antenna=None):
     an_columns = fits.ColDefs([
         fits.Column(name="NOSTA", format="J", array=np.array(nostas, dtype=np.int32)),
         fits.Column(name="ANNAME", format="8A", array=np.array(annames)),
+        fits.Column(name="STABXYZ", format="3D", array=np.zeros((len(nostas), 3))),
     ])
     an_hdu = fits.BinTableHDU.from_columns(an_columns, name="AIPS AN")
+    an_hdu.header["ARRAYX"] = 1657004.629
+    an_hdu.header["ARRAYY"] = 5797894.3801
+    an_hdu.header["ARRAYZ"] = 2073303.1705
 
     fits.HDUList([hdu, su_hdu, an_hdu]).writeto(path)
     return path
@@ -144,8 +148,12 @@ def _make_synthetic_file_with_a_missing_baseline(path):
     an_columns = fits.ColDefs([
         fits.Column(name="NOSTA", format="J", array=np.array([1, 2, 3], dtype=np.int32)),
         fits.Column(name="ANNAME", format="8A", array=np.array(["C00:01", "C01:02", "C02:03"])),
+        fits.Column(name="STABXYZ", format="3D", array=np.zeros((3, 3))),
     ])
     an_hdu = fits.BinTableHDU.from_columns(an_columns, name="AIPS AN")
+    an_hdu.header["ARRAYX"] = 1657004.629
+    an_hdu.header["ARRAYY"] = 5797894.3801
+    an_hdu.header["ARRAYZ"] = 2073303.1705
     fits.HDUList([hdu, su_hdu, an_hdu]).writeto(path)
     return path
 

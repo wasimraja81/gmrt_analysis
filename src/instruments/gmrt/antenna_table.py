@@ -1,9 +1,13 @@
-"""GMRT antenna table reading and DUD-antenna resolution.
+"""GMRT-specific antenna-naming convention: DUD-antenna resolution.
 
 GMRT's AIPS AN table names antennas as "<code>:<station number>", e.g.
 "C00:01" -- the code identifies the physical antenna, the station number
 is its AIPS-internal index (NOSTA). Antenna names to exclude are given as
-bare codes, e.g. "C07", matched against the table by prefix.
+bare codes, e.g. "C07", matched against the table by prefix. Reading the
+antenna table itself (names, positions) is generic AIPS format knowledge,
+not a GMRT fact -- see `data_io.antenna_table` for that; only the naming
+convention and DUD list here are GMRT-specific (split 2026-09-25, at the
+user's request: "what is generic should remain generic").
 
 "DUD" here means specifically the two antennas with a permanent, structural
 quirk in GMRT's own AN-table conventions (see `GMRT_STRUCTURAL_DUD_NAMES`)
@@ -20,9 +24,8 @@ distinction -- is a separate, per-observation concern, not hardcoded here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from data_io.raw_data_access import open_fits_readonly
+from data_io.antenna_table import Antenna
 
 # The two antennas GMRT's own AN-table conventions carry with permanently
 # invalid/placeholder positions -- confirmed directly (2026-09-24): GSB's AN
@@ -38,27 +41,11 @@ from data_io.raw_data_access import open_fits_readonly
 GMRT_STRUCTURAL_DUD_NAMES = ["C07", "S05"]
 
 
-@dataclass(frozen=True)
-class Antenna:
-    station_number: int  # AIPS NOSTA, 1-indexed
-    name: str  # e.g. "C00:01"
-
-
 @dataclass
 class ActiveAntennaResolution:
     active_antennas: list[Antenna]  # antenna table minus DUDs, table order preserved
     dud_antennas: list[Antenna]  # the excluded ones
     unmatched_dud_names: list[str]  # configured DUD names that matched no antenna
-
-
-def read_antenna_table(fits_path: Path | str) -> list[Antenna]:
-    """Read every antenna in the AIPS AN table, in table order."""
-    with open_fits_readonly(fits_path) as hdul:
-        an = hdul["AIPS AN"]
-        return [
-            Antenna(station_number=int(row["NOSTA"]), name=str(row["ANNAME"]).strip())
-            for row in an.data
-        ]
 
 
 def resolve_active_antennas(antennas: list[Antenna], dud_names: list[str]) -> ActiveAntennaResolution:

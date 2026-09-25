@@ -14,9 +14,10 @@ from pathlib import Path
 
 import numpy as np
 
+from data_io.antenna_table import Antenna, read_array_reference_position_m
+from data_io.known_observatory_locations import KNOWN_OBSERVATORY_LOCATIONS
 from data_io.raw_data_access import open_fits_readonly
 from data_io.row_index import RowIndex
-from instruments.gmrt.antenna_table import Antenna
 
 # The AIPS extended baseline encoding's own ceiling (see decode_baseline in
 # data_io/uvfits_group_params.py) -- an antenna count above this could never
@@ -41,6 +42,34 @@ def check_telescope_is_gmrt(fits_path: Path | str) -> None:
         raise GmrtValidationError(
             f"{fits_path}: TELESCOP={telescop!r}, expected 'GMRT' -- this doesn't look "
             f"like a GMRT observation."
+        )
+
+
+def check_array_position_matches_known_location(fits_path: Path | str, tolerance_deg: float = 0.5) -> None:
+    """Raise if this file's own recorded array position (`ARRAYX/Y/Z`) isn't
+    close to GMRT's known, published location.
+
+    `tolerance_deg` is generous on purpose (~55 km at this latitude) -- this
+    is a sanity check for a corrupted or wrong-telescope array position, not
+    a precise geodesy check; `check_telescope_is_gmrt` already catches an
+    honestly-mislabeled file, this catches an internally inconsistent one
+    (TELESCOP says GMRT, but the recorded position doesn't match).
+    """
+    from astropy.coordinates import EarthLocation
+    import astropy.units as u
+
+    x, y, z = read_array_reference_position_m(fits_path)
+    location = EarthLocation.from_geocentric(x, y, z, unit=u.m)
+    known = KNOWN_OBSERVATORY_LOCATIONS["GMRT"]
+
+    lat_diff = abs(location.lat.deg - known.latitude_deg)
+    lon_diff = abs(location.lon.deg - known.longitude_deg)
+    if lat_diff > tolerance_deg or lon_diff > tolerance_deg:
+        raise GmrtValidationError(
+            f"{fits_path}: array position resolves to lat={location.lat.deg:.3f}, "
+            f"lon={location.lon.deg:.3f}, more than {tolerance_deg} deg from GMRT's known "
+            f"location (lat={known.latitude_deg}, lon={known.longitude_deg}) -- "
+            f"ARRAYX/Y/Z may be corrupted, or this isn't actually a GMRT file."
         )
 
 

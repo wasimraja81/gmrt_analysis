@@ -37,16 +37,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from data_io.antenna_table import Antenna, read_antenna_table
 from data_io.row_index import RowIndex, build_row_index
-from instruments.gmrt.antenna_table import (
-    GMRT_STRUCTURAL_DUD_NAMES,
-    Antenna,
-    read_antenna_table,
-    resolve_active_antennas,
-)
+from instruments.gmrt.antenna_table import GMRT_STRUCTURAL_DUD_NAMES, resolve_active_antennas
 from instruments.gmrt.sanity_checks import (
     RowCountConsistencyReport,
     check_antenna_count_is_plausible,
+    check_array_position_matches_known_location,
     check_row_count_consistency,
     check_telescope_is_gmrt,
 )
@@ -83,10 +80,11 @@ def build_gmrt_row_index(
     normal use. Which antennas are merely dead for this one observation is
     not a parameter -- it's derived from the row index itself, once built.
 
-    Runs every sanity check scoped for T5c: `TELESCOP == 'GMRT'` and antenna-
-    count plausibility first (cheap, header-only, so a wrong file fails
-    before the expensive full-file scan even starts), then, once the index
-    is built, row-count consistency.
+    Runs every sanity check scoped for T5c: `TELESCOP == 'GMRT'`, the array
+    position against GMRT's known location, and antenna-count plausibility
+    first (cheap, header-only, so a wrong file fails before the expensive
+    full-file scan even starts), then, once the index is built, row-count
+    consistency.
 
     `strict=True` (the default) raises `GmrtRowCountMismatch` if every
     integration has the same row count but it doesn't match what the
@@ -102,6 +100,7 @@ def build_gmrt_row_index(
     structural_dud_names = list(GMRT_STRUCTURAL_DUD_NAMES if structural_dud_names is None else structural_dud_names)
 
     check_telescope_is_gmrt(fits_path)
+    check_array_position_matches_known_location(fits_path)
     antennas = read_antenna_table(fits_path)
     check_antenna_count_is_plausible(antennas)
 
