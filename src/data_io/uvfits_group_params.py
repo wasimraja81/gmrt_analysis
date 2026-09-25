@@ -98,6 +98,7 @@ def read_all_param_columns(
     max_chunk_bytes: int | None = None,
     ram_fraction: float = DEFAULT_RAM_FRACTION_TO_USE,
     verbose: bool = False,
+    logger=None,
 ) -> np.ndarray:
     """Read every parameter column for every row, as a ``(gcount, pcount)``
     float64 array -- touching only the parameter bytes, never the visibility
@@ -123,6 +124,12 @@ def read_all_param_columns(
     even has a fixed record length at all. Those are per-file facts a
     generic reader must not assume; a larger, memory-budget-sized block is
     chosen only because fewer, bigger reads mean fewer separate file opens.
+
+    `verbose=True` reports progress per chunk. If `logger` is given, progress
+    goes through it (`logger.info`) -- e.g. a pipeline stage's own
+    `RunManifest`-scoped logger, so progress lands in that run's actual log
+    file, not just stdout. Without a `logger`, falls back to `print()`, for
+    standalone use with no run/manifest involved (a notebook, a quick script).
     """
     floats_per_group = layout.pcount + layout.data_floats_per_group
     row_bytes = floats_per_group * 4  # dtype ">f4" is 4 bytes per float
@@ -146,11 +153,14 @@ def read_all_param_columns(
         del chunk  # closes this block's own mapping, releasing its pages before the next block opens
         if verbose:
             elapsed = time.monotonic() - started
-            print(
+            message = (
                 f"read_all_param_columns: chunk {chunk_num}/{n_chunks}, "
-                f"rows [{start}, {stop}) of {layout.gcount}, {elapsed:.1f}s elapsed",
-                flush=True,
+                f"rows [{start}, {stop}) of {layout.gcount}, {elapsed:.1f}s elapsed"
             )
+            if logger is not None:
+                logger.info(message)
+            else:
+                print(message, flush=True)
     return result
 
 

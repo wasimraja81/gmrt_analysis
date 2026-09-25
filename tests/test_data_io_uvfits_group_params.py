@@ -164,6 +164,47 @@ def test_read_all_param_columns_with_a_small_chunk_budget_matches_reading_it_who
     np.testing.assert_array_equal(ant1 == ant2, [False, False, True, False, False, True, False])
 
 
+def test_read_all_param_columns_verbose_progress_goes_through_a_given_logger():
+    # A pipeline stage passes its own RunManifest-scoped logger here so scan
+    # progress lands in that run's actual log file, not just stdout -- a real
+    # gap found running this pipeline for real (2026-09-25): the logger this
+    # project's own stages use is uniquely named per run and doesn't
+    # propagate, so print() output never reached it.
+    import logging
+
+    scratch = make_scratch_dir("uvfits_verbose_logger")
+    path = scratch / "synthetic.fits"
+    n = 7
+    known_baseline = np.array(
+        [1 * 256 + 2, 3 * 256 + 4, 7 * 256 + 7, 1 * 256 + 3, 2 * 256 + 4, 7 * 256 + 7, 5 * 256 + 6],
+        dtype=np.float64,
+    )
+    _make_synthetic_groups_fits(
+        path,
+        uu=np.arange(n, dtype=np.float64), vv=np.zeros(n), ww=np.zeros(n),
+        baseline=known_baseline,
+        date1=np.full(n, 2460100.5), date2=np.zeros(n),
+        source=np.ones(n),
+    )
+    layout = read_group_params_layout(path)
+    row_bytes = (layout.pcount + layout.data_floats_per_group) * 4
+
+    records = []
+
+    class _ListHandler(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    logger = logging.getLogger("test_read_all_param_columns_verbose_progress")
+    logger.setLevel(logging.INFO)
+    logger.addHandler(_ListHandler())
+
+    read_all_param_columns(path, layout, max_chunk_bytes=row_bytes * 2, verbose=True, logger=logger)
+
+    assert any("chunk" in message for message in records)
+    assert len(records) >= 3  # forces ~4 chunks for n=7, same budget as the test above
+
+
 _RUN_REAL_GWB_SCAN = os.environ.get("RUN_REAL_GWB_SCAN") == "1"
 
 

@@ -55,7 +55,9 @@ def run_build_index_stage(config: dict) -> Path:
             return idx_path
 
         manifest.logger.info("building row index for %s", fits_path)
-        index, resolution = build_gmrt_row_index(fits_path, strict=strict, verbose=True)
+        index, resolution = build_gmrt_row_index(
+            fits_path, strict=strict, verbose=True, logger=manifest.logger
+        )
         manifest.logger.info(
             "index built: %d rows, %d active antennas, %d dead-this-observation: %s",
             index.gcount,
