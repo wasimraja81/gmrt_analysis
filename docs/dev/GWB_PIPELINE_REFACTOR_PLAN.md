@@ -1,8 +1,12 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0-T4, T5a, T5b done (2026-09-24), Phase A complete. T5c (GMRT data
-adapter) in progress — antenna table + DUD resolution done; row-index building,
-channel-range mapping, and vis loading for one source still pending.
+**Status line:** T0-T4, T5a, T5b, T5c done (2026-09-24), Phase A complete. T5c's generic
+index/select/read stack (`data_io/row_index.py`, `row_selection.py`,
+`visibility_data.py`), GMRT orchestration layer, and sanity checks
+(`instruments/gmrt/row_index.py`, `sanity_checks.py`) are done, 90 tests passing. Two
+originally-scoped sanity checks (frequency-band, expected-calibrators) were dropped
+after review found them mis-scoped, not deferred — see T5c for why. Next: T5d (outer
+solve/diagnose/flag loop).
 
 ## Objective
 
@@ -39,6 +43,20 @@ standing rule 8) supplied as data/config to that generic core, not woven into it
    user or a collaborator — must be able to reproduce exactly what an earlier run did, via
    the manifest `src/provenance/` writes (git state, resolved parameters, input identity),
    not by remembering what flags were passed.
+
+   **Hardened (2026-09-25), after a real run was killed mid-scan** (session teardown, not a
+   code bug) **and left no trace at all** — no manifest, no run-index entry, just a
+   one-line log fragment. `RunManifest` now writes a manifest immediately on `__enter__`
+   (`outcome.status = "started"`), before any of the stage's own work runs, and overwrites
+   the same file in place at `__exit__` with the final outcome — a manifest whose status is
+   still `"started"` means the run never finished, instead of nothing existing at all. Both
+   the manifest and `save_row_index`'s `.npz` output are now written atomically (temp file
+   in the same directory, then `os.replace`, cleaned up on any exception) — a process
+   killed mid-write leaves the previous complete file (or none), never a truncated one that
+   looks present but isn't valid. The `build_index` stage is also idempotent by default: if
+   an index already exists at its target path, the expensive full-file scan is skipped
+   (still writes a fresh manifest recording the skip) — `build_index.force_rebuild: true`
+   forces a rebuild.
 5. **Dev-test-dev-test at the microscopic level.** One focused change, then verify, before
    the next. Don't batch untested changes across a ticket.
 6. **Venv-only, no system installs.** All Python work runs inside `gmrt/` at the repo
@@ -81,6 +99,19 @@ standing rule 8) supplied as data/config to that generic core, not woven into it
    cached index used to check "does this dataset have autocorrelations" may itself have
    been built by code that drops them, which would make that check say nothing reliable
    about the raw file at all.
+9. **Visibility data is indexed by antenna identity, never by assumed position.** No stage
+   may assume every integration has the same antennas present, the same row count, or that
+   baseline N always means the same antenna pair — an antenna can be dead for the whole
+   observation, or (in principle, on a file this pipeline hasn't seen yet) drop out or come
+   back mid-run. Every stage reads a row's own `ant1`/`ant2` and looks up by that identity,
+   the way `solve_channel_gains` (T5a) already does by taking explicit `ant1_idx`/`ant2_idx`
+   arrays rather than assuming a dense fixed layout. A stage that needs a fixed, dense,
+   flagged-for-gaps shape — because it's handing data to an external tool that expects
+   conventional UVFITS — builds that as an explicit, opt-in export step, never as this
+   pipeline's internal default. Confirmed directly (2026-09-24) that GWB's own data doesn't
+   need this in practice — all 10,476 integrations in the real file have the same 28
+   antennas and the same 378-row length throughout — but the code must not rely on that
+   holding for a different file.
 
 ## Reference material
 
@@ -214,17 +245,32 @@ at that point).
   This ticket's correctness gate is the file:line citations above, each checked directly
   against the code. Its output is the audit finding itself; there is no test file for it.
 
-  Still open: one integration of one source in the GWB cached index has 378 rows,
-  matching the cross-only formula for 28 antennas — GMRT has 30. Worth a look later,
-  most likely a scan-specific detail: some antennas may have still been slewing onto
-  source for that particular integration.
-- **T5c — GMRT data adapter (`src/instruments/gmrt/`) — IN PROGRESS.** Antenna table
-  reading, DUD-antenna resolution, row-index building, GWB channel-range/frequency
-  mapping, vis loading for one source. This is where GMRT-specific FITS-format knowledge
-  belongs — not in `src/engine/`. Produces the vis/model/antenna-index arrays T5a's
-  solver consumes. T5b's audit is done: the row-index builder loads everything
-  unconditionally (no correlation-type filtering), matching every other consumer except
-  the solve itself — that's the design to follow here.
+  Resolved (2026-09-24), checked directly against the row index: 378 rows/integration
+  is not scan-specific, it holds for every integration of every one of the 13 sources
+  in this file, and no autocorrelations are recorded anywhere in it — 378 = C(28,2),
+  cross-only, 28 antennas. The two antennas that never appear in `ant1`/`ant2` anywhere
+  in the file are station 4 (`C03:04`) and station 10 (`C10:10`) — not the `C07`/`S05`
+  pair the pipeline's DUD config carries, and this file's AN table has no antenna named
+  `C07` or `S05` at all (the C-arm sequence in it runs ...C06, C08... with no C07).
+  Resolved (2026-09-24, confirmed by the user): not a naming difference, not a DUD at
+  all in the structural sense. `C03:04`/`C10:10` were dead for this specific
+  observation only — valid AN-table positions, will have real data again once
+  repaired — and were deliberately omitted from the raw file at the correlator to
+  reduce data size, distinct from `C07`/`S05`'s permanent, structural AN-table
+  placeholder-position quirk. Two exclusion concepts now kept separate rather than
+  conflated into one DUD list — see T5c below.
+- **T5c — GMRT data adapter (`src/instruments/gmrt/`) — DONE (2026-09-24).** The
+  index/select/read stack, the GMRT orchestration layer, and every sanity check that
+  survived scrutiny are built and tested (89 tests passing). Two items originally
+  scoped here were dropped, not deferred — see below for why. Channel-range/frequency
+  mapping needed no dedicated GMRT code in the end: it's fully self-contained in the
+  UVFITS metadata already (`chan_freqs_hz`, generic), so any caller turns a frequency
+  range into channel indices directly and passes them to `read_visibility_data`'s
+  `axis_selection`. This is where GMRT-specific FITS-format knowledge belongs — not in
+  `src/engine/`. Produces the vis/model/antenna-index arrays T5a's solver consumes.
+  T5b's audit is done: the row-index builder loads everything unconditionally (no
+  correlation-type filtering), matching every other consumer except the solve
+  itself — that's the design followed here and in `select_rows`.
 
   **First slice done (2026-09-23): `src/instruments/gmrt/antenna_table.py`**
   (`read_antenna_table`, `resolve_active_antennas`). Matches a configured DUD name
@@ -247,6 +293,107 @@ at that point).
   same for both" (confirmed by the user) is true of which antennas are dead; it is not
   true that the two correlators represent that fact in the data the same way.
 
+  **Second slice done (2026-09-24): `src/data_io/uvfits_group_params.py`,
+  `src/data_io/row_index.py`, `src/data_io/row_selection.py`.** Telescope-agnostic, not
+  GMRT-specific — the GMRT-specific pieces (antenna table, DUD resolution) stay in
+  `src/instruments/gmrt/`, built on top of these.
+  - `uvfits_group_params.py`: reads a random-groups file's parameter columns (BASELINE,
+    SOURCE, UU/VV, DATE, ...) without touching the much larger visibility data. Reads in
+    memory-bounded chunks (a fraction of the host's total RAM, default 20%, `os.sysconf`
+    stdlib-only so this works on the Raspberry Pi target too) rather than one unbounded
+    pass — the archived code's own equivalent pattern held the whole file's touched span
+    resident (22GB+ on the real 389GB GWB file, confirmed directly), which this avoids.
+    Verified against the real file: output matches the pre-existing cached index
+    (`40_014_25jul2021_2.6s_gwb.index.npz`) exactly. An explicit bulk-`file.read()`
+    alternative was built and benchmarked against the same file too, on the theory that
+    one big sequential read might beat many small memmap-triggered page faults — it
+    didn't: 2086.5s vs. the chunked memmap approach's 1764.9s, ~18% slower, with identical
+    output. Kept the memmap approach; the bulk-read variant isn't part of the pipeline.
+  - `row_index.py`: `RowIndex`/`build_row_index` — the one unavoidable full-file pass
+    (every row's SOURCE/BASELINE lives only in that row, confirmed no `AIPS NX` scan
+    table exists in either real file to shortcut it). Reads every data axis by its
+    `CTYPE` label (`STOKES`, `FREQ`, ...), not by assumed position — the real GWB header
+    has `NAXIS=7` (`COMPLEX, STOKES, FREQ, IF, RA, DEC`), not the 4 axes the
+    random-groups convention is often described with; a fixed-position read (what the
+    archived code also does, safely, only because RA/DEC are both length 1 in this data)
+    would silently mis-locate STOKES/FREQ on a file where that isn't true. Also adds
+    `integration_boundaries` (a new integration starts wherever SOURCE or DATE changes),
+    for T5d's per-integration iteration.
+  - `row_selection.py`: `select_rows()` — a generic "any subset of any number of
+    sources" row selector, replacing the shape of the archived `load_vis_for_source`
+    (which required exactly one source as its entry point, confirmed still the shared
+    engine behind `cal_solver.py`, `cal_apply.py`, `plotVis.py`, `preprocess_ugmrt.py` —
+    all its filters, including `uvrange`/`elevation`, are real production requirements,
+    not just diagnostic conveniences). `sources=None` selects from the whole file.
+    `correlation_type` defaults to `"cross"` per the pipeline-wide default. No `max_rows`
+    silent downsampling — `every_nth`/`random_subset_n` are explicit, named, and
+    `random_subset_n` requires a `random_seed` (no seed-less path exists). Cheap and
+    file-I/O-free: works purely from `RowIndex`'s in-memory arrays; the row bytes
+    themselves are read separately, by `read_visibility_data`.
+  - `visibility_data.py`: `read_visibility_data()` reads the actual visibility bytes for
+    a `select_rows()` result. Every axis except `COMPLEX` (mandatorily decoded into
+    real/imag/weight — that's what the FITS convention defines that axis to mean) is
+    handled by one symmetric mechanism, selectable by CTYPE name via `axis_selection`,
+    defaulting to "select everything" when not named — an early version instead hardcoded
+    "only COMPLEX/STOKES/FREQ have selection logic, anything else must have length 1",
+    which would have raised on any file with a genuine multi-IF or multi-pointing axis;
+    corrected after review caught it. Verified against three properties directly, not
+    assumed: (1) known per-row/channel/Stokes values recovered exactly; (2) a second,
+    unrelated axis (`RA`, not `IF`) with length > 1 handled by the same code path, proving
+    the fix isn't secretly IF-specific; (3) shuffled axis order (`FREQ` before `STOKES`,
+    reversed from this file's own order) and a nonstandard CTYPE name both read correctly
+    — found by label via `find_axis`, never assumed position, anywhere.
+  - Real-data finding, checked directly against the built-and-verified index: every one
+    of this file's 10,476 integrations, across all 13 sources, has exactly 378 rows and
+    the same 28 active antennas — no variation anywhere in the file. Resolves the "worth
+    a look later" note below. The two antennas absent from every row are station 4
+    (`C03:04`) and station 10 (`C10:10`) — not the `C07`/`S05` pair the DUD config
+    carries (see the note below for the open question this raises).
+
+  **Third slice done (2026-09-24): `src/instruments/gmrt/row_index.py`,
+  `src/instruments/gmrt/sanity_checks.py`.** `build_gmrt_row_index()` composes the
+  generic pieces above with `antenna_table.py`'s DUD resolution, unmodified — no
+  reimplementation of scanning, selecting, or reading. Adds the sanity checks that
+  survived scrutiny (see the revised list below): `TELESCOP == 'GMRT'` and
+  antenna-count plausibility run first, cheap and header-only, before the expensive
+  full-file scan starts; the DUD cross-check and row-count consistency run once the
+  index is built. `strict=True` (default) raises `GmrtDudConfigMismatch` or
+  `GmrtRowCountMismatch` rather than letting either pass silently; `strict=False`
+  proceeds anyway with both recorded in the returned `GmrtAntennaResolution`.
+  Confirmed against the real file (via the already-verified saved index, no need to
+  re-run the full scan): with neither exclusion list covering them, the check reports
+  precisely `C03:04` and `C10:10` as the mismatch; with
+  `dead_this_observation_names=["C03","C10"]`, row-count consistency reports a clean
+  match — 378 rows/integration for 28 active antennas, exactly as predicted. Returns
+  the plain, unmodified `RowIndex` — downstream code calls
+  `select_rows`/`read_visibility_data` directly on it, no GMRT-specific wrapper needed
+  for either. 17 new tests (`test_instruments_gmrt_row_index.py`,
+  `test_instruments_gmrt_sanity_checks.py`).
+
+  **Revised (2026-09-24), after the user corrected a conflation:** the single
+  `dud_names` parameter was wrong — it conflated two genuinely different things.
+  `antenna_table.GMRT_STRUCTURAL_DUD_NAMES` (`C07`, `S05`, hardcoded, not a caller
+  parameter) is a permanent fact about GMRT's AN-table conventions: these two carry
+  invalid/placeholder positions in GSB's table regardless of which observation is
+  being read, so excluding them can't depend on a per-run argument. `C03:04`/`C10:10`
+  are not that — they have valid AN-table positions, were merely dead for *this*
+  observation (deliberately omitted from the raw file at the correlator to reduce
+  data size), and will carry real data again in a future file once repaired. Treating
+  them as permanent DUDs would have been wrong the same way a stale config is wrong.
+  `build_gmrt_row_index()` initially took `dead_this_observation_names` as a caller
+  parameter, separate from `structural_dud_names`. Corrected again the same day, at
+  the user's prompting: requiring the caller to name the dead-this-observation
+  antennas up front just recreated the exact stale-config risk that made `C07`/`S05`
+  wrong for GWB in the first place. Once the row index is built, which nominal,
+  non-structural-DUD antennas have zero rows is already known — nothing to predict in
+  advance. The parameter is gone; `dead_this_observation_antennas` is now derived,
+  not supplied, and `GmrtDudConfigMismatch` (which checked a caller's list against
+  reality) is gone with it — there's no longer a list that could disagree with
+  reality. `GmrtRowCountMismatch` remains: given the *derived* active set, every
+  integration's row count is still checked against the dense-all-pairs prediction,
+  now a check with nothing to go stale rather than one comparing two independently
+  fallible sources.
+
   **Design requirement, not optional:** the active (non-DUD) antenna list is resolved
   once, immediately after reading the antenna table, before anything else is computed
   from it — matching the archived code's own pattern (`n_ant = len(active_antennas)`
@@ -265,26 +412,72 @@ at that point).
     integration, if this observation's raw output includes autocorrelations at all.
     T5b settles that; don't use this formula against real row counts until it does.
 
-  **Sanity checks in scope for this ticket** (load-bearing for T5c's own correctness —
-  if antenna/DUD resolution is wrong, everything downstream is silently wrong too):
-  - `TELESCOP == 'GMRT'` in the primary header (catches pointing the pipeline at the
-    wrong file).
-  - Antenna count is plausible, not just present (0 or an absurd value fails loudly).
-  - The DUD-antenna cross-check `FLAGGING_DESIGN_NOTES.md` already specified: after
-    excluding the configured DUD list, the *observed* active-baseline set must match the
-    *expected* one — fail if some antenna not on the DUD list still has zero data (a
-    stale config or a hardware problem — either way, fail loudly rather than work
-    around it silently).
-  - Frequency axis (`AIPS FQ` table) falls inside the expected band for the active
-    profile (GSB vs GWB) — catches a channel-range/profile mismatch immediately, not
-    three stages downstream.
-  - Expected calibrators/targets are present in the `AIPS SU` table by name.
-  - Row-count consistency: total `GCOUNT` decomposes cleanly into
-    `n_integrations × (cross-baselines + autocorrelations)` — the two-count distinction
-    above, made executable.
+  **Sanity checks — built (2026-09-24), in `sanity_checks.py`** (load-bearing for T5c's
+  own correctness — if antenna/DUD resolution is wrong, everything downstream is
+  silently wrong too):
+  - `check_telescope_is_gmrt`: `TELESCOP == 'GMRT'` in the primary header (catches
+    pointing the pipeline at the wrong file).
+  - `check_antenna_count_is_plausible`: rejects zero antennas, and rejects more than
+    the AIPS baseline encoding could ever represent (2047 — the format's own ceiling,
+    not a GMRT-specific number; see `decode_baseline`).
+  - `check_row_count_consistency` (the DUD-antenna cross-check `FLAGGING_DESIGN_NOTES.md`
+    specified, made executable, plus the row-count formula check): after excluding the
+    configured DUD list, the *observed* active-baseline set must match the *expected*
+    one — fails if some antenna not on the DUD list still has zero data, and separately
+    reports (without assuming it must hold, per standing rule 9) whether every
+    integration's row count matches what the resolved active-antenna count predicts.
+
+  **Two items dropped from this ticket, not deferred** — examined properly rather than
+  left as "needs more info," and found to be mis-scoped from the start:
+  - *"Frequency axis falls inside the expected band for the active profile (GSB vs
+    GWB)"* — a category error. GSB/GWB are correlator backends, not frequency bands;
+    GWB alone can sit anywhere from ~100 MHz to ~1800 MHz depending on which GMRT
+    receiver was selected for a given observation, so there is no single "expected GWB
+    band" to check a file against. The frequency axis itself is already fully
+    self-contained in the UVFITS metadata (`chan_freqs_hz`, generic, CTYPE-driven) —
+    there's nothing external to validate it against at this layer.
+  - *"Expected calibrators/targets present in the AIPS SU table"* — assumed a
+    per-observation reference (an observing proposal, a source-list config) that
+    doesn't exist anywhere in this pipeline's design; the archived config's
+    `SOURCE='3C48'` is one calibrator for one processing run, not a manifest of an
+    observation's intended source list. Neither frequency range nor calibrator choice
+    stops mattering for analysis — they just aren't unit-testable properties of a raw
+    UVFITS file at the data-adapter layer; if either belongs anywhere, it's at the
+    observing-proposal or per-run-config level, scoped properly if it's ever built.
+
+- **Pipeline driver (`bin/run_gwb_pipeline.sh`, `src/cli/pipeline_stages.py`) — first
+  stage runnable, 2026-09-25.** A fixed, ordered list of stages (`STAGE_ORDER`), each
+  independently switched on/off by a per-observation YAML config's `stages:` block
+  (`config/40_014_25jul2021_gwb.yaml`). Adding a future stage (split, primary
+  calibration, ...) means writing one function and adding one line to the list, not
+  restructuring the driver. Stage 1, `build_index`, wraps `build_gmrt_row_index` +
+  `save_row_index` in exactly the existing `RunManifest`/logging machinery — no new
+  provenance mechanism, just the first real caller. This is also what makes T5a/T5c's
+  antenna resolution and indexing genuinely runnable for the first time, so the
+  user-guide deferral noted under T5a ("no directly observable output until a `bin/`
+  script wires it into something runnable") is now due.
+  Index files always live adjacent to the raw file they index (`<fits_path>.idx.npz`,
+  confirmed with the user as the standing rule, regardless of telescope), never under
+  `work_dir`. `work_dir` itself is deliberately not on `/data1` (the raw data disk,
+  confirmed spinning, not SSD) — it's `/scratch/gmrt/40_014_25JUL2021/work_gwb/`,
+  mirroring the raw data's directory structure on the fast disk instead.
+
 - **T5d — Outer iteration loop** (solve → diagnose → propose flags → re-solve), wrapping
   T5a via T5c's data adapter. Was originally scoped together with T5a as one ticket;
   split out so the core solve could be tested and verified on its own first.
+
+  **Design requirement, decided 2026-09-24, before this ticket starts:** T5d must call
+  `solve_channel_gains` with `n_ant = len(nominal_antennas)` (the fixed 30, from the AN
+  table) and build `ant1_idx`/`ant2_idx` from raw station number
+  (`station_number - 1`) — never `len(active_antennas)` with a compacted index. Verified
+  directly against `solve_channel_gains`'s own code: an antenna with zero baselines
+  (`has_any_data[i] = False`) is left at its untouched initial gain (`1+0j`) for the
+  whole solve — never divided by zero, never phase-rotated — so this already gives
+  exactly the "look for all 30, treat not-found as flagged" behavior agreed earlier,
+  with no new mechanism needed. A compacted index would work for one observation but
+  make antenna index position mean a different physical antenna in a different
+  observation if a different antenna happened to be dead that day — the exact failure
+  mode standing rule 9 exists to prevent.
 - **T5e — Data-content sanity checks (`src/data_io/`, GMRT-specific thresholds supplied
   by `src/instruments/gmrt/`) — scoped now, not deferred silently, after being raised
   2026-09-23.** Broader statistical checks deliberately left out of T5c's scope so T5c

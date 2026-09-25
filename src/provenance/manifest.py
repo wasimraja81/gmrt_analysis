@@ -65,7 +65,18 @@ class RunManifest:
         self.input_fingerprints = [_describe_input_file(p) for p in self._input_paths]
         self.output_paths: list[str] = []
         self.started_at_utc = _utc_now_iso()
+        self.manifest_path, self.diff_path = _manifest_paths(self.work_dir, self.stage, self.run_id)
         self.logger = setup_stage_logger(self.stage, self.work_dir, self.run_id, console_log_level)
+
+        # Written immediately, before any of the stage's own work runs -- a
+        # process killed mid-stage (SIGKILL, session teardown) leaves this
+        # "started" record behind instead of no manifest at all. __exit__
+        # overwrites the same path with the final outcome; a manifest whose
+        # outcome is still "started" means the run never reached __exit__.
+        self._write_manifest_record(
+            outcome={"status": "started", "error_type": None, "error_message": None, "traceback": None},
+            finished_at_utc=None,
+        )
 
     def add_output(self, path: Path | str) -> None:
         """Record one output file this run produced.
@@ -76,6 +87,24 @@ class RunManifest:
         """
         guard_output_path(path, self._input_paths)
         self.output_paths.append(str(path))
+
+    def _write_manifest_record(self, outcome: dict, finished_at_utc: str | None) -> dict:
+        record = {
+            "run_id": self.run_id,
+            "stage": self.stage,
+            "started_at_utc": self.started_at_utc,
+            "finished_at_utc": finished_at_utc,
+            "host": socket.gethostname(),
+            "python_version": platform.python_version(),
+            "git": {k: v for k, v in self.git_state.items() if k != "diff_text"},
+            "parameters": self.parameters,
+            "inputs": self.input_fingerprints,
+            "outputs": self.output_paths,
+            "outcome": outcome,
+        }
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(self.manifest_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+        return record
 
     def __enter__(self) -> "RunManifest":
         return self
@@ -94,30 +123,12 @@ class RunManifest:
             }
             self.logger.error("stage %s failed: %s: %s", self.stage, exc_type.__name__, exc_val)
 
-        record = {
-            "run_id": self.run_id,
-            "stage": self.stage,
-            "started_at_utc": self.started_at_utc,
-            "finished_at_utc": finished_at_utc,
-            "host": socket.gethostname(),
-            "python_version": platform.python_version(),
-            "git": {k: v for k, v in self.git_state.items() if k != "diff_text"},
-            "parameters": self.parameters,
-            "inputs": self.input_fingerprints,
-            "outputs": self.output_paths,
-            "outcome": outcome,
-        }
-
-        manifest_path, diff_path = _manifest_paths(self.work_dir, self.stage, self.run_id)
-        manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+        record = self._write_manifest_record(outcome, finished_at_utc)
 
         if self.git_state["dirty"] and self.git_state["diff_text"]:
-            diff_path.write_text(self.git_state["diff_text"])
-            record["git"]["diff_file"] = diff_path.name
-            manifest_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-
-        self.manifest_path = manifest_path
+            _atomic_write_text(self.diff_path, self.git_state["diff_text"])
+            record["git"]["diff_file"] = self.diff_path.name
+            _atomic_write_text(self.manifest_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
 
         self.index_entry = {
             "run_id": self.run_id,
@@ -129,7 +140,7 @@ class RunManifest:
             "parameters": self.parameters,
             "outcome_status": outcome["status"],
             "error_type": outcome["error_type"],
-            "manifest_path": str(manifest_path),
+            "manifest_path": str(self.manifest_path),
             "log_path": str(stage_log_path(self.work_dir, self.stage, self.run_id)),
         }
         append_to_run_index(self.work_dir, self.index_entry)
@@ -141,6 +152,18 @@ class RunManifest:
 def _manifest_paths(work_dir: Path, stage: str, run_id: str) -> tuple[Path, Path]:
     stage_dir = Path(work_dir) / "provenance" / stage
     return stage_dir / f"{run_id}.json", stage_dir / f"{run_id}.diff"
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text to `path` atomically: write to a temp file in the same
+    directory, then rename into place. A process killed mid-write never
+    leaves a truncated or corrupt file at `path` itself -- `path` either has
+    its previous complete contents, or the new complete contents, never a
+    partial write."""
+    path = Path(path)
+    tmp_path = path.with_name(f"{path.name}.tmp{os.getpid()}")
+    tmp_path.write_text(text)
+    os.replace(tmp_path, path)
 
 
 def _new_run_id() -> str:

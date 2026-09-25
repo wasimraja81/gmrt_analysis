@@ -1,0 +1,19 @@
+# Pipeline config for the 40_014_25JUL2021 GWB observation.
+#
+# fits_path: the raw data file itself, read-only, never written to.
+# work_dir: everything the pipeline produces while running (manifests, logs,
+#   the run index, and future stage outputs) -- deliberately NOT on /data1,
+#   which is a spinning disk and should hold nothing but the raw data and its
+#   row-index sidecar; work_dir lives on /scratch (SSD) instead, mirroring
+#   the raw data's own directory structure.
+#
+# Note: the row index itself (built by the build_index stage) is the one
+# exception -- it's saved adjacent to fits_path on /data1, not under
+# work_dir, per the standing rule that an index always lives next to the
+# raw file it indexes.
+
+fits_path: /data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
+work_dir: /scratch/gmrt/40_014_25JUL2021/work_gwb
+
+stages:
+  build_index: true

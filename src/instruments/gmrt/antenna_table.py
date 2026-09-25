@@ -2,16 +2,19 @@
 
 GMRT's AIPS AN table names antennas as "<code>:<station number>", e.g.
 "C00:01" -- the code identifies the physical antenna, the station number
-is its AIPS-internal index (NOSTA). DUD-antenna configuration (which
-antennas were hardware-dead, never correlating, for a given observation)
-is given as bare codes, e.g. "C07", matched against the table by prefix.
+is its AIPS-internal index (NOSTA). Antenna names to exclude are given as
+bare codes, e.g. "C07", matched against the table by prefix.
 
-DUD antennas are not a data-quality/flagging concern -- they contribute
-zero rows to the raw file at all. Excluding them here, once, before
-anything downstream computes an antenna count or baseline count, is what
-keeps every later calculation (the solver, flagging-percentage
-denominators, coverage statistics) consistent with each other. See
-docs/dev/GWB_PIPELINE_REFACTOR_PLAN.md, standing rule 8 and T5b.
+"DUD" here means specifically the two antennas with a permanent, structural
+quirk in GMRT's own AN-table conventions (see `GMRT_STRUCTURAL_DUD_NAMES`)
+-- not any antenna that happens to be inactive for a given observation.
+Excluding them, once, before anything downstream computes an antenna count
+or baseline count, is what keeps every later calculation (the solver,
+flagging-percentage denominators, coverage statistics) consistent with
+each other. See docs/dev/GWB_PIPELINE_REFACTOR_PLAN.md, standing rule 8
+and T5b. An antenna that's merely dead for one particular observation --
+different from a structural DUD, see `instruments.gmrt.row_index` for the
+distinction -- is a separate, per-observation concern, not hardcoded here.
 """
 
 from __future__ import annotations
@@ -20,6 +23,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from data_io.raw_data_access import open_fits_readonly
+
+# The two antennas GMRT's own AN-table conventions carry with permanently
+# invalid/placeholder positions -- confirmed directly (2026-09-24): GSB's AN
+# table lists them as placeholder entries "C07:31"/"S05:32" appended after
+# the 30 real stations, with positions that aren't real geodetic coordinates;
+# GWB's AN table omits them by name entirely. A structural fact about the
+# antenna table format, true regardless of which observation is being read
+# -- not something to pass in per run. Confirmed by the user (2026-09-24):
+# not to be confused with an antenna that's merely dead for one observation
+# (which has a valid, real position, and will have data again once
+# repaired) -- see `instruments.gmrt.row_index.build_gmrt_row_index`'s
+# separate `dead_this_observation_names` parameter for that.
+GMRT_STRUCTURAL_DUD_NAMES = ["C07", "S05"]
 
 
 @dataclass(frozen=True)

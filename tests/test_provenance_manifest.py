@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from data_io.raw_data_access import RawDataProtectionError
+from provenance.logging_setup import close_logger
 from provenance.manifest import RunManifest
 
 from conftest import make_scratch_dir
@@ -278,6 +279,54 @@ def test_manifest_appends_an_entry_to_the_run_index():
     assert entry["parameters"] == {"chan_start": 1731}
     assert entry["outcome_status"] == "success"
     assert entry["manifest_path"] == str(manifest.manifest_path)
+
+
+def test_manifest_atomic_write_leaves_no_temp_file_behind():
+    scratch = make_scratch_dir("manifest_atomic_write")
+    repo = scratch / "repo"
+    repo.mkdir()
+    _init_scratch_repo(repo)
+    work_dir = scratch / "work"
+    work_dir.mkdir()
+    input_file = _make_input_file(scratch, "raw_input.fits", "fake fits bytes")
+
+    with RunManifest(
+        stage="unit_test_stage", work_dir=work_dir, parameters={}, inputs=[input_file], repo_root=repo,
+    ) as manifest:
+        pass
+
+    stage_dir = manifest.manifest_path.parent
+    leftover_temp_files = [p for p in stage_dir.iterdir() if ".tmp" in p.name]
+    assert leftover_temp_files == []
+
+
+def test_manifest_is_written_immediately_as_started_before_any_stage_work_runs():
+    # Simulates a process killed mid-stage (SIGKILL, session teardown):
+    # __exit__ never runs, but a manifest must still exist, showing the run
+    # never finished -- not silently absent, which is what a real killed run
+    # left behind before this fix (confirmed directly, 2026-09-25).
+    scratch = make_scratch_dir("manifest_started_only")
+    repo = scratch / "repo"
+    repo.mkdir()
+    _init_scratch_repo(repo)
+    work_dir = scratch / "work"
+    work_dir.mkdir()
+    input_file = _make_input_file(scratch, "raw_input.fits", "fake fits bytes")
+
+    manifest = RunManifest(
+        stage="unit_test_stage", work_dir=work_dir, parameters={"x": 1}, inputs=[input_file], repo_root=repo,
+    )
+    # __exit__ deliberately never called -- this is the "killed mid-run" case.
+
+    record = json.loads(manifest.manifest_path.read_text())
+    assert record["outcome"]["status"] == "started"
+    assert record["finished_at_utc"] is None
+    assert record["outputs"] == []
+    # No run-index entry either -- that's still only appended in __exit__ --
+    # but the manifest file alone is enough to show this run never finished.
+    assert not (work_dir / "runs_index.jsonl").exists()
+
+    close_logger(manifest.logger)  # avoid leaking a handler into other tests
 
 
 def test_run_index_accumulates_across_multiple_stages_in_the_same_work_dir():
