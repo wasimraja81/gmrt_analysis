@@ -10,6 +10,8 @@ pipeline.
 - [Reading raw data safely](#reading-raw-data-safely)
 - [Finding out what a run did (logs)](#finding-out-what-a-run-did-logs)
 - [Finding past runs (the run index)](#finding-past-runs-the-run-index)
+- [Running the pipeline](#running-the-pipeline)
+- [Building the row index](#building-the-row-index)
 
 ---
 
@@ -148,3 +150,112 @@ jq -r '[.stage, .parameters.clustering_threshold_jy, .outcome_status] | @tsv' wo
 > [!NOTE]
 > This file only ever has lines added to it — never rewritten — so it's safe to keep
 > around and grow for as long as you use the pipeline.
+
+---
+
+## Running the pipeline
+
+One config file per observation describes what to process and which stages to run.
+`bin/run_gwb_pipeline.sh` reads it and runs whichever stages are switched on, in a fixed
+order.
+
+```bash
+bin/run_gwb_pipeline.sh config/40_014_25jul2021_gwb.yaml
+```
+
+### The config file
+
+```yaml
+fits_path: /data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS
+work_dir: /scratch/gmrt/40_014_25JUL2021/work_gwb
+
+stages:
+  build_index: true
+```
+
+| Field | What it means |
+|---|---|
+| `fits_path` | Your raw data file. Read-only, never modified. |
+| `work_dir` | Where run records, logs, and the run index (described above) get written. Keep this on a fast disk — it's separate from where your raw data lives, and doesn't need to be. |
+| `stages` | Which stages to run this time. A stage set to `false`, or left out, is skipped. |
+
+> [!TIP]
+> **What this gives you**
+> - Re-running the same config reruns exactly the same stages against exactly the same
+>   file — no flags to remember or retype.
+> - Turning a stage off doesn't remove it from the pipeline; it just skips it for this
+>   invocation. Flip it back on any time.
+> - As more stages are added over time, they show up here as more entries under
+>   `stages:` — the config grows with the pipeline, you don't need a new one.
+
+> [!NOTE]
+> `work_dir` isn't the only place output lands — some stages (the row index, described
+> below) save their result next to your raw data file instead, because that output
+> belongs with the data it describes. `work_dir` is specifically for run records, logs,
+> and anything else about *how* a stage ran.
+
+---
+
+## Building the row index
+
+Before the pipeline can select or read specific visibilities efficiently, it needs to
+know, for every row in your raw file, which source and which antenna pair it belongs to.
+Nothing in the file's header records this — it has to be read once, for every row. The
+`build_index` stage does this one-time read and saves the result so nothing has to repeat
+it.
+
+Turn it on in your config:
+
+```yaml
+stages:
+  build_index: true
+```
+
+### What you get
+
+| Location | What's there |
+|---|---|
+| `<fits_path>.idx.npz` | The index itself — always saved next to your raw data file, never under `work_dir`. |
+
+> [!IMPORTANT]
+> The first run takes on the order of 30 minutes for a 389 GB file, because every row has
+> to be touched once — that per-row information has no summary anywhere else in the file
+> to shortcut past. Built once, it's reused automatically from then on — see below.
+
+### It only rebuilds when it needs to
+
+If `<fits_path>.idx.npz` already exists, running the stage again does nothing but confirm
+that and record a run — it doesn't repeat the 30-minute read. To force a rebuild anyway
+(for instance, if you have reason to think the raw file changed):
+
+```yaml
+stages:
+  build_index:
+    force_rebuild: true
+```
+
+### What the log tells you
+
+The stage's log (see [Finding out what a run did](#finding-out-what-a-run-did-logs))
+reports progress as it reads, and finishes with a summary — this one is from the
+`40_014_25JUL2021` GWB observation:
+
+```
+index built: 3959928 rows, 28 active antennas, 2 dead-this-observation: ['C03:04', 'C10:10']
+saved index to /data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS.idx.npz
+```
+
+"Dead-this-observation" antennas are ones your antenna table lists but that have no data
+anywhere in this particular file — GMRT antennas taken out of service for maintenance
+show up this way, distinct from a handful of antennas with a separate, permanent quirk in
+how GMRT's antenna table itself is built (unrelated to whether they had data that day).
+You don't need to configure either list; both are worked out from the antenna table and
+the data itself.
+
+> [!TIP]
+> **What this gives you**
+> - A count of which antennas contributed data to this observation, without having to
+>   inspect the raw file by hand.
+> - If the pipeline's antenna count doesn't match what the data itself shows — the kind
+>   of mismatch that can otherwise go unnoticed for a while — the stage stops with a
+>   clear error rather than producing a result built on a wrong assumption.

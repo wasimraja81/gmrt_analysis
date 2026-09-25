@@ -1,12 +1,18 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0-T4, T5a, T5b, T5c done (2026-09-24), Phase A complete. T5c's generic
-index/select/read stack (`data_io/row_index.py`, `row_selection.py`,
-`visibility_data.py`), GMRT orchestration layer, and sanity checks
-(`instruments/gmrt/row_index.py`, `sanity_checks.py`) are done, 90 tests passing. Two
-originally-scoped sanity checks (frequency-band, expected-calibrators) were dropped
-after review found them mis-scoped, not deferred — see T5c for why. Next: T5d (outer
-solve/diagnose/flag loop).
+**Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). 102 tests
+passing. `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the real 389GB
+GWB file (2026-09-25), producing a validated row index — see Phase C (T5c) for details
+and the hardening that followed a run getting killed mid-scan. Two originally-scoped
+sanity checks (frequency-band, expected-calibrators) were dropped after review found them
+mis-scoped, not deferred — see Phase C for why.
+
+Phases re-ordered 2026-09-25 around the pipeline's own high-level stages (raw data →
+index → know your data → curation → cal solve → split-with-cal-applied → imaging); see
+Phase B, added the same day, and the `## Sequencing` note below. Next: T19 (Phase B,
+visPlot app — buildable now, no dependency on calibration existing first), or T5d (Phase
+C, outer solve/diagnose/flag loop) — either is a reasonable next step; T19 doesn't block
+on T5d or the reverse.
 
 ## Objective
 
@@ -112,6 +118,13 @@ standing rule 8) supplied as data/config to that generic core, not woven into it
    need this in practice — all 10,476 integrations in the real file have the same 28
    antennas and the same 378-row length throughout — but the code must not rely on that
    holding for a different file.
+10. **Re-evaluate design at each micro-stage, not just at ticket boundaries.** Added
+    2026-09-25, naming a practice that was already happening rather than introducing a new
+    one: the dead-this-observation redesign, the axis-selection genericity fix, and the
+    provenance hardening after a real run was killed mid-scan all came from stepping back
+    mid-stream, not from a ticket's own acceptance criteria. Before starting the next
+    piece of work, check whether finishing the last one revealed something already built
+    that should change — not only whether the next thing is ready to start.
 
 ## Reference material
 
@@ -178,7 +191,33 @@ at that point).
   `manifest_run_index_*` in `tests/test_provenance_manifest.py`). Closes Phase A.
   User-facing: `../user/GWB_USER_GUIDE.md#finding-past-runs-the-run-index`.
 
-### Phase B — Primary Calibration (3C48)
+### Phase B — Know Your Data
+
+**Added 2026-09-25, from a high-level re-framing of the pipeline's own stages** (raw data
+→ index → know your data → curation → cal solve → split-with-cal-applied → imaging):
+nothing in the original ticket list covered looking at the data *before* calibration
+starts, even though `select_rows`/`read_visibility_data` already give everything this
+needs — source list, UV-coverage, frequency sampling, integration counts, uncalibrated
+amplitude/phase checks — with no dependency on Phase C (calibration) existing first.
+Buildable now, ahead of Phase C.
+
+- **T19 — visPlot app: meaningful defaults + interactive exploration.** Reuse and improve
+  the archived `legacy_gsb_40_014/src/plotVis.py` (1492 lines, "generalized plotVis
+  utility ... single multi-panel figure with selectable products and selectors") per
+  standing rule 8 — this is not written from scratch; check what it already does and why
+  before designing its replacement. Requirements from the user (2026-09-25), fine-grained
+  design deferred to its own conversation:
+  - A meaningful default set of plots/products generated with no configuration, so a
+    first look at any observation needs no setup.
+  - An interactive "scratch phase": the user explores the data live with the tool, then,
+    once satisfied, asks for specific additional views on top of the defaults (zoomed
+    selections, particular filters) rather than needing to script that from the start.
+  - Antenna layout plotting.
+  - Source listing with positions and other attributes.
+  - HA range plotting.
+  - Az/El range plotting.
+
+### Phase C — Primary Calibration (3C48)
 
 - **T5a — Core per-channel gain solve (generic, `src/engine/bandpass_solve.py`) — DONE
   (2026-09-23).** StefCal-style alternating-least-squares antenna gain solve, per channel.
@@ -204,7 +243,7 @@ at that point).
     everything for a source (cross and auto together, if autocorrelations exist), and
     filter to cross-only only when preparing input for `solve_channel_gains`. This keeps
     autocorrelation data available for whatever else needs it — including applying the
-    solved gains to it afterward (a separate, later step, Phase C, not built yet — the
+    solved gains to it afterward (a separate, later step, Phase D, not built yet — the
     gains are per-antenna, so they apply to autocorrelation visibilities too, even though
     they weren't solved from them).
 
@@ -499,7 +538,7 @@ at that point).
 - **T8 — GWB threshold validation.** Settle and record (with reasoning, not just a number)
   the working per-channel clustering threshold for GWB.
 
-### Phase C — Primary Transfer & Split
+### Phase D — Primary Transfer & Split
 
 **Design requirement for both tickets below, decided 2026-09-24:** split and plot each
 take an explicit correlation-type option (cross, auto, or both), defaulting to cross.
@@ -510,26 +549,26 @@ required — see T5b's audit, which found neither archived tool has a selector f
 - **T9 — 3C48 split + diagnostics.**
 - **T10 — 3C468.1 primary-only split + diagnostics.**
 
-### Phase D — Advanced Flagging (Clustering, 3C468.1)
+### Phase E — Advanced Flagging (Clustering, 3C468.1)
 
 - **T11 — Full six-section flag-table clustering.**
 
-### Phase E — Secondary Calibration
+### Phase F — Secondary Calibration
 
 - **T12 — Phase-only/delay-phase secondary solve + final split.**
 
-### Phase F — Target (Moon) Processing
+### Phase G — Target (Moon) Processing
 
 - **T13 — Split/plot moon scans** (raw/primary/primary+secondary variants).
 - **T14 — Selfcal imaging** (phasecentre / no-phasecentre).
 - **T15 — Post-selfcal artifacts** (destriping, stacking, movies, cumulative RMS).
 
-### Phase G — 3C468.1 Self-cal Imaging
+### Phase H — 3C468.1 Self-cal Imaging
 
 - **T16 — Per-scan selfcal imaging.**
 - **T17 — Post-selfcal stacking/movies/flag diagnostics.**
 
-### Phase H — Publishing
+### Phase I — Publishing
 
 - **T18 — Redesigned gh-pages "Provenance & reproducibility" section**, surfacing the
   manifest/run-index from Phase A, keeping the rest of the existing section taxonomy
@@ -537,6 +576,7 @@ required — see T5b's audit, which found neither archived tool has a selector f
 
 ## Sequencing
 
-T0 → A (T1-T4) → B (T5a-T5e, T6-T8, the live pain point) → C → D → E → F → G → H, with a
-dev-test checkpoint after each ticket. Each ticket gets its own commit(s); nothing merges to
-`develop` without its test passing against real (or realistic fixture) data.
+T0 → A (T1-T4) → B (T19, know your data) → C (T5a-T5e, T6-T8, the live pain point) → D → E
+→ F → G → H → I, with a dev-test checkpoint after each ticket. Each ticket gets its own
+commit(s); nothing merges to `develop` without its test passing against real (or
+realistic fixture) data.
