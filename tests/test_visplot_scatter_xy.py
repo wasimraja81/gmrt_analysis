@@ -61,6 +61,32 @@ def test_scatter_xy_colorize_by_creates_one_series_per_category_with_legend():
     plt.close(fig)
 
 
+def test_scatter_xy_mirror_also_plots_the_negated_points_without_a_duplicate_legend_entry():
+    x = np.array([1.0, 2.0])
+    y = np.array([3.0, 4.0])
+
+    fig = scatter_xy(x, y, mirror=True, color="tab:blue")
+    ax = fig.axes[0]
+
+    assert len(ax.collections) == 2  # original points + mirrored points
+    np.testing.assert_allclose(sorted(ax.collections[0].get_offsets()[:, 0]), sorted(x))
+    np.testing.assert_allclose(sorted(ax.collections[1].get_offsets()[:, 0]), sorted(-x))
+    assert ax.get_legend() is None  # no label was given, so no legend either
+
+
+def test_scatter_xy_mirror_with_colorize_by_keeps_one_legend_entry_per_category():
+    x = np.array([1.0, 2.0])
+    y = np.array([3.0, 4.0])
+    labels = np.array(["RR", "LL"])
+
+    fig = scatter_xy(x, y, colorize_by=labels, mirror=True)
+    ax = fig.axes[0]
+
+    assert len(ax.collections) == 4  # 2 categories x (original + mirrored)
+    legend_labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert legend_labels == ["LL", "RR"]  # not doubled by the mirrored points (sorted, not insertion order)
+
+
 def test_scatter_xy_draws_into_a_given_axes_without_creating_a_new_figure():
     fig, ax = plt.subplots()
     x = np.array([1.0, 2.0])

@@ -33,6 +33,7 @@ def scatter_xy(
     weight: np.ndarray | None = None,
     colorize_by: np.ndarray | None = None,
     show_flagged: bool = False,
+    mirror: bool = False,
     point_size: float = DEFAULT_POINT_SIZE,
     linewidths: float = DEFAULT_LINEWIDTHS,
     color: str = DEFAULT_COLOR,
@@ -52,6 +53,11 @@ def scatter_xy(
     label per cell): each distinct category gets its own color from a
     qualitative palette and a legend entry, and `color` is ignored.
 
+    `mirror`, if set, also plots (-x, -y) for every point plotted (same
+    style, no extra legend entry) -- for a quantity pair where a
+    measurement and its conjugate are both physically sampled, e.g. a UV
+    plane point and (-u, -v).
+
     `point_size` (the marker area in points^2; see `POINT_SIZE_RANGE` for a
     sensible range) and `linewidths` (marker edge width) apply to every
     point drawn. Draws into `ax` if given, else creates a new figure."""
@@ -66,26 +72,26 @@ def scatter_xy(
     else:
         good = np.ones(x.shape, dtype=bool)
 
+    def _plot(px, py, **kwargs):
+        ax.scatter(px, py, s=point_size, linewidths=linewidths, alpha=0.7, **kwargs)
+        if mirror:
+            kwargs.pop("label", None)
+            ax.scatter(-px, -py, s=point_size, linewidths=linewidths, alpha=0.7, **kwargs)
+
     if colorize_by is not None:
         labels = np.asarray(colorize_by).ravel()
         categories = sorted(set(labels[good].tolist()))
         cmap = plt.get_cmap(CATEGORY_COLORMAP)
         for i, category in enumerate(categories):
             mask = good & (labels == category)
-            ax.scatter(
-                x[mask], y[mask], s=point_size, linewidths=linewidths,
-                color=cmap(i % cmap.N), alpha=0.7, label=str(category),
-            )
+            _plot(x[mask], y[mask], color=cmap(i % cmap.N), label=str(category))
         if len(categories) > 1:
             ax.legend(fontsize=8, markerscale=2, loc="best")
     else:
-        ax.scatter(x[good], y[good], s=point_size, linewidths=linewidths, color=color, alpha=0.7)
+        _plot(x[good], y[good], color=color)
 
     if show_flagged and weight is not None:
-        ax.scatter(
-            x[~good], y[~good], s=point_size, linewidths=linewidths,
-            color=FLAGGED_COLOR, alpha=0.5, marker="x", label="flagged",
-        )
+        _plot(x[~good], y[~good], color=FLAGGED_COLOR, marker="x", label="flagged")
         ax.legend(fontsize=8, markerscale=2, loc="best")
 
     ax.set_xlabel(xlabel)
