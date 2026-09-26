@@ -18,8 +18,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+from astropy.coordinates import EarthLocation
 
+from data_io.astrometry import altaz_deg, hour_angle_hours, parallactic_angle_deg
 from data_io.row_index import RowIndex
+from data_io.source_table import Source
 
 SPEED_OF_LIGHT_M_PER_S = 299_792_458.0
 
@@ -51,6 +54,17 @@ def _resolve_source_ids(index: RowIndex, sources) -> list[int]:
     return wanted
 
 
+def _cyclic_range_mask(values: np.ndarray, bounds: tuple[float, float]) -> np.ndarray:
+    """A range mask over a cyclic quantity already normalized to its own
+    canonical range (hour angle to [-12, 12), azimuth to [0, 360), etc.) --
+    `lo > hi` wraps through that range's own boundary rather than matching
+    nothing."""
+    lo, hi = bounds
+    if lo <= hi:
+        return (values >= lo) & (values <= hi)
+    return (values >= lo) | (values <= hi)
+
+
 def _normalized_pair_keys(pairs) -> set[int]:
     keys = set()
     for a, b in pairs:
@@ -70,6 +84,12 @@ def select_rows(
     baselines: list[tuple[int, int]] | None = None,
     exclude_baselines: list[tuple[int, int]] | None = None,
     uvdist_range_m: tuple[float, float] | None = None,
+    ha_range_hours: tuple[float, float] | None = None,
+    az_range_deg: tuple[float, float] | None = None,
+    el_range_deg: tuple[float, float] | None = None,
+    parallactic_angle_range_deg: tuple[float, float] | None = None,
+    source_table: dict[int, Source] | None = None,
+    array_location: EarthLocation | None = None,
     every_nth: int | None = None,
     random_subset_n: int | None = None,
     random_seed: int | None = None,
@@ -83,6 +103,19 @@ def select_rows(
     `correlation_type` defaults to "cross" (excluding autocorrelations),
     matching the pipeline-wide default; pass "auto" or "both" explicitly
     to include them.
+
+    `ha_range_hours`/`az_range_deg`/`el_range_deg`/`parallactic_angle_range_deg`
+    filter by each row's own source, at that row's own JD, as seen from
+    `array_location` -- computed via `data_io.astrometry`, not read from the
+    file (UVFITS carries neither). Using any of them requires `source_table`
+    (`data_io.source_table.read_source_table`'s result) and `array_location`
+    (`data_io.antenna_table.read_array_earth_location`'s result); both are
+    read once by the caller and passed in, keeping this function's own
+    contract (operates on `RowIndex`'s in-memory arrays, no file I/O here)
+    intact. `ha_range_hours`/`az_range_deg`/`parallactic_angle_range_deg` are
+    all cyclic; a tuple where the low bound exceeds the high bound (e.g.
+    `ha_range_hours=(10, -10)`, spanning lower culmination) wraps through
+    the cycle's own boundary instead of matching nothing.
 
     No silent downsampling: `every_nth` and `random_subset_n` are the only
     ways to reduce the result below what the filters select, both explicit
@@ -139,6 +172,34 @@ def select_rows(
         lo, hi = uvdist_range_m
         uvdist_m = np.sqrt(index.uu_sec.astype(np.float64) ** 2 + index.vv_sec.astype(np.float64) ** 2) * SPEED_OF_LIGHT_M_PER_S
         mask &= (uvdist_m >= lo) & (uvdist_m <= hi)
+
+    geometry_filters = (ha_range_hours, az_range_deg, el_range_deg, parallactic_angle_range_deg)
+    if any(f is not None for f in geometry_filters):
+        if source_table is None or array_location is None:
+            raise ValueError(
+                "ha_range_hours/az_range_deg/el_range_deg/parallactic_angle_range_deg "
+                "require both source_table and array_location"
+            )
+        missing_ids = sorted(set(index.source_id.tolist()) - set(source_table.keys()))
+        if missing_ids:
+            raise ValueError(f"source_table is missing source id(s) {missing_ids} present in this index")
+
+        unique_ids, inverse = np.unique(index.source_id, return_inverse=True)
+        ra_deg = np.array([source_table[int(sid)].ra_apparent_deg for sid in unique_ids])[inverse]
+        dec_deg = np.array([source_table[int(sid)].dec_apparent_deg for sid in unique_ids])[inverse]
+
+        if ha_range_hours is not None:
+            mask &= _cyclic_range_mask(hour_angle_hours(index.jd, ra_deg, array_location), ha_range_hours)
+        if az_range_deg is not None or el_range_deg is not None:
+            az_deg, el_deg = altaz_deg(index.jd, ra_deg, dec_deg, array_location)
+            if az_range_deg is not None:
+                mask &= _cyclic_range_mask(az_deg, az_range_deg)
+            if el_range_deg is not None:
+                lo, hi = el_range_deg
+                mask &= (el_deg >= lo) & (el_deg <= hi)
+        if parallactic_angle_range_deg is not None:
+            pa_deg = parallactic_angle_deg(index.jd, ra_deg, dec_deg, array_location)
+            mask &= _cyclic_range_mask(pa_deg, parallactic_angle_range_deg)
 
     row_indices = np.where(mask)[0]
 
