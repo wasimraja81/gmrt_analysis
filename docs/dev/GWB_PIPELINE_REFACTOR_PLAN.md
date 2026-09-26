@@ -9,10 +9,13 @@ mis-scoped, not deferred — see Phase C for why.
 
 Phases re-ordered 2026-09-25 around the pipeline's own high-level stages (raw data →
 index → know your data → curation → cal solve → split-with-cal-applied → imaging); see
-Phase B, added the same day, and the `## Sequencing` note below. Next: T19 (Phase B,
-visPlot app — buildable now, no dependency on calibration existing first), or T5d (Phase
-C, outer solve/diagnose/flag loop) — either is a reasonable next step; T19 doesn't block
-on T5d or the reverse.
+Phase B, added the same day, and the `## Sequencing` note below.
+
+T19 (Phase B, visPlot app) is well underway (208 tests passing, 2026-09-27) -- the
+generic selection/plotting engine and several of the required plot types are done; see
+T19's own status for what's built and what's left (the CLI wrapper itself, a time-range
+resolver, and T20). T5d (Phase C, outer solve/diagnose/flag loop) remains a reasonable
+alternative next step; neither blocks the other.
 
 ## Objective
 
@@ -201,21 +204,98 @@ needs — source list, UV-coverage, frequency sampling, integration counts, unca
 amplitude/phase checks — with no dependency on Phase C (calibration) existing first.
 Buildable now, ahead of Phase C.
 
-- **T19 — visPlot app: meaningful defaults + interactive exploration.** Reuse and improve
-  the archived `legacy_gsb_40_014/src/plotVis.py` (1492 lines, "generalized plotVis
-  utility ... single multi-panel figure with selectable products and selectors") per
-  standing rule 8 — this is not written from scratch; check what it already does and why
-  before designing its replacement. Requirements from the user (2026-09-25), fine-grained
-  design deferred to its own conversation:
-  - A meaningful default set of plots/products generated with no configuration, so a
-    first look at any observation needs no setup.
-  - An interactive "scratch phase": the user explores the data live with the tool, then,
-    once satisfied, asks for specific additional views on top of the defaults (zoomed
-    selections, particular filters) rather than needing to script that from the start.
-  - Antenna layout plotting.
-  - Source listing with positions and other attributes.
-  - HA range plotting.
-  - Az/El range plotting.
+- **T19 — visPlot app: meaningful defaults + interactive exploration — IN PROGRESS
+  (started 2026-09-26).** Reuse and improve the archived `legacy_gsb_40_014/src/plotVis.py`
+  (1492 lines, "generalized plotVis utility ... single multi-panel figure with selectable
+  products and selectors") per standing rule 8 — checked directly before designing its
+  replacement (its own "any panel, any product" design is the precedent for `scatter_xy`
+  below, arrived at independently before rereading it). CLI-first per the user
+  (2026-09-25): no Jupyter, a future Qt GUI reuses the same `src/visplot/` functions from
+  its own widget callbacks rather than reimplementing plotting logic; the CLI wrapper
+  itself (`bin/visplot.py`) is not yet built (next).
+
+  **Done:**
+  - Foundation: `data_io/source_table.py` (AIPS SU table, including a corrected
+    understanding of `CALCODE` as an EVLA-convention scan-intent code, not a VLA-specific
+    resolved/unresolved flag), `data_io/astrometry.py` (hour angle, Az/El, parallactic
+    angle, generic against any `EarthLocation`), `select_rows` extended with
+    `ha_range_hours`/`az_range_deg`/`el_range_deg`/`parallactic_angle_range_deg` filters
+    and exact (not reference-frequency-approximated) `u/v/w_range_klambda`/
+    `uvdist_range_klambda` filters.
+  - Fixed a real, previously undetected bug found while building the antenna layout plot:
+    `read_antenna_table` was adding `STABXYZ` directly to `ARRAYX/Y/Z` as if both were in
+    the same ECEF frame; AIPS Memo 117 defines `STABXYZ` in ECEF rotated to the array's own
+    local meridian, and the fix (confirmed via independent geodetic height, and via web
+    search of the AIPS memo) was necessary for every antenna position in the codebase, not
+    just this plot.
+  - Added the W coordinate (`ww_sec`) to `RowIndex`/`VisibilityBlock` — never read before.
+  - `src/visplot/`: `antenna_layout` (density-based compact-core detection, not
+    centroid-distance, since GMRT's own layout shows those disagree; a dynamically
+    positioned, exact-collision-avoiding-label inset; a title with optional
+    telescope/source-file provenance), `source_listing`, `hour_angle_range`,
+    `az_el_range`, `parallactic_angle_range`, and a generic engine
+    (`derived_quantities.compute_quantity` + `scatter_xy`) that replaced the two
+    originally-built specific functions (`amplitude_phase`, `uv_coverage`) once it became
+    clear they had no genuine reason to be separate from "pick two named quantities and
+    plot them, with optional per-category coloring, flag handling, and a `mirror` option
+    for a measurement-and-its-conjugate pair like UV coverage".
+  - `src/visplot/range_spec.py` (`"1:5,10,12:14"` set/range grammar, plus
+    `astropy.units`-based conversion for genuine physical units — not kilo-wavelengths,
+    which isn't one), `channel_selection.py` (index or frequency band, resolved against a
+    file's real, not assumed-ordered, channel frequencies), `antenna_selection.py` (id or
+    full name, mirroring `sources`'s own name-or-id), and
+    `instruments/gmrt/antenna_selection.py` (a bare GMRT code prefix, e.g. "C00").
+
+  **Remaining:**
+  - A time-range resolver (relative hours / absolute JD / UTC string — not a scalar-unit
+    conversion like the others, needs its own design given ISO timestamps' own colons
+    would collide with the `lo:hi` grammar).
+  - `bin/visplot.py` itself.
+  - T20 (below), which several plot titles and the time-range resolver's "DATE-OBS +
+    bare time-of-day" convenience will depend on.
+  - A stock-take of the AIPS FQ table and AN-table polarization columns (2026-09-27)
+    found real gaps beyond the original requirement list — see T20.
+
+- **T20 — Observation metadata aggregator ("listObs") — NOT STARTED (added 2026-09-27).**
+  A stock-take of what a UVFITS file actually carries, against what this codebase reads,
+  found: the AIPS FQ table (`FRQSEL`/`IF FREQ`/`CH WIDTH`/`TOTAL BANDWIDTH`/`SIDEBAND`) is
+  never consulted at all — `chan_freqs_hz` is computed purely from the primary header's
+  `CRVAL4`/`CDELT4`/`CRPIX4`, correct for the real GWB file only because it happens to have
+  a single frequency setup (confirmed directly: its one FQ-table row's `CH WIDTH` exactly
+  matches `CDELT4`) — a file with more than one frequency setup would be read wrong, since
+  each row's own `FREQSEL` (also unread) is never used to pick the matching FQ entry; the
+  AN table's polarization/feed columns (`POLTYA`/`POLAA`/`POLCALA`/`POLTYB`/`POLAB`/
+  `POLCALB`, plus `MNTSTA`/`STAXOF`) are unread, directly relevant given this project's
+  pol-cal interest; the SU table's `QUAL`/`FREQOFF`/`BANDWIDTH`/`LSRVEL`/`RESTFREQ`/
+  `PMRA`/`PMDEC` are unread (all zero/trivial in the real GWB file, but real gaps); no
+  integration-time header keyword exists in this file at all (the "2.6s" in its filename
+  is not recorded metadata anywhere) — it has to be a derived quantity, from the row
+  index's own integration boundaries, not a table read.
+
+  Proposed shape (generic-core/GMRT-wrapper split, as everywhere else in this codebase):
+  - `data_io/observation_header.py` — the primary header's descriptive keywords
+    (`TELESCOP`, `OBSERVER`, `OBJECT`, `DATE_OBS`, `INSTRUME`, `BUNIT`).
+  - `data_io/frequency_table.py` — the AIPS FQ table, and the fix for the FQ-table gap
+    above.
+  - A separate `AntennaPolarization` dataclass + reader, keyed by station number (like
+    `read_source_table`'s dict-by-id), rather than extending `Antenna` itself — `Antenna`
+    is already used everywhere, and adding more required fields would mean another round
+    of test-fixture churn (as happened when `x_m`/`y_m`/`z_m` were added) for data most
+    callers don't need.
+  - `Source` extended directly with its missing SU-table columns (no legacy fixture
+    burden — built fresh this session).
+  - `data_io/observation_summary.py`: `list_obs(fits_path, index=None) -> ObservationSummary`,
+    bundling `header`, `antennas`, `antenna_polarization`, `sources`, `frequency_setups`,
+    and (only given a `RowIndex`, since building one is the expensive full-file scan)
+    derived scan/timing info — integration time, per-source on-source time, observation
+    start/end JD. This is both a genuine standalone "what's in this file" report and what
+    plotting tools query for titles/axis context, rather than each one re-reading header
+    metadata separately.
+  - `instruments/gmrt/observation_summary.py` — a thin wrapper adding active-vs-DUD
+    antenna resolution on top, same split as `instruments/gmrt/row_index.py`.
+  - A shared `visplot` title helper reading `TELESCOP`/`DATE_OBS` (and the array's known
+    location, if useful) off an `ObservationSummary`, replacing `antenna_layout`'s current
+    ad hoc `telescope`/`source_path` parameters — and used by every other plot's title too.
 
 ### Phase C — Primary Calibration (3C48)
 
