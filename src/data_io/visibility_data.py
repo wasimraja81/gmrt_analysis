@@ -40,6 +40,7 @@ class VisibilityBlock:
     jd: np.ndarray
     uu_sec: np.ndarray
     vv_sec: np.ndarray
+    ww_sec: np.ndarray
     chan_freqs_hz: np.ndarray | None  # physical frequencies for the selected FREQ indices, if a FREQ axis exists
     stokes_labels: list[str] | None  # physical Stokes labels for the selected STOKES indices, if a STOKES axis exists
 
@@ -174,6 +175,7 @@ def read_visibility_data(
         jd=index.jd[row_indices],
         uu_sec=index.uu_sec[row_indices],
         vv_sec=index.vv_sec[row_indices],
+        ww_sec=index.ww_sec[row_indices],
         chan_freqs_hz=chan_freqs_hz,
         stokes_labels=stokes_labels,
     )

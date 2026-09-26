@@ -108,6 +108,7 @@ def _make_index(source_id, jd, ant1, ant2, integration_boundaries):
         source_id=np.asarray(source_id), jd=np.asarray(jd),
         ant1=np.asarray(ant1, dtype=np.int16), ant2=np.asarray(ant2, dtype=np.int16),
         uu_sec=np.zeros(len(source_id), dtype=np.float32), vv_sec=np.zeros(len(source_id), dtype=np.float32),
+        ww_sec=np.zeros(len(source_id), dtype=np.float32),
         source_ranges={}, integration_boundaries=np.asarray(integration_boundaries),
         id_to_name={}, chan_freqs_hz=np.array([]), stokes_labels=[],
         data_axis_lengths=[3, 1, 1, 1], data_axis_types=["COMPLEX", "STOKES", "FREQ", "IF"],

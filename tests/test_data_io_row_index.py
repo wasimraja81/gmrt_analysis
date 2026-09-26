@@ -28,7 +28,7 @@ def _make_synthetic_uvfits_with_sources(path):
     )
     uu = np.arange(n, dtype=">f4") * 10.0
     vv = np.arange(n, dtype=">f4") * 20.0
-    ww = np.zeros(n, dtype=">f4")
+    ww = np.arange(n, dtype=">f4") * 5.0
     date1 = np.full(n, 2460100.0, dtype=">f8")
     date2 = np.arange(n, dtype=">f8") * 0.001
     freqsel = np.ones(n, dtype=">f4")
@@ -81,6 +81,7 @@ def test_build_row_index_against_a_synthetic_file_shaped_like_the_real_data():
     assert index.id_to_name == {1: "3C48", 2: "3C468.1"}
 
     np.testing.assert_allclose(index.uu_sec, np.arange(10) * 10.0, atol=1e-2)
+    np.testing.assert_allclose(index.ww_sec, np.arange(10) * 5.0, atol=1e-2)
     np.testing.assert_allclose(index.jd, 2460100.0 + np.arange(10) * 0.001, atol=1e-6)
 
     np.testing.assert_allclose(index.chan_freqs_hz, [100e6, 101e6, 102e6, 103e6])
@@ -227,6 +228,7 @@ def test_save_and_load_row_index_round_trips_every_field():
     np.testing.assert_array_equal(loaded.ant2, index.ant2)
     np.testing.assert_array_equal(loaded.uu_sec, index.uu_sec)
     np.testing.assert_array_equal(loaded.vv_sec, index.vv_sec)
+    np.testing.assert_array_equal(loaded.ww_sec, index.ww_sec)
     assert loaded.ant1.dtype == index.ant1.dtype
     assert loaded.source_ranges == index.source_ranges
     np.testing.assert_array_equal(loaded.integration_boundaries, index.integration_boundaries)
@@ -261,3 +263,23 @@ def test_save_row_index_does_not_corrupt_an_existing_index_if_the_write_fails():
     assert idx_path.read_bytes() == original_bytes
     leftover_temp_files = [p for p in idx_path.parent.iterdir() if ".tmp" in p.name]
     assert leftover_temp_files == []
+
+
+def test_load_row_index_raises_a_clear_error_for_a_pre_ww_sec_cache():
+    # A cache written before W-coordinate support (2026-09-26) has every
+    # field except ww_sec -- loading it must fail with a clear, actionable
+    # error, not a bare KeyError, and must not silently substitute a
+    # made-up value.
+    scratch = make_scratch_dir("row_index_old_format")
+    fits_path = scratch / "synthetic.fits"
+    _make_synthetic_uvfits_with_sources(fits_path)
+    index = build_row_index(fits_path)
+    idx_path = default_row_index_path(fits_path)
+    save_row_index(index, idx_path)
+
+    with np.load(idx_path, allow_pickle=False) as data:
+        fields_without_ww_sec = {k: data[k] for k in data.files if k != "ww_sec"}
+    np.savez(idx_path, **fields_without_ww_sec)
+
+    with pytest.raises(ValueError, match="ww_sec"):
+        load_row_index(idx_path)

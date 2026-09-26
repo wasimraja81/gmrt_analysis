@@ -14,10 +14,11 @@ def _make_index():
     ant2 = np.array([2, 3, 2, 2, 3, 3, 1, 3, 2, 3], dtype=np.int16)
     uu_sec = np.array([0, 1e-6, 0, 2e-6, 0, 3e-6, 0, 4e-6, 0, 5e-6], dtype=np.float32)
     vv_sec = np.zeros(10, dtype=np.float32)
+    ww_sec = np.zeros(10, dtype=np.float32)
 
     return RowIndex(
         path="synthetic", gcount=10, pcount=8,
-        source_id=source_id, jd=jd, ant1=ant1, ant2=ant2, uu_sec=uu_sec, vv_sec=vv_sec,
+        source_id=source_id, jd=jd, ant1=ant1, ant2=ant2, uu_sec=uu_sec, vv_sec=vv_sec, ww_sec=ww_sec,
         source_ranges={1: [(0, 3), (5, 7)], 2: [(3, 5), (7, 10)]},
         integration_boundaries=np.array([0, 3, 5, 7, 10]),
         id_to_name={1: "3C48", 2: "3C286"},
@@ -174,10 +175,11 @@ def _make_geometry_index():
     ant2 = np.array([2, 2], dtype=np.int16)
     uu_sec = np.zeros(2, dtype=np.float32)
     vv_sec = np.zeros(2, dtype=np.float32)
+    ww_sec = np.zeros(2, dtype=np.float32)
 
     index = RowIndex(
         path="synthetic", gcount=2, pcount=8,
-        source_id=source_id, jd=jd, ant1=ant1, ant2=ant2, uu_sec=uu_sec, vv_sec=vv_sec,
+        source_id=source_id, jd=jd, ant1=ant1, ant2=ant2, uu_sec=uu_sec, vv_sec=vv_sec, ww_sec=ww_sec,
         source_ranges={1: [(0, 1)], 2: [(1, 2)]},
         integration_boundaries=np.array([0, 2]),
         id_to_name={1: "source-1", 2: "source-2"},

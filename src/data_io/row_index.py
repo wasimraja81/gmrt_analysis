@@ -56,6 +56,7 @@ class RowIndex:
     ant2: np.ndarray  # per row
     uu_sec: np.ndarray  # per row
     vv_sec: np.ndarray  # per row
+    ww_sec: np.ndarray  # per row
     source_ranges: dict[int, list[tuple[int, int]]]  # source id -> [(start, stop), ...), half-open, contiguous runs
     integration_boundaries: np.ndarray  # row indices where a new integration starts, length n_integrations + 1
     id_to_name: dict[int, str]  # from the AIPS SU table
@@ -165,6 +166,7 @@ def build_row_index(
 
     uu_sec = all_params[:, resolve_param_column(layout, "UU")].astype(np.float32)
     vv_sec = all_params[:, resolve_param_column(layout, "VV")].astype(np.float32)
+    ww_sec = all_params[:, resolve_param_column(layout, "WW")].astype(np.float32)
 
     with open_fits_readonly(fits_path) as hdul:
         header = hdul[0].header
@@ -200,6 +202,7 @@ def build_row_index(
         ant2=ant2,
         uu_sec=uu_sec,
         vv_sec=vv_sec,
+        ww_sec=ww_sec,
         source_ranges=_compute_source_ranges(source_id),
         integration_boundaries=_compute_integration_boundaries(source_id, jd),
         id_to_name=_read_source_id_to_name(fits_path),
@@ -245,6 +248,7 @@ def save_row_index(index: RowIndex, path: Path | str) -> Path:
                 ant2=index.ant2,
                 uu_sec=index.uu_sec,
                 vv_sec=index.vv_sec,
+                ww_sec=index.ww_sec,
                 integration_boundaries=index.integration_boundaries,
                 chan_freqs_hz=index.chan_freqs_hz,
                 data_offset=index.data_offset,
@@ -263,8 +267,22 @@ def save_row_index(index: RowIndex, path: Path | str) -> Path:
 
 
 def load_row_index(path: Path | str) -> RowIndex:
-    """Load a row index previously written by `save_row_index`."""
+    """Load a row index previously written by `save_row_index`.
+
+    Raises a clear `ValueError` rather than a bare `KeyError` if `path` was
+    written before W-coordinate support was added (2026-09-26) -- this is a
+    disposable, rebuildable cache, not data to migrate in place, so the fix
+    is to rebuild it (`build_row_index` + `save_row_index` on the same raw
+    file, or the pipeline's build_index stage with `force_rebuild: true`),
+    not to patch around a field that was never recorded.
+    """
     with np.load(path, allow_pickle=False) as data:
+        if "ww_sec" not in data:
+            raise ValueError(
+                f"{path}: this row index predates W-coordinate support and has no ww_sec -- "
+                f"rebuild it (build_row_index + save_row_index on the raw file, or the "
+                f"pipeline's build_index stage with force_rebuild: true) rather than loading it as-is."
+            )
         source_ranges = {
             int(k): [tuple(r) for r in v]
             for k, v in json.loads(str(data["source_ranges_json"])).items()
@@ -280,6 +298,7 @@ def load_row_index(path: Path | str) -> RowIndex:
             ant2=data["ant2"],
             uu_sec=data["uu_sec"],
             vv_sec=data["vv_sec"],
+            ww_sec=data["ww_sec"],
             source_ranges=source_ranges,
             integration_boundaries=data["integration_boundaries"],
             id_to_name=id_to_name,
