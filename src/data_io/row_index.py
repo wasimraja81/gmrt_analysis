@@ -29,6 +29,7 @@ import numpy as np
 from astropy.io import fits
 
 from data_io.raw_data_access import open_fits_readonly
+from data_io.source_table import read_source_table
 from data_io.uvfits_group_params import (
     decode_baseline,
     read_all_param_columns,
@@ -108,22 +109,7 @@ def _compute_integration_boundaries(source_id: np.ndarray, jd: np.ndarray) -> np
 def _read_source_id_to_name(fits_path: Path | str) -> dict[int, str]:
     """Read the AIPS SU table's source-id-to-name lookup -- a small, whole-file
     table, not a per-row quantity."""
-    with open_fits_readonly(fits_path) as hdul:
-        try:
-            su = hdul["AIPS SU"]
-        except KeyError:
-            return {}
-        cols = set(su.columns.names)
-        id_col = "ID. NO." if "ID. NO." in cols else ("ID_NO." if "ID_NO." in cols else None)
-        if id_col is None or "SOURCE" not in cols:
-            return {}
-        result = {}
-        for row in su.data:
-            name = row["SOURCE"]
-            if isinstance(name, bytes):
-                name = name.decode("ascii")
-            result[int(row[id_col])] = str(name).strip()
-        return result
+    return {sid: source.name for sid, source in read_source_table(fits_path).items()}
 
 
 def _compute_source_ranges(source_id: np.ndarray) -> dict[int, list[tuple[int, int]]]:
