@@ -84,3 +84,20 @@ def test_parse_quantity_range_is_case_sensitive_about_units():
 
 def test_parse_quantity_range_handles_multiple_terms_with_one_shared_unit():
     assert parse_quantity_range("1:5,10km", u.m) == [(1000.0, 5000.0), (10000.0, 10000.0)]
+
+
+def test_parse_quantity_range_applies_a_unit_found_on_any_one_term_to_all_terms():
+    # The unit appears on the first term here, not the last -- must still
+    # apply to the second, unitless term.
+    assert parse_quantity_range("1km,2:3", u.m) == [(1000.0, 1000.0), (2000.0, 3000.0)]
+
+
+def test_parse_quantity_range_accepts_the_same_unit_repeated_on_every_term():
+    assert parse_quantity_range("100:100.5MHz,103.5:104MHz", u.Hz) == [
+        (100e6, 100.5e6), (103.5e6, 104e6),
+    ]
+
+
+def test_parse_quantity_range_rejects_conflicting_units_across_terms():
+    with pytest.raises(ValueError, match="mixed units"):
+        parse_quantity_range("1km,2000m", u.m)
