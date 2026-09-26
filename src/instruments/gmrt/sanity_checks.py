@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from data_io.antenna_table import Antenna, read_array_reference_position_m
+from data_io.antenna_table import Antenna, read_array_earth_location
 from data_io.known_observatory_locations import KNOWN_OBSERVATORY_LOCATIONS
 from data_io.raw_data_access import open_fits_readonly
 from data_io.row_index import RowIndex
@@ -55,11 +55,7 @@ def check_array_position_matches_known_location(fits_path: Path | str, tolerance
     honestly-mislabeled file, this catches an internally inconsistent one
     (TELESCOP says GMRT, but the recorded position doesn't match).
     """
-    from astropy.coordinates import EarthLocation
-    import astropy.units as u
-
-    x, y, z = read_array_reference_position_m(fits_path)
-    location = EarthLocation.from_geocentric(x, y, z, unit=u.m)
+    location = read_array_earth_location(fits_path)
     known = KNOWN_OBSERVATORY_LOCATIONS["GMRT"]
 
     lat_diff = abs(location.lat.deg - known.latitude_deg)

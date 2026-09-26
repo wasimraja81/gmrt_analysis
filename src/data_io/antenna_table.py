@@ -21,6 +21,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import astropy.units as u
+from astropy.coordinates import EarthLocation
+
 from data_io.raw_data_access import open_fits_readonly
 
 
@@ -57,6 +60,15 @@ def read_array_reference_position_m(fits_path: Path | str) -> tuple[float, float
     angle), separately from any one antenna's position."""
     with open_fits_readonly(fits_path) as hdul:
         return _array_reference_position_m(hdul["AIPS AN"].header)
+
+
+def read_array_earth_location(fits_path: Path | str) -> EarthLocation:
+    """The array's reference position as an `EarthLocation` -- what sanity
+    checks and observing-geometry code (hour angle, Az/El, parallactic
+    angle) both need, built from the same `ARRAYX/Y/Z` this module already
+    reads."""
+    x, y, z = read_array_reference_position_m(fits_path)
+    return EarthLocation.from_geocentric(x, y, z, unit=u.m)
 
 
 def _array_reference_position_m(an_header) -> tuple[float, float, float]:
