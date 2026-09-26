@@ -65,6 +65,28 @@ def _cyclic_range_mask(values: np.ndarray, bounds: tuple[float, float]) -> np.nd
     return (values >= lo) | (values <= hi)
 
 
+def _row_klambda_range(sec_values: np.ndarray, freq_lo_hz: float, freq_hi_hz: float) -> tuple[np.ndarray, np.ndarray]:
+    """Each row's exact [min, max] value in kilo-wavelengths across
+    [freq_lo_hz, freq_hi_hz], computed from its own frequency-independent
+    value in seconds (u_sec/v_sec/w_sec, or a uvdist derived from them).
+
+    Exact, not approximate: a row's own seconds-value is constant across
+    every channel, and frequency varies monotonically with channel index,
+    so the row's achievable kilo-wavelength range is fully determined by
+    evaluating at just the two band edges -- no reference frequency is
+    substituted anywhere. `np.minimum`/`np.maximum` (not just "at_lo,
+    at_hi" in that order) because a negative seconds-value flips which
+    edge gives the smaller result."""
+    at_lo = sec_values * freq_lo_hz / 1e3
+    at_hi = sec_values * freq_hi_hz / 1e3
+    return np.minimum(at_lo, at_hi), np.maximum(at_lo, at_hi)
+
+
+def _overlaps_range_mask(row_lo: np.ndarray, row_hi: np.ndarray, bounds: tuple[float, float]) -> np.ndarray:
+    lo, hi = bounds
+    return (row_lo <= hi) & (row_hi >= lo)
+
+
 def _normalized_pair_keys(pairs) -> set[int]:
     keys = set()
     for a, b in pairs:
@@ -84,6 +106,11 @@ def select_rows(
     baselines: list[tuple[int, int]] | None = None,
     exclude_baselines: list[tuple[int, int]] | None = None,
     uvdist_range_m: tuple[float, float] | None = None,
+    u_range_klambda: tuple[float, float] | None = None,
+    v_range_klambda: tuple[float, float] | None = None,
+    w_range_klambda: tuple[float, float] | None = None,
+    uvdist_range_klambda: tuple[float, float] | None = None,
+    freq_range_hz: tuple[float, float] | None = None,
     ha_range_hours: tuple[float, float] | None = None,
     az_range_deg: tuple[float, float] | None = None,
     el_range_deg: tuple[float, float] | None = None,
@@ -103,6 +130,19 @@ def select_rows(
     `correlation_type` defaults to "cross" (excluding autocorrelations),
     matching the pipeline-wide default; pass "auto" or "both" explicitly
     to include them.
+
+    `u_range_klambda`/`v_range_klambda`/`w_range_klambda`/`uvdist_range_klambda`
+    filter by each row's exact achievable range in kilo-wavelengths across
+    `freq_range_hz` (defaulting to the index's own full channel band) --
+    see `_row_klambda_range` for why this is exact rather than an
+    approximation using some single reference frequency. A row passes if
+    its own range overlaps the one requested, since different channels of
+    the same row can land on either side of a boundary. These need no
+    extra input beyond `index` itself (`chan_freqs_hz` is already part of
+    it); they raise if the index has no FREQ axis at all. The plain
+    (frequency-independent) `uvdist_range_m` above is unrelated -- kilo-
+    wavelengths cannot be substituted into it, since uvdist_range_m has no
+    frequency dependence to convert.
 
     `ha_range_hours`/`az_range_deg`/`el_range_deg`/`parallactic_angle_range_deg`
     filter by each row's own source, at that row's own JD, as seen from
@@ -172,6 +212,33 @@ def select_rows(
         lo, hi = uvdist_range_m
         uvdist_m = np.sqrt(index.uu_sec.astype(np.float64) ** 2 + index.vv_sec.astype(np.float64) ** 2) * SPEED_OF_LIGHT_M_PER_S
         mask &= (uvdist_m >= lo) & (uvdist_m <= hi)
+
+    klambda_filters = (u_range_klambda, v_range_klambda, w_range_klambda, uvdist_range_klambda)
+    if any(f is not None for f in klambda_filters):
+        if index.chan_freqs_hz is None or len(index.chan_freqs_hz) == 0:
+            raise ValueError(
+                "u_range_klambda/v_range_klambda/w_range_klambda/uvdist_range_klambda "
+                "require channel frequencies, which this index does not have (no FREQ axis)"
+            )
+        if freq_range_hz is not None:
+            freq_lo_hz, freq_hi_hz = freq_range_hz
+        else:
+            freq_lo_hz = float(np.min(index.chan_freqs_hz))
+            freq_hi_hz = float(np.max(index.chan_freqs_hz))
+
+        if u_range_klambda is not None:
+            row_lo, row_hi = _row_klambda_range(index.uu_sec.astype(np.float64), freq_lo_hz, freq_hi_hz)
+            mask &= _overlaps_range_mask(row_lo, row_hi, u_range_klambda)
+        if v_range_klambda is not None:
+            row_lo, row_hi = _row_klambda_range(index.vv_sec.astype(np.float64), freq_lo_hz, freq_hi_hz)
+            mask &= _overlaps_range_mask(row_lo, row_hi, v_range_klambda)
+        if w_range_klambda is not None:
+            row_lo, row_hi = _row_klambda_range(index.ww_sec.astype(np.float64), freq_lo_hz, freq_hi_hz)
+            mask &= _overlaps_range_mask(row_lo, row_hi, w_range_klambda)
+        if uvdist_range_klambda is not None:
+            uvdist_sec = np.hypot(index.uu_sec.astype(np.float64), index.vv_sec.astype(np.float64))
+            row_lo, row_hi = _row_klambda_range(uvdist_sec, freq_lo_hz, freq_hi_hz)
+            mask &= _overlaps_range_mask(row_lo, row_hi, uvdist_range_klambda)
 
     geometry_filters = (ha_range_hours, az_range_deg, el_range_deg, parallactic_angle_range_deg)
     if any(f is not None for f in geometry_filters):

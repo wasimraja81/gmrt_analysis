@@ -261,3 +261,71 @@ def test_cyclic_range_mask_wraps_when_the_low_bound_exceeds_the_high_bound():
     values = np.array([-11.9, 0.0, 11.9])
     mask = _cyclic_range_mask(values, (10.0, -10.0))
     np.testing.assert_array_equal(mask, [True, False, True])
+
+
+# --- kilo-wavelength range filters: 4 rows, a 1.0-1.1 GHz band (3
+# channels: 1.0, 1.05, 1.1 GHz), each row's own exact kλ range (computed
+# directly, matching what _row_klambda_range must reproduce) is:
+# row 0: uu_sec=1e-6  -> [1.0, 1.1] kλ
+# row 1: uu_sec=2e-6  -> [2.0, 2.2] kλ (always outside the test window below)
+# row 2: uu_sec=-1e-6 -> [-1.1, -1.0] kλ (negative -- exercises the sign flip)
+# row 3: uu_sec=5e-9  -> [0.005, 0.0055] kλ (entirely inside the test window)
+
+
+def _make_klambda_index():
+    n = 4
+    uu_sec = np.array([1e-6, 2e-6, -1e-6, 5e-9], dtype=np.float32)
+    vv_sec = np.zeros(n, dtype=np.float32)
+    ww_sec = np.array([3e-7, 0.0, 0.0, 0.0], dtype=np.float32)  # row 0: 0.3-0.33 kλ in w
+    return RowIndex(
+        path="synthetic", gcount=n, pcount=8,
+        source_id=np.ones(n, dtype=np.int32), jd=np.full(n, 100.0),
+        ant1=np.array([1] * n, dtype=np.int16), ant2=np.array([2] * n, dtype=np.int16),
+        uu_sec=uu_sec, vv_sec=vv_sec, ww_sec=ww_sec,
+        source_ranges={1: [(0, n)]}, integration_boundaries=np.array([0, n]),
+        id_to_name={1: "3C48"}, chan_freqs_hz=np.array([1.0e9, 1.05e9, 1.1e9]), stokes_labels=["RR"],
+        data_axis_lengths=[3, 1, 3, 1], data_axis_types=["COMPLEX", "STOKES", "FREQ", "IF"],
+        data_offset=0, build_time_sec=0.0,
+    )
+
+
+def test_select_rows_by_u_range_klambda_includes_rows_whose_range_overlaps():
+    index = _make_klambda_index()
+    # Window (-1.05, 1.05): row 0 [1.0,1.1] overlaps at its low edge, row 2
+    # [-1.1,-1.0] overlaps at its high edge, row 3 [0.005,0.0055] is fully
+    # inside, row 1 [2.0,2.2] is fully outside.
+    sel = select_rows(index, correlation_type="both", u_range_klambda=(-1.05, 1.05))
+    np.testing.assert_array_equal(sel.row_indices, [0, 2, 3])
+
+
+def test_select_rows_by_w_range_klambda():
+    index = _make_klambda_index()
+    # Only row 0 has a nonzero w; its exact range is [0.3, 0.33] kλ.
+    sel = select_rows(index, correlation_type="both", w_range_klambda=(0.1, 0.4))
+    np.testing.assert_array_equal(sel.row_indices, [0])
+
+
+def test_select_rows_by_uvdist_range_klambda_is_never_negative():
+    index = _make_klambda_index()
+    # vv_sec is all zero, so uvdist_sec = |uu_sec| -- row 2's negative u
+    # still contributes a positive uvdist range [1.0, 1.1] kλ, same as row 0.
+    sel = select_rows(index, correlation_type="both", uvdist_range_klambda=(1.05, 1.2))
+    np.testing.assert_array_equal(sel.row_indices, [0, 2])
+
+
+def test_select_rows_klambda_range_respects_an_explicit_freq_range_hz():
+    index = _make_klambda_index()
+    # Restricting to just the top half of the band (1.05-1.1 GHz) changes
+    # row 0's range to [1.05, 1.1] kλ, no longer overlapping a window that
+    # only reached up to 1.02.
+    sel = select_rows(
+        index, correlation_type="both", u_range_klambda=(0.9, 1.02), freq_range_hz=(1.05e9, 1.1e9),
+    )
+    np.testing.assert_array_equal(sel.row_indices, [])
+
+
+def test_select_rows_klambda_range_raises_without_a_freq_axis():
+    index = _make_klambda_index()
+    object.__setattr__(index, "chan_freqs_hz", np.array([]))
+    with pytest.raises(ValueError, match="FREQ axis"):
+        select_rows(index, u_range_klambda=(0.0, 1.0))
