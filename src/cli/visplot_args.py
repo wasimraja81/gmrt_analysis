@@ -13,6 +13,7 @@ import astropy.units as u
 from data_io.antenna_table import Antenna
 from instruments.gmrt.antenna_selection import resolve_antenna_selection
 from visplot.channel_selection import resolve_channel_selection
+from visplot.derived_quantities import QUANTITY_NAMES
 from visplot.range_spec import parse_single_quantity_range, parse_single_range
 from visplot.time_range import resolve_time_range_jd
 
@@ -21,11 +22,41 @@ NAMED_PLOTS = {"antenna-layout", "source-listing", "ha-range", "az-el-range", "p
 
 def parse_plot_names(spec: str) -> list[str]:
     """`--plots` into an ordered list of plot names, e.g.
-    "antenna-layout,amp-vs-time_h"."""
+    "antenna-layout,amp-vs-time_h" -- each one checked by
+    `validate_plot_name`, so a bad name fails before any data is read."""
     names = [p.strip() for p in spec.split(",") if p.strip()]
     if not names:
         raise ValueError("--plots requires at least one plot name")
+    for name in names:
+        validate_plot_name(name)
     return names
+
+
+def validate_plot_name(name: str) -> None:
+    """Raises `ValueError` unless `name` is a named plot or a 'Y-vs-X' pair
+    of known quantity names. A bare quantity name gets a message suggesting
+    pairs."""
+    if name in NAMED_PLOTS:
+        return
+    if "-vs-" in name:
+        for quantity in parse_quantity_pair(name):
+            validate_quantity_name(quantity, context=f"in plot {name!r}")
+        return
+    if name in QUANTITY_NAMES:
+        raise ValueError(
+            f"{name!r} is a quantity; a plot needs two, written 'Y-vs-X', "
+            f"e.g. 'amp-vs-{name}' or '{name}-vs-time_h'"
+        )
+    raise ValueError(
+        f"unrecognized plot name {name!r}: expected one of {sorted(NAMED_PLOTS)} "
+        f"or a 'Y-vs-X' pair of quantities from {sorted(QUANTITY_NAMES)}"
+    )
+
+
+def validate_quantity_name(name: str, context: str = "") -> None:
+    if name not in QUANTITY_NAMES:
+        where = f" {context}" if context else ""
+        raise ValueError(f"unknown quantity {name!r}{where}: expected one of {sorted(QUANTITY_NAMES)}")
 
 
 def is_generic_quantity_plot(name: str) -> bool:

@@ -32,6 +32,7 @@ if "--output-dir" in sys.argv:
 
 import numpy as np
 from astropy.io import fits
+from matplotlib.backends.backend_pdf import PdfPages
 
 from cli.visplot_args import (  # noqa: E402
     is_generic_quantity_plot,
@@ -45,15 +46,17 @@ from cli.visplot_args import (  # noqa: E402
     resolve_stokes_axis_selection,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
+    validate_quantity_name,
 )
 from data_io.antenna_table import read_antenna_table, read_array_earth_location  # noqa: E402
 from data_io.astrometry import altaz_deg, hour_angle_hours, parallactic_angle_deg  # noqa: E402
 from data_io.row_index import default_row_index_path, load_row_index  # noqa: E402
 from data_io.row_selection import select_rows  # noqa: E402
 from data_io.source_table import read_source_table  # noqa: E402
-from data_io.visibility_data import read_visibility_data  # noqa: E402
+from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes  # noqa: E402
+from data_io.visibility_data import VisibilityReadTooLarge, read_visibility_data  # noqa: E402
 from visplot.antenna_layout import antenna_layout  # noqa: E402
-from visplot.derived_quantities import compute_quantity  # noqa: E402
+from visplot.derived_quantities import compute_quantity, quantity_display_name, quantity_label  # noqa: E402
 from visplot.geometry_range import az_el_range, hour_angle_range, parallactic_angle_range  # noqa: E402
 from visplot.scatter_xy import scatter_xy  # noqa: E402
 from visplot.source_listing import source_listing  # noqa: E402
@@ -61,68 +64,198 @@ from visplot.source_listing import source_listing  # noqa: E402
 GEOMETRY_PLOTS = {"ha-range", "az-el-range", "parallactic-angle-range"}
 
 
+_EPILOG = """\
+plot names (--plots, comma-separated):
+  named plots:
+    antenna-layout             antenna positions, local East/North (m)
+    source-listing             the file's source table
+    ha-range                   hour angle vs time, per source
+    az-el-range                azimuth and elevation vs time, per source
+    parallactic-angle-range    parallactic angle vs time, per source
+  generic plots are written Y-vs-X, where Y and X are any two of:
+    real, imag, amp            visibility; unit from the file's BUNIT keyword
+    phase_deg                  visibility phase (deg)
+    time_h                     time since the first selected integration (h)
+    u_sec, v_sec, w_sec        u, v, w (s)
+    uvdist_m                   sqrt(u^2 + v^2) (m)
+    u_klambda, v_klambda       u, v, w, sqrt(u^2 + v^2) at each channel's
+    w_klambda, uvdist_klambda  frequency (kilo-wavelengths)
+    freq_mhz                   channel frequency (MHz)
+    stokes                     Stokes/correlation label (for --colorize-by)
+  e.g. amp-vs-uvdist_klambda, phase_deg-vs-time_h, v_klambda-vs-u_klambda.
+  Every generic plot names two quantities; a single name such as
+  uvdist_klambda is rejected.
+
+examples:
+  # antenna layout and source list only (reads no visibilities)
+  bin/visplot.sh OBS.FITS --plots antenna-layout,source-listing
+
+  # observing geometry of two calibrators
+  bin/visplot.sh OBS.FITS --plots ha-range,az-el-range,parallactic-angle-range \\
+      --sources 3C286,3C48
+
+  # amplitude vs frequency, RR only, first 30 minutes of the file, 400-450 MHz
+  bin/visplot.sh OBS.FITS --plots amp-vs-freq_mhz --sources 3C286 \\
+      --stokes RR --time-range 0:0.5 --channels 400:450MHz
+
+  # UV coverage in kilo-wavelengths, with the conjugate points, saved to disk
+  bin/visplot.sh OBS.FITS --plots v_klambda-vs-u_klambda --mirror \\
+      --sources 3C286 --channels 0:10 --output-dir plots/
+
+range syntax: 'lo:hi' for one range; several joined by commas ('1:5,10,12:14').
+A unit suffix on any term applies to all terms ('100:100.5MHz,103.5:104MHz').
+
+saved output (--output-dir): one PNG per plot (150 dpi), plus two combined
+PDFs, one page per plot. In both PDFs the data points are drawn into an image
+(as AIPS UVPLT's array method does), while axes, labels and titles stay vector;
+this keeps a page quick to open however many points it has:
+  PREFIX_lowres.pdf   points at 150 dpi
+  PREFIX_highres.pdf  points at 600 dpi, for zooming in
+                      (skip it with --no-highres-pdf)
+"""
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Explore a UVFITS observation: antenna layout, source listing, "
-        "observing geometry, and any quantity-vs-quantity visibility plot.",
+        prog="bin/visplot.sh",
+        description="Explore a UVFITS observation: antenna layout, source listing,\n"
+        "observing geometry, and any quantity-vs-quantity visibility plot.\n"
+        "Shows plots interactively unless --output-dir is given.",
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("fits_path", help="the raw UVFITS file (read-only; its .idx.npz row index must already exist)")
+    parser.add_argument(
+        "fits_path",
+        help="the UVFITS file (opened read-only); its row index (FITS_PATH.idx.npz) must "
+        "already exist -- build it with the pipeline's build_index stage",
+    )
     parser.add_argument(
         "--plots", required=True,
-        help="comma-separated plot names: antenna-layout, source-listing, ha-range, "
-        "az-el-range, parallactic-angle-range, or a generic 'Y-vs-X' pair using "
-        "derived-quantity names (real, imag, amp, phase_deg, time_h, u_sec, v_sec, "
-        "w_sec, uvdist_m, u_klambda, v_klambda, w_klambda, uvdist_klambda, freq_mhz, "
-        "stokes), e.g. amp-vs-freq_mhz, u_klambda-vs-v_klambda",
+        help="comma-separated plot names; see 'plot names' below",
     )
 
-    sel = parser.add_argument_group("selection (mirrors select_rows)")
-    sel.add_argument("--sources", help="comma-separated source names or ids")
-    sel.add_argument("--correlation-type", choices=["cross", "auto", "both"], default="cross")
-    sel.add_argument("--antennas", help="e.g. '1:5,10,W01:25,C00' (id, full name, or GMRT code prefix)")
-    sel.add_argument("--exclude-antennas", help="same syntax as --antennas")
-    sel.add_argument("--time-range", help="'lo:hi' (relative hours, or 'jd'-suffixed absolute) or 'start/end' (ISO-8601)")
-    sel.add_argument("--uvdist-range", help="'lo:hi', metres by default, or with an explicit 'km' suffix")
-    sel.add_argument("--u-range-klambda", help="'lo:hi' in kilo-wavelengths")
-    sel.add_argument("--v-range-klambda", help="'lo:hi' in kilo-wavelengths")
-    sel.add_argument("--w-range-klambda", help="'lo:hi' in kilo-wavelengths")
-    sel.add_argument("--uvdist-range-klambda", help="'lo:hi' in kilo-wavelengths")
-    sel.add_argument("--ha-range", help="'lo:hi', hours by default, or with an explicit 'deg' suffix")
-    sel.add_argument("--az-range", help="'lo:hi', degrees by default, or with an explicit 'rad' suffix")
-    sel.add_argument("--el-range", help="'lo:hi', degrees by default, or with an explicit 'rad' suffix")
-    sel.add_argument("--pa-range", help="'lo:hi', degrees by default, or with an explicit 'rad' suffix")
-    sel.add_argument("--every-nth", type=int)
-    sel.add_argument("--random-subset-n", type=int)
-    sel.add_argument("--random-seed", type=int)
+    sel = parser.add_argument_group("row selection (all given filters are combined)")
+    sel.add_argument("--sources", help="comma-separated source names or ids, e.g. 3C286,3C48 (default: all)")
+    sel.add_argument(
+        "--correlation-type", choices=["cross", "auto", "both"], default="cross",
+        help="cross-correlations, autocorrelations, or both (default: cross)",
+    )
+    sel.add_argument(
+        "--antennas",
+        help="keep baselines involving these antennas: ids, full names, or GMRT code "
+        "prefixes, e.g. '1:5,10,W01:25,C00' (default: all)",
+    )
+    sel.add_argument("--exclude-antennas", help="drop baselines involving these antennas (same syntax as --antennas)")
+    sel.add_argument(
+        "--time-range",
+        help="'lo:hi' in hours from the first integration in the file ('h' suffix optional), "
+        "or absolute JD with a 'jd' suffix, or 'start/end' as ISO-8601 UTC timestamps",
+    )
+    sel.add_argument("--uvdist-range", help="'lo:hi' baseline length, metres by default, or with a unit suffix, e.g. 'km'")
+    klambda_help = (
+        "'lo:hi' in kilo-wavelengths; a row is kept if its value at any frequency between the "
+        "lowest and highest --channels frequency (whole band if --channels is not given) falls in range"
+    )
+    sel.add_argument("--u-range-klambda", help=klambda_help)
+    sel.add_argument("--v-range-klambda", help=klambda_help)
+    sel.add_argument("--w-range-klambda", help=klambda_help)
+    sel.add_argument("--uvdist-range-klambda", help=klambda_help)
+    sel.add_argument("--ha-range", help="'lo:hi' hour angle, hours by default, or with a 'deg' suffix")
+    sel.add_argument("--az-range", help="'lo:hi' azimuth, degrees by default, or with a 'rad' suffix")
+    sel.add_argument("--el-range", help="'lo:hi' elevation, degrees by default, or with a 'rad' suffix")
+    sel.add_argument("--pa-range", help="'lo:hi' parallactic angle, degrees by default, or with a 'rad' suffix")
+    sel.add_argument(
+        "--every-nth", type=int, metavar="N",
+        help="keep every Nth row of those matching all other filters (not with --random-subset-n)",
+    )
+    sel.add_argument(
+        "--random-subset-n", type=int, metavar="N",
+        help="keep N randomly chosen rows of those matching all other filters; requires --random-seed",
+    )
+    sel.add_argument("--random-seed", type=int, help="seed for --random-subset-n, so the subset is reproducible")
 
-    axis = parser.add_argument_group("axis-level selection")
-    axis.add_argument("--channels", help="index range ('10:20') or frequency band with a unit ('300:310MHz')")
-    axis.add_argument("--stokes", help="comma-separated Stokes/correlation labels, e.g. RR,LL")
+    axis = parser.add_argument_group("channel/Stokes selection (generic Y-vs-X plots)")
+    axis.add_argument(
+        "--channels",
+        help="channel indices ('10:20') or a frequency band with a unit ('400:450MHz') (default: all)",
+    )
+    axis.add_argument("--stokes", help="comma-separated Stokes/correlation labels, e.g. RR,LL (default: all)")
 
-    style = parser.add_argument_group("style (generic quantity-vs-quantity plots)")
-    style.add_argument("--point-size", type=float, default=4.0)
-    style.add_argument("--linewidths", type=float, default=0.0)
-    style.add_argument("--color", default="tab:blue")
-    style.add_argument("--colorize-by", help="a derived-quantity name to color points by, e.g. stokes")
-    style.add_argument("--show-flagged", action="store_true")
+    style = parser.add_argument_group("style (generic Y-vs-X plots)")
+    style.add_argument(
+        "--point-size", type=float, metavar="S",
+        help="marker area in points^2 (default: chosen from the number of points -- 20 up to "
+        "1e3 points, 4 up to 1e5, 1 up to 1e6, 0.25 beyond). Markers are squares above 1e5 "
+        "points, circles otherwise",
+    )
+    style.add_argument("--linewidths", type=float, default=0.0, help="marker edge width in points (default: 0)")
+    style.add_argument("--color", default="tab:blue", help="marker color, any matplotlib color (default: tab:blue)")
+    style.add_argument(
+        "--colorize-by",
+        help="color points by a category quantity, e.g. stokes (overrides --color)",
+    )
+    style.add_argument(
+        "--show-flagged", action="store_true",
+        help="also draw flagged points (weight <= 0), as light-red crosses (default: flagged points are hidden)",
+    )
     style.add_argument("--mirror", action="store_true", help="also plot (-x, -y), e.g. for UV coverage")
 
     out = parser.add_argument_group("output")
-    out.add_argument("--output-dir", help="save a PNG per plot plus a combined PDF here, instead of showing interactively")
-    out.add_argument("--output-prefix", default="visplot", help="filename prefix for saved output")
+    out.add_argument(
+        "--output-dir",
+        help="save plots here (see 'saved output' below); without it, plots open in a window",
+    )
+    out.add_argument("--output-prefix", default="visplot", help="filename prefix for saved output (default: visplot)")
+    out.add_argument(
+        "--no-highres-pdf", action="store_true",
+        help="skip PREFIX_highres.pdf (write only the PNGs and PREFIX_lowres.pdf)",
+    )
 
     return parser
 
 
-def _read_telescope(fits_path: str) -> str | None:
+# Interim, until generic plots stream in chunks (plan doc T22): the reader's
+# size check counts its output arrays (24 bytes per sample), but a generic plot
+# peaked at ~110 bytes per sample (measured 2026-09-27, 3C286 and 3C468.1, up to
+# 122 million samples). Scaling the read budget by this ratio keeps the whole
+# plot within the host-RAM fraction.
+_READ_TO_PLOT_BYTES = 24 / 110
+
+LOWRES_DPI = 150
+HIGHRES_DPI = 600
+
+
+def _save_combined_pdf(path: Path, figures, dpi: int) -> None:
+    """All figures into one PDF, one page each. Each figure's data points
+    (its scatter collections) are drawn into an image at `dpi`; axes,
+    labels, and titles stay vector."""
+    with PdfPages(path) as pdf:
+        for _, fig in figures:
+            for ax in fig.axes:
+                for collection in ax.collections:
+                    collection.set_rasterized(True)
+            pdf.savefig(fig, dpi=dpi)
+
+
+def _read_header_keyword(fits_path: str, keyword: str) -> str | None:
     with fits.open(fits_path) as hdul:
-        telescope = str(hdul[0].header.get("TELESCOP", "")).strip()
-    return telescope or None
+        value = str(hdul[0].header.get(keyword, "")).strip()
+    return value or None
 
 
 def main(argv: list[str]) -> int:
-    args = build_arg_parser().parse_args(argv[1:])
+    parser = build_arg_parser()
+    args = parser.parse_args(argv[1:])
     fits_path = args.fits_path
+
+    # Checked before the file is opened, so a typo fails immediately rather
+    # than after a (possibly long) row selection or data read.
+    try:
+        plot_names = parse_plot_names(args.plots)
+        if args.colorize_by:
+            validate_quantity_name(args.colorize_by, context="in --colorize-by")
+    except ValueError as err:
+        parser.error(str(err))
 
     idx_path = default_row_index_path(fits_path)
     if not idx_path.exists():
@@ -133,9 +266,9 @@ def main(argv: list[str]) -> int:
     antennas = read_antenna_table(fits_path)
     array_location = read_array_earth_location(fits_path)
     source_table = read_source_table(fits_path)
-    telescope = _read_telescope(fits_path)
+    telescope = _read_header_keyword(fits_path, "TELESCOP")
+    bunit = _read_header_keyword(fits_path, "BUNIT")
 
-    plot_names = parse_plot_names(args.plots)
     needs_geometry = bool(GEOMETRY_PLOTS.intersection(plot_names)) or any(
         v is not None for v in (args.ha_range, args.az_range, args.el_range, args.pa_range)
     )
@@ -163,6 +296,13 @@ def main(argv: list[str]) -> int:
         select_kwargs["source_table"] = source_table
         select_kwargs["array_location"] = array_location
 
+    # The kλ row filters evaluate each row at the edges of a frequency span:
+    # that span must be the band of the selected channels.
+    channel_indices = resolve_channels_arg(args.channels, index.chan_freqs_hz)
+    if channel_indices is not None:
+        selected_freqs_hz = np.asarray(index.chan_freqs_hz)[channel_indices]
+        select_kwargs["freq_range_hz"] = (float(selected_freqs_hz.min()), float(selected_freqs_hz.max()))
+
     selection = select_rows(index, **select_kwargs)
     print(f"selected {selection.n_rows} rows; sources present: {selection.sources}")
 
@@ -172,13 +312,26 @@ def main(argv: list[str]) -> int:
     block = None
     if any(is_generic_quantity_plot(name) for name in plot_names):
         axis_selection = {}
-        channel_indices = resolve_channels_arg(args.channels, index.chan_freqs_hz)
         if channel_indices is not None:
             axis_selection["FREQ"] = np.array(channel_indices)
         stokes_indices = resolve_stokes_axis_selection(args.stokes, index.stokes_labels)
         if stokes_indices is not None:
             axis_selection["STOKES"] = np.array(stokes_indices)
-        block = read_visibility_data(fits_path, index, selection.row_indices, axis_selection=axis_selection or None)
+        try:
+            block = read_visibility_data(
+                fits_path, index, selection.row_indices, axis_selection=axis_selection or None,
+                max_bytes=int(host_total_memory_bytes() * DEFAULT_RAM_FRACTION_TO_USE * _READ_TO_PLOT_BYTES),
+            )
+        except VisibilityReadTooLarge as err:
+            sys.stdout.flush()
+            print(
+                f"{parser.prog}: plotting this selection needs ~{err.estimated_bytes / _READ_TO_PLOT_BYTES / 1e9:.1f} GB "
+                f"({err.n_rows:,} rows x {int(np.prod(err.selected_shape)):,} samples per row), over the "
+                f"{err.max_bytes / _READ_TO_PLOT_BYTES / 1e9:.1f} GB limit ({err.ram_fraction:.0%} of this host's RAM).\n"
+                "Narrow it with --channels, --stokes, --time-range, --every-nth or --random-subset-n.",
+                file=sys.stderr,
+            )
+            return 1
 
     figures: list[tuple[str, object]] = []
     for name in plot_names:
@@ -205,7 +358,7 @@ def main(argv: list[str]) -> int:
                     jd, parallactic_angle_deg(jd, ra_deg, dec_deg, array_location), labels,
                     telescope=telescope, source_path=fits_path,
                 )
-        elif is_generic_quantity_plot(name):
+        else:  # a generic Y-vs-X plot (parse_plot_names allows nothing else)
             y_name, x_name = parse_quantity_pair(name)
             y = compute_quantity(y_name, block)
             x = compute_quantity(x_name, block)
@@ -213,26 +366,27 @@ def main(argv: list[str]) -> int:
             fig = scatter_xy(
                 x, y, weight=block.weight, colorize_by=colorize_by, show_flagged=args.show_flagged,
                 mirror=args.mirror, point_size=args.point_size, linewidths=args.linewidths, color=args.color,
-                xlabel=x_name, ylabel=y_name, title=f"{y_name} vs {x_name}",
+                xlabel=quantity_label(x_name, bunit=bunit), ylabel=quantity_label(y_name, bunit=bunit),
+                title=f"{quantity_display_name(y_name)} vs {quantity_display_name(x_name)}",
             )
-        else:
-            print(f"unrecognized plot name: {name!r}", file=sys.stderr)
-            return 1
         figures.append((name, fig))
 
     if args.output_dir:
-        from matplotlib.backends.backend_pdf import PdfPages
-
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        pdf_path = output_dir / f"{args.output_prefix}.pdf"
-        with PdfPages(pdf_path) as pdf:
-            for name, fig in figures:
-                png_path = output_dir / f"{args.output_prefix}_{name}.png"
-                fig.savefig(png_path, dpi=150)
-                pdf.savefig(fig)
-                print(f"saved {png_path}")
-        print(f"saved {pdf_path}")
+        for name, fig in figures:
+            png_path = output_dir / f"{args.output_prefix}_{name}.png"
+            fig.savefig(png_path, dpi=LOWRES_DPI)
+            print(f"saved {png_path}")
+
+        lowres_path = output_dir / f"{args.output_prefix}_lowres.pdf"
+        _save_combined_pdf(lowres_path, figures, dpi=LOWRES_DPI)
+        print(f"saved {lowres_path}")
+
+        if not args.no_highres_pdf:
+            highres_path = output_dir / f"{args.output_prefix}_highres.pdf"
+            _save_combined_pdf(highres_path, figures, dpi=HIGHRES_DPI)
+            print(f"saved {highres_path}")
     else:
         import matplotlib.pyplot as plt
 

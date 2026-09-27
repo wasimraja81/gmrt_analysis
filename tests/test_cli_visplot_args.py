@@ -12,6 +12,7 @@ from cli.visplot_args import (
     resolve_stokes_axis_selection,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
+    validate_quantity_name,
 )
 from data_io.antenna_table import Antenna
 
@@ -114,3 +115,23 @@ def test_resolve_stokes_axis_selection_raises_without_a_stokes_axis():
 def test_resolve_stokes_axis_selection_raises_when_nothing_matches():
     with pytest.raises(ValueError, match="matched none"):
         resolve_stokes_axis_selection("XX", ["RR", "LL"])
+
+
+def test_parse_plot_names_rejects_a_bare_quantity_and_suggests_pairs():
+    with pytest.raises(ValueError, match=r"is a quantity; a plot needs two.*amp-vs-uvdist_klambda"):
+        parse_plot_names("uvdist_klambda")
+
+
+def test_parse_plot_names_rejects_an_unknown_quantity_in_a_pair():
+    with pytest.raises(ValueError, match=r"unknown quantity 'ampl' in plot 'ampl-vs-freq_mhz'"):
+        parse_plot_names("ampl-vs-freq_mhz")
+
+
+def test_parse_plot_names_rejects_an_unrecognized_name():
+    with pytest.raises(ValueError, match="unrecognized plot name 'uv-coverage'"):
+        parse_plot_names("antenna-layout,uv-coverage")
+
+
+def test_validate_quantity_name_rejects_an_unknown_colorize_by():
+    with pytest.raises(ValueError, match="unknown quantity 'pol' in --colorize-by"):
+        validate_quantity_name("pol", context="in --colorize-by")
