@@ -41,6 +41,21 @@ def test_hour_angle_range_has_no_legend_for_a_single_source():
     ax = fig.axes[0]
 
     assert ax.get_legend() is None
+    assert "3C286" in ax.get_title()
+    plt.close(fig)
+
+
+def test_hour_angle_range_title_includes_all_sources_and_provenance():
+    jd, labels = _synthetic_two_source_data()
+    ha_hours = np.array([-2.0, -1.0, 3.0, 4.0])
+
+    fig = hour_angle_range(jd, ha_hours, labels, telescope="GMRT", source_path="/data/obs.fits")
+    ax = fig.axes[0]
+
+    title = ax.get_title()
+    assert "3C286" in title and "3C48" in title
+    assert "GMRT" in title
+    assert "obs.fits" in title
     plt.close(fig)
 
 
@@ -67,4 +82,16 @@ def test_az_el_range_has_two_panels_with_correct_ylims_and_one_legend():
     assert ax_az.get_ylim() == (0.0, 360.0)
     assert ax_el.get_legend() is not None
     assert ax_az.get_legend() is None  # avoid a duplicate legend on the second panel
+    plt.close(fig)
+
+
+def test_az_el_range_single_source_title_names_the_source():
+    jd = np.array([100.0, 100.1])
+    labels = np.array(["3C286", "3C286"])
+    az_deg = np.array([10.0, 20.0])
+    el_deg = np.array([30.0, 40.0])
+
+    fig = az_el_range(jd, az_deg, el_deg, labels)
+
+    assert "3C286" in fig._suptitle.get_text()
     plt.close(fig)

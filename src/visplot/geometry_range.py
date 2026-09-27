@@ -14,6 +14,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
+from visplot.plot_title import build_plot_title
+
 
 def _scatter_by_source(ax, hours: np.ndarray, values: np.ndarray, source_labels: np.ndarray, ylabel: str, show_legend: bool):
     labels = np.asarray(source_labels)
@@ -22,6 +24,11 @@ def _scatter_by_source(ax, hours: np.ndarray, values: np.ndarray, source_labels:
         ax.scatter(hours[mask], values[mask], s=8, alpha=0.7, label=str(name))
     ax.set_ylabel(ylabel)
     ax.grid(True, alpha=0.3)
+    # Always shown, even for a single source: with only one, there is no
+    # legend below to name it (a legend distinguishes colors, and one
+    # source needs no distinguishing) -- the title is what's carried by
+    # build_plot_title's own sources= argument, called by each plot
+    # function below.
     if show_legend and len(set(labels.tolist())) > 1:
         ax.legend(fontsize=8, markerscale=2, loc="best")
 
@@ -31,7 +38,9 @@ def _hours_from_start(jd: np.ndarray) -> np.ndarray:
     return (jd - jd.min()) * 24.0
 
 
-def hour_angle_range(jd: np.ndarray, ha_hours: np.ndarray, source_labels) -> Figure:
+def hour_angle_range(
+    jd: np.ndarray, ha_hours: np.ndarray, source_labels, telescope: str | None = None, source_path=None,
+) -> Figure:
     """Hour angle over the selection, one series per source. A dashed line
     at HA=0 marks transit."""
     hours = _hours_from_start(jd)
@@ -40,11 +49,13 @@ def hour_angle_range(jd: np.ndarray, ha_hours: np.ndarray, source_labels) -> Fig
     ax.axhline(0.0, color="0.5", lw=0.8, ls="--")
     ax.set_ylim(-12, 12)
     ax.set_xlabel("Time from start of selection (h)")
-    ax.set_title("Hour angle range")
+    ax.set_title(build_plot_title("Hour angle range", sorted(set(source_labels)), telescope, source_path))
     return fig
 
 
-def parallactic_angle_range(jd: np.ndarray, pa_deg: np.ndarray, source_labels) -> Figure:
+def parallactic_angle_range(
+    jd: np.ndarray, pa_deg: np.ndarray, source_labels, telescope: str | None = None, source_path=None,
+) -> Figure:
     """Parallactic angle over the selection, one series per source -- the
     range a source's parallactic angle covers is what determines whether it
     is useful as a polarization-angle calibrator."""
@@ -53,11 +64,14 @@ def parallactic_angle_range(jd: np.ndarray, pa_deg: np.ndarray, source_labels) -
     _scatter_by_source(ax, hours, np.asarray(pa_deg), source_labels, "Parallactic angle (deg)", show_legend=True)
     ax.set_ylim(-180, 180)
     ax.set_xlabel("Time from start of selection (h)")
-    ax.set_title("Parallactic angle range")
+    ax.set_title(build_plot_title("Parallactic angle range", sorted(set(source_labels)), telescope, source_path))
     return fig
 
 
-def az_el_range(jd: np.ndarray, az_deg: np.ndarray, el_deg: np.ndarray, source_labels) -> Figure:
+def az_el_range(
+    jd: np.ndarray, az_deg: np.ndarray, el_deg: np.ndarray, source_labels,
+    telescope: str | None = None, source_path=None,
+) -> Figure:
     """Elevation and azimuth over the selection, one series per source, as
     two panels sharing a time axis -- elevation on top (a dashed line at
     el=0 marks the horizon), azimuth below."""
@@ -72,5 +86,5 @@ def az_el_range(jd: np.ndarray, az_deg: np.ndarray, el_deg: np.ndarray, source_l
     ax_az.set_ylim(0, 360)
     ax_az.set_xlabel("Time from start of selection (h)")
 
-    fig.suptitle("Az/El range")
+    fig.suptitle(build_plot_title("Az/El range", sorted(set(source_labels)), telescope, source_path))
     return fig
