@@ -94,3 +94,71 @@ def compute_quantity(name: str, block: VisibilityBlock) -> np.ndarray:
         return _broadcast_stokes_labels(block)
 
     raise ValueError(f"unknown quantity {name!r}")
+
+
+# A short display name for every name compute_quantity accepts -- for a
+# title, where a unit is unwanted clutter (the axis labels already carry it).
+QUANTITY_DISPLAY_NAMES = {
+    "real": "Real",
+    "imag": "Imag",
+    "amp": "Amplitude",
+    "phase_deg": "Phase",
+    "time_h": "Time",
+    "u_sec": "U",
+    "v_sec": "V",
+    "w_sec": "W",
+    "uvdist_m": "UV distance",
+    "u_klambda": "U",
+    "v_klambda": "V",
+    "w_klambda": "W",
+    "uvdist_klambda": "UV distance",
+    "freq_mhz": "Frequency",
+    "stokes": "Stokes",
+}
+QUANTITY_NAMES = frozenset(QUANTITY_DISPLAY_NAMES)
+
+# A unit for every name whose unit is fixed by this module's own arithmetic
+# (degrees, hours, metres, kilo-wavelengths, MHz). "real"/"imag"/"amp" are
+# deliberately absent: `block.data`'s unit is whatever the source file's own
+# BUNIT header keyword says (a UVFITS file may have "UNCALIB", "JY", or
+# another unit, depending on whether flux calibration has been applied), and
+# `quantity_label` takes that value in as `bunit`. "stokes" is a category
+# label and has no unit.
+QUANTITY_UNITS = {
+    "phase_deg": "deg",
+    "time_h": "h",
+    "u_sec": "s",
+    "v_sec": "s",
+    "w_sec": "s",
+    "uvdist_m": "m",
+    "u_klambda": "kλ",
+    "v_klambda": "kλ",
+    "w_klambda": "kλ",
+    "uvdist_klambda": "kλ",
+    "freq_mhz": "MHz",
+}
+
+_BUNIT_QUANTITIES = {"real", "imag", "amp"}
+
+
+def quantity_display_name(name: str) -> str:
+    """A short display name for a `compute_quantity` name, with no unit --
+    for a plot title. Falls back to the bare name for anything not in
+    `QUANTITY_DISPLAY_NAMES` (there is none today)."""
+    return QUANTITY_DISPLAY_NAMES.get(name, name)
+
+
+def quantity_label(name: str, bunit: str | None = None) -> str:
+    """`quantity_display_name(name)`, plus its unit in parentheses when one
+    is known -- for an axis label.
+
+    Most units are fixed by this module's own arithmetic (`QUANTITY_UNITS`).
+    The unit of "real"/"imag"/"amp" is whatever the source file's own BUNIT
+    header keyword says, so the caller passes it in as `bunit` (e.g. from the
+    primary header); without it, their labels carry no unit."""
+    display = quantity_display_name(name)
+    if name in _BUNIT_QUANTITIES:
+        unit = bunit
+    else:
+        unit = QUANTITY_UNITS.get(name)
+    return f"{display} ({unit})" if unit else display

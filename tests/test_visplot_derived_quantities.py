@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from data_io.visibility_data import VisibilityBlock
-from visplot.derived_quantities import compute_quantity
+from visplot.derived_quantities import compute_quantity, quantity_display_name, quantity_label
 
 
 def _make_block(chan_freqs_hz=np.array([1e9, 1.1e9])):
@@ -91,3 +91,54 @@ def test_compute_quantity_klambda_raises_without_a_freq_axis():
     block = _make_block(chan_freqs_hz=None)
     with pytest.raises(ValueError, match="uvdist_klambda"):
         compute_quantity("uvdist_klambda", block)
+
+
+# Every name compute_quantity accepts (mirroring its own if-chain), so a
+# plot axis gets a display name.
+_ALL_QUANTITY_NAMES = [
+    "real", "imag", "amp", "phase_deg", "time_h",
+    "u_sec", "v_sec", "w_sec", "uvdist_m",
+    "u_klambda", "v_klambda", "w_klambda", "uvdist_klambda",
+    "freq_mhz", "stokes",
+]
+
+
+@pytest.mark.parametrize("name", _ALL_QUANTITY_NAMES)
+def test_quantity_display_name_covers_every_compute_quantity_name(name):
+    assert quantity_display_name(name) != name
+
+
+def test_quantity_label_includes_units_where_physically_meaningful():
+    assert "deg" in quantity_label("phase_deg")
+    assert "MHz" in quantity_label("freq_mhz")
+    assert "m" in quantity_label("uvdist_m")
+    assert "λ" in quantity_label("u_klambda")
+
+
+def test_quantity_label_shows_no_unit_for_amp_real_imag_without_a_bunit():
+    assert quantity_label("amp") == quantity_display_name("amp")
+    assert quantity_label("real") == quantity_display_name("real")
+    assert quantity_label("imag") == quantity_display_name("imag")
+
+
+def test_quantity_label_shows_no_unit_for_stokes_even_with_a_bunit():
+    # Stokes labels are categories and carry no unit.
+    assert quantity_label("stokes", bunit="JY") == quantity_display_name("stokes")
+
+
+def test_quantity_label_uses_the_given_bunit_for_amp_real_imag():
+    assert quantity_label("amp", bunit="UNCALIB") == "Amplitude (UNCALIB)"
+    assert quantity_label("real", bunit="JY") == "Real (JY)"
+    assert quantity_label("imag", bunit="JY") == "Imag (JY)"
+
+
+def test_quantity_label_ignores_bunit_for_quantities_with_a_fixed_unit():
+    assert quantity_label("freq_mhz", bunit="JY") == "Frequency (MHz)"
+
+
+def test_quantity_display_name_falls_back_to_the_bare_name_for_an_unknown_quantity():
+    assert quantity_display_name("not_a_real_quantity") == "not_a_real_quantity"
+
+
+def test_quantity_label_falls_back_to_the_bare_name_for_an_unknown_quantity():
+    assert quantity_label("not_a_real_quantity") == "not_a_real_quantity"
