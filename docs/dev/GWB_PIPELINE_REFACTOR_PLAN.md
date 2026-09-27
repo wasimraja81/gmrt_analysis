@@ -257,6 +257,16 @@ Buildable now, ahead of Phase C.
     selection that stacks a wide channel range and full Stokes axis onto a generic scatter
     plot is not fast (10206 rows x 4 pol x 2048 chan is 83 million points for matplotlib
     to render, independent of file I/O) — `--channels`/`--stokes` narrow that per plot.
+  - Follow-ups after first use (2026-09-27): axis labels carry units, with
+    amplitude/real/imag taken from the file's own `BUNIT`; titles without units; `-h`
+    rewritten (every option described, defaults stated, a plot-names section, examples)
+    and plot names checked before the file is opened; the kλ row filters now use the
+    band selected by `--channels` (previously the whole band); saved PDFs draw points as
+    an image (150 and 600 dpi), since vector points made a 520k-point page take ~20 s to
+    render in poppler and MuPDF alike; dense plots get smaller, square markers;
+    `read_visibility_data` reads in bounded chunks, so its memory follows the selection
+    (before, it held the longest contiguous run of full rows). Remaining memory limit:
+    T22.
 
   **Remaining:**
   - T20 (below): the AIPS FQ table and AN-table polarization columns, and DATE-OBS /
@@ -302,6 +312,63 @@ Buildable now, ahead of Phase C.
   - A shared `visplot` title helper reading `TELESCOP`/`DATE_OBS` (and the array's known
     location, if useful) off an `ObservationSummary`, replacing `antenna_layout`'s current
     ad hoc `telescope`/`source_path` parameters — and used by every other plot's title too.
+
+- **T21 — visPlot density mode — NOT STARTED (added 2026-09-27).** A plot style for dense
+  generic Y-vs-X plots that colors each pixel by the number of samples landing in it —
+  the approach of Datashader and `mpl-scatter-density`, and close to AIPS UVPLT's own
+  "array method" (which fills an in-memory pixel array and displays it as an image).
+  Plain points overplot: at hundreds of thousands of samples, later points hide earlier
+  ones and the plot shows only coverage. Proposed: a `--density` style option, built
+  from `numpy.histogram2d` plus `imshow` with a logarithmic color scale (no new
+  dependency); pixel grid sized to the axes at the output dpi; axis labels and titles as
+  for the point style. Deferred by the user behind the PDF-output and marker work
+  (2026-09-27). Largely falls out of T22, which accumulates per-pixel counts anyway.
+
+- **T22 — visPlot streaming generic plots — DESIGN, FOR REVIEW (added 2026-09-27).**
+  *Problem.* A generic Y-vs-X plot holds the whole selection in memory at once: the
+  reader's output (complex128 + float64 weight, 24 bytes per sample, twice the file's
+  float32 12), then each plotted quantity as float64, masks and filtered copies, and
+  matplotlib's own float64 offsets — a measured peak of ~110 bytes per sample (3C286 and
+  3C468.1, 10-122 million samples; checked at 122M: 13.5 GB estimated, 13.7 GB measured).
+  3C468.1, RR, all channels is 924 million samples, ~101.6 GB — more than this 67 GB
+  host, for data that is 11.1 GB on disk (44.3 GB read from disk, since Stokes are
+  interleaved within each channel). The PDFs already draw points as an image, so holding
+  every sample is never needed. The interim guard (`_READ_TO_PLOT_BYTES` in
+  `cli/visplot.py`) refuses such selections; this ticket removes the limit.
+
+  *Approach* — AIPS UVPLT's "array method" (fill a pixel array in memory, display it as
+  an image): read the selected rows in bounded chunks (the reader already chunks
+  internally since 2026-09-27), compute x and y for the chunk, add the chunk's samples
+  into a fixed pixel grid of counts, discard the chunk. Memory: one chunk plus the grid
+  (~70 MB for the 600 dpi page), independent of selection size.
+
+  *Axis ranges* (the grid needs them before binning):
+  - from the row index, with no data read: time_h, u/v/w (s), uvdist_m, freq_mhz, and
+    the kilo-wavelength quantities (row values x the selected band's edge frequencies);
+  - fixed: phase_deg (-180 to 180);
+  - from the data (amp, real, imag): one extra pass over the chunks computing min/max,
+    unless the user supplies `--x-range`/`--y-range`, which skip that pass;
+  - `--mirror` widens a range to be symmetric.
+
+  *Rendering.* Pixels with count > 0 drawn in the plot color (the point style); a
+  marker size above one pixel becomes a dilation of the occupied mask. `--colorize-by`
+  and `--show-flagged` keep one grid per category, composited in a fixed order. T21's
+  density mode colors the same counts on a log scale. Axes, labels and titles stay
+  matplotlib vector, via `imshow` with `extent` on the same axes, so both PDFs, the PNG,
+  titles, units and legends are unchanged. Low-res and high-res outputs bin at their own
+  dpi from the same pass (two grids), or the high-res grid is downsampled.
+
+  *Interactive window* (no `--output-dir`): shows the same image, so zooming enlarges
+  the pixels. Re-binning the visible region on zoom (re-reading its chunks) is possible
+  later and out of scope here.
+
+  *Removes* the interim guard, and with it the need for any memory advice.
+
+  *Open questions for review:* default grid size for the interactive window; whether
+  amp/real/imag default to the data pass or to a robust range (e.g. 0.1-99.9
+  percentile from a first chunk), since outliers such as the ~499.9 MHz channel's
+  amplitudes (to ~9000, against at most a few hundred in the other channels, seen in
+  3C286) can compress the rest of a plot.
 
 ### Phase C — Primary Calibration (3C48)
 
