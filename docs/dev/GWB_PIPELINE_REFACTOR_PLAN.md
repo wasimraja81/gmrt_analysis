@@ -11,11 +11,11 @@ Phases re-ordered 2026-09-25 around the pipeline's own high-level stages (raw da
 index → know your data → curation → cal solve → split-with-cal-applied → imaging); see
 Phase B, added the same day, and the `## Sequencing` note below.
 
-T19 (Phase B, visPlot app) is well underway (208 tests passing, 2026-09-27) -- the
-generic selection/plotting engine and several of the required plot types are done; see
-T19's own status for what's built and what's left (the CLI wrapper itself, a time-range
-resolver, and T20). T5d (Phase C, outer solve/diagnose/flag loop) remains a reasonable
-alternative next step; neither blocks the other.
+T19 (Phase B, visPlot app) is done (250 tests passing, 2026-09-27) -- the CLI
+(`bin/visplot.sh`), every selection/plotting piece it wires together, and the shared
+plot-title helper are all built and verified against the real GWB file; see T19's own
+status. T20 (observation metadata aggregator) and T5d (Phase C, outer solve/diagnose/flag
+loop) are both reasonable next steps; neither blocks the other.
 
 ## Objective
 
@@ -204,15 +204,15 @@ needs — source list, UV-coverage, frequency sampling, integration counts, unca
 amplitude/phase checks — with no dependency on Phase C (calibration) existing first.
 Buildable now, ahead of Phase C.
 
-- **T19 — visPlot app: meaningful defaults + interactive exploration — IN PROGRESS
-  (started 2026-09-26).** Reuse and improve the archived `legacy_gsb_40_014/src/plotVis.py`
-  (1492 lines, "generalized plotVis utility ... single multi-panel figure with selectable
-  products and selectors") per standing rule 8 — checked directly before designing its
-  replacement (its own "any panel, any product" design is the precedent for `scatter_xy`
-  below, arrived at independently before rereading it). CLI-first per the user
-  (2026-09-25): no Jupyter, a future Qt GUI reuses the same `src/visplot/` functions from
-  its own widget callbacks rather than reimplementing plotting logic; the CLI wrapper
-  itself (`bin/visplot.py`) is not yet built (next).
+- **T19 — visPlot app: meaningful defaults + interactive exploration — DONE
+  (started 2026-09-26, completed 2026-09-27).** Reuse and improve the archived
+  `legacy_gsb_40_014/src/plotVis.py` (1492 lines, "generalized plotVis utility ... single
+  multi-panel figure with selectable products and selectors") per standing rule 8 —
+  checked directly before designing its replacement (its own "any panel, any product"
+  design is the precedent for `scatter_xy` below, arrived at independently before
+  rereading it). CLI-first per the user (2026-09-25): no Jupyter, a future Qt GUI reuses
+  the same `src/visplot/` functions from its own widget callbacks rather than
+  reimplementing plotting logic.
 
   **Done:**
   - Foundation: `data_io/source_table.py` (AIPS SU table, including a corrected
@@ -245,16 +245,22 @@ Buildable now, ahead of Phase C.
     file's real, not assumed-ordered, channel frequencies), `antenna_selection.py` (id or
     full name, mirroring `sources`'s own name-or-id), and
     `instruments/gmrt/antenna_selection.py` (a bare GMRT code prefix, e.g. "C00").
+  - `src/visplot/time_range.py` (relative hours / absolute JD / ISO "start/end", resolved
+    against the row index's own JD range).
+  - `src/visplot/plot_title.py` — a shared title helper (source list, plus optional
+    telescope/file provenance), wired into all three geometry-range plots so a
+    single-source plot still names its source even with no legend to carry it.
+  - `src/cli/visplot.py` (the CLI entry point, dispatched by `bin/visplot.sh`) and
+    `src/cli/visplot_args.py` (its pure, directly-testable argument resolution) — wiring
+    every filter, resolver, and plot function above into one tool. Verified end to end
+    against the real GWB file with a narrow, contiguous `3C286` selection; a naive
+    selection that stacks a wide channel range and full Stokes axis onto a generic scatter
+    plot is not fast (10206 rows x 4 pol x 2048 chan is 83 million points for matplotlib
+    to render, independent of file I/O) — `--channels`/`--stokes` narrow that per plot.
 
   **Remaining:**
-  - A time-range resolver (relative hours / absolute JD / UTC string — not a scalar-unit
-    conversion like the others, needs its own design given ISO timestamps' own colons
-    would collide with the `lo:hi` grammar).
-  - `bin/visplot.py` itself.
-  - T20 (below), which several plot titles and the time-range resolver's "DATE-OBS +
-    bare time-of-day" convenience will depend on.
-  - A stock-take of the AIPS FQ table and AN-table polarization columns (2026-09-27)
-    found real gaps beyond the original requirement list — see T20.
+  - T20 (below): the AIPS FQ table and AN-table polarization columns, and DATE-OBS /
+    per-source on-source time for richer plot titles and axis context.
 
 - **T20 — Observation metadata aggregator ("listObs") — NOT STARTED (added 2026-09-27).**
   A stock-take of what a UVFITS file actually carries, against what this codebase reads,
