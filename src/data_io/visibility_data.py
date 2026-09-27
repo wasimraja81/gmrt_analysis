@@ -45,6 +45,29 @@ class VisibilityBlock:
     stokes_labels: list[str] | None  # physical Stokes labels for the selected STOKES indices, if a STOKES axis exists
 
 
+# Upper bound on the full-row buffer copied off disk at once (before channel/
+# Stokes selection). Chunks within one contiguous run stay sequential on disk.
+READ_CHUNK_BYTES = 256 * 1024**2
+
+
+class VisibilityReadTooLarge(MemoryError):
+    """A requested read's estimated size exceeds its budget. Carries the
+    numbers so a caller (e.g. a CLI) can word its own advice."""
+
+    def __init__(self, estimated_bytes: int, max_bytes: int, n_rows: int, selected_shape: tuple, ram_fraction: float):
+        self.estimated_bytes = estimated_bytes
+        self.max_bytes = max_bytes
+        self.n_rows = n_rows
+        self.selected_shape = selected_shape
+        self.ram_fraction = ram_fraction
+        super().__init__(
+            f"requested visibility read needs ~{estimated_bytes / 1e9:.2f}GB "
+            f"({n_rows:,} rows x shape {selected_shape}), exceeding the "
+            f"{max_bytes / 1e9:.2f}GB budget ({ram_fraction:.0%} of host RAM). "
+            f"Narrow the selection, or pass max_bytes explicitly."
+        )
+
+
 def _contiguous_runs(sorted_unique_indices: np.ndarray) -> list[tuple[int, int]]:
     """Group sorted, unique row indices into contiguous half-open [start, stop) runs."""
     if len(sorted_unique_indices) == 0:
@@ -65,6 +88,7 @@ def read_visibility_data(
     axis_selection: dict[str, np.ndarray] | None = None,
     max_bytes: int | None = None,
     ram_fraction: float = DEFAULT_RAM_FRACTION_TO_USE,
+    max_chunk_bytes: int = READ_CHUNK_BYTES,
 ) -> VisibilityBlock:
     """Read visibility data for exactly the given rows.
 
@@ -75,6 +99,10 @@ def read_visibility_data(
     need more than `max_bytes` (default: `ram_fraction` of host RAM), this
     raises with the estimated size and the budget, rather than partially
     reading.
+
+    Rows are copied off disk in chunks of at most `max_chunk_bytes` of full
+    rows (every channel and Stokes, before `axis_selection` is applied), so
+    peak memory is the selected output plus one bounded chunk.
     """
     row_indices = np.unique(np.asarray(row_indices, dtype=np.int64))
     axis_selection = axis_selection or {}
@@ -111,12 +139,7 @@ def read_visibility_data(
     if max_bytes is None:
         max_bytes = int(host_total_memory_bytes() * ram_fraction)
     if estimated_bytes > max_bytes:
-        raise MemoryError(
-            f"requested visibility read needs ~{estimated_bytes / 1e9:.2f}GB "
-            f"({n_rows:,} rows x shape {selected_shape}), exceeding the "
-            f"{max_bytes / 1e9:.2f}GB budget ({ram_fraction:.0%} of host RAM). "
-            f"Narrow the selection, or pass max_bytes explicitly."
-        )
+        raise VisibilityReadTooLarge(estimated_bytes, max_bytes, n_rows, selected_shape, ram_fraction)
 
     # Reshape order matches numpy's natural order for a GroupsHDU: dims run from the
     # highest axis number (slowest) to axis 2 (fastest) -- confirmed directly against
@@ -132,8 +155,15 @@ def read_visibility_data(
     out_data = np.empty((n_rows, *selected_shape), dtype=np.complex128)
     out_weight = np.empty((n_rows, *selected_shape), dtype=np.float64)
 
+    rows_per_chunk = max(1, max_chunk_bytes // row_bytes)
+    chunks = [
+        (chunk_start, min(stop, chunk_start + rows_per_chunk))
+        for start, stop in _contiguous_runs(row_indices)
+        for chunk_start in range(start, stop, rows_per_chunk)
+    ]
+
     write_pos = 0
-    for start, stop in _contiguous_runs(row_indices):
+    for start, stop in chunks:
         n = stop - start
         block = open_raw_memmap(
             fits_path,

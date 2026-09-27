@@ -3,7 +3,7 @@ import pytest
 from astropy.io import fits
 
 from data_io.row_index import build_row_index
-from data_io.visibility_data import read_visibility_data
+from data_io.visibility_data import VisibilityReadTooLarge, read_visibility_data
 
 from conftest import make_scratch_dir
 
@@ -118,6 +118,22 @@ def test_read_visibility_data_with_non_contiguous_row_indices():
     expected_3, _ = _expected_value(3, 0, 1, 0)
     assert block.data[0, 0, 1, 0] == pytest.approx(expected_0)
     assert block.data[1, 0, 1, 0] == pytest.approx(expected_3)
+
+
+def test_read_visibility_data_chunked_read_matches_a_single_chunk_read():
+    scratch = make_scratch_dir("visibility_data")
+    path = scratch / "synthetic.fits"
+    _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
+    index = build_row_index(path)
+    rows = np.array([0, 1, 2, 3])
+    selection = {"FREQ": np.array([0, 2]), "STOKES": np.array([1])}
+
+    whole = read_visibility_data(path, index, rows, axis_selection=selection)
+    one_row_chunks = read_visibility_data(path, index, rows, axis_selection=selection, max_chunk_bytes=1)
+
+    np.testing.assert_array_equal(one_row_chunks.data, whole.data)
+    np.testing.assert_array_equal(one_row_chunks.weight, whole.weight)
+    np.testing.assert_array_equal(one_row_chunks.row_indices, whole.row_indices)
 
 
 def test_read_visibility_data_raises_when_estimated_size_exceeds_budget():
@@ -237,3 +253,17 @@ def test_read_visibility_data_handles_a_non_trivial_ra_axis_not_just_if():
     real = 1 * 1000 + 0 * 200 + 1 * 10 + 0
     assert block_ra0.data[1, 0, 1, 0, 0] == pytest.approx(complex(real, real + 0.5))
     np.testing.assert_array_equal(block_ra0.axis_indices["RA"], [0])
+
+
+def test_read_visibility_data_too_large_error_carries_its_numbers():
+    scratch = make_scratch_dir("visibility_data")
+    path = scratch / "synthetic.fits"
+    _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
+    index = build_row_index(path)
+
+    with pytest.raises(VisibilityReadTooLarge) as caught:
+        read_visibility_data(path, index, row_indices=np.arange(4), max_bytes=10)
+
+    assert caught.value.n_rows == 4
+    assert caught.value.max_bytes == 10
+    assert caught.value.estimated_bytes == 4 * 3 * 2 * 24
