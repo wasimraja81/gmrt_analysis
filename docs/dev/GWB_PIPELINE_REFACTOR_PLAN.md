@@ -416,13 +416,19 @@ Buildable now, ahead of Phase C.
   memory (all Stokes, colored, 6 threads): 2.66 GB peak for 256 MiB chunks (was 3.73 GB),
   ~9.2 per chunk byte; `STREAM_MEMORY_PER_CHUNK_BYTE = 10`.
 
-- **T24 — visPlot selection summaries on disk — NOT STARTED (added 2026-09-28).** From
-  the review (point B). The range pass's results for a selection (per-axis min/max and a
-  value histogram, plus per-row min/max of the visibility quantities) saved to a
-  directory the user names, so a later run or zoom over the same selection skips the
-  pass or skips rows. The user asked for no trash without an easy cleanup: files only in
-  the named directory, one clear filename prefix, written under a temporary name and
-  renamed when complete, and a command that removes them.
+- **T24 — visPlot range cache on disk — DONE (2026-09-28).** From the review (point B).
+  `--cache-dir DIR` saves each axis range the range pass finds (min, max, and the value
+  histogram, so a later percentile run also reuses it) and reuses it when the same
+  selection is plotted again, skipping that pass. Keyed by the file (path, size,
+  modification time), rows, channel/Stokes selection, quantity, flag handling, mirroring
+  and log-axis handling. The user asked for no trash without an easy cleanup: nothing is
+  written without `--cache-dir`; files are `visplot-cache_<FITS stem>_<key>.npz`, written
+  as `<name>.<pid>.partial` and renamed when complete; the next run removes partials whose
+  process is gone; an interrupted pass saves nothing; each run prints the cache's file
+  count and size with the removal command; `--clear-cache DIR` removes every
+  `visplot-cache_*` file there and nothing else. On 3C286 RR, a repeat run took 6.4 s
+  against 13.9 s. Per-row summaries (for skipping rows on zoom) are left to review point
+  D, on hold.
 
 - **T25 — visPlot axis range modes and scaling — DONE (2026-09-28).** From the review
   (point C). `--x-range-mode`/`--y-range-mode`: `minmax` (default; outliers visible) or

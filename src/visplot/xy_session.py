@@ -86,15 +86,32 @@ class XYSource:
         return run_stream(chunks, self.ctx, reducers, on_chunk, threads=self.threads)
 
 
-def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None) -> dict[PlotSpec, tuple]:
+def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None, cache=None) -> dict[PlotSpec, tuple]:
     """(x_extent, y_extent) per plot: a given range as is, otherwise the
-    data's min/max from one pre-pass over the selection. The pre-pass reads
+    data's range from one pre-pass over the selection. The pre-pass reads
     visibility data only if an axis being ranged is a visibility quantity
     (amp, real, imag, phase); a pre-pass over metadata alone covers every
-    selected sample, flagged or not."""
-    reducers = {(plot, axis): RangeReducer(plot, axis) for plot, axis in range_pass_axes(plots)}
-    if reducers:
-        source.stream(list(reducers.values()), read_data=range_pass_reads_data(plots), on_chunk=on_chunk)
+    selected sample, flagged or not.
+
+    With a `RangeCache`, axes whose result is cached skip the pass, and the
+    results the pass computes are saved (only if it ran to the end)."""
+    hits = cached_ranges(source, plots, cache)
+    reducers = {}
+    for plot, axis in range_pass_axes(plots):
+        reducer = RangeReducer(plot, axis, with_histogram=cache is not None)
+        if (plot, axis) in hits:
+            reducer.load(*hits[(plot, axis)])
+        reducers[(plot, axis)] = reducer
+    to_compute = {k: r for k, r in reducers.items() if k not in hits}
+    if to_compute:
+        read_data = any(QUANTITIES[r.quantity].needs_data for r in to_compute.values())
+        completed = source.stream(list(to_compute.values()), read_data=read_data, on_chunk=on_chunk)
+        if completed and cache is not None:
+            for (plot, axis), reducer in to_compute.items():
+                if np.isfinite(reducer.lo):
+                    cache.save(source.fits_path, _cache_key(cache, source, plot, axis), reducer.lo, reducer.hi,
+                               reducer.histogram.counts,
+                               {"quantity": reducer.quantity, "rows": source.n_rows, "file": str(source.fits_path)})
 
     extents = {}
     for plot in plots:
@@ -102,6 +119,26 @@ def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None) -> d
         y = plot.y_range if plot.y_range is not None else reducers[(plot, "y")].extent()
         extents[plot] = (tuple(x), tuple(y))
     return extents
+
+
+def _cache_key(cache, source: XYSource, plot: PlotSpec, axis: str) -> str:
+    return cache.key(
+        source.fits_path, source.row_indices, source.axis_selection, plot.x if axis == "x" else plot.y,
+        apply_flags=plot.apply_flags, show_flagged=plot.show_flagged, mirror=plot.mirror,
+        log_axis=plot.axis_scale(axis).name == "log",
+    )
+
+
+def cached_ranges(source: XYSource, plots: list[PlotSpec], cache) -> dict:
+    """(plot, axis) -> cached (lo, hi, histogram counts), for axes needing a range."""
+    if cache is None:
+        return {}
+    hits = {}
+    for plot, axis in range_pass_axes(plots):
+        found = cache.load(source.fits_path, _cache_key(cache, source, plot, axis))
+        if found is not None:
+            hits[(plot, axis)] = found
+    return hits
 
 
 def plot_grids(source: XYSource, plots: list[PlotSpec], extents, shapes, on_chunk=None) -> tuple[dict, bool]:
@@ -118,13 +155,15 @@ def range_pass_axes(plots: list[PlotSpec]) -> list[tuple[PlotSpec, str]]:
     return [(p, axis) for p in plots for axis, fixed in (("x", p.x_range), ("y", p.y_range)) if fixed is None]
 
 
-def range_pass_reads_data(plots: list[PlotSpec]) -> bool:
-    """Whether the range pass reads visibility data: only if a ranged axis is
-    a visibility quantity (amp, real, imag, phase)."""
-    return any(QUANTITIES[p.x if axis == "x" else p.y].needs_data for p, axis in range_pass_axes(plots))
+def range_pass_reads_data(plots: list[PlotSpec], cached: dict | None = None) -> bool:
+    """Whether the range pass reads visibility data: only if an axis it
+    ranges (one not in `cached`) is a visibility quantity (amp, real, imag,
+    phase)."""
+    return any(QUANTITIES[p.x if axis == "x" else p.y].needs_data
+               for p, axis in range_pass_axes(plots) if (p, axis) not in (cached or {}))
 
 
-def describe_passes(source: XYSource, plots: list[PlotSpec]) -> list[str]:
+def describe_passes(source: XYSource, plots: list[PlotSpec], cached: dict | None = None) -> list[str]:
     """What streaming these plots will do, before it starts:
     how much is selected, and what each pass over the selection reads."""
     from visplot.quantities import quantity_label
@@ -142,7 +181,11 @@ def describe_passes(source: XYSource, plots: list[PlotSpec]) -> list[str]:
         return f"reads visibility data, {data_gb:.1f} GB" if read_data else "row metadata only, no visibility data read"
 
     passes = []
-    ranged = range_pass_axes(plots)
+    cached = cached or {}
+    ranged = [key for key in range_pass_axes(plots) if key not in cached]
+    if cached:
+        names = sorted({quantity_label(p.x if axis == "x" else p.y, source.ctx) for p, axis in cached})
+        lines.append(f"data ranges taken from the cache: {', '.join(names)}")
     if ranged:
         names = sorted({
             quantity_label(p.x if axis == "x" else p.y, source.ctx)
@@ -150,7 +193,8 @@ def describe_passes(source: XYSource, plots: list[PlotSpec]) -> list[str]:
                if p.range_mode(axis) == "percentile" else "")
             for p, axis in ranged
         })
-        passes.append(f"find the data range of {', '.join(names)} ({reads(range_pass_reads_data(plots))})")
+        read_data = any(QUANTITIES[p.x if axis == "x" else p.y].needs_data for p, axis in ranged)
+        passes.append(f"find the data range of {', '.join(names)} ({reads(read_data)})")
     passes.append(f"draw the plots ({reads(any(p.needs_data for p in plots))})")
     for i, text in enumerate(passes, start=1):
         lines.append(f"pass {i} of {len(passes)}: {text}")

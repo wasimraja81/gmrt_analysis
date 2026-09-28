@@ -211,3 +211,24 @@ def test_log_scale_and_percentile_range_run_end_to_end(monkeypatch):
                  "--output-dir", str(scratch / "out"), "--no-highres-pdf"]) == 0
     assert any("outside the axis ranges, left out" in s for s in statuses)
     plt.close("all")
+
+
+def test_cache_dir_skips_the_range_pass_on_a_repeat_run_and_clear_cache_removes_it(capsys):
+    scratch = make_scratch_dir("cli_visplot_cache")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    cache_dir = scratch / "cache"
+    run = ["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--output-dir", str(scratch / "out"),
+           "--no-highres-pdf", "--cache-dir", str(cache_dir)]
+
+    main(run)
+    first = capsys.readouterr().out
+    assert "pass 1 of 2: find the data range" in first
+    assert "remove them with: bin/visplot.sh --clear-cache" in first
+    main(run)
+    second = capsys.readouterr().out
+    assert "data ranges taken from the cache" in second and "pass 1 of 1: draw the plots" in second
+
+    assert main(["visplot", "--clear-cache", str(cache_dir)]) == 0
+    assert "removed 2 visplot cache file(s)" in capsys.readouterr().out
+    assert list(cache_dir.iterdir()) == []
+    plt.close("all")

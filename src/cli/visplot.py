@@ -60,12 +60,14 @@ from visplot.antenna_layout import antenna_layout  # noqa: E402
 from visplot.axis_scale import SCALE_NAMES  # noqa: E402
 from visplot.plot_spec import PlotSpec, expand_plot_name  # noqa: E402
 from visplot.quantities import QUANTITIES, context_from_source_table  # noqa: E402
+from visplot.range_cache import RangeCache, clear_cache  # noqa: E402
 from visplot.source_listing import source_listing  # noqa: E402
 from visplot.xy_figure import XYFigure, grid_summary  # noqa: E402
 from visplot.xy_interactive import run_interactive  # noqa: E402
 from visplot.xy_session import (  # noqa: E402
     DEFAULT_STREAM_THREADS,
     XYSource,
+    cached_ranges,
     describe_passes,
     pass_progress,
     plot_grids,
@@ -262,6 +264,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="skip PREFIX_highres.pdf (write only the PNGs and PREFIX_lowres.pdf)",
     )
 
+    cache = parser.add_argument_group("cache (files only where you name a directory)")
+    cache.add_argument(
+        "--cache-dir", metavar="DIR",
+        help="save each axis range found by the range pass in DIR, and reuse it when the same "
+        "selection is plotted again (skipping that pass). Files are named visplot-cache_*",
+    )
+    cache.add_argument(
+        "--clear-cache", metavar="DIR",
+        help="remove every visplot-cache_* file in DIR, and exit (FITS_PATH and --plots are not needed)",
+    )
+
     perf = parser.add_argument_group("performance")
     perf.add_argument(
         "--threads", type=int, default=DEFAULT_STREAM_THREADS, metavar="N",
@@ -302,6 +315,15 @@ def _terminal_progress(progress):
 
 def main(argv: list[str]) -> int:
     parser = build_arg_parser()
+    if any(a == "--clear-cache" or a.startswith("--clear-cache=") for a in argv[1:]):
+        pre = argparse.ArgumentParser(add_help=False)
+        pre.add_argument("--clear-cache", required=True)
+        known, _ = pre.parse_known_args(argv[1:])
+        removed = clear_cache(known.clear_cache)
+        for path in removed:
+            print(f"removed {path}")
+        print(f"removed {len(removed)} visplot cache file(s) from {known.clear_cache}")
+        return 0
     args = parser.parse_args(argv[1:])
     fits_path = args.fits_path
     warnings.simplefilter("ignore", AstrometryWarning)  # reported once, by _report_ut1
@@ -401,11 +423,16 @@ def main(argv: list[str]) -> int:
                       threads=max(1, args.threads))
     sources_present = list(selection.sources.values())
     xy_figures = {p: XYFigure(p, ctx, sources_present, telescope, fits_path) for p in xy_plots}
+    cache = RangeCache(args.cache_dir) if args.cache_dir else None
+    if cache is not None:
+        for stale in cache.remove_stale_partials():
+            print(f"removed {stale} (left by an earlier run that stopped while writing)")
+    cached = cached_ranges(source, xy_plots, cache)
     if xy_plots:
-        for line in describe_passes(source, xy_plots):
+        for line in describe_passes(source, xy_plots, cached):
             print(line)
     _report_ut1(index, selection, xy_plots, xy_figures, geometry_filters=select_kwargs.get("source_table") is not None)
-    n_passes = 2 if range_pass_axes(xy_plots) else 1
+    n_passes = 2 if [k for k in range_pass_axes(xy_plots) if k not in cached] else 1
     labels = (f"pass 1 of {n_passes}: finding data ranges", f"pass {n_passes} of {n_passes}: drawing")
 
     # Figures in the order the plots were named.
@@ -421,11 +448,16 @@ def main(argv: list[str]) -> int:
     if args.output_dir:
         extents = {}
         if xy_plots:
-            progress = pass_progress(source, labels[0], range_pass_reads_data(xy_plots))
-            extents = resolve_extents(source, xy_plots, on_chunk=_terminal_progress(progress))
+            progress = pass_progress(source, labels[0], range_pass_reads_data(xy_plots, cached))
+            extents = resolve_extents(source, xy_plots, on_chunk=_terminal_progress(progress), cache=cache)
         _save_outputs(args, source, xy_plots, xy_figures, extents, figures, labels[1])
     else:
-        _show_windows(source, xy_plots, xy_figures, figures, labels)
+        _show_windows(source, xy_plots, xy_figures, figures, labels, cache, cached)
+    if cache is not None:
+        n_files, n_bytes = cache.usage()
+        size = f"{n_bytes / 1e6:.1f} MB" if n_bytes >= 1e6 else f"{n_bytes / 1e3:.0f} KB"
+        print(f"cache: {len(cache.written)} file(s) written this run; {n_files} in {cache.directory} "
+              f"({size}); remove them with: {parser.prog} --clear-cache {cache.directory}")
     return 0
 
 
@@ -487,7 +519,7 @@ def _save_outputs(args, source, xy_plots, xy_figures, extents, figures, draw_lab
         print(f"saved {highres_path}")
 
 
-def _show_windows(source, xy_plots, xy_figures, figures, labels) -> None:
+def _show_windows(source, xy_plots, xy_figures, figures, labels, cache=None, cached=None) -> None:
     """Open every window first, so the range pass (if any) shows its progress
     in the windows as well as the terminal; then draw."""
     import time
@@ -500,7 +532,7 @@ def _show_windows(source, xy_plots, xy_figures, figures, labels) -> None:
     plt.pause(0.001)
 
     if xy_figures:
-        progress = pass_progress(source, labels[0], range_pass_reads_data(xy_plots))
+        progress = pass_progress(source, labels[0], range_pass_reads_data(xy_plots, cached))
         to_terminal = _terminal_progress(progress)
         last = [0.0]
 
@@ -514,11 +546,11 @@ def _show_windows(source, xy_plots, xy_figures, figures, labels) -> None:
                 last[0] = time.monotonic()
             return any(plt.fignum_exists(f.fig.number) for f in xy_figures.values())
 
-        if range_pass_axes(xy_plots):
+        if [k for k in range_pass_axes(xy_plots) if k not in (cached or {})]:
             for figure in xy_figures.values():
                 figure.set_status(progress.text(0))
             plt.pause(0.001)
-        extents = resolve_extents(source, xy_plots, on_chunk=on_chunk)
+        extents = resolve_extents(source, xy_plots, on_chunk=on_chunk, cache=cache)
         if any(plt.fignum_exists(f.fig.number) for f in xy_figures.values()):
             run_interactive(source, xy_figures, extents, first_pass_label=labels[1])
     plt.ioff()

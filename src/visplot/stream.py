@@ -213,7 +213,7 @@ class RangeReducer:
     cannot show (log: non-positive) are left out; a mirrored plot's range
     covers the negated values too."""
 
-    def __init__(self, plot: PlotSpec, axis: str):
+    def __init__(self, plot: PlotSpec, axis: str, with_histogram: bool = False):
         self.plot = plot
         self.axis = axis
         self.quantity = plot.x if axis == "x" else plot.y
@@ -221,7 +221,14 @@ class RangeReducer:
         self.mode = plot.range_mode(axis)
         self.lo = np.inf
         self.hi = -np.inf
-        self.histogram = ValueHistogram() if self.mode == "percentile" else None
+        # kept in percentile mode, or when asked (e.g. to cache it for later percentile runs)
+        self.histogram = ValueHistogram() if self.mode == "percentile" or with_histogram else None
+
+    def load(self, lo: float, hi: float, histogram_counts: np.ndarray) -> None:
+        """Take a result computed earlier (e.g. from a cache) in place of a pass."""
+        self.lo, self.hi = lo, hi
+        self.histogram = ValueHistogram()
+        self.histogram.counts[:] = histogram_counts
 
     def compute(self, values: ChunkValues):
         """This chunk's (lo, hi, histogram or None), or None if it has no
@@ -268,7 +275,7 @@ class RangeReducer:
         if QUANTITIES[self.quantity].categorical:
             return (self.lo - 0.5, self.hi + 0.5)
         lo, hi = self.lo, self.hi
-        if self.histogram is not None and self.histogram.counts.any():
+        if self.mode == "percentile" and self.histogram is not None and self.histogram.counts.any():
             p_lo, p_hi = self.plot.range_percentiles
             lo = max(lo, self.histogram.percentile(p_lo, upper=False))
             hi = min(hi, self.histogram.percentile(p_hi, upper=True))
