@@ -1,9 +1,8 @@
-"""Pure argument-resolution logic for `bin/visplot.py` -- translating CLI
-strings into the kwargs `select_rows`/`read_visibility_data`/`scatter_xy`
-already accept, via the resolvers already built in `visplot/` and
-`instruments/gmrt/`. Kept separate from the argparse/orchestration in
-`cli/visplot.py` so this logic is directly testable without invoking a
-subprocess.
+"""Pure argument-resolution logic for `bin/visplot.sh` -- translating CLI
+strings into what `select_rows`, `iter_visibility_chunks` and the plot specs
+take, via the resolvers in `visplot/` and `instruments/gmrt/`. Kept separate
+from the argparse/orchestration in `cli/visplot.py` so this logic is
+directly testable without invoking a subprocess.
 """
 
 from __future__ import annotations
@@ -13,11 +12,15 @@ import astropy.units as u
 from data_io.antenna_table import Antenna
 from instruments.gmrt.antenna_selection import resolve_antenna_selection
 from visplot.channel_selection import resolve_channel_selection
-from visplot.derived_quantities import QUANTITY_NAMES
+from visplot.plot_spec import PRESETS
+from visplot.quantities import QUANTITIES
 from visplot.range_spec import parse_single_quantity_range, parse_single_range
 from visplot.time_range import resolve_time_range_jd
 
-NAMED_PLOTS = {"antenna-layout", "source-listing", "ha-range", "az-el-range", "parallactic-angle-range"}
+TABLE_PLOTS = {"antenna-layout", "source-listing"}  # drawn from the file's tables
+NAMED_PLOTS = TABLE_PLOTS | set(PRESETS)
+QUANTITY_NAMES = set(QUANTITIES)
+CATEGORY_NAMES = {name for name, q in QUANTITIES.items() if q.categorical}
 
 
 def parse_plot_names(spec: str) -> list[str]:
@@ -59,15 +62,10 @@ def validate_quantity_name(name: str, context: str = "") -> None:
         raise ValueError(f"unknown quantity {name!r}{where}: expected one of {sorted(QUANTITY_NAMES)}")
 
 
-def is_generic_quantity_plot(name: str) -> bool:
-    return name not in NAMED_PLOTS and "-vs-" in name
-
-
 def parse_quantity_pair(name: str) -> tuple[str, str]:
-    """A generic "Y-vs-X" plot name into (y_quantity, x_quantity) --
-    `derived_quantities.compute_quantity`'s own names, joined by the
-    literal separator "-vs-" (distinct from the underscores within a
-    quantity name like "freq_mhz")."""
+    """A generic "Y-vs-X" plot name into (y_quantity, x_quantity) -- names
+    from the quantity registry, joined by the separator "-vs-"
+    (distinct from the underscores within a quantity name like "freq_mhz")."""
     if "-vs-" not in name:
         raise ValueError(f"{name!r} is not a recognized plot name (not one of {sorted(NAMED_PLOTS)}, no '-vs-')")
     y_name, x_name = name.split("-vs-", 1)
@@ -128,3 +126,14 @@ def resolve_stokes_axis_selection(spec: str | None, stokes_labels: list[str] | N
     if not indices:
         raise ValueError(f"--stokes {spec!r} matched none of this file's Stokes labels {stokes_labels}")
     return indices
+
+
+def validate_colorize_by(name: str) -> None:
+    """--colorize-by takes a category quantity (one color per category)."""
+    if name not in CATEGORY_NAMES:
+        raise ValueError(f"--colorize-by takes a category, one of {sorted(CATEGORY_NAMES)}; got {name!r}")
+
+
+def resolve_plain_range_arg(spec: str | None) -> tuple[float, float] | None:
+    """--x-range/--y-range: 'lo:hi' in the axis quantity's own units."""
+    return parse_single_range(spec) if spec else None

@@ -28,7 +28,7 @@ still a parameter:
   nominal, non-structural-DUD antennas have zero rows.
 
 The returned `RowIndex` is the plain, unmodified object from `data_io.row_index`
--- every downstream consumer (`select_rows`, `read_visibility_data`) works on it
+-- every downstream consumer (`select_rows`, `iter_visibility_chunks`) works on it
 directly, with no GMRT-specific wrapper needed for selection or reading.
 """
 

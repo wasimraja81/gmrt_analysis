@@ -4,7 +4,7 @@ Deliberately separate from actually reading visibility data: everything
 here operates on the small, in-memory arrays `RowIndex` already holds
 (`source_id`, `ant1`/`ant2`, `jd`, `uu_sec`/`vv_sec`), so a selection is
 cheap to compute -- no raw-file I/O at all. The result is a set of
-absolute row indices; a separate reader (see `read_visibility_data`) is
+absolute row indices; a separate reader (see `iter_visibility_chunks`) is
 what actually touches the file, for exactly those rows.
 
 Telescope-agnostic. "Source" is one optional filter among several, not a

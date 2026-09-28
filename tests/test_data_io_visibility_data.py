@@ -3,7 +3,7 @@ import pytest
 from astropy.io import fits
 
 from data_io.row_index import build_row_index
-from data_io.visibility_data import VisibilityReadTooLarge, read_visibility_data
+from data_io.visibility_data import iter_visibility_chunks
 
 from conftest import make_scratch_dir
 
@@ -11,7 +11,7 @@ from conftest import make_scratch_dir
 def _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2, n_if=1):
     """A random-groups file with a formula-based, exactly-known data value per
     (row, if, channel, stokes): real=row*1000+iff*100+chan*10+stokes,
-    imag=real+0.5, weight=1.0+row*0.01 -- lets a test check read_visibility_data
+    imag=real+0.5, weight=1.0+row*0.01 -- lets a test check iter_visibility_chunks
     recovers exact values, not just plausible-looking ones.
     """
     image_data = np.zeros((n_rows, n_if, n_chan, n_stokes, 3), dtype=">f4")
@@ -56,13 +56,69 @@ def _expected_value(r, f, c, s):
     return complex(real, real + 0.5), 1.0 + r * 0.01
 
 
-def test_read_visibility_data_recovers_known_values_for_every_row_chan_stokes():
+def _read_one_chunk(path, index, row_indices, axis_selection=None):
+    """These files are a few rows, so the default chunk size covers them in one chunk."""
+    chunks = list(iter_visibility_chunks(path, index, row_indices, axis_selection))
+    assert len(chunks) == 1
+    return chunks[0]
+
+
+def _row_bytes(index):
+    return (index.pcount + int(np.prod(index.data_axis_lengths))) * 4
+
+
+def test_iter_visibility_chunks_concatenate_to_the_one_chunk_read():
+    scratch = make_scratch_dir("visibility_data")
+    path = scratch / "synthetic.fits"
+    _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
+    index = build_row_index(path)
+    selection = {"FREQ": np.array([0, 2]), "STOKES": np.array([1])}
+
+    whole = _read_one_chunk(path, index, np.arange(4), axis_selection=selection)
+    chunks = list(iter_visibility_chunks(path, index, np.arange(4), selection, max_chunk_bytes=_row_bytes(index)))
+
+    assert len(chunks) == 4  # one row per chunk
+    np.testing.assert_array_equal(np.concatenate([c.data for c in chunks]), whole.data)
+    np.testing.assert_array_equal(np.concatenate([c.weight for c in chunks]), whole.weight)
+    np.testing.assert_array_equal(np.concatenate([c.row_indices for c in chunks]), [0, 1, 2, 3])
+    np.testing.assert_array_equal(np.concatenate([c.jd for c in chunks]), whole.jd)
+
+
+def test_iter_visibility_chunks_groups_separate_runs_into_one_chunk():
     scratch = make_scratch_dir("visibility_data")
     path = scratch / "synthetic.fits"
     _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
     index = build_row_index(path)
 
-    block = read_visibility_data(path, index, row_indices=np.arange(4))
+    # rows 0 and 2 are two runs; a two-row chunk budget holds both.
+    chunks = list(iter_visibility_chunks(path, index, np.array([2, 0]), max_chunk_bytes=2 * _row_bytes(index)))
+
+    assert len(chunks) == 1
+    np.testing.assert_array_equal(chunks[0].row_indices, [0, 2])
+    expected_0, _ = _expected_value(0, 0, 1, 0)
+    expected_2, _ = _expected_value(2, 0, 1, 0)
+    assert chunks[0].data[0, 0, 1, 0] == pytest.approx(expected_0)
+    assert chunks[0].data[1, 0, 1, 0] == pytest.approx(expected_2)
+
+
+def test_iter_visibility_chunks_never_exceeds_its_row_limit():
+    scratch = make_scratch_dir("visibility_data")
+    path = scratch / "synthetic.fits"
+    _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
+    index = build_row_index(path)
+
+    chunks = list(iter_visibility_chunks(path, index, np.array([0, 1, 3]), max_chunk_bytes=2 * _row_bytes(index)))
+
+    assert [len(c.row_indices) for c in chunks] == [2, 1]
+
+
+def test_iter_visibility_chunks_recovers_known_values_for_every_row_chan_stokes():
+    scratch = make_scratch_dir("visibility_data")
+    path = scratch / "synthetic.fits"
+    _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
+    index = build_row_index(path)
+
+    block = _read_one_chunk(path, index, row_indices=np.arange(4))
 
     assert block.axis_types == ["STOKES", "FREQ", "IF"]
     assert block.data.shape == (4, 2, 3, 1)
@@ -79,14 +135,14 @@ def test_read_visibility_data_recovers_known_values_for_every_row_chan_stokes():
     np.testing.assert_array_equal(block.ant2, index.ant2)
 
 
-def test_read_visibility_data_channel_and_stokes_selection():
+def test_iter_visibility_chunks_channel_and_stokes_selection():
     scratch = make_scratch_dir("visibility_data")
     path = scratch / "synthetic.fits"
     _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
     index = build_row_index(path)
 
     # select channels 0 and 2 (skip 1), stokes index 1 only
-    block = read_visibility_data(
+    block = _read_one_chunk(
         path, index, row_indices=np.array([1, 3]),
         axis_selection={"FREQ": np.array([0, 2]), "STOKES": np.array([1])},
     )
@@ -104,14 +160,14 @@ def test_read_visibility_data_channel_and_stokes_selection():
     assert block.stokes_labels == ["LL"]
 
 
-def test_read_visibility_data_with_non_contiguous_row_indices():
+def test_iter_visibility_chunks_with_non_contiguous_row_indices():
     scratch = make_scratch_dir("visibility_data")
     path = scratch / "synthetic.fits"
     _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
     index = build_row_index(path)
 
     # rows 0 and 3 -- two separate contiguous runs, exercises the multi-run path.
-    block = read_visibility_data(path, index, row_indices=np.array([3, 0]))
+    block = _read_one_chunk(path, index, row_indices=np.array([3, 0]))
 
     np.testing.assert_array_equal(block.row_indices, [0, 3])  # sorted, not input order
     expected_0, _ = _expected_value(0, 0, 1, 0)
@@ -120,43 +176,17 @@ def test_read_visibility_data_with_non_contiguous_row_indices():
     assert block.data[1, 0, 1, 0] == pytest.approx(expected_3)
 
 
-def test_read_visibility_data_chunked_read_matches_a_single_chunk_read():
-    scratch = make_scratch_dir("visibility_data")
-    path = scratch / "synthetic.fits"
-    _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
-    index = build_row_index(path)
-    rows = np.array([0, 1, 2, 3])
-    selection = {"FREQ": np.array([0, 2]), "STOKES": np.array([1])}
-
-    whole = read_visibility_data(path, index, rows, axis_selection=selection)
-    one_row_chunks = read_visibility_data(path, index, rows, axis_selection=selection, max_chunk_bytes=1)
-
-    np.testing.assert_array_equal(one_row_chunks.data, whole.data)
-    np.testing.assert_array_equal(one_row_chunks.weight, whole.weight)
-    np.testing.assert_array_equal(one_row_chunks.row_indices, whole.row_indices)
-
-
-def test_read_visibility_data_raises_when_estimated_size_exceeds_budget():
-    scratch = make_scratch_dir("visibility_data")
-    path = scratch / "synthetic.fits"
-    _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
-    index = build_row_index(path)
-
-    with pytest.raises(MemoryError):
-        read_visibility_data(path, index, row_indices=np.arange(4), max_bytes=10)  # absurdly small
-
-
-def test_read_visibility_data_rejects_an_unknown_axis_selection_name():
+def test_iter_visibility_chunks_rejects_an_unknown_axis_selection_name():
     scratch = make_scratch_dir("visibility_data")
     path = scratch / "synthetic.fits"
     _make_synthetic_uvfits_with_known_visibilities(path, n_rows=2, n_chan=2, n_stokes=1)
     index = build_row_index(path)
 
     with pytest.raises(ValueError, match="RA"):
-        read_visibility_data(path, index, row_indices=np.arange(2), axis_selection={"RA": [0]})
+        _read_one_chunk(path, index, row_indices=np.arange(2), axis_selection={"RA": [0]})
 
 
-def test_read_visibility_data_handles_a_genuinely_non_trivial_extra_axis():
+def test_iter_visibility_chunks_handles_a_genuinely_non_trivial_extra_axis():
     # 2 IFs, both with real, distinct data -- the case that used to raise
     # NotImplementedError. Default (no axis_selection) must read both IFs
     # correctly; explicit selection must pick out just one.
@@ -165,7 +195,7 @@ def test_read_visibility_data_handles_a_genuinely_non_trivial_extra_axis():
     _make_synthetic_uvfits_with_known_visibilities(path, n_rows=2, n_chan=2, n_stokes=1, n_if=2)
     index = build_row_index(path)
 
-    block_all = read_visibility_data(path, index, row_indices=np.arange(2))
+    block_all = _read_one_chunk(path, index, row_indices=np.arange(2))
     assert block_all.axis_types == ["STOKES", "FREQ", "IF"]
     assert block_all.data.shape == (2, 1, 2, 2)
     for r in range(2):
@@ -174,7 +204,7 @@ def test_read_visibility_data_handles_a_genuinely_non_trivial_extra_axis():
                 expected, _ = _expected_value(r, f, c, 0)
                 assert block_all.data[r, 0, c, f] == pytest.approx(expected)
 
-    block_if1 = read_visibility_data(path, index, row_indices=np.arange(2), axis_selection={"IF": np.array([1])})
+    block_if1 = _read_one_chunk(path, index, row_indices=np.arange(2), axis_selection={"IF": np.array([1])})
     assert block_if1.data.shape == (2, 1, 2, 1)
     expected, _ = _expected_value(0, 1, 0, 0)
     assert block_if1.data[0, 0, 0, 0] == pytest.approx(expected)
@@ -228,17 +258,17 @@ def _make_synthetic_uvfits_with_a_multi_pointing_ra_axis(path, n_rows=2, n_chan=
     return path
 
 
-def test_read_visibility_data_handles_a_non_trivial_ra_axis_not_just_if():
+def test_iter_visibility_chunks_handles_a_non_trivial_ra_axis_not_just_if():
     # Proves genericity isn't secretly tied to the IF axis specifically --
     # RA is a different axis, in a different position, never named anywhere
-    # in read_visibility_data's own logic.
+    # in iter_visibility_chunks's own logic.
     scratch = make_scratch_dir("visibility_data_multi_ra")
     path = scratch / "synthetic.fits"
     _make_synthetic_uvfits_with_a_multi_pointing_ra_axis(path, n_rows=2, n_chan=2, n_stokes=1, n_ra=2)
     index = build_row_index(path)
     assert index.data_axis_types == ["COMPLEX", "STOKES", "FREQ", "IF", "RA"]
 
-    block_all = read_visibility_data(path, index, row_indices=np.arange(2))
+    block_all = _read_one_chunk(path, index, row_indices=np.arange(2))
     assert block_all.axis_types == ["STOKES", "FREQ", "IF", "RA"]
     assert block_all.data.shape == (2, 1, 2, 1, 2)
     for r in range(2):
@@ -248,22 +278,23 @@ def test_read_visibility_data_handles_a_non_trivial_ra_axis_not_just_if():
                 expected = complex(real, real + 0.5)
                 assert block_all.data[r, 0, c, 0, ra] == pytest.approx(expected)
 
-    block_ra0 = read_visibility_data(path, index, row_indices=np.arange(2), axis_selection={"RA": np.array([0])})
+    block_ra0 = _read_one_chunk(path, index, row_indices=np.arange(2), axis_selection={"RA": np.array([0])})
     assert block_ra0.data.shape == (2, 1, 2, 1, 1)
     real = 1 * 1000 + 0 * 200 + 1 * 10 + 0
     assert block_ra0.data[1, 0, 1, 0, 0] == pytest.approx(complex(real, real + 0.5))
     np.testing.assert_array_equal(block_ra0.axis_indices["RA"], [0])
 
 
-def test_read_visibility_data_too_large_error_carries_its_numbers():
+def test_iter_visibility_chunks_metadata_only_reads_no_data():
     scratch = make_scratch_dir("visibility_data")
     path = scratch / "synthetic.fits"
     _make_synthetic_uvfits_with_known_visibilities(path, n_rows=4, n_chan=3, n_stokes=2)
     index = build_row_index(path)
 
-    with pytest.raises(VisibilityReadTooLarge) as caught:
-        read_visibility_data(path, index, row_indices=np.arange(4), max_bytes=10)
+    with_data = _read_one_chunk(path, index, np.arange(4))
+    [meta] = list(iter_visibility_chunks(path, index, np.arange(4), read_data=False))
 
-    assert caught.value.n_rows == 4
-    assert caught.value.max_bytes == 10
-    assert caught.value.estimated_bytes == 4 * 3 * 2 * 24
+    assert meta.data is None and meta.weight is None
+    np.testing.assert_array_equal(meta.jd, with_data.jd)
+    np.testing.assert_array_equal(meta.source_id, index.source_id)
+    assert meta.axis_types == with_data.axis_types

@@ -1,0 +1,94 @@
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+import numpy as np
+
+from visplot.plot_spec import PlotSpec
+from visplot.quantities import QuantityContext
+from visplot.stream import FLAGGED_LAYER, GridReducer
+from visplot.xy_figure import (
+    DENSE_MARKER_THRESHOLD,
+    XYFigure,
+    auto_point_size,
+    auto_square_marker,
+    downsample_layers,
+    draw_markers,
+    layers_to_rgba,
+    marker_offsets,
+    marker_radius_px,
+)
+
+CTX = QuantityContext(time_reference_jd=2459421.0, bunit="UNCALIB", stokes_labels=("RR", "LL"))
+
+
+def test_auto_point_size_shrinks_with_sample_count():
+    assert [auto_point_size(n) for n in (10, 1_000, 1_001, 100_000, 1_000_000, 1_000_001)] == [20, 20, 4, 4, 1, 0.25]
+
+
+def test_markers_are_square_only_when_dense():
+    assert not auto_square_marker(DENSE_MARKER_THRESHOLD)
+    assert auto_square_marker(DENSE_MARKER_THRESHOLD + 1)
+
+
+def test_marker_radius_follows_the_scatter_area_convention():
+    assert marker_radius_px(4.0, 72) == 1.0  # diameter sqrt(4) = 2 points = 2 pixels at 72 dpi
+
+
+def test_marker_offsets_disk_and_square():
+    assert marker_offsets(0.5, square=False) == [(0, 0)]
+    assert len(marker_offsets(1.0, square=False)) == 5
+    assert len(marker_offsets(1.0, square=True)) == 9
+
+
+def test_draw_markers_stamps_each_occupied_pixel_higher_layer_wins():
+    layers = np.zeros((5, 5), dtype=np.int16)
+    layers[2, 1] = 1
+    layers[2, 3] = 2
+    out = draw_markers(layers, marker_offsets(1.0, square=True))
+    assert out[2, 2] == 2  # both markers cover (2, 2); layer 2 paints over layer 1
+    assert out[1, 0] == 1 and out[3, 4] == 2
+    assert out[0, 0] == 0
+
+
+def test_downsample_takes_the_top_layer_of_each_block():
+    layers = np.zeros((4, 4), dtype=np.int16)
+    layers[0, 0] = 1
+    layers[1, 1] = 3
+    layers[3, 2] = FLAGGED_LAYER
+    np.testing.assert_array_equal(downsample_layers(layers, 2), [[3, 0], [0, FLAGGED_LAYER]])
+
+
+def test_layers_to_rgba_colors_each_layer_and_leaves_empty_transparent():
+    layers = np.array([[0, 1]], dtype=np.int16)
+    rgba = layers_to_rgba(layers, {1: (1.0, 0.0, 0.0, 1.0)})
+    assert rgba[0, 0, 3] == 0
+    assert tuple(rgba[0, 1]) == (255, 0, 0, 255)
+
+
+def test_xy_figure_labels_title_and_grid_shape():
+    plot = PlotSpec(y="amp", x="freq_mhz")
+    fig = XYFigure(plot, CTX, sources=["3C286"], telescope="GMRT", source_path="/d/obs.fits")
+    assert fig.ax.get_xlabel() == "Frequency (MHz)"
+    assert fig.ax.get_ylabel() == "Amplitude (UNCALIB)"
+    assert fig.ax.get_title() == "Amplitude vs Frequency: 3C286\n(GMRT, file: obs.fits)"
+    h150, w150 = fig.grid_shape(150)
+    h600, w600 = fig.grid_shape(600)
+    assert abs(h600 - 4 * h150) <= 2 and abs(w600 - 4 * w150) <= 2
+    plt.close(fig.fig)
+
+
+def test_xy_figure_shows_a_grid_as_an_image_with_its_extent():
+    plot = PlotSpec(y="amp", x="stokes", colorize_by="stokes")
+    grid = GridReducer(plot, (-0.5, 1.5), (0.0, 10.0), height=4, width=4)
+    grid.layers[:] = 0
+    grid.layers[0] = 1
+    grid.layers[3] = 2
+    grid.seen_codes = {0, 1}
+    grid.n_samples = 2
+    fig = XYFigure(plot, CTX)
+    fig.show(grid, display_dpi=100)
+    assert fig.image.get_extent() == [-0.5, 1.5, 0.0, 10.0]
+    assert [t.get_text() for t in fig.ax.get_legend().get_texts()] == ["RR", "LL"]
+    assert [t.get_text() for t in fig.ax.get_xticklabels()] == ["RR", "LL"]
+    plt.close(fig.fig)

@@ -1,7 +1,6 @@
 import pytest
 
 from cli.visplot_args import (
-    is_generic_quantity_plot,
     parse_plot_names,
     parse_quantity_pair,
     resolve_antennas_arg,
@@ -12,7 +11,8 @@ from cli.visplot_args import (
     resolve_stokes_axis_selection,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
-    validate_quantity_name,
+    resolve_plain_range_arg,
+    validate_colorize_by,
 )
 from data_io.antenna_table import Antenna
 
@@ -29,12 +29,6 @@ def test_parse_plot_names_splits_on_comma():
 def test_parse_plot_names_rejects_empty():
     with pytest.raises(ValueError, match="requires at least one"):
         parse_plot_names("")
-
-
-def test_is_generic_quantity_plot_distinguishes_named_from_generic():
-    assert is_generic_quantity_plot("antenna-layout") is False
-    assert is_generic_quantity_plot("amp-vs-time_h") is True
-    assert is_generic_quantity_plot("not-a-plot-at-all") is False
 
 
 def test_parse_quantity_pair_splits_on_the_literal_separator():
@@ -132,6 +126,17 @@ def test_parse_plot_names_rejects_an_unrecognized_name():
         parse_plot_names("antenna-layout,uv-coverage")
 
 
-def test_validate_quantity_name_rejects_an_unknown_colorize_by():
-    with pytest.raises(ValueError, match="unknown quantity 'pol' in --colorize-by"):
-        validate_quantity_name("pol", context="in --colorize-by")
+def test_validate_colorize_by_accepts_only_categories():
+    validate_colorize_by("stokes")
+    validate_colorize_by("source")
+    with pytest.raises(ValueError, match="takes a category"):
+        validate_colorize_by("amp")
+
+
+def test_parse_plot_names_accepts_presets_and_geometry_quantities():
+    assert parse_plot_names("ha-range,el_deg-vs-time_h") == ["ha-range", "el_deg-vs-time_h"]
+
+
+def test_resolve_plain_range_arg():
+    assert resolve_plain_range_arg(None) is None
+    assert resolve_plain_range_arg("0:250") == (0.0, 250.0)

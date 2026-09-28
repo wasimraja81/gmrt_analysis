@@ -5,42 +5,74 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import numpy as np
+import pytest
+from astropy.io import fits
 
 from conftest import make_scratch_dir
-from cli.visplot_args import NAMED_PLOTS
-from visplot.derived_quantities import QUANTITY_NAMES
-from cli.visplot import HIGHRES_DPI, LOWRES_DPI, _save_combined_pdf, build_arg_parser
+from cli.visplot import build_arg_parser, main
+from cli.visplot_args import NAMED_PLOTS, QUANTITY_NAMES
+from data_io.row_index import build_row_index, default_row_index_path, save_row_index
+
+JD0 = 2459421.2  # 2021-07-25
 
 
-def _dense_figure(n_points=50_000):
+def _make_synthetic_file(path, n_rows=40):
+    """n_rows rows over 3 baselines, 2 sources (first and second half), 2 Stokes x 4 channels;
+    amplitude grows with row; row 0's first sample is flagged."""
     rng = np.random.default_rng(0)
-    fig, ax = plt.subplots()
-    ax.scatter(rng.normal(size=n_points), rng.normal(size=n_points), s=1.0, linewidths=0)
-    return fig
+    image_data = np.zeros((n_rows, 1, 4, 2, 3), dtype=">f4")
+    image_data[..., 0] = (np.arange(n_rows)[:, None, None, None] + 1.0) * np.ones((1, 1, 4, 2))
+    image_data[..., 1] = rng.random((n_rows, 1, 4, 2))
+    image_data[..., 2] = 1.0
+    image_data[0, 0, 0, 0, 2] = -1.0
+    baseline = np.tile(np.array([1 * 256 + 2, 1 * 256 + 3, 2 * 256 + 3], dtype=">f4"), n_rows)[:n_rows]
+    source = np.where(np.arange(n_rows) < n_rows // 2, 1, 2).astype(">f4")
+    parnames = ["UU---SIN", "VV---SIN", "WW---SIN", "BASELINE", "DATE", "DATE", "SOURCE", "FREQSEL"]
+    pardata = [
+        (np.arange(n_rows) * 1e-7).astype(">f4"), (np.arange(n_rows) * 2e-7).astype(">f4"), np.zeros(n_rows, dtype=">f4"),
+        baseline, np.full(n_rows, JD0, dtype=">f8"), (np.arange(n_rows) // 3 * 10 / 86400).astype(">f8"),
+        source, np.ones(n_rows, dtype=">f4"),
+    ]
+    hdu = fits.GroupsHDU(fits.GroupData(image_data, parnames=parnames, pardata=pardata, bitpix=-32))
+    hdu.header["TELESCOP"] = "GMRT"
+    hdu.header["BUNIT"] = "UNCALIB"
+    hdu.header["CTYPE2"] = "COMPLEX"
+    hdu.header["CTYPE3"] = "STOKES"
+    hdu.header["CRVAL3"] = -1.0
+    hdu.header["CDELT3"] = -1.0
+    hdu.header["CTYPE4"] = "FREQ"
+    hdu.header["CRVAL4"] = 400e6
+    hdu.header["CDELT4"] = 1e6
+    hdu.header["CRPIX4"] = 1.0
+    hdu.header["CTYPE5"] = "IF"
+    su_hdu = fits.BinTableHDU.from_columns(fits.ColDefs([
+        fits.Column(name="ID. NO.", format="J", array=np.array([1, 2], dtype=np.int32)),
+        fits.Column(name="SOURCE", format="16A", array=np.array(["3C286", "3C48"])),
+        fits.Column(name="RAAPP", format="D", array=np.array([202.8, 24.4])),
+        fits.Column(name="DECAPP", format="D", array=np.array([30.5, 33.2])),
+    ]), name="AIPS SU")
+    an_hdu = fits.BinTableHDU.from_columns(fits.ColDefs([
+        fits.Column(name="NOSTA", format="J", array=np.array([1, 2, 3], dtype=np.int32)),
+        fits.Column(name="ANNAME", format="8A", array=np.array(["C00:01", "C01:02", "C02:03"])),
+        fits.Column(name="STABXYZ", format="3D", array=np.zeros((3, 3))),
+    ]), name="AIPS AN")
+    an_hdu.header["ARRAYX"] = 1657004.629
+    an_hdu.header["ARRAYY"] = 5797894.3801
+    an_hdu.header["ARRAYZ"] = 2073303.1705
+    fits.HDUList([hdu, su_hdu, an_hdu]).writeto(path)
+    save_row_index(build_row_index(path), default_row_index_path(path))
+    return path
 
 
-def test_save_combined_pdf_rasterizes_every_scatter_collection():
-    scratch = make_scratch_dir("cli_visplot_pdf_rasterization")
-    fig = _dense_figure(n_points=100)
-
-    _save_combined_pdf(scratch / "a.pdf", [("f", fig)], dpi=LOWRES_DPI)
-
-    assert all(c.get_rasterized() for c in fig.axes[0].collections)
-    plt.close(fig)
+def test_every_argument_has_help_text():
+    parser = build_arg_parser()
+    assert [a.dest for a in parser._actions if not a.help] == []
 
 
-def test_highres_pdf_embeds_a_larger_image_than_lowres():
-    scratch = make_scratch_dir("cli_visplot_pdf_sizes")
-    figures = [("dense", _dense_figure())]
-
-    lowres = scratch / "lowres.pdf"
-    highres = scratch / "highres.pdf"
-    _save_combined_pdf(lowres, figures, dpi=LOWRES_DPI)
-    _save_combined_pdf(highres, figures, dpi=HIGHRES_DPI)
-
-    assert HIGHRES_DPI > LOWRES_DPI
-    assert highres.stat().st_size > lowres.stat().st_size
-    plt.close(figures[0][1])
+def test_help_plot_names_section_lists_every_plot_and_quantity():
+    section = build_arg_parser().epilog.split("how plots are drawn:")[0]
+    for name in sorted(NAMED_PLOTS | QUANTITY_NAMES):
+        assert re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", section), name
 
 
 def test_highres_pdf_is_written_by_default_and_can_be_suppressed():
@@ -50,18 +82,63 @@ def test_highres_pdf_is_written_by_default_and_can_be_suppressed():
 
 
 def test_point_size_defaults_to_automatic():
-    args = build_arg_parser().parse_args(["x.fits", "--plots", "amp-vs-freq_mhz"])
-    assert args.point_size is None
+    assert build_arg_parser().parse_args(["x.fits", "--plots", "amp-vs-freq_mhz"]).point_size is None
 
 
-def test_every_argument_has_help_text():
+def test_colorize_by_accepts_only_categories():
     parser = build_arg_parser()
-    missing = [a.dest for a in parser._actions if not a.help]
-    assert missing == []
+    assert parser.parse_args(["x.fits", "--plots", "amp-vs-freq_mhz", "--colorize-by", "stokes"]).colorize_by == "stokes"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["x.fits", "--plots", "amp-vs-freq_mhz", "--colorize-by", "amp"])
 
 
-def test_help_plot_names_section_lists_every_plot_and_quantity():
-    epilog = build_arg_parser().epilog
-    section = epilog.split("examples:")[0]
-    for name in sorted(NAMED_PLOTS | QUANTITY_NAMES):
-        assert re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", section), name
+def test_saved_run_writes_every_output():
+    scratch = make_scratch_dir("cli_visplot_saved_run")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    out = scratch / "out"
+
+    code = main(["visplot", str(path), "--plots", "antenna-layout,amp-vs-freq_mhz,az-el-range",
+                 "--colorize-by", "stokes", "--output-dir", str(out), "--output-prefix", "t"])
+
+    assert code == 0
+    assert sorted(p.name for p in out.iterdir()) == sorted([
+        "t_antenna-layout.png", "t_amp-vs-freq_mhz.png", "t_az-el-range_el_deg.png", "t_az-el-range_az_deg.png",
+        "t_lowres.pdf", "t_highres.pdf",
+    ])
+    plt.close("all")
+
+
+def test_saved_generic_plot_marks_every_unflagged_sample(monkeypatch):
+    scratch = make_scratch_dir("cli_visplot_samples")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    shown = {}
+
+    import cli.visplot as cli
+
+    real_show = cli.XYFigure.show
+
+    def spy(self, grid, display_dpi, downsample=1):
+        shown[self.plot.name] = grid
+        return real_show(self, grid, display_dpi, downsample)
+
+    monkeypatch.setattr(cli.XYFigure, "show", spy)
+    main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--output-dir", str(scratch / "out"),
+          "--no-highres-pdf"])
+
+    assert shown["amp-vs-freq_mhz"].n_samples == 40 * 4 * 2 - 1  # every sample but the one flagged
+    plt.close("all")
+
+
+def test_geometry_preset_reads_no_visibility_data(monkeypatch):
+    scratch = make_scratch_dir("cli_visplot_geometry")
+    path = _make_synthetic_file(scratch / "obs.fits")
+
+    import data_io.visibility_data as vd
+
+    def fail(*args, **kwargs):
+        raise AssertionError("a geometry preset read visibility data")
+
+    monkeypatch.setattr(vd, "_read_run", fail)
+    assert main(["visplot", str(path), "--plots", "ha-range", "--output-dir", str(scratch / "out"),
+                 "--no-highres-pdf"]) == 0
+    plt.close("all")

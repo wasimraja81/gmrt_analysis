@@ -3,14 +3,14 @@
 
 Usage: gmrt/bin/python3 src/cli/visplot.py FITS_PATH --plots PLOT[,PLOT...] [options]
 
-Assembles a selection via `select_rows` (reusing every filter already
-built: sources, correlation type, antennas by id/name/GMRT prefix, a time
-range, uvdist/u/v/w in metres or exact kilo-wavelengths, HA/Az/El/
-parallactic-angle ranges) and, for the fixed plot types, calls the matching
-`visplot` function directly; for a generic "Y-vs-X" plot, reads one shared
-`VisibilityBlock` (channel/Stokes axis selection applied once, reused
-across every generic plot in this invocation) and pairs two
-`derived_quantities` via `scatter_xy`.
+Selects rows with `select_rows` (sources, correlation type, antennas, time,
+uv distance, kilo-wavelength and observing-geometry ranges), then draws:
+- table plots (antenna layout, source listing) from the file's tables;
+- every other plot -- a generic "Y-vs-X" pair or a geometry preset -- by
+  streaming the selection chunk by chunk into a fixed pixel grid per plot
+  (`visplot.xy_session`), so memory does not grow with the selection.
+Saves PNGs and PDFs with --output-dir; otherwise opens windows that fill as
+the data streams in and re-stream on zoom (`visplot.xy_interactive`).
 """
 
 from __future__ import annotations
@@ -35,43 +35,50 @@ from astropy.io import fits
 from matplotlib.backends.backend_pdf import PdfPages
 
 from cli.visplot_args import (  # noqa: E402
-    is_generic_quantity_plot,
+    CATEGORY_NAMES,
+    TABLE_PLOTS,
     parse_plot_names,
-    parse_quantity_pair,
     resolve_antennas_arg,
     resolve_channels_arg,
     resolve_deg_range_arg,
     resolve_ha_range_arg,
     resolve_klambda_range_arg,
+    resolve_plain_range_arg,
     resolve_stokes_axis_selection,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
-    validate_quantity_name,
+    validate_colorize_by,
 )
 from data_io.antenna_table import read_antenna_table, read_array_earth_location  # noqa: E402
-from data_io.astrometry import altaz_deg, hour_angle_hours, parallactic_angle_deg  # noqa: E402
 from data_io.row_index import default_row_index_path, load_row_index  # noqa: E402
 from data_io.row_selection import select_rows  # noqa: E402
 from data_io.source_table import read_source_table  # noqa: E402
-from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes  # noqa: E402
-from data_io.visibility_data import VisibilityReadTooLarge, read_visibility_data  # noqa: E402
 from visplot.antenna_layout import antenna_layout  # noqa: E402
-from visplot.derived_quantities import compute_quantity, quantity_display_name, quantity_label  # noqa: E402
-from visplot.geometry_range import az_el_range, hour_angle_range, parallactic_angle_range  # noqa: E402
-from visplot.scatter_xy import scatter_xy  # noqa: E402
+from visplot.plot_spec import PlotSpec, expand_plot_name  # noqa: E402
+from visplot.quantities import context_from_source_table  # noqa: E402
 from visplot.source_listing import source_listing  # noqa: E402
-
-GEOMETRY_PLOTS = {"ha-range", "az-el-range", "parallactic-angle-range"}
-
+from visplot.xy_figure import XYFigure  # noqa: E402
+from visplot.xy_interactive import run_interactive  # noqa: E402
+from visplot.xy_session import (  # noqa: E402
+    XYSource,
+    describe_passes,
+    pass_progress,
+    plot_grids,
+    range_pass_axes,
+    range_pass_reads_data,
+    resolve_extents,
+    stream_chunk_bytes,
+)
 
 _EPILOG = """\
 plot names (--plots, comma-separated):
-  named plots:
+  table plots:
     antenna-layout             antenna positions, local East/North (m)
     source-listing             the file's source table
-    ha-range                   hour angle vs time, per source
-    az-el-range                azimuth and elevation vs time, per source
-    parallactic-angle-range    parallactic angle vs time, per source
+  observing geometry per selected row, colored by source:
+    ha-range                   hour angle vs time
+    az-el-range                elevation vs time and azimuth vs time
+    parallactic-angle-range    parallactic angle vs time
   generic plots are written Y-vs-X, where Y and X are any two of:
     real, imag, amp            visibility; unit from the file's BUNIT keyword
     phase_deg                  visibility phase (deg)
@@ -81,10 +88,23 @@ plot names (--plots, comma-separated):
     u_klambda, v_klambda       u, v, w, sqrt(u^2 + v^2) at each channel's
     w_klambda, uvdist_klambda  frequency (kilo-wavelengths)
     freq_mhz                   channel frequency (MHz)
-    stokes                     Stokes/correlation label (for --colorize-by)
+    ha_h, az_deg, el_deg       hour angle (h), azimuth and elevation (deg)
+    pa_deg                     parallactic angle (deg)
+    stokes, source             categories (also for --colorize-by)
   e.g. amp-vs-uvdist_klambda, phase_deg-vs-time_h, v_klambda-vs-u_klambda.
   Every generic plot names two quantities; a single name such as
   uvdist_klambda is rejected.
+
+how plots are drawn: the selection is read in chunks and each chunk's
+samples are marked on a fixed pixel grid per plot, then dropped, so memory
+does not depend on how much is selected. The first pass finds each axis's
+range (reading visibility data only for amp, real, imag or phase axes);
+--x-range/--y-range skip it for that axis.
+
+windows (no --output-dir): each plot fills in as chunks are read, with the
+rows read so far shown at the bottom right. After a zoom or pan, the plot
+re-reads the selection and redraws the new region at the window's own
+resolution.
 
 examples:
   # antenna layout and source list only (reads no visibilities)
@@ -100,17 +120,16 @@ examples:
 
   # UV coverage in kilo-wavelengths, with the conjugate points, saved to disk
   bin/visplot.sh OBS.FITS --plots v_klambda-vs-u_klambda --mirror \\
-      --sources 3C286 --channels 0:10 --output-dir plots/
+      --sources 3C286 --output-dir plots/
 
 range syntax: 'lo:hi' for one range; several joined by commas ('1:5,10,12:14').
 A unit suffix on any term applies to all terms ('100:100.5MHz,103.5:104MHz').
 
 saved output (--output-dir): one PNG per plot (150 dpi), plus two combined
-PDFs, one page per plot. In both PDFs the data points are drawn into an image
-(as AIPS UVPLT's array method does), while axes, labels and titles stay vector;
-this keeps a page quick to open however many points it has:
-  PREFIX_lowres.pdf   points at 150 dpi
-  PREFIX_highres.pdf  points at 600 dpi, for zooming in
+PDFs, one page per plot, with the samples as an image and axes, labels and
+titles as vector:
+  PREFIX_lowres.pdf   samples at 150 dpi
+  PREFIX_highres.pdf  samples at 600 dpi, for zooming in
                       (skip it with --no-highres-pdf)
 """
 
@@ -184,21 +203,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     style = parser.add_argument_group("style (generic Y-vs-X plots)")
     style.add_argument(
         "--point-size", type=float, metavar="S",
-        help="marker area in points^2 (default: chosen from the number of points -- 20 up to "
-        "1e3 points, 4 up to 1e5, 1 up to 1e6, 0.25 beyond). Markers are squares above 1e5 "
-        "points, circles otherwise",
+        help="marker area in points^2 (default: chosen from the number of samples -- 20 up to "
+        "1e3, 4 up to 1e5, 1 up to 1e6, 0.25 beyond). Markers are squares above 1e5 "
+        "samples, circles otherwise",
     )
-    style.add_argument("--linewidths", type=float, default=0.0, help="marker edge width in points (default: 0)")
     style.add_argument("--color", default="tab:blue", help="marker color, any matplotlib color (default: tab:blue)")
     style.add_argument(
-        "--colorize-by",
-        help="color points by a category quantity, e.g. stokes (overrides --color)",
+        "--colorize-by", choices=sorted(CATEGORY_NAMES),
+        help="color samples by a category (overrides --color)",
     )
     style.add_argument(
         "--show-flagged", action="store_true",
-        help="also draw flagged points (weight <= 0), as light-red crosses (default: flagged points are hidden)",
+        help="also draw flagged samples (weight <= 0), in light red on top (default: flagged samples are left out)",
     )
     style.add_argument("--mirror", action="store_true", help="also plot (-x, -y), e.g. for UV coverage")
+    style.add_argument("--x-range", help="'lo:hi' x-axis range in the quantity's units (default: from the data)")
+    style.add_argument("--y-range", help="'lo:hi' y-axis range in the quantity's units (default: from the data)")
 
     out = parser.add_argument_group("output")
     out.add_argument(
@@ -214,33 +234,30 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-# Interim, until generic plots stream in chunks (plan doc T22): the reader's
-# size check counts its output arrays (24 bytes per sample), but a generic plot
-# peaked at ~110 bytes per sample (measured 2026-09-27, 3C286 and 3C468.1, up to
-# 122 million samples). Scaling the read budget by this ratio keeps the whole
-# plot within the host-RAM fraction.
-_READ_TO_PLOT_BYTES = 24 / 110
-
 LOWRES_DPI = 150
-HIGHRES_DPI = 600
-
-
-def _save_combined_pdf(path: Path, figures, dpi: int) -> None:
-    """All figures into one PDF, one page each. Each figure's data points
-    (its scatter collections) are drawn into an image at `dpi`; axes,
-    labels, and titles stay vector."""
-    with PdfPages(path) as pdf:
-        for _, fig in figures:
-            for ax in fig.axes:
-                for collection in ax.collections:
-                    collection.set_rasterized(True)
-            pdf.savefig(fig, dpi=dpi)
+HIGHRES_DPI = 600  # a whole multiple of LOWRES_DPI: the 150 dpi grid is an exact 4x4 reduction
 
 
 def _read_header_keyword(fits_path: str, keyword: str) -> str | None:
     with fits.open(fits_path) as hdul:
         value = str(hdul[0].header.get(keyword, "")).strip()
     return value or None
+
+
+def _terminal_progress(progress):
+    """An on_chunk callback printing `progress` (a PassProgress) at every 10%
+    of the selection."""
+    next_mark = [0.1]
+
+    def on_chunk(rows_done: int) -> bool:
+        total = progress.total_rows
+        if total and rows_done / total >= next_mark[0]:
+            print(progress.text(rows_done), flush=True)
+            while rows_done / total >= next_mark[0]:
+                next_mark[0] += 0.1
+        return True
+
+    return on_chunk
 
 
 def main(argv: list[str]) -> int:
@@ -253,7 +270,9 @@ def main(argv: list[str]) -> int:
     try:
         plot_names = parse_plot_names(args.plots)
         if args.colorize_by:
-            validate_quantity_name(args.colorize_by, context="in --colorize-by")
+            validate_colorize_by(args.colorize_by)
+        x_range = resolve_plain_range_arg(args.x_range)
+        y_range = resolve_plain_range_arg(args.y_range)
     except ValueError as err:
         parser.error(str(err))
 
@@ -269,130 +288,170 @@ def main(argv: list[str]) -> int:
     telescope = _read_header_keyword(fits_path, "TELESCOP")
     bunit = _read_header_keyword(fits_path, "BUNIT")
 
-    needs_geometry = bool(GEOMETRY_PLOTS.intersection(plot_names)) or any(
-        v is not None for v in (args.ha_range, args.az_range, args.el_range, args.pa_range)
-    )
+    try:
+        select_kwargs = dict(
+            sources=[s.strip() for s in args.sources.split(",")] if args.sources else None,
+            correlation_type=args.correlation_type,
+            antennas=resolve_antennas_arg(args.antennas, antennas),
+            exclude_antennas=resolve_antennas_arg(args.exclude_antennas, antennas),
+            jd_range=resolve_time_range_arg(args.time_range, float(index.jd.min())),
+            uvdist_range_m=resolve_uvdist_range_arg(args.uvdist_range),
+            u_range_klambda=resolve_klambda_range_arg(args.u_range_klambda),
+            v_range_klambda=resolve_klambda_range_arg(args.v_range_klambda),
+            w_range_klambda=resolve_klambda_range_arg(args.w_range_klambda),
+            uvdist_range_klambda=resolve_klambda_range_arg(args.uvdist_range_klambda),
+            ha_range_hours=resolve_ha_range_arg(args.ha_range),
+            az_range_deg=resolve_deg_range_arg(args.az_range),
+            el_range_deg=resolve_deg_range_arg(args.el_range),
+            parallactic_angle_range_deg=resolve_deg_range_arg(args.pa_range),
+            every_nth=args.every_nth,
+            random_subset_n=args.random_subset_n,
+            random_seed=args.random_seed,
+        )
+        if any(v is not None for v in (args.ha_range, args.az_range, args.el_range, args.pa_range)):
+            select_kwargs["source_table"] = source_table
+            select_kwargs["array_location"] = array_location
 
-    select_kwargs = dict(
-        sources=[s.strip() for s in args.sources.split(",")] if args.sources else None,
-        correlation_type=args.correlation_type,
-        antennas=resolve_antennas_arg(args.antennas, antennas),
-        exclude_antennas=resolve_antennas_arg(args.exclude_antennas, antennas),
-        jd_range=resolve_time_range_arg(args.time_range, float(index.jd.min())),
-        uvdist_range_m=resolve_uvdist_range_arg(args.uvdist_range),
-        u_range_klambda=resolve_klambda_range_arg(args.u_range_klambda),
-        v_range_klambda=resolve_klambda_range_arg(args.v_range_klambda),
-        w_range_klambda=resolve_klambda_range_arg(args.w_range_klambda),
-        uvdist_range_klambda=resolve_klambda_range_arg(args.uvdist_range_klambda),
-        ha_range_hours=resolve_ha_range_arg(args.ha_range),
-        az_range_deg=resolve_deg_range_arg(args.az_range),
-        el_range_deg=resolve_deg_range_arg(args.el_range),
-        parallactic_angle_range_deg=resolve_deg_range_arg(args.pa_range),
-        every_nth=args.every_nth,
-        random_subset_n=args.random_subset_n,
-        random_seed=args.random_seed,
-    )
-    if needs_geometry:
-        select_kwargs["source_table"] = source_table
-        select_kwargs["array_location"] = array_location
-
-    # The kλ row filters evaluate each row at the edges of a frequency span:
-    # that span must be the band of the selected channels.
-    channel_indices = resolve_channels_arg(args.channels, index.chan_freqs_hz)
-    if channel_indices is not None:
-        selected_freqs_hz = np.asarray(index.chan_freqs_hz)[channel_indices]
-        select_kwargs["freq_range_hz"] = (float(selected_freqs_hz.min()), float(selected_freqs_hz.max()))
+        # The kλ row filters evaluate each row at the edges of a frequency span:
+        # that span must be the band of the selected channels.
+        channel_indices = resolve_channels_arg(args.channels, index.chan_freqs_hz)
+        if channel_indices is not None:
+            selected_freqs_hz = np.asarray(index.chan_freqs_hz)[channel_indices]
+            select_kwargs["freq_range_hz"] = (float(selected_freqs_hz.min()), float(selected_freqs_hz.max()))
+        stokes_indices = resolve_stokes_axis_selection(args.stokes, index.stokes_labels)
+    except ValueError as err:
+        parser.error(str(err))
 
     selection = select_rows(index, **select_kwargs)
-    print(f"selected {selection.n_rows} rows; sources present: {selection.sources}")
+    print(f"selected {selection.n_rows:,} rows; sources present: {selection.sources}")
 
-    # A generic "Y-vs-X" plot needs the actual visibility data; every such
-    # plot in this invocation shares one read (and one channel/Stokes axis
-    # selection), rather than re-reading per plot.
-    block = None
-    if any(is_generic_quantity_plot(name) for name in plot_names):
-        axis_selection = {}
-        if channel_indices is not None:
-            axis_selection["FREQ"] = np.array(channel_indices)
-        stokes_indices = resolve_stokes_axis_selection(args.stokes, index.stokes_labels)
-        if stokes_indices is not None:
-            axis_selection["STOKES"] = np.array(stokes_indices)
-        try:
-            block = read_visibility_data(
-                fits_path, index, selection.row_indices, axis_selection=axis_selection or None,
-                max_bytes=int(host_total_memory_bytes() * DEFAULT_RAM_FRACTION_TO_USE * _READ_TO_PLOT_BYTES),
-            )
-        except VisibilityReadTooLarge as err:
-            sys.stdout.flush()
-            print(
-                f"{parser.prog}: plotting this selection needs ~{err.estimated_bytes / _READ_TO_PLOT_BYTES / 1e9:.1f} GB "
-                f"({err.n_rows:,} rows x {int(np.prod(err.selected_shape)):,} samples per row), over the "
-                f"{err.max_bytes / _READ_TO_PLOT_BYTES / 1e9:.1f} GB limit ({err.ram_fraction:.0%} of this host's RAM).\n"
-                "Narrow it with --channels, --stokes, --time-range, --every-nth or --random-subset-n.",
-                file=sys.stderr,
-            )
-            return 1
+    style = PlotSpec(
+        y="", x="", colorize_by=args.colorize_by, show_flagged=args.show_flagged, mirror=args.mirror,
+        x_range=x_range, y_range=y_range, point_size=args.point_size, color=args.color,
+    )
+    plots_by_name = {name: expand_plot_name(name, style) for name in plot_names if name not in TABLE_PLOTS}
+    xy_plots = [p for plots in plots_by_name.values() for p in plots]
 
+    axis_selection = {}
+    if channel_indices is not None:
+        axis_selection["FREQ"] = np.array(channel_indices)
+    if stokes_indices is not None:
+        axis_selection["STOKES"] = np.array(stokes_indices)
+    stokes_labels = index.stokes_labels or []
+    if stokes_indices is not None:
+        stokes_labels = [stokes_labels[i] for i in stokes_indices]
+
+    time_reference_jd = float(index.jd[selection.row_indices].min()) if selection.n_rows else float(index.jd.min())
+    ctx = context_from_source_table(time_reference_jd, source_table, array_location, bunit, stokes_labels)
+    source = XYSource(fits_path, index, selection.row_indices, axis_selection or None, ctx, stream_chunk_bytes())
+    sources_present = list(selection.sources.values())
+    xy_figures = {p: XYFigure(p, ctx, sources_present, telescope, fits_path) for p in xy_plots}
+    if xy_plots:
+        for line in describe_passes(source, xy_plots):
+            print(line)
+    n_passes = 2 if range_pass_axes(xy_plots) else 1
+    labels = (f"pass 1 of {n_passes}: finding data ranges", f"pass {n_passes} of {n_passes}: drawing")
+
+    # Figures in the order the plots were named.
     figures: list[tuple[str, object]] = []
     for name in plot_names:
         if name == "antenna-layout":
-            fig = antenna_layout(antennas, array_location, telescope=telescope, source_path=fits_path)
+            figures.append((name, antenna_layout(antennas, array_location, telescope=telescope, source_path=fits_path)))
         elif name == "source-listing":
-            fig = source_listing(source_table)
-        elif name in GEOMETRY_PLOTS:
-            jd = index.jd[selection.row_indices]
-            source_ids = index.source_id[selection.row_indices]
-            ra_deg = np.array([source_table[int(sid)].ra_apparent_deg for sid in source_ids])
-            dec_deg = np.array([source_table[int(sid)].dec_apparent_deg for sid in source_ids])
-            labels = np.array([source_table[int(sid)].name for sid in source_ids])
-            if name == "ha-range":
-                fig = hour_angle_range(
-                    jd, hour_angle_hours(jd, ra_deg, array_location), labels,
-                    telescope=telescope, source_path=fits_path,
-                )
-            elif name == "az-el-range":
-                az_deg, el_deg = altaz_deg(jd, ra_deg, dec_deg, array_location)
-                fig = az_el_range(jd, az_deg, el_deg, labels, telescope=telescope, source_path=fits_path)
-            else:
-                fig = parallactic_angle_range(
-                    jd, parallactic_angle_deg(jd, ra_deg, dec_deg, array_location), labels,
-                    telescope=telescope, source_path=fits_path,
-                )
-        else:  # a generic Y-vs-X plot (parse_plot_names allows nothing else)
-            y_name, x_name = parse_quantity_pair(name)
-            y = compute_quantity(y_name, block)
-            x = compute_quantity(x_name, block)
-            colorize_by = compute_quantity(args.colorize_by, block) if args.colorize_by else None
-            fig = scatter_xy(
-                x, y, weight=block.weight, colorize_by=colorize_by, show_flagged=args.show_flagged,
-                mirror=args.mirror, point_size=args.point_size, linewidths=args.linewidths, color=args.color,
-                xlabel=quantity_label(x_name, bunit=bunit), ylabel=quantity_label(y_name, bunit=bunit),
-                title=f"{quantity_display_name(y_name)} vs {quantity_display_name(x_name)}",
-            )
-        figures.append((name, fig))
+            figures.append((name, source_listing(source_table)))
+        else:
+            figures += [(p.name, xy_figures[p]) for p in plots_by_name[name]]
 
     if args.output_dir:
-        output_dir = Path(args.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for name, fig in figures:
-            png_path = output_dir / f"{args.output_prefix}_{name}.png"
-            fig.savefig(png_path, dpi=LOWRES_DPI)
-            print(f"saved {png_path}")
-
-        lowres_path = output_dir / f"{args.output_prefix}_lowres.pdf"
-        _save_combined_pdf(lowres_path, figures, dpi=LOWRES_DPI)
-        print(f"saved {lowres_path}")
-
-        if not args.no_highres_pdf:
-            highres_path = output_dir / f"{args.output_prefix}_highres.pdf"
-            _save_combined_pdf(highres_path, figures, dpi=HIGHRES_DPI)
-            print(f"saved {highres_path}")
+        extents = {}
+        if xy_plots:
+            progress = pass_progress(source, labels[0], range_pass_reads_data(xy_plots))
+            extents = resolve_extents(source, xy_plots, on_chunk=_terminal_progress(progress))
+        _save_outputs(args, source, xy_plots, xy_figures, extents, figures, labels[1])
     else:
-        import matplotlib.pyplot as plt
-
-        plt.show()
-
+        _show_windows(source, xy_plots, xy_figures, figures, labels)
     return 0
+
+
+def _save_outputs(args, source, xy_plots, xy_figures, extents, figures, draw_label) -> None:
+    # One plotting pass at the high-res grid; the low-res grid is its exact 4x4 reduction.
+    factor = HIGHRES_DPI // LOWRES_DPI
+    shapes = {}
+    for p in xy_plots:
+        h, w = xy_figures[p].grid_shape(LOWRES_DPI)
+        shapes[p] = (h * factor, w * factor)
+    grids = {}
+    if xy_plots:
+        progress = pass_progress(source, draw_label, any(p.needs_data for p in xy_plots))
+        grids, _ = plot_grids(source, xy_plots, extents, shapes, on_chunk=_terminal_progress(progress))
+
+    def _mpl_figure(item):
+        return item.fig if isinstance(item, XYFigure) else item
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for item in xy_figures.values():
+        grid = grids[item.plot]
+        item.set_status(f"{grid.n_samples:,} samples from {source.n_rows:,} rows")
+
+    lowres_path = output_dir / f"{args.output_prefix}_lowres.pdf"
+    with PdfPages(lowres_path) as pdf:
+        for name, item in figures:
+            if isinstance(item, XYFigure):
+                item.show(grids[item.plot], display_dpi=LOWRES_DPI, downsample=factor)
+            png_path = output_dir / f"{args.output_prefix}_{name}.png"
+            _mpl_figure(item).savefig(png_path, dpi=LOWRES_DPI)
+            pdf.savefig(_mpl_figure(item), dpi=LOWRES_DPI)
+            print(f"saved {png_path}")
+    print(f"saved {lowres_path}")
+
+    if not args.no_highres_pdf:
+        highres_path = output_dir / f"{args.output_prefix}_highres.pdf"
+        with PdfPages(highres_path) as pdf:
+            for _, item in figures:
+                if isinstance(item, XYFigure):
+                    item.show(grids[item.plot], display_dpi=HIGHRES_DPI)
+                pdf.savefig(_mpl_figure(item), dpi=HIGHRES_DPI)
+        print(f"saved {highres_path}")
+
+
+def _show_windows(source, xy_plots, xy_figures, figures, labels) -> None:
+    """Open every window first, so the range pass (if any) shows its progress
+    in the windows as well as the terminal; then draw."""
+    import time
+
+    import matplotlib.pyplot as plt
+
+    plt.ion()
+    for _, item in figures:
+        (item.fig if isinstance(item, XYFigure) else item).show()
+    plt.pause(0.001)
+
+    if xy_figures:
+        progress = pass_progress(source, labels[0], range_pass_reads_data(xy_plots))
+        to_terminal = _terminal_progress(progress)
+        last = [0.0]
+
+        def on_chunk(rows_done: int) -> bool:
+            to_terminal(rows_done)
+            if time.monotonic() - last[0] >= 0.5:
+                for figure in xy_figures.values():
+                    figure.set_status(progress.text(rows_done))
+                    figure.fig.canvas.draw_idle()
+                plt.pause(0.001)
+                last[0] = time.monotonic()
+            return any(plt.fignum_exists(f.fig.number) for f in xy_figures.values())
+
+        if range_pass_axes(xy_plots):
+            for figure in xy_figures.values():
+                figure.set_status(progress.text(0))
+            plt.pause(0.001)
+        extents = resolve_extents(source, xy_plots, on_chunk=on_chunk)
+        if any(plt.fignum_exists(f.fig.number) for f in xy_figures.values()):
+            run_interactive(source, xy_figures, extents, first_pass_label=labels[1])
+    plt.ioff()
+    if plt.get_fignums():  # table figures still open after the streamed ones close
+        plt.show()
 
 
 if __name__ == "__main__":
