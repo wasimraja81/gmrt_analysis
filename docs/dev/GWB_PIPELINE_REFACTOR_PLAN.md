@@ -433,11 +433,18 @@ Buildable now, ahead of Phase C.
   raw file), iterating pages (per baseline, antenna, source), and exporting any plot in
   the usual formats. Design to be presented for review before building.
 
-- **T27 — Astrometry without network access — NOT STARTED (added 2026-09-28).** From the
-  review (point G). `astrometry.local_sidereal_time_hours` asks astropy for UT1, which
-  may try to download IERS tables (~10 s per process here). Try the online tables, fall
-  back to astropy's bundled tables, and if the date is outside those too, compute with
-  UT1 = UTC and warn that hour angle may be off by up to 0.9 s of time (~0.00025 h).
+- **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
+  G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
+  tables (10 s timeout per process here, and a stall on an offline machine). Now
+  `astrometry.Ut1Provider` supplies UT1 - UTC: astropy's bundled IERS-B tables (final
+  values; this astropy's cover 1962-01-01 to 2026-08-14) when they cover the dates, the
+  online IERS tables (5 s timeout) for later dates, and otherwise UT1 = UTC with a
+  warning that hour angle may be off by up to 0.9 s of time (0.00025 h). Sidereal time
+  is Greenwich apparent sidereal time relative to the TIO plus the site longitude, which
+  needs no further table lookup; it agrees with astropy's own computation to 0.001 ms
+  of time. The CLI prints the UT1 source for any geometry plot or filter before
+  reading, and on a fallback prints the warning and puts it on every geometry plot.
+  First use now takes 0.48 s (was 10 s).
 
 - **T19 review point D** (progressive chunk order, instant zoom preview, zoom pruning,
   re-bin on resize): on hold until the user has tried the interactive windows.

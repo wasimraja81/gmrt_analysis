@@ -142,3 +142,41 @@ def test_geometry_preset_reads_no_visibility_data(monkeypatch):
     assert main(["visplot", str(path), "--plots", "ha-range", "--output-dir", str(scratch / "out"),
                  "--no-highres-pdf"]) == 0
     plt.close("all")
+
+
+def test_geometry_run_reports_where_ut1_comes_from(capsys):
+    scratch = make_scratch_dir("cli_visplot_ut1_source")
+    path = _make_synthetic_file(scratch / "obs.fits")
+
+    main(["visplot", str(path), "--plots", "ha-range", "--output-dir", str(scratch / "out"), "--no-highres-pdf"])
+
+    assert "UT1 - UTC (for hour angle, azimuth, elevation, parallactic angle): IERS-B (bundled with astropy)" \
+        in capsys.readouterr().out
+    plt.close("all")
+
+
+def test_ut1_fallback_is_warned_in_the_terminal_and_on_the_plot(monkeypatch, capsys):
+    import cli.visplot as cli
+    import data_io.astrometry as astrometry
+
+    class NoTables(astrometry.Ut1Provider):
+        def ut1_minus_utc_s(self, jd):
+            self.fallback_used = True
+            self.sources_used.add("none: UT1 = UTC assumed")
+            return np.zeros(np.shape(np.atleast_1d(jd)))
+
+    provider = NoTables()
+    monkeypatch.setattr(astrometry, "DEFAULT_UT1", provider)
+    monkeypatch.setattr(cli, "DEFAULT_UT1", provider)
+    notes = []
+    original_set_note = cli.XYFigure.set_note
+    monkeypatch.setattr(cli.XYFigure, "set_note", lambda self, text: (notes.append(text), original_set_note(self, text)))
+
+    scratch = make_scratch_dir("cli_visplot_ut1_fallback")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    main(["visplot", str(path), "--plots", "ha-range,amp-vs-freq_mhz", "--output-dir", str(scratch / "out"),
+          "--no-highres-pdf"])
+
+    assert "WARNING: UT1 - UTC unavailable" in capsys.readouterr().err
+    assert notes == ["UT1 = UTC assumed: hour angle may be off by up to 0.9 s of time"]  # the HA plot only
+    plt.close("all")

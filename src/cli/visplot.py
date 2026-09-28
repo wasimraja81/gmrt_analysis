@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -50,6 +51,7 @@ from cli.visplot_args import (  # noqa: E402
     validate_colorize_by,
 )
 from data_io.antenna_table import read_antenna_table, read_array_earth_location  # noqa: E402
+from data_io.astrometry import DEFAULT_UT1, AstrometryWarning, fallback_message  # noqa: E402
 from data_io.row_index import default_row_index_path, load_row_index  # noqa: E402
 from data_io.row_selection import select_rows  # noqa: E402
 from data_io.source_table import read_source_table  # noqa: E402
@@ -242,6 +244,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+GEOMETRY_QUANTITIES = {"ha_h", "az_deg", "el_deg", "pa_deg"}
+
 LOWRES_DPI = 150
 HIGHRES_DPI = 600  # a whole multiple of LOWRES_DPI: the 150 dpi grid is an exact 4x4 reduction
 
@@ -272,6 +276,7 @@ def main(argv: list[str]) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv[1:])
     fits_path = args.fits_path
+    warnings.simplefilter("ignore", AstrometryWarning)  # reported once, by _report_ut1
 
     # Checked before the file is opened, so a typo fails immediately rather
     # than after a (possibly long) row selection or data read.
@@ -358,6 +363,7 @@ def main(argv: list[str]) -> int:
     if xy_plots:
         for line in describe_passes(source, xy_plots):
             print(line)
+    _report_ut1(index, selection, xy_plots, xy_figures, geometry_filters=select_kwargs.get("source_table") is not None)
     n_passes = 2 if range_pass_axes(xy_plots) else 1
     labels = (f"pass 1 of {n_passes}: finding data ranges", f"pass {n_passes} of {n_passes}: drawing")
 
@@ -380,6 +386,22 @@ def main(argv: list[str]) -> int:
     else:
         _show_windows(source, xy_plots, xy_figures, figures, labels)
     return 0
+
+
+def _report_ut1(index, selection, xy_plots, xy_figures, geometry_filters: bool) -> None:
+    """Where UT1 - UTC comes from for this selection's dates, printed before
+    any pass; a fallback to UT1 = UTC is also noted on every geometry plot."""
+    geometry_plots = [p for p in xy_plots if GEOMETRY_QUANTITIES.intersection(p.quantities)]
+    if not geometry_plots and not geometry_filters:
+        return
+    jd = index.jd[selection.row_indices] if selection.n_rows else index.jd
+    DEFAULT_UT1.ut1_minus_utc_s([float(jd.min()), float(jd.max())])
+    print(f"UT1 - UTC (for hour angle, azimuth, elevation, parallactic angle): {', '.join(sorted(DEFAULT_UT1.sources_used))}")
+    if DEFAULT_UT1.fallback_used:
+        sys.stdout.flush()
+        print(f"WARNING: {fallback_message()}", file=sys.stderr)
+        for p in geometry_plots:
+            xy_figures[p].set_note("UT1 = UTC assumed: hour angle may be off by up to 0.9 s of time")
 
 
 def _save_outputs(args, source, xy_plots, xy_figures, extents, figures, draw_label) -> None:

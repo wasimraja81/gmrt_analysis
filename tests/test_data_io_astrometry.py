@@ -4,10 +4,18 @@ import numpy as np
 import pytest
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
+from astropy.utils import iers
 import astropy.units as u
 
 from data_io.antenna_table import read_array_earth_location
-from data_io.astrometry import altaz_deg, hour_angle_hours, local_sidereal_time_hours, parallactic_angle_deg
+from data_io.astrometry import (
+    AstrometryWarning,
+    Ut1Provider,
+    altaz_deg,
+    hour_angle_hours,
+    local_sidereal_time_hours,
+    parallactic_angle_deg,
+)
 from data_io.source_table import read_source_table
 
 REAL_GWB_FITS = "/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS"
@@ -17,15 +25,18 @@ JD = 2460123.456
 
 
 def _lst_hours_directly(jd, location):
-    return Time(jd, format="jd", scale="utc").sidereal_time("apparent", longitude=location.lon).hour
+    """astropy's own computation at the site longitude, from its bundled tables."""
+    with iers.conf.set_temp("auto_download", False):
+        return Time(jd, format="jd", scale="utc").sidereal_time("apparent", longitude=location.lon).hour
 
 
-def test_local_sidereal_time_hours_matches_a_direct_astropy_call():
-    assert local_sidereal_time_hours(JD, GMRT_LOCATION) == pytest.approx(_lst_hours_directly(JD, GMRT_LOCATION))
+def test_local_sidereal_time_hours_matches_astropy():
+    difference_s = abs(local_sidereal_time_hours(JD, GMRT_LOCATION) - _lst_hours_directly(JD, GMRT_LOCATION)) * 3600
+    assert difference_s < 1e-3  # measured 1e-6 s
 
 
 def test_hour_angle_hours_is_zero_at_transit():
-    ra_deg = _lst_hours_directly(JD, GMRT_LOCATION) * 15.0
+    ra_deg = local_sidereal_time_hours(JD, GMRT_LOCATION) * 15.0
     assert hour_angle_hours(JD, ra_deg, GMRT_LOCATION) == pytest.approx(0.0, abs=1e-9)
 
 
@@ -74,3 +85,41 @@ def test_astrometry_runs_end_to_end_against_the_real_gwb_file():
     assert 0.0 <= az_deg < 360.0
     assert -90.0 <= el_deg <= 90.0
     assert -180.0 <= pa_deg <= 180.0
+
+
+def test_ut1_comes_from_the_bundled_tables_without_network_access(monkeypatch):
+    def no_network(*args, **kwargs):
+        raise AssertionError("the online IERS tables were consulted for a date the bundled tables cover")
+
+    monkeypatch.setattr(iers.IERS_Auto, "open", no_network)
+    provider = Ut1Provider()
+    values = provider.ut1_minus_utc_s([2459421.2, 2459421.3])
+    expected = iers.IERS_B.open().ut1_utc(Time([2459421.2, 2459421.3], format="jd", scale="utc")).to_value("s")
+    np.testing.assert_allclose(values, expected)
+    assert provider.sources_used == {"IERS-B (bundled with astropy)"}
+    assert not provider.fallback_used
+
+
+def test_ut1_falls_back_to_utc_with_a_warning_when_no_table_covers_the_date(monkeypatch):
+    def offline(*args, **kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(iers.IERS_Auto, "open", offline)
+    provider = Ut1Provider()
+    far_future = 2488069.5  # 2100-01-01, beyond every IERS table
+    with pytest.warns(AstrometryWarning, match="UT1 = UTC"):
+        values = provider.ut1_minus_utc_s([far_future])
+    np.testing.assert_array_equal(values, [0.0])
+    assert provider.fallback_used
+    assert provider.sources_used == {"none: UT1 = UTC assumed"}
+
+
+def test_ut1_offline_provider_skips_the_online_tables(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("online tables consulted with allow_online=False")
+
+    monkeypatch.setattr(iers.IERS_Auto, "open", fail)
+    provider = Ut1Provider(allow_online=False)
+    with pytest.warns(AstrometryWarning):
+        provider.ut1_minus_utc_s([2488069.5])
+    assert provider.fallback_used

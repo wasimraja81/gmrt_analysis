@@ -127,6 +127,7 @@ class XYFigure:
             line(value, color="0.5", lw=0.8, ls="--", zorder=1)
         self.image = None
         self.status = self.fig.text(0.99, 0.005, "", ha="right", va="bottom", fontsize=8, color="0.4")
+        self.note = self.fig.text(0.01, 0.005, "", ha="left", va="bottom", fontsize=7, color="darkred", wrap=True)
 
     def grid_shape(self, dpi: float) -> tuple[int, int]:
         """(height, width) in pixels of the axes area at `dpi`."""
@@ -179,3 +180,8 @@ class XYFigure:
 
     def set_status(self, text: str) -> None:
         self.status.set_text(text)
+
+    def set_note(self, text: str) -> None:
+        """A caveat shown on the plot itself (bottom left), e.g. a warning
+        about how a quantity was computed."""
+        self.note.set_text(text)

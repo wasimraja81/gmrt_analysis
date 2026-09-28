@@ -129,9 +129,13 @@ def describe_passes(source: XYSource, plots: list[PlotSpec]) -> list[str]:
     how much is selected, and what each pass over the selection reads."""
     from visplot.quantities import quantity_label
 
-    n_samples = source.n_rows * source.samples_per_row
-    lines = [f"{source.n_rows:,} rows x {source.samples_per_row:,} samples per row = {n_samples:,} samples",
-             "plots: " + "; ".join(p.title for p in plots)]
+    if any(p.needs_data for p in plots):
+        n_samples = source.n_rows * source.samples_per_row
+        size = (f"{source.n_rows:,} rows x {source.samples_per_row:,} visibility samples per row "
+                f"= {n_samples:,} samples")
+    else:
+        size = f"{source.n_rows:,} rows (one value per row; no visibility data needed)"
+    lines = [size, "plots: " + "; ".join(p.title for p in plots)]
     data_gb = source.n_rows * source.row_bytes / 1e9
 
     def reads(read_data: bool) -> str:
