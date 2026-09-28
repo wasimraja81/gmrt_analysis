@@ -54,3 +54,19 @@ def test_an_interrupted_pass_leaves_no_file():
     run_stream([_block([0, 1])], CTX, [locate])
     assert writer.close(locate, completed=False) is None
     assert list(scratch.iterdir()) == []
+
+
+def test_time_utc_is_the_recorded_time_less_the_files_offset():
+    from dataclasses import replace
+
+    scratch = make_scratch_dir("locate_csv_utc")
+    ctx = replace(CTX, recorded_minus_utc_s=35.0, time_system="IAT")
+    locate = LocateReducer(PlotSpec(y="amp", x="freq_mhz"), (0.0, 2000.0), (0.5, 1.5))  # row 0 only
+    writer = LocateCsvWriter(scratch / "located.csv", locate, ctx)
+    locate.sink = writer
+    run_stream([_block([0])], ctx, [locate])
+    text = writer.close(locate, completed=True).read_text().splitlines()
+    first = dict(zip(COLUMNS, [line for line in text if not line.startswith("#")][1].split(",")))
+    assert first["jd_recorded"] == "2459421.0000000000"  # 2021-07-25 12:00:00 as recorded
+    assert first["time_utc"] == "2021-07-25T11:59:25.000"
+    assert "# jd_recorded: the file's timestamp (TIMSYS IAT); time_utc: recorded - 35 s" in text

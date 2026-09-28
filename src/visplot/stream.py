@@ -26,7 +26,7 @@ import numpy as np
 
 from data_io.visibility_data import VisibilityBlock, slice_block
 from visplot.plot_spec import PlotSpec
-from visplot.quantities import QUANTITIES, QuantityContext
+from visplot.quantities import QUANTITIES, QuantityContext, Unit, resolve_unit
 from visplot.value_histogram import ValueHistogram
 
 EMPTY_LAYER = 0
@@ -37,18 +37,39 @@ FLAGGED_LAYER = np.iinfo(np.int16).max  # flagged samples draw above every categ
 
 
 class ChunkValues:
-    """Quantity values for one chunk, each evaluated once."""
+    """Quantity values for one chunk, each evaluated once per base and once
+    per unit."""
 
     def __init__(self, block: VisibilityBlock, ctx: QuantityContext):
         self.block = block
         self.ctx = ctx
-        self._quantities: dict[str, np.ndarray] = {}
+        self._bases: dict[tuple[str, str], np.ndarray] = {}
+        self._scaled: dict[tuple[str, str], np.ndarray] = {}
         self._samples: dict[PlotSpec, tuple] = {}
 
+    def base(self, name: str, base: str) -> np.ndarray:
+        """Quantity `name` in its base `base` (a category: its codes)."""
+        key = (name, base)
+        if key not in self._bases:
+            self._bases[key] = QUANTITIES[name].evaluate_base(base, self.block, self.ctx)
+        return self._bases[key]
+
+    def in_unit(self, name: str, unit: Unit) -> np.ndarray:
+        values = self.base(name, unit.base)
+        if unit.factor == 1.0:
+            return values
+        key = (name, unit.name)
+        if key not in self._scaled:
+            self._scaled[key] = values * unit.factor
+        return self._scaled[key]
+
+    def axis(self, plot: PlotSpec, axis: str) -> np.ndarray:
+        """The values on `plot`'s axis "x" or "y", in the axis's unit."""
+        return self.in_unit(plot.x if axis == "x" else plot.y, plot.unit(axis, self.ctx))
+
     def __getitem__(self, name: str) -> np.ndarray:
-        if name not in self._quantities:
-            self._quantities[name] = QUANTITIES[name].evaluate(self.block, self.ctx)
-        return self._quantities[name]
+        """Quantity `name` in its default unit (a category: its codes)."""
+        return self.in_unit(name, resolve_unit(name, None, self.ctx))
 
     def samples(self, plot: PlotSpec):
         """The samples `plot` draws from this chunk, as flat arrays
@@ -69,7 +90,7 @@ class ChunkValues:
         self._samples.pop(plot, None)
 
     def _compute_samples(self, plot: PlotSpec):
-        arrays = [self[plot.x], self[plot.y]]
+        arrays = [self.axis(plot, "x"), self.axis(plot, "y")]
         if plot.colorize_by:
             arrays.append(self[plot.colorize_by])
         use_flags = plot.apply_flags and self.block.weight is not None
@@ -213,12 +234,19 @@ class RangeReducer:
     when that quantity needs it; flagged samples are left out when the chunk
     carries weights (and the plot applies flags); values the axis scale
     cannot show (log: non-positive) are left out; a mirrored plot's range
-    covers the negated values too."""
+    covers the negated values too.
 
-    def __init__(self, plot: PlotSpec, axis: str, with_histogram: bool = False):
+    Values are taken in the unit's base (`base`) and converted by the unit's
+    factor in `extent`, so a result found for one unit (e.g. from a cache)
+    serves every unit of the same base; the factor is positive, so min, max
+    and percentiles convert exactly and log's positive values stay positive."""
+
+    def __init__(self, plot: PlotSpec, axis: str, ctx: QuantityContext | None = None, with_histogram: bool = False):
         self.plot = plot
         self.axis = axis
         self.quantity = plot.x if axis == "x" else plot.y
+        self.unit = plot.unit(axis, ctx)
+        self.base = self.unit.base
         self.scale = plot.axis_scale(axis)
         self.mode = plot.range_mode(axis)
         self.lo = np.inf
@@ -235,7 +263,7 @@ class RangeReducer:
     def compute(self, values: ChunkValues):
         """This chunk's (lo, hi, histogram or None), or None if it has no
         value to show. Safe to call from worker threads."""
-        v = values[self.quantity]
+        v = values.base(self.quantity, self.base)
         weight = values.block.weight
         if self.plot.apply_flags and not self.plot.show_flagged and weight is not None:
             v, good = np.broadcast_arrays(v, weight > 0)
@@ -268,8 +296,8 @@ class RangeReducer:
         self.apply(self.compute(values))
 
     def extent(self, margin: float = 0.03) -> tuple[float, float]:
-        """The range with a margin on each side (in the axis scale's
-        coordinate), so edge samples are not cut by the axes frame; a
+        """The range in the axis's unit, with a margin on each side (in the
+        axis scale's coordinate), so edge samples are not cut by the axes frame; a
         category axis gets half a slot each side. Percentile mode narrows
         the range to `range_percentiles` of the values."""
         if not np.isfinite(self.lo):
@@ -283,6 +311,7 @@ class RangeReducer:
             hi = min(hi, self.histogram.percentile(p_hi, upper=True))
             if self.plot.mirror:
                 lo, hi = min(lo, -hi), max(hi, -lo)
+        lo, hi = lo * self.unit.factor, hi * self.unit.factor
         t_lo, t_hi = (float(t) for t in self.scale.forward(np.array([lo, hi], dtype=np.float64)))
         span = t_hi - t_lo
         pad = span * margin if span > 0 else max(abs(t_lo) * margin, 0.5)
@@ -402,7 +431,7 @@ LOCATE_FIELDS = ("row", "ant1", "ant2", "jd", "source_id", "channel", "freq_hz",
 
 
 class LocateReducer:
-    """The samples of a plot inside a box (x_box, y_box in data units), with
+    """The samples of a plot inside a box (x_box, y_box in the axes' units), with
     where each comes from: the first `limit` kept (for a table), every one
     counted by baseline, and every one passed to `sink` if given (e.g. a CSV
     writer), in row order. A plot that does not vary along an axis (e.g. hour
@@ -450,7 +479,7 @@ class LocateReducer:
         # Weights join the broadcast only when flags apply, as in `ChunkValues.samples`:
         # a per-row plot without flags stays one sample per row.
         use_flags = self.plot.apply_flags and block.weight is not None and not self.plot.show_flagged
-        parts = [values[self.plot.x], values[self.plot.y]] + ([block.weight] if use_flags else [])
+        parts = [values.axis(self.plot, "x"), values.axis(self.plot, "y")] + ([block.weight] if use_flags else [])
         arrays = np.broadcast_arrays(*parts)
         x, y = arrays[0], arrays[1]
         if use_flags:

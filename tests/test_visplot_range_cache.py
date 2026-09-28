@@ -86,6 +86,7 @@ class _Source:
         self.row_indices = np.arange(6)
         self.axis_selection = None
         self.n_rows = 6
+        self.ctx = CTX
         self.passes = 0
 
     def stream(self, reducers, read_data, on_chunk=None):
@@ -116,6 +117,16 @@ def test_a_second_run_takes_the_ranges_from_the_cache_without_a_pass():
     assert source.passes == 1  # both answered from the cache
     assert again == first
     assert narrowed[percentile_plot][1][1] < first[plot][1][1]  # the cached histogram serves percentiles
+
+
+def test_a_range_found_in_one_unit_serves_every_unit_of_its_base():
+    scratch = make_scratch_dir("range_cache_units")
+    source = _Source(_fits_stand_in(scratch))
+    in_h = resolve_extents(source, [PlotSpec(y="amp", x="time", x_unit="h")], cache=RangeCache(scratch / "cache"))
+    in_min = resolve_extents(source, [PlotSpec(y="amp", x="time", x_unit="min")], cache=RangeCache(scratch / "cache"))
+    assert source.passes == 1  # the second run's x range (in min) came from the first run's (in h)
+    (h_lo, h_hi), (m_lo, m_hi) = list(in_h.values())[0][0], list(in_min.values())[0][0]
+    assert (m_lo, m_hi) == pytest.approx((h_lo * 60, h_hi * 60))
 
 
 def test_an_interrupted_pass_saves_nothing():

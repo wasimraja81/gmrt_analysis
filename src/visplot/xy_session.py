@@ -19,7 +19,7 @@ from data_io.row_index import RowIndex
 from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes
 from data_io.visibility_data import iter_visibility_chunks
 from visplot.plot_spec import PlotSpec
-from visplot.quantities import QUANTITIES, QuantityContext
+from visplot.quantities import QUANTITIES, QuantityContext, quantity_label
 from visplot.stream import GridReducer, RangeReducer, run_stream
 
 # Peak working memory of the streaming plot path per byte of full rows in a
@@ -94,11 +94,13 @@ def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None, cach
     selected sample, flagged or not.
 
     With a `RangeCache`, axes whose result is cached skip the pass, and the
-    results the pass computes are saved (only if it ran to the end)."""
+    results the pass computes are saved (only if it ran to the end). Ranges
+    are found and cached in the unit's base, so one result serves every unit
+    of that base (e.g. kλ and Mλ)."""
     hits = cached_ranges(source, plots, cache)
     reducers = {}
     for plot, axis in range_pass_axes(plots):
-        reducer = RangeReducer(plot, axis, with_histogram=cache is not None)
+        reducer = RangeReducer(plot, axis, source.ctx, with_histogram=cache is not None)
         if (plot, axis) in hits:
             reducer.load(*hits[(plot, axis)])
         reducers[(plot, axis)] = reducer
@@ -111,7 +113,8 @@ def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None, cach
                 if np.isfinite(reducer.lo):
                     cache.save(source.fits_path, _cache_key(cache, source, plot, axis), reducer.lo, reducer.hi,
                                reducer.histogram.counts,
-                               {"quantity": reducer.quantity, "rows": source.n_rows, "file": str(source.fits_path)})
+                               {"quantity": reducer.quantity, "base": reducer.base, "rows": source.n_rows,
+                                "file": str(source.fits_path)})
 
     extents = {}
     for plot in plots:
@@ -122,8 +125,10 @@ def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None, cach
 
 
 def _cache_key(cache, source: XYSource, plot: PlotSpec, axis: str) -> str:
+    quantity = plot.x if axis == "x" else plot.y
     return cache.key(
-        source.fits_path, source.row_indices, source.axis_selection, plot.x if axis == "x" else plot.y,
+        source.fits_path, source.row_indices, source.axis_selection,
+        f"{quantity}@{plot.unit(axis, source.ctx).base}",
         apply_flags=plot.apply_flags, show_flagged=plot.show_flagged, mirror=plot.mirror,
         log_axis=plot.axis_scale(axis).name == "log",
     )
@@ -166,8 +171,6 @@ def range_pass_reads_data(plots: list[PlotSpec], cached: dict | None = None) -> 
 def describe_passes(source: XYSource, plots: list[PlotSpec], cached: dict | None = None) -> list[str]:
     """What streaming these plots will do, before it starts:
     how much is selected, and what each pass over the selection reads."""
-    from visplot.quantities import quantity_label
-
     if any(p.needs_data for p in plots):
         n_samples = source.n_rows * source.samples_per_row
         size = (f"{source.n_rows:,} rows x {source.samples_per_row:,} visibility samples per row "
@@ -184,11 +187,11 @@ def describe_passes(source: XYSource, plots: list[PlotSpec], cached: dict | None
     cached = cached or {}
     ranged = [key for key in range_pass_axes(plots) if key not in cached]
     if cached:
-        names = sorted({quantity_label(p.x if axis == "x" else p.y, source.ctx) for p, axis in cached})
+        names = sorted({_axis_label(p, axis, source.ctx) for p, axis in cached})
         lines.append(f"data ranges taken from the cache: {', '.join(names)}")
     if ranged:
         names = sorted({
-            quantity_label(p.x if axis == "x" else p.y, source.ctx)
+            _axis_label(p, axis, source.ctx)
             + (f" (percentiles {p.range_percentiles[0]:g}-{p.range_percentiles[1]:g})"
                if p.range_mode(axis) == "percentile" else "")
             for p, axis in ranged
@@ -199,6 +202,10 @@ def describe_passes(source: XYSource, plots: list[PlotSpec], cached: dict | None
     for i, text in enumerate(passes, start=1):
         lines.append(f"pass {i} of {len(passes)}: {text}")
     return lines
+
+
+def _axis_label(plot: PlotSpec, axis: str, ctx: QuantityContext) -> str:
+    return quantity_label(plot.x if axis == "x" else plot.y, ctx, plot.x_unit if axis == "x" else plot.y_unit)
 
 
 class PassProgress:

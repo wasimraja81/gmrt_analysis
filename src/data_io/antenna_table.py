@@ -98,3 +98,61 @@ def _array_reference_position_m(an_header) -> tuple[float, float, float]:
         float(an_header.get("ARRAYY", 0.0)),
         float(an_header.get("ARRAYZ", 0.0)),
     )
+
+
+@dataclass(frozen=True)
+class TimeReference:
+    """The file's time keywords, None where absent: `reference_date` (AN
+    `RDATE`, else the primary header's `DATE-OBS`, as "YYYY-MM-DD"), the date
+    AIPS counts days from; `time_system` (AN `TIMSYS`, "IAT" or "UTC");
+    `iat_minus_utc_s` (AN `IATUTC`) and `data_minus_utc_s` (AN `DATUTC`).
+
+    AIPS Memo 117 defines DATUTC as the data's time system minus UTC and
+    IATUTC as IAT - UTC on RDATE. GMRT GWB files write TIMSYS = 'IAT' with
+    DATUTC = 0 and IATUTC = 35 (the leap-second count of 2012-2015; 37 s on
+    the 2021 file's date), so the keywords disagree with each other; their
+    u, v, w put the timestamps 34.07 s after UTC (`data_io.timestamp_check`,
+    2026-09-28). This project's rule (the user's decision, 2026-09-28):
+    UTC = recorded time - IATUTC when TIMSYS is 'IAT', recorded time
+    otherwise, with that check warning when the u, v, w disagree."""
+
+    reference_date: str | None
+    time_system: str | None
+    iat_minus_utc_s: float | None = None
+    data_minus_utc_s: float | None = None
+
+    @property
+    def recorded_minus_utc_s(self) -> float:
+        """Seconds to subtract from a recorded time to get UTC (see the
+        class docstring for the rule). Raises ValueError if TIMSYS is 'IAT'
+        without IATUTC."""
+        if (self.time_system or "").upper() == "IAT":
+            if self.iat_minus_utc_s is None:
+                raise ValueError("TIMSYS is 'IAT' but the antenna table has no IATUTC: UTC cannot be derived")
+            return self.iat_minus_utc_s
+        return 0.0
+
+    def describe(self) -> str:
+        """The keywords and the rule's result, for a log or terminal line."""
+        system = self.time_system or "not declared"
+        keywords = f"TIMSYS {system}, IATUTC {self.iat_minus_utc_s}, DATUTC {self.data_minus_utc_s}"
+        offset = self.recorded_minus_utc_s
+        rule = f"UTC = recorded - {offset:g} s (IATUTC)" if offset else "UTC = recorded"
+        return f"{keywords}: {rule}"
+
+
+def read_time_reference(fits_path: Path | str) -> TimeReference:
+    with open_fits_readonly(fits_path) as hdul:
+        date_obs = str(hdul[0].header.get("DATE-OBS", "")).strip()
+        an_header = hdul["AIPS AN"].header if "AIPS AN" in hdul else {}
+        rdate = str(an_header.get("RDATE", "")).strip()
+        time_system = str(an_header.get("TIMSYS", "")).strip()
+        iatutc = an_header.get("IATUTC")
+        datutc = an_header.get("DATUTC")
+    date = (rdate or date_obs)[:10]
+    return TimeReference(
+        reference_date=date or None,
+        time_system=time_system or None,
+        iat_minus_utc_s=float(iatutc) if iatutc is not None else None,
+        data_minus_utc_s=float(datutc) if datutc is not None else None,
+    )

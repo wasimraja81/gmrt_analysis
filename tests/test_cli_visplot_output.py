@@ -9,8 +9,8 @@ import pytest
 from astropy.io import fits
 
 from conftest import make_scratch_dir
-from cli.visplot import build_arg_parser, main
-from cli.visplot_args import NAMED_PLOTS, QUANTITY_NAMES
+from cli.run_visplot import build_arg_parser, main
+from visplot.request_args import NAMED_PLOTS, QUANTITY_NAMES
 from data_io.row_index import build_row_index, default_row_index_path, save_row_index
 
 JD0 = 2459421.2  # 2021-07-25
@@ -102,7 +102,7 @@ def test_saved_run_writes_every_output():
 
     assert code == 0
     assert sorted(p.name for p in out.iterdir()) == sorted([
-        "t_antenna-layout.png", "t_amp-vs-freq_mhz.png", "t_az-el-range_el_deg.png", "t_az-el-range_az_deg.png",
+        "t_antenna-layout.png", "t_amp-vs-freq_mhz.png", "t_az-el-range_el.png", "t_az-el-range_az.png",
         "t_lowres.pdf", "t_highres.pdf",
     ])
     plt.close("all")
@@ -113,7 +113,7 @@ def test_saved_generic_plot_marks_every_unflagged_sample(monkeypatch):
     path = _make_synthetic_file(scratch / "obs.fits")
     shown = {}
 
-    import cli.visplot as cli
+    import visplot.run as cli
 
     real_show = cli.XYFigure.show
 
@@ -150,13 +150,13 @@ def test_geometry_run_reports_where_ut1_comes_from(capsys):
 
     main(["visplot", str(path), "--plots", "ha-range", "--output-dir", str(scratch / "out"), "--no-highres-pdf"])
 
-    assert "UT1 - UTC (for hour angle, azimuth, elevation, parallactic angle): IERS-B (bundled with astropy)" \
+    assert "UT1 - UTC (for hour angle, azimuth, elevation, parallactic angle, LST): IERS-B (bundled with astropy)" \
         in capsys.readouterr().out
     plt.close("all")
 
 
 def test_ut1_fallback_is_warned_in_the_terminal_and_on_the_plot(monkeypatch, capsys):
-    import cli.visplot as cli
+    import visplot.run as cli
     import data_io.astrometry as astrometry
 
     class NoTables(astrometry.Ut1Provider):
@@ -178,7 +178,7 @@ def test_ut1_fallback_is_warned_in_the_terminal_and_on_the_plot(monkeypatch, cap
           "--no-highres-pdf"])
 
     assert "WARNING: UT1 - UTC unavailable" in capsys.readouterr().err
-    assert notes == ["UT1 = UTC assumed: hour angle may be off by up to 0.9 s of time"]  # the HA plot only
+    assert notes == ["UT1 = UTC assumed: hour angle and LST may be off by up to 0.9 s of time"]  # the HA plot only
     plt.close("all")
 
 
@@ -201,7 +201,7 @@ def test_log_scale_and_percentile_range_run_end_to_end(monkeypatch):
     path = _make_synthetic_file(scratch / "obs.fits")
     statuses = []
 
-    import cli.visplot as cli
+    import visplot.run as cli
 
     original_set_status = cli.XYFigure.set_status
     monkeypatch.setattr(cli.XYFigure, "set_status",
@@ -255,3 +255,118 @@ def test_locate_needs_one_plot_and_a_csv(capsys):
         main(["visplot", str(path), "--plots", "amp-vs-freq_mhz,amp-vs-time_h", "--locate", "0:1,0:1",
               "--locate-csv", str(scratch / "x.csv")])
     assert "exactly one streamed plot" in capsys.readouterr().err
+
+
+class _RecordedFigures:
+    """Collects the XYFigures a run makes, to inspect their axes."""
+
+    def __init__(self, monkeypatch):
+        import visplot.run as cli
+
+        self.figures = []
+        recorded = self.figures
+
+        class Recording(cli.XYFigure):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                recorded.append(self)
+
+        monkeypatch.setattr(cli, "XYFigure", Recording)
+
+
+def test_units_apply_to_every_plots_axis_presets_included(monkeypatch, capsys):
+    recorded = _RecordedFigures(monkeypatch)
+    scratch = make_scratch_dir("cli_visplot_units")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    assert main(["visplot", str(path), "--plots", "phase-vs-time,ha-range", "--x-unit", "local", "--y-unit", "deg",
+                 "--output-dir", str(scratch / "out"), "--no-highres-pdf"]) == 0
+    phase, ha = recorded.figures
+    assert phase.ax.get_xlabel() == ha.ax.get_xlabel() == "Time (IST, UTC+05:30; day 0 = 2021-07-25)"
+    assert (phase.ax.get_ylabel(), ha.ax.get_ylabel()) == ("Phase (deg)", "Hour angle (deg)")
+    assert ha.ax.get_ylim() == pytest.approx((-180.0, 180.0))  # the preset's +-12 h, converted
+    assert "local time: Asia/Kolkata (IST, UTC+05:30)" in capsys.readouterr().out
+    plt.close("all")
+
+
+@pytest.mark.parametrize("args, message", [
+    (["--plots", "amp-vs-uvdist_klambda", "--x-unit", "m"],
+     "plot 'amp-vs-uvdist_klambda': 'uvdist_klambda' is 'uvdist' in klambda"),
+    (["--plots", "amp-vs-time", "--x-unit", "klambda"], "unit 'klambda' does not apply to 'time'"),
+    (["--plots", "amp-vs-time", "--y-unit", "mJy"], "BUNIT ('UNCALIB'), which is not a flux density"),
+    (["--plots", "amp-vs-time", "--x-unit", "UTC", "--x-scale", "log"], "needs a linear x scale"),
+])
+def test_a_unit_that_does_not_apply_is_rejected_before_reading(args, message, capsys):
+    scratch = make_scratch_dir("cli_visplot_unit_errors")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    with pytest.raises(SystemExit):
+        main(["visplot", str(path), *args, "--output-dir", str(scratch / "out")])
+    err = capsys.readouterr().err
+    assert message in err
+    assert not (scratch / "out").exists()
+
+
+def test_local_time_needs_a_known_time_zone(capsys):
+    scratch = make_scratch_dir("cli_visplot_time_zone")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    fits.setval(path, "TELESCOP", value="OTHER")  # a synthetic scratch file
+    base = ["visplot", str(path), "--plots", "amp-vs-time", "--x-unit", "local", "--output-dir", str(scratch / "out"),
+            "--no-highres-pdf"]
+    with pytest.raises(SystemExit):
+        main(base)
+    assert "TELESCOP 'OTHER' is not among the known ones (GMRT: Asia/Kolkata): give --time-zone" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        main(base + ["--time-zone", "Mars/Olympus"])
+    assert "unknown time zone 'Mars/Olympus'" in capsys.readouterr().err
+    assert main(base + ["--time-zone", "Asia/Kolkata"]) == 0
+    plt.close("all")
+
+
+def test_recorded_time_is_the_default_with_the_files_time_system_and_reference_date(monkeypatch):
+    recorded = _RecordedFigures(monkeypatch)
+    scratch = make_scratch_dir("cli_visplot_recorded_time")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    fits.setval(path, "RDATE", value="2021-07-24", extname="AIPS AN")  # a synthetic scratch file
+    fits.setval(path, "TIMSYS", value="IAT", extname="AIPS AN")
+    fits.setval(path, "IATUTC", value=35.0, extname="AIPS AN")
+    assert main(["visplot", str(path), "--plots", "amp-vs-time", "--output-dir", str(scratch / "out"),
+                 "--no-highres-pdf"]) == 0
+    (figure,) = recorded.figures
+    assert figure.ax.get_xlabel() == "Time (recorded, IAT; day 0 = 2021-07-24)"
+    assert [t.get_text() for t in figure.ax.get_xticklabels()][0].startswith("01:")  # the day after RDATE
+    plt.close("all")
+
+
+def test_a_utc_plot_reports_the_time_system_and_the_timestamp_check(capsys):
+    scratch = make_scratch_dir("cli_visplot_time_system")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    fits.setval(path, "TIMSYS", value="IAT", extname="AIPS AN")
+    fits.setval(path, "IATUTC", value=35.0, extname="AIPS AN")
+    assert main(["visplot", str(path), "--plots", "ha-range", "--output-dir", str(scratch / "out"),
+                 "--no-highres-pdf"]) == 0
+    out, err = capsys.readouterr()
+    assert "time system: TIMSYS IAT, IATUTC 35.0, DATUTC None: UTC = recorded - 35 s (IATUTC)" in out
+    # the synthetic file's u, v, w come from no real geometry: the check says it cannot measure
+    assert "WARNING: timestamps: recorded - UTC could not be measured from u, v, w" in err
+    plt.close("all")
+
+
+def test_iat_without_iatutc_is_rejected(capsys):
+    scratch = make_scratch_dir("cli_visplot_iat_without_iatutc")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    fits.setval(path, "TIMSYS", value="IAT", extname="AIPS AN")
+    with pytest.raises(SystemExit):
+        main(["visplot", str(path), "--plots", "ha-range", "--output-dir", str(scratch / "out")])
+    assert "TIMSYS is 'IAT' but the antenna table has no IATUTC" in capsys.readouterr().err
+
+
+def test_the_launcher_runs_as_a_script():
+    """bin/visplot.sh runs src/cli/run_visplot.py as a script, which puts
+    src/cli on the import path: no module there may share a package's name
+    (a cli/visplot.py shadowed the visplot package once __init__.py went)."""
+    import subprocess
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    result = subprocess.run([str(repo / "bin" / "visplot.sh"), "--help"], capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
+    assert "usage: bin/visplot.sh" in result.stdout

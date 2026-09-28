@@ -329,3 +329,16 @@ def test_select_rows_klambda_range_raises_without_a_freq_axis():
     object.__setattr__(index, "chan_freqs_hz", np.array([]))
     with pytest.raises(ValueError, match="FREQ axis"):
         select_rows(index, u_range_klambda=(0.0, 1.0))
+
+
+def test_geometry_filters_read_the_timestamps_as_utc_after_the_offset():
+    from data_io.astrometry import hour_angle_hours
+
+    index, source_table, array_location = _make_geometry_index()
+    offset_s = 3600.0  # an hour: moves the hour angle by about one hour
+    ha_utc = hour_angle_hours(index.jd - offset_s / 86400, np.array([180.0, 60.0]), array_location)
+    window = (float(ha_utc[1]) - 0.1, float(ha_utc[1]) + 0.1)  # around source 2's shifted hour angle
+    kwargs = dict(correlation_type="both", ha_range_hours=window, source_table=source_table,
+                  array_location=array_location)
+    assert select_rows(index, recorded_minus_utc_s=offset_s, **kwargs).row_indices.tolist() == [1]
+    assert select_rows(index, **kwargs).row_indices.tolist() == []

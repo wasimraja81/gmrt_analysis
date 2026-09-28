@@ -10,7 +10,7 @@ CTX = QuantityContext(time_reference_jd=2459421.0, stokes_labels=("RR", "LL"))
 
 
 def _block(rows, weight=None, n_chan=2):
-    """rows: list of row indices; jd = JD0 + row/24 (so time_h == row); 2 Stokes x n_chan."""
+    """rows: list of row indices; jd = JD0 + row/24 (so time_h == row); u = row km; 2 Stokes x n_chan."""
     rows = np.asarray(rows)
     data = (rows[:, None, None] + 1.0) * np.ones((1, 2, n_chan)) + 0j
     return VisibilityBlock(
@@ -21,7 +21,7 @@ def _block(rows, weight=None, n_chan=2):
         axis_indices={"STOKES": np.array([0, 1]), "FREQ": np.arange(n_chan)},
         ant1=np.ones(len(rows)), ant2=np.full(len(rows), 2), source_id=np.ones(len(rows), dtype=int),
         jd=2459421.0 + rows / 24.0,
-        uu_sec=rows * 1e-6, vv_sec=rows * 0.0, ww_sec=rows * 0.0,
+        uu_sec=rows * 1e3 / 299_792_458.0, vv_sec=rows * 0.0, ww_sec=rows * 0.0,  # u = row km
         chan_freqs_hz=np.linspace(1e9, 1.1e9, n_chan),
         stokes_labels=["RR", "LL"],
     )
@@ -29,7 +29,7 @@ def _block(rows, weight=None, n_chan=2):
 
 def test_samples_broadcast_to_the_shape_the_pair_needs():
     values = ChunkValues(_block([0, 1, 2]), CTX)
-    x, y, code, flagged = values.samples(PlotSpec(y="u_sec", x="time_h", apply_flags=False))
+    x, y, code, flagged = values.samples(PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False))
     assert x.size == 3  # one per row: neither quantity varies over Stokes or channel
     x, y, code, flagged = values.samples(PlotSpec(y="amp", x="time_h"))
     assert x.size == 3 * 2 * 2
@@ -47,7 +47,7 @@ def test_samples_drop_flagged_unless_shown():
 
 def test_samples_mirror_appends_the_negated_points():
     values = ChunkValues(_block([1, 2]), CTX)
-    x, y, _, _ = values.samples(PlotSpec(y="u_sec", x="time_h", apply_flags=False, mirror=True))
+    x, y, _, _ = values.samples(PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False, mirror=True))
     np.testing.assert_allclose(sorted(x), [-2, -1, 1, 2])
 
 
@@ -87,12 +87,12 @@ def test_range_reducer_category_axis_gets_half_a_slot_each_side():
 
 
 def test_grid_reducer_bins_samples_into_pixels():
-    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False)
+    plot = PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False)
     # samples at pixel centres, clear of JD rounding at the pixel edges
-    grid = GridReducer(plot, (-0.5, 3.5), (-0.5e-6, 3.5e-6), height=4, width=4)
+    grid = GridReducer(plot, (-0.5, 3.5), (-0.5, 3.5), height=4, width=4)
     run_stream([_block([0, 1]), _block([3])], CTX, [grid])
     occupied = np.argwhere(grid.layers_2d() > 0).tolist()
-    assert occupied == [[0, 0], [1, 1], [3, 3]]  # (iy, ix): time 0,1,3 with u 0,1,3 microseconds
+    assert occupied == [[0, 0], [1, 1], [3, 3]]  # (iy, ix): time 0,1,3 with u 0,1,3 km
     assert grid.n_samples == 3
 
 
@@ -107,7 +107,7 @@ def test_grid_reducer_is_unchanged_by_adding_the_same_samples_again():
 
 def test_grid_reducer_paints_higher_codes_and_flagged_on_top():
     weight = np.ones((1, 2, 1))
-    plot = PlotSpec(y="u_sec", x="time_h", colorize_by="stokes", show_flagged=True)
+    plot = PlotSpec(y="u", y_unit="km", x="time_h", colorize_by="stokes", show_flagged=True)
     grid = GridReducer(plot, (0.0, 1.0), (0.0, 1.0), height=1, width=1)
     run_stream([_block([0], weight=weight, n_chan=1)], CTX, [grid])
     assert grid.layers_2d()[0, 0] == 2  # LL (code 1) painted over RR (code 0)
@@ -118,7 +118,7 @@ def test_grid_reducer_paints_higher_codes_and_flagged_on_top():
 
 
 def test_grid_reducer_ignores_samples_outside_its_extent():
-    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False)
+    plot = PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False)
     grid = GridReducer(plot, (10.0, 20.0), (0.0, 1.0), height=2, width=2)
     run_stream([_block([0, 1])], CTX, [grid])
     assert grid.n_samples == 0 and not grid.layers.any()
@@ -133,7 +133,7 @@ def test_range_reducer_evaluates_only_its_own_axis():
 
 
 def test_range_reducer_mirror_covers_the_negated_values():
-    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False, mirror=True)
+    plot = PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False, mirror=True)
     rx = RangeReducer(plot, "x")
     run_stream([_block([1, 2])], CTX, [rx])
     assert (rx.lo, rx.hi) == pytest.approx((-2.0, 2.0))
@@ -199,7 +199,7 @@ def test_range_reducer_percentile_mode_narrows_to_the_bulk():
 
 
 def test_range_reducer_log_scale_ignores_non_positive_values():
-    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False, x_scale="log")
+    plot = PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False, x_scale="log")
     rx = RangeReducer(plot, "x")
     run_stream([_block([0, 1, 10])], CTX, [rx])  # time_h 0 cannot be shown on a log axis
     assert (rx.lo, rx.hi) == pytest.approx((1.0, 10.0))
@@ -208,8 +208,8 @@ def test_range_reducer_log_scale_ignores_non_positive_values():
 
 
 def test_grid_reducer_bins_evenly_in_the_log_coordinate_and_counts_what_it_leaves_out():
-    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False, x_scale="log")
-    grid = GridReducer(plot, (1.0, 1000.0), (-1.0, 2000e-6), height=1, width=3)
+    plot = PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False, x_scale="log")
+    grid = GridReducer(plot, (1.0, 1000.0), (-1.0, 2000.0), height=1, width=3)
     run_stream([_block([0, 2, 20, 200, 5000])], CTX, [grid])  # time 0 is not positive; 5000 is beyond the range
     columns = np.flatnonzero(grid.layers_2d()[0])
     assert columns.tolist() == [0, 1, 2]  # one decade per pixel: 2, 20, 200
@@ -233,8 +233,8 @@ def test_locate_finds_the_samples_in_a_box_with_where_each_comes_from():
 def test_locate_on_a_per_row_plot_reports_channel_and_stokes_as_all():
     from visplot.stream import LocateReducer
 
-    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False)
-    locate = LocateReducer(plot, (0.5, 2.5), (0.0, 1.0))
+    plot = PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False)
+    locate = LocateReducer(plot, (0.5, 2.5), (0.0, 3.0))
     run_stream([_block(range(0, 5))], CTX, [locate])
     assert [r["row"] for r in locate.records] == [1, 2]
     assert all(r["channel"] is None and r["stokes"] is None for r in locate.records)
@@ -251,8 +251,8 @@ def test_locate_keeps_at_most_limit_records_but_counts_all():
 def test_locate_marks_mirrored_samples():
     from visplot.stream import LocateReducer
 
-    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False, mirror=True)
-    locate = LocateReducer(plot, (-2.5, -1.5), (-3e-6, 0.0))  # the mirror of row 2 (time 2 h, u 2 us)
+    plot = PlotSpec(y="u", y_unit="km", x="time_h", apply_flags=False, mirror=True)
+    locate = LocateReducer(plot, (-2.5, -1.5), (-3.0, 0.0))  # the mirror of row 2 (time 2 h, u 2 km)
     run_stream([_block(range(0, 5))], CTX, [locate])
     assert [(r["row"], r["mirrored"]) for r in locate.records] == [(2, True)]
 

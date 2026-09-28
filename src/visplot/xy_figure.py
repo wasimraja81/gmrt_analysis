@@ -16,6 +16,7 @@ from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
+from visplot.clock_axis import ClockFormatter, ClockLocator
 from visplot.plot_spec import PlotSpec
 from visplot.plot_title import build_plot_title
 from visplot.quantities import QUANTITIES, QuantityContext, category_label, quantity_label
@@ -121,8 +122,12 @@ class XYFigure:
         # A bare Figure (no pyplot): saved with savefig, or embedded in a Qt window.
         self.fig = Figure(figsize=figsize)
         self.ax = self.fig.add_subplot()
-        self.ax.set_xlabel(quantity_label(plot.x, ctx))
-        self.ax.set_ylabel(quantity_label(plot.y, ctx))
+        self.ax.set_xlabel(quantity_label(plot.x, ctx, plot.x_unit))
+        self.ax.set_ylabel(quantity_label(plot.y, ctx, plot.y_unit))
+        for axis, mpl_axis in (("x", self.ax.xaxis), ("y", self.ax.yaxis)):
+            if plot.unit(axis, ctx).clock:
+                mpl_axis.set_major_locator(ClockLocator())
+                mpl_axis.set_major_formatter(ClockFormatter())
         self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path))
         self.ax.grid(True, alpha=0.3)
         for axis, value in plot.reference_lines:
@@ -131,6 +136,7 @@ class XYFigure:
         self.image = None
         self._scales_set = False
         self.equal_override: bool | None = None  # set from a window's aspect toggle
+        self.view_request: tuple | None = None  # the extents last asked of set_view, before any widening
         self.status = self.fig.text(0.99, 0.005, "", ha="right", va="bottom", fontsize=8, color="0.4")
         self.note = self.fig.text(0.01, 0.005, "", ha="left", va="bottom", fontsize=7, color="darkred", wrap=True)
 
@@ -138,7 +144,10 @@ class XYFigure:
         """Set the axes' scales, limits and aspect for these extents, and return
         the limits the axes end up with: with equal aspect one axis's range
         widens so a unit is the same length on both (the axes box keeps its
-        shape), and a grid binned over the returned limits fills the axes."""
+        shape), and a grid binned over the returned limits fills the axes.
+        The extents asked for are kept (`view_request`), so turning equal
+        scale off again returns to them."""
+        self.view_request = (tuple(x_extent), tuple(y_extent))
         self._set_scales()
         equal = self.plot.equal_aspect if self.equal_override is None else self.equal_override
         if equal and self.linear:

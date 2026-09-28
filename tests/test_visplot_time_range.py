@@ -67,3 +67,13 @@ def test_resolve_time_range_jd_rejects_a_non_numeric_bound():
     # the numeric part itself still isn't a valid float.
     with pytest.raises(ValueError, match="not a valid time bound"):
         resolve_time_range_jd("1.2.3:2", REFERENCE_JD)
+
+
+def test_absolute_bounds_are_utc_and_become_recorded_time():
+    ref = 2459421.2
+    iso = resolve_time_range_jd("2021-07-25T17:00:00/2021-07-25T18:00:00", ref, recorded_minus_utc_s=35.0)
+    plain = resolve_time_range_jd("2021-07-25T17:00:00/2021-07-25T18:00:00", ref)
+    assert iso == pytest.approx((plain[0] + 35 / 86400, plain[1] + 35 / 86400), abs=1e-9)
+    assert resolve_time_range_jd("2459421.3:2459421.4jd", ref, 35.0) == pytest.approx(
+        (2459421.3 + 35 / 86400, 2459421.4 + 35 / 86400), abs=1e-9)
+    assert resolve_time_range_jd("0:1", ref, 35.0) == resolve_time_range_jd("0:1", ref)  # relative: unchanged

@@ -7,10 +7,11 @@ to its name when the pass completes; an interrupted pass removes the
 partial file.
 
 Columns give both readable and exact values: baseline by antenna names and
-by station numbers, UTC time and JD, channel index and frequency, Stokes,
-the plot's x and y, the weight, and whether the sample is a mirrored
-(conjugate) point. Lines starting with '#' describe the file: the plot, the
-box, and (at the end, once known) the total and the count by baseline.
+by station numbers, UTC time and the recorded JD, channel index and frequency, Stokes,
+the plot's x and y (in the axes' units), the weight, and whether the sample
+is a mirrored (conjugate) point. Lines starting with '#' describe the file:
+the plot, what x and y hold and in which unit, the box, and (at the end,
+once known) the total and the count by baseline.
 """
 
 from __future__ import annotations
@@ -23,7 +24,9 @@ from pathlib import Path
 import numpy as np
 from astropy.time import Time
 
-COLUMNS = ("baseline", "ant1", "ant2", "time_utc", "jd", "channel", "freq_mhz", "stokes",
+from visplot.quantities import utc_jd, value_description
+
+COLUMNS = ("baseline", "ant1", "ant2", "time_utc", "jd_recorded", "channel", "freq_mhz", "stokes",
            "x", "y", "weight", "mirrored", "row", "source")
 
 
@@ -36,7 +39,9 @@ class LocateCsvWriter:
         self._file = open(self.partial, "w", newline="")
         self._writer = csv.writer(self._file)
         plot = locate.plot
-        self._comment(f"located samples of plot: {plot.title} (y = {plot.y}, x = {plot.x})")
+        self._comment(f"located samples of plot: {plot.title}")
+        self._comment(f"y: {value_description(plot.y, ctx, plot.y_unit)}")
+        self._comment(f"x: {value_description(plot.x, ctx, plot.x_unit)}")
         self._comment(f"box: x {locate.x_box[0]:.10g} to {locate.x_box[1]:.10g}, "
                       f"y {locate.y_box[0]:.10g} to {locate.y_box[1]:.10g}")
         if fits_path is not None:
@@ -44,6 +49,9 @@ class LocateCsvWriter:
         if command:
             self._comment(f"command: {command}")
         self._comment(f"written: {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
+        system = f" (TIMSYS {ctx.time_system})" if ctx.time_system else ""
+        self._comment(f"jd_recorded: the file's timestamp{system}; time_utc: recorded - "
+                      f"{ctx.recorded_minus_utc_s:g} s")
         self._comment("channel -1 and Stokes 'all': the plot does not vary along that axis")
         self._writer.writerow(COLUMNS)
 
@@ -60,7 +68,7 @@ class LocateCsvWriter:
         unique, inverse = np.unique(pairs, axis=0, return_inverse=True)
         labels = np.array([f"{names.get(int(a), a)}-{names.get(int(b), b)}" for a, b in unique], dtype=object)
         baseline = labels[inverse.ravel()]
-        times = Time(columns["jd"], format="jd", scale="utc").isot
+        times = Time(utc_jd(self.ctx, columns["jd"]), format="jd", scale="utc").isot
         source = [sources.get(int(s), str(int(s))) for s in columns["source_id"]]
         freq_mhz = columns["freq_hz"] / 1e6
         self._writer.writerows(zip(

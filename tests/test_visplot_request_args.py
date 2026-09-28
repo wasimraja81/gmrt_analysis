@@ -1,6 +1,6 @@
 import pytest
 
-from cli.visplot_args import (
+from visplot.request_args import (
     parse_plot_names,
     parse_quantity_pair,
     resolve_antennas_arg,
@@ -140,3 +140,8 @@ def test_parse_plot_names_accepts_presets_and_geometry_quantities():
 def test_resolve_plain_range_arg():
     assert resolve_plain_range_arg(None) is None
     assert resolve_plain_range_arg("0:250") == (0.0, 250.0)
+
+
+def test_parse_plot_names_accepts_quantity_names_and_earlier_names_with_units():
+    assert parse_plot_names("amp-vs-uvdist,v-vs-u,amp-vs-uvdist_klambda,phase_deg-vs-time_h") == [
+        "amp-vs-uvdist", "v-vs-u", "amp-vs-uvdist_klambda", "phase_deg-vs-time_h"]

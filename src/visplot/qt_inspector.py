@@ -34,6 +34,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from visplot.locate_csv import LocateCsvWriter, write_kept
 from visplot.plot_spec import PlotSpec
+from visplot.quantities import utc_jd
 from visplot.stream import GridReducer, LocateReducer
 from visplot.xy_figure import XYFigure, grid_summary
 from visplot.xy_session import PassProgress, XYSource, range_pass_axes, range_pass_reads_data, resolve_extents
@@ -97,6 +98,7 @@ class _Panel:
     selector: RectangleSelector | None = None
     locate_action: QtGui.QAction | None = None
     toolbar: NavigationToolbar2QT | None = None
+    aspect_box: QtWidgets.QCheckBox | None = None
     extent: tuple | None = None
 
 
@@ -110,6 +112,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self.cached = cached or {}
         self.setWindowTitle("visplot")
         self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setTabBarAutoHide(True)  # one plot: no tab bar
         self.setCentralWidget(self.tabs)
         self.panels: dict[PlotSpec, _Panel] = {}
         self.jobs: list[_Job] = []  # queued, the first running
@@ -155,11 +158,12 @@ class InspectorWindow(QtWidgets.QMainWindow):
         panel.locate_action.setCheckable(True)
         panel.locate_action.setToolTip("Drag a box to list the samples inside it")
         panel.locate_action.toggled.connect(lambda on, p=panel: self._toggle_locate(p, on))
-        aspect_action = toolbar.addAction("Equal aspect")
-        aspect_action.setCheckable(True)
-        aspect_action.setChecked(figure.plot.equal_aspect)
-        aspect_action.setToolTip("One unit the same length on both axes")
-        aspect_action.toggled.connect(lambda on, p=panel: self._toggle_aspect(p, on))
+        # A check box, so its state shows: equal scale on or off.
+        panel.aspect_box = QtWidgets.QCheckBox("Equal aspect")
+        panel.aspect_box.setChecked(figure.plot.equal_aspect)
+        panel.aspect_box.setToolTip("One unit the same length on both axes (widens one axis; off returns to the view)")
+        panel.aspect_box.toggled.connect(lambda on, p=panel: self._toggle_aspect(p, on))
+        toolbar.addWidget(panel.aspect_box)
         export_action = toolbar.addAction("Export…")
         export_action.setToolTip("Re-read the current view at a chosen dpi and save it")
         export_action.triggered.connect(lambda _=False, p=panel: self._export(p))
@@ -188,6 +192,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.save_locate_button)
         dock.setWidget(body)
         self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, dock)
+        dock.hide()  # shown when Locate is first used, so the plot has the room until then
         self.locate_dock = dock
 
     # ---- jobs -----------------------------------------------------------------
@@ -316,13 +321,17 @@ class InspectorWindow(QtWidgets.QMainWindow):
                 continue
             if limits != (panel.grid.x_extent, panel.grid.y_extent) and limits != tuple(panel.extent):
                 panel.extent = limits
+                panel.figure.view_request = limits  # the zoomed view is what the aspect toggle returns to
                 self.request_draw([plot])
 
     def _toggle_aspect(self, panel: _Panel, equal: bool) -> None:
+        """Equal scale on: widen the requested view so a unit is the same
+        length on both axes; off: back to the requested view (the data's
+        range, or the last zoom)."""
         panel.figure.equal_override = equal
         if panel.extent is None:
             return  # applied when the ranges are known
-        panel.extent = panel.figure.set_view(panel.figure.ax.get_xlim(), panel.figure.ax.get_ylim())
+        panel.extent = panel.figure.set_view(*panel.figure.view_request)
         panel.last_limits = (tuple(panel.extent[0]), tuple(panel.extent[1]))
         self.request_draw([panel.plot])
 
@@ -333,6 +342,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         (Zoom and pan lock the canvas, and the box selector ignores every
         event while they hold the lock.)"""
         if on:
+            self.locate_dock.show()
             if panel.toolbar.mode.name == "ZOOM":
                 panel.toolbar.zoom()
             elif panel.toolbar.mode.name == "PAN":
@@ -376,6 +386,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
                          self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
 
     def _show_locate(self, locate: LocateReducer) -> None:
+        self.locate_dock.show()
         names = self.source.ctx.antenna_names or {}
         shown = len(locate.records)
         top = sorted(locate.by_baseline.items(), key=lambda kv: -kv[1])[:10]
@@ -387,6 +398,10 @@ class InspectorWindow(QtWidgets.QMainWindow):
             f"Most: {baselines}" if locate.n_found else "no samples in the box")
         rows = locate_rows(locate.records, self.source.ctx)
         table = self.locate_table
+        headers = [c for c, _ in _LOCATE_COLUMNS]
+        for axis in ("x", "y"):
+            headers[headers.index(axis)] = _axis_header(locate.plot, axis, self.source.ctx)
+        table.setHorizontalHeaderLabels(headers)
         table.setSortingEnabled(False)
         table.setRowCount(len(rows))
         for i, row in enumerate(rows):
@@ -488,6 +503,15 @@ _LOCATE_COLUMNS = [
 ]
 
 
+def _axis_header(plot: PlotSpec, axis: str, ctx) -> str:
+    """A located-samples column header with the axis's unit, e.g. "x (kλ)";
+    clock time is in hours, e.g. "x (h, UTC)"."""
+    unit = plot.unit(axis, ctx)
+    if unit.clock:
+        return f"{axis} (h, {unit.label})"
+    return f"{axis} ({unit.label})" if unit.label else axis
+
+
 def _baseline(a: int, b: int, names: dict) -> str:
     return f"{names.get(a, a)}-{names.get(b, b)}"
 
@@ -498,7 +522,7 @@ def locate_rows(records: list[dict], ctx) -> list[list]:
         return []
     names = ctx.antenna_names or {}
     sources = ctx.source_names or {}
-    times = Time(np.array([r["jd"] for r in records]), format="jd", scale="utc").isot
+    times = Time(utc_jd(ctx, np.array([r["jd"] for r in records])), format="jd", scale="utc").isot
     rows = []
     for r, t in zip(records, times):
         rows.append([

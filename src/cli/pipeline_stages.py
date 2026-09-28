@@ -15,9 +15,28 @@ from typing import Callable
 
 import yaml
 
-from data_io.row_index import default_row_index_path, save_row_index
+from data_io.antenna_table import read_antenna_table, read_time_reference
+from data_io.row_index import default_row_index_path, load_row_index, save_row_index
+from data_io.source_table import read_source_table
+from data_io.timestamp_check import check_timestamps
 from instruments.gmrt.row_index import build_gmrt_row_index
 from provenance.manifest import RunManifest
+
+
+def check_file_timestamps(fits_path: Path, index, logger) -> None:
+    """Log how recorded time becomes UTC (the file's time keywords and the
+    rule) and the timestamps checked against the file's own u, v, w
+    (`data_io.timestamp_check`): a warning when they disagree, cannot be
+    measured, or the keywords give no offset."""
+    reference = read_time_reference(fits_path)
+    try:
+        declared = reference.recorded_minus_utc_s
+        logger.info("time system: %s", reference.describe())
+    except ValueError as err:
+        declared = float("nan")
+        logger.warning("time system: %s", err)
+    check = check_timestamps(index, read_antenna_table(fits_path), read_source_table(fits_path), declared)
+    (logger.info if check.agrees else logger.warning)("%s", check.summary())
 
 
 def run_build_index_stage(config: dict) -> Path:
@@ -31,6 +50,9 @@ def run_build_index_stage(config: dict) -> Path:
     trail shows every invocation, not just the ones that did new work. Set
     `build_index.force_rebuild: true` in the config to rebuild anyway (e.g.
     after the raw file's DUD/antenna situation is known to have changed).
+
+    Either way, the file's timestamps are checked against its u, v, w
+    (`check_file_timestamps`), in the stage's log.
     """
     fits_path = Path(config["fits_path"])
     work_dir = Path(config["work_dir"])
@@ -51,6 +73,7 @@ def run_build_index_stage(config: dict) -> Path:
                 "true to rebuild anyway)",
                 idx_path,
             )
+            check_file_timestamps(fits_path, load_row_index(idx_path), manifest.logger)
             manifest.add_output(idx_path)
             return idx_path
 
@@ -69,6 +92,7 @@ def run_build_index_stage(config: dict) -> Path:
         save_row_index(index, idx_path)
         manifest.add_output(idx_path)
         manifest.logger.info("saved index to %s", idx_path)
+        check_file_timestamps(fits_path, index, manifest.logger)
 
     return idx_path
 

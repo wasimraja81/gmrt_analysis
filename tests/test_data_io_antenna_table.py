@@ -4,7 +4,13 @@ import numpy as np
 import pytest
 from astropy.io import fits
 
-from data_io.antenna_table import Antenna, read_antenna_table, read_array_reference_position_m
+from data_io.antenna_table import (
+    Antenna,
+    TimeReference,
+    read_antenna_table,
+    read_array_reference_position_m,
+    read_time_reference,
+)
 
 from conftest import make_scratch_dir
 
@@ -121,3 +127,34 @@ def test_antenna_heights_are_physically_sane_against_the_real_file():
     for antenna in antennas:
         location = EarthLocation.from_geocentric(antenna.x_m, antenna.y_m, antenna.z_m, unit=u.m)
         assert location.height.to_value(u.m) == pytest.approx(640.0, abs=100.0), antenna.name
+
+
+def test_read_time_reference_prefers_rdate_and_reads_timsys():
+    scratch = make_scratch_dir("antenna_table_time_reference")
+    path = _make_synthetic_an_table(scratch / "an.fits")
+    assert read_time_reference(path) == TimeReference(reference_date=None, time_system=None)
+    fits.setval(path, "DATE-OBS", value="2021-07-23")
+    assert read_time_reference(path).reference_date == "2021-07-23"
+    fits.setval(path, "RDATE", value="2021-07-24", extname="AIPS AN")
+    fits.setval(path, "TIMSYS", value="IAT", extname="AIPS AN")
+    assert read_time_reference(path) == TimeReference(reference_date="2021-07-24", time_system="IAT",
+                                                      iat_minus_utc_s=None, data_minus_utc_s=None)
+
+
+def test_recorded_minus_utc_follows_timsys_and_iatutc():
+    assert TimeReference("2021-07-24", "IAT", 35.0, 0.0).recorded_minus_utc_s == 35.0
+    assert TimeReference("2021-07-24", "UTC", 37.0, 0.0).recorded_minus_utc_s == 0.0
+    assert TimeReference("2021-07-24", None).recorded_minus_utc_s == 0.0
+    with pytest.raises(ValueError, match="no IATUTC"):
+        TimeReference("2021-07-24", "IAT").recorded_minus_utc_s
+    assert TimeReference("2021-07-24", "IAT", 35.0, 0.0).describe() == \
+        "TIMSYS IAT, IATUTC 35.0, DATUTC 0.0: UTC = recorded - 35 s (IATUTC)"
+
+
+def test_read_time_reference_reads_iatutc_and_datutc():
+    scratch = make_scratch_dir("antenna_table_iatutc")
+    path = _make_synthetic_an_table(scratch / "an.fits")
+    fits.setval(path, "IATUTC", value=35.0, extname="AIPS AN")
+    fits.setval(path, "DATUTC", value=0.0, extname="AIPS AN")
+    reference = read_time_reference(path)
+    assert (reference.iat_minus_utc_s, reference.data_minus_utc_s) == (35.0, 0.0)

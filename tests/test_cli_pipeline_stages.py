@@ -97,6 +97,9 @@ def test_run_build_index_stage_writes_manifest_log_and_index():
 
     log_dir = work_dir / "logs" / "build_index"
     assert list(log_dir.glob("*.log"))
+    log_text = next(log_dir.glob("*.log")).read_text()
+    assert "time system: TIMSYS not declared" in log_text  # the timestamp check ran and logged
+    assert "timestamps: recorded - UTC could not be measured from u, v, w" in log_text
 
     assert run_index_path(work_dir).exists()
 

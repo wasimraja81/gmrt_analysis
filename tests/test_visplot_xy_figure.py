@@ -140,3 +140,15 @@ def test_set_view_with_equal_aspect_gives_equal_pixels_per_unit():
     free = XYFigure(PlotSpec(y="amp", x="uvdist_klambda"), CTX)
     assert free.set_view((0.0, 40.0), (0.0, 5.0)) == ((0.0, 40.0), (0.0, 5.0))
     plt.close(fig.fig)
+
+
+def test_axes_are_labelled_in_their_units_and_clock_time_as_a_time_of_day():
+    ctx = QuantityContext(time_reference_jd=2459421.2, bunit="UNCALIB", time_zone="Asia/Kolkata")
+    fig = XYFigure(PlotSpec(y="phase", x="time", x_unit="local", y_unit="rad"), ctx)
+    assert fig.ax.get_xlabel() == "Time (IST, UTC+05:30; day 0 = 2021-07-25)"
+    assert fig.ax.get_ylabel() == "Phase (rad)"
+    fig.set_view((22.0, 26.0), (-3.2, 3.2))
+    fig.fig.canvas.draw()
+    assert [t.get_text() for t in fig.ax.get_xticklabels()] == [
+        "00:22:00:00", "00:23:00:00", "01:00:00:00", "01:01:00:00", "01:02:00:00"]
+    plt.close(fig.fig)

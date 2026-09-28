@@ -1,7 +1,8 @@
 # GWB Pipeline Rebuild — Plan
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
-and T22 (visPlot, streaming) done 2026-09-27, 277 tests passing; T20, T21 not started.
+and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, 400
+tests passing; T26, T32 in progress; T31, T33, point D, T20, T21 open (order in Phase B).
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -251,8 +252,10 @@ Buildable now, ahead of Phase C.
   - `src/visplot/plot_title.py` — a shared title helper (source list, plus optional
     telescope/file provenance), wired into all three geometry-range plots so a
     single-source plot still names its source even with no legend to carry it.
-  - `src/cli/visplot.py` (the CLI entry point, dispatched by `bin/visplot.sh`) and
-    `src/cli/visplot_args.py` (its pure, directly-testable argument resolution) — wiring
+  - `src/cli/visplot.py` (the CLI entry point, dispatched by `bin/visplot.sh`; renamed
+    `run_visplot.py` in T30 so it no longer shares the `visplot` package's name) and
+    `src/cli/visplot_args.py` (its pure, directly-testable argument resolution; moved to
+    `src/visplot/request_args.py` in T32, shared with the GUI) — wiring
     every filter, resolver, and plot function above into one tool. Verified end to end
     against the real GWB file with a narrow, contiguous `3C286` selection; a naive
     selection that stacks a wide channel range and full Stokes axis onto a generic scatter
@@ -535,13 +538,72 @@ Buildable now, ahead of Phase C.
   window has an "Equal aspect" toggle per plot (to be recorded in the reproducing
   command by T31). `--aspect equal` requires linear axes.
 
-- **T30 — Units per axis — NOT STARTED (added 2026-09-28).** The user chooses the unit an
-  axis is shown in (`--x-unit`/`--y-unit`, and a unit selector per axis in the GUI), via
-  astropy.units: frequency Hz..GHz; time s/min/h since the first integration, or UTC or
-  LST clock time; u, v, w and uv distance in s/ns, m/km or λ/kλ/Mλ (so `u_klambda` and
-  `u_sec` become one quantity `u` with units; the old names stay as aliases); phase and
-  angles deg/rad, hour angle h/deg. Amplitude keeps the file's BUNIT; conversion only
-  where BUNIT is a flux unit (e.g. Jy to mJy).
+- **T30 — Units per axis — DONE (added and built 2026-09-28).** The user chooses the unit
+  an axis is shown in (`--x-unit`/`--y-unit`; the GUI's unit selectors come with T32).
+  Quantities are now `real, imag, amp, phase, time, u, v, w, uvdist, ha, az, el, pa, freq`
+  (and the categories); the old names that carried a unit (`u_klambda`, `time_h`,
+  `freq_mhz`, ...) stay as aliases of a quantity and unit, and an alias with a different
+  `--x-unit` is rejected. Units, by quantity: time in h, min, s since the first selected
+  integration, or clock time: UTC, local observatory time, LST; u, v, w, uv distance in
+  λ, kλ, Mλ at each channel's frequency, or m, km (one value per row; s, µs, ns dropped
+  at the user's request, 2026-09-28, `u_sec` etc. now rejected with the alternatives); phase,
+  azimuth, elevation, parallactic angle in deg or rad; hour angle in h, deg, rad;
+  frequency in Hz, kHz, MHz, GHz; real, imag, amp in the file's BUNIT, plus Jy, mJy, µJy
+  when BUNIT is a flux density (AIPS's 'JY' read as Jy; 'UNCALIB' allows no conversion).
+  Design: each quantity has base evaluations (u: a length in m, the file's seconds times c,
+  and a length in λ); a unit is a base times a positive factor (from astropy.units). Ranges are
+  found and cached in the base and converted, so a range found in kλ serves Mλ, and one
+  in h serves min, without another pass. Clock axes are ticked at whole clock steps
+  (labels: see the amendment below); LST counts on past 24 h across 0h LST; clock time
+  needs a linear scale and no mirroring.
+  Presets take the units too, with their fixed ranges and reference lines converted
+  (`ha-range --y-unit deg`: ±180°). Axis labels, the located-samples table and CSV header
+  state each axis's unit; elapsed time names its origin ("Time since 2021-07-25 16:48:00
+  UTC (h)"). Visibility units are checked against BUNIT and local time's zone before any
+  row is selected; every plot then carries its units explicitly (for T31's command).
+  Preset output files are now named by quantity alone (`az-el-range_el.png`, was
+  `..._el_deg.png`), since the unit can change.
+  Local time added at the user's request (2026-09-28: night and day follow local time,
+  which matters for polarimetry): the zone comes from the file's TELESCOP by a table in
+  `instruments/observatory_time_zones.py` (GMRT: Asia/Kolkata, IST), or `--time-zone`
+  (an IANA name); the file itself has no zone. The axis uses the zone's UTC offset at the
+  first selected integration, named in the label ("Time (IST, UTC+05:30; day 0 =
+  2021-07-24)");
+  if the offset differs at the last (a daylight-saving change), the CLI warns and notes
+  it on the plot. Checked on the GWB file: 3C286 at 22:13-22:21 IST with hour angle
+  4.4 h (LST 17.9 h at GMRT, RA 13.5 h); the whole file's hour angle against LST from
+  17:50 to 03:40 (+1d); 3C286's uv coverage in km at equal scale.
+
+  Amended the same day at the user's request: the default time axis is the time as
+  recorded (the DATE parameters as the file holds them, labelled with the file's TIMSYS),
+  every clock axis (recorded, UTC, local, LST) is labelled dd:hh:mm:ss, days counted from
+  the file's reference date (RDATE, else DATE-OBS) as AIPS does, so the GWB file (RDATE
+  2021-07-24) starts on day 01; u, v, w and uv distance lost s, µs, ns (`u_sec` etc. are
+  rejected with the alternatives). `src/visplot/__init__.py` removed (its module list is
+  now `src/visplot/README.md`); that exposed `src/cli/visplot.py`, run as a script,
+  shadowing the `visplot` package, so the entry script is now `src/cli/run_visplot.py`
+  (as `run_gwb_pipeline.py`), with a test running `bin/visplot.sh`. The Equal aspect
+  toggle is a check box and off returns to the data's range (it kept the widened limits).
+
+- **T34 — Timestamps: declared time system against the file's u, v, w — DONE
+  (2026-09-28).** The user asked whether the recorded time is UT. The GWB file's AN table
+  has TIMSYS = 'IAT', IATUTC = 35, DATUTC = 0. AIPS Memo 117 (rev. 2025-10-01) defines
+  DATUTC as the data's time system minus UTC and IATUTC as IAT - UTC on RDATE; 35 s was
+  the leap-second count of 2012-07 to 2015-06 (37 s on 2021-07-24, erfa), so the keywords
+  disagree with each other and with the date. Measured from the data
+  (`data_io/timestamp_check.py`): u, v, w predicted from the AN positions, SU coordinates
+  and each timestamp shifted by an offset, the offset fitted per integration: the stored
+  u, v, w match timestamps 34.078 s after UTC (11 of 12 integrations over the night,
+  spread 0.050 s, J2000 frame, baseline = ant2 - ant1, rms 5 mm; 10 m rms read as UTC).
+  The 0.93 s between 34.08 and 35 is not explained (half the 2.683 s integration is
+  1.34 s; UT1 - UTC is -0.146 s). User's decision (option C): UTC = recorded - IATUTC
+  when TIMSYS is 'IAT' (`TimeReference.recorded_minus_utc_s`), applied wherever a
+  timestamp is read as UTC (UTC, local, LST axes; hour angle, Az/El, parallactic angle;
+  the geometry filters; absolute --time-range bounds, taken as UTC; the located samples'
+  time_utc, with the JD column renamed jd_recorded), and the check run by the pipeline's
+  build_index stage (logged) and by visplot whenever it reads UTC, warning when measured
+  and declared differ by more than 0.1 s (the method's own spread is 0.05 s) or the offset
+  cannot be measured. On the GWB file it warns: 0.922 s apart.
 
 - **T31 — Provenance for every plot — NOT STARTED (added 2026-09-28).** Every GUI "Plot"
   click and every CLI run records the explicit CLI-equivalent command (every option
@@ -553,14 +615,38 @@ Buildable now, ahead of Phase C.
   (the directory visplot starts from) by default, shown in the GUI and printed by the
   CLI, changeable with `--provenance-dir` (user's choice, 2026-09-28).
 
-- **T32 — visplot GUI — DESIGN (added 2026-09-28).** A plotms-style front end on the
+- **T32 — visplot GUI — IN PROGRESS (added 2026-09-28).** A plotms-style front end on the
   existing engine: file and selection controls, x/y from the quantity registry with units
   and scales, display options, Plot/Clear; `bin/visplot.sh` with no arguments opens it.
-  The CLI stays first-class (programmatic probes and batch generation); GUI and CLI share
-  one request model, and every GUI setting has a CLI option. User's brief: "a
-  professional design ... robust, efficient, fool-proof, good-looking". Design presented
-  2026-09-28; the user chose to see the layout first (no wiring, a screenshot for review)
-  and then wire it. Folds in T19 point D and T26's remaining controls.
+  The CLI stays first-class (programmatic probes and batch generation). User's brief: "a
+  professional design ... robust, efficient, fool-proof, good-looking", and (2026-09-28)
+  "design it in a way that cli and gui can never diverge". Folds in T19 point D and T26's
+  remaining controls.
+  Built (2026-09-28), on one code path for both:
+  - `visplot/request.py`: the command-line parser (moved from `cli/`) defines every option
+    once; `PlotRequest` holds a value per parser option, by the option's own name, and
+    `to_argv`/`from_argv` convert it to and from a complete command line (every option,
+    defaults included, paths absolute; a value starting with '-' written `--opt=value`).
+  - `visplot/run.py`: `check_request`, `open_file`, `select`/`count_selection`, `prepare`,
+    `run_locate`, `save_outputs` -- what `cli/visplot.py`'s `main` did, now shared; the CLI
+    (`cli/run_visplot.py`) only parses, prints the run's reports and picks save, locate or
+    window. `cli/visplot_args.py` moved to `visplot/request_args.py`.
+  - `visplot/gui/`: the form (`form.py`) has one control per request option, bound by
+    name; choices from the parser, quantities and units from the registry, tooltips from
+    each option's `--help`; fields checked as typed by the same resolvers. The window
+    (`main_window.py`): Data (file, summary: `visplot/file_summary.py`), Axes, Selection,
+    Display, Performance sections; live counts (`count_selection`, off the UI thread);
+    the form's command line; Plot runs `prepare` and opens a tab with the plot window
+    and the plot's command; Messages and History docks (double-click loads a plot's
+    request into the form); light and dark window themes.
+  - Tests that keep them together: every request option is a form field or a named GUI
+    action (`ACTION_OPTIONS`: locate, save); a request shown in the form comes back
+    unchanged; a request's command line reads back as the same request; a GUI plot and
+    the command line's run of the same request select the same rows and give the same
+    pixels.
+  Measured on 3C286 RR (141.7M samples, 6.8 GB): the GUI's Plot drew it in 12 s.
+  Next: File > Save plots (the request's --output-dir), the Locate tool recording its
+  request, the first T31 provenance records from Plot, then point D and T26's controls.
 
 - **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
   matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in

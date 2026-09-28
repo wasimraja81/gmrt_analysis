@@ -1,0 +1,437 @@
+"""The visplot GUI's main window.
+
+Left: the request form (`gui.form`), and under it the live counts of what
+the form selects, the form's own command line, and Plot / Clear. Right: a
+tab per plot, each the plot window (`visplot.qt_inspector`) with the
+command that reproduces it. Bottom: messages (what a run reports, as the
+command line prints it) and the history of plots made.
+
+Plot builds a `PlotRequest` from the form and runs it through
+`visplot.run` -- the same `check_request`, `prepare` and plot window the
+command line runs -- so a GUI plot and its command line are one run.
+Opening a file, counting a selection and preparing a plot run on
+background threads; the window polls them.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+import traceback
+from typing import Callable
+
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from visplot.file_summary import summarize
+from visplot.gui.form import RequestForm
+from visplot.gui.widgets import CommandLine
+from visplot.gui.style import THEMES, apply_theme
+from visplot.request import build_arg_parser
+from visplot.run import RequestError, check_request, count_selection, open_file, prepare
+
+POLL_MS = 100
+COUNT_DELAY_MS = 400
+# The Messages list keeps the newest this many (about 600 bytes each: a few MB at most);
+# History keeps this many plots. Older entries stay in the session's log (T31).
+MAX_MESSAGES = 5000
+MAX_HISTORY = 1000
+
+
+class _Task:
+    """`fn()` on a background thread; the window polls `done` and then
+    calls `on_done(result)` or `on_error(message)` on its own thread."""
+
+    def __init__(self, fn: Callable, on_done: Callable, on_error: Callable):
+        self.fn, self.on_done, self.on_error = fn, on_done, on_error
+        self.result = None
+        self.error: str | None = None
+        self.done = False
+        self.thread = threading.Thread(target=self._body, daemon=True)
+
+    def _body(self):
+        try:
+            self.result = self.fn()
+        except RequestError as err:
+            self.error = str(err)
+        except Exception:
+            self.error = traceback.format_exc()
+        self.done = True
+
+
+class VisplotWindow(QtWidgets.QMainWindow):
+    def __init__(self, fits_path: str | None = None, theme: str = "light"):
+        super().__init__()
+        self.setWindowTitle("visplot")
+        self.theme = theme
+        self.opened = None
+        self._tasks: list[_Task] = []
+        self._pending_reports: list[tuple[str, str]] = []
+        self._reports_lock = threading.Lock()
+        self._count_generation = 0
+
+        self.form = RequestForm()
+        self.form.open_button.clicked.connect(self._choose_file)
+        self.form.path_edit.returnPressed.connect(lambda: self.open_path(self.form.path_edit.text().strip()))
+        self.form.cache_button.clicked.connect(self._choose_cache_dir)
+        self.form.changed.connect(self._form_changed)
+
+        splitter = QtWidgets.QSplitter()
+        splitter.addWidget(self._sidebar())
+        splitter.addWidget(self._plot_area())
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([430, 1070])
+        self.setCentralWidget(splitter)
+        self._build_docks()
+        self._build_menus()
+        self._build_status_bar()
+
+        self.count_timer = QtCore.QTimer(self, singleShot=True, interval=COUNT_DELAY_MS)
+        self.count_timer.timeout.connect(self._count)
+        self.poll_timer = QtCore.QTimer(self, interval=POLL_MS)
+        self.poll_timer.timeout.connect(self._poll)
+        self.poll_timer.start()
+        self._form_changed()
+        if fits_path:
+            self.open_path(fits_path)
+
+    # ---- layout ----------------------------------------------------------------
+
+    def _sidebar(self) -> QtWidgets.QWidget:
+        scroll = QtWidgets.QScrollArea(objectName="sidebar")
+        scroll.setWidget(self.form)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+
+        panel = QtWidgets.QFrame()
+        panel.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        layout = QtWidgets.QVBoxLayout(panel)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(6)
+        self.counts = QtWidgets.QLabel("Open a file to see what the selection holds.", objectName="counts")
+        self.counts.setMinimumHeight(2 * self.counts.fontMetrics().lineSpacing() + 4)
+        self.problem = QtWidgets.QLabel("", objectName="problem")
+        self.problem.setWordWrap(True)
+        self.form_command = CommandLine()
+        copy = QtWidgets.QToolButton(text="Copy")
+        copy.clicked.connect(lambda: QtGui.QGuiApplication.clipboard().setText(self.form_command.text()))
+        self.plot_button = QtWidgets.QPushButton("Plot", objectName="primary")
+        self.plot_button.setDefault(True)
+        self.plot_button.clicked.connect(self._plot)
+        clear = QtWidgets.QPushButton("Clear")
+        clear.setToolTip("Close every plot tab")
+        clear.clicked.connect(self._clear_plots)
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.addWidget(clear)
+        buttons.addStretch(1)
+        buttons.addWidget(self.plot_button)
+        command_row = QtWidgets.QHBoxLayout()
+        command_row.addWidget(self.form_command, 1)
+        command_row.addWidget(copy)
+        layout.addWidget(self.counts)
+        layout.addWidget(self.problem)
+        layout.addLayout(command_row)
+        layout.addLayout(buttons)
+
+        side = QtWidgets.QWidget()
+        side_layout = QtWidgets.QVBoxLayout(side)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+        side_layout.setSpacing(0)
+        side_layout.addWidget(scroll, 1)
+        side_layout.addWidget(panel)
+        side.setMinimumWidth(380)
+        return side
+
+    def _plot_area(self) -> QtWidgets.QWidget:
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setTabsClosable(True)
+        self.tabs.setMovable(True)
+        self.tabs.tabCloseRequested.connect(self._close_tab)
+        welcome = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(welcome)
+        layout.addStretch(1)
+        title = QtWidgets.QLabel("visplot", objectName="welcomeTitle", alignment=QtCore.Qt.AlignCenter)
+        text = QtWidgets.QLabel(
+            "Open a UVFITS file, choose what to plot on the left, and press Plot.\n"
+            "Each plot opens in its own tab, with the command line that reproduces it;\n"
+            "bin/visplot.sh runs the same request from a terminal.",
+            objectName="welcomeText", alignment=QtCore.Qt.AlignCenter)
+        layout.addWidget(title)
+        layout.addWidget(text)
+        layout.addStretch(2)
+        self.tabs.addTab(welcome, "Start")
+        self.tabs.tabBar().setTabButton(0, QtWidgets.QTabBar.RightSide, None)
+        return self.tabs
+
+    def _build_docks(self) -> None:
+        self.messages = QtWidgets.QListWidget()
+        self.messages.setWordWrap(True)
+        messages_dock = QtWidgets.QDockWidget("Messages", self, objectName="messagesDock")
+        messages_dock.setWidget(self.messages)
+        self.history = QtWidgets.QTableWidget(0, 3)
+        self.history.setHorizontalHeaderLabels(["time", "plot", "command"])
+        self.history.horizontalHeader().setStretchLastSection(True)
+        self.history.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.history.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.history.setToolTip("Double-click a plot to load its request into the form")
+        self.history.cellDoubleClicked.connect(self._load_history)
+        self._history_requests = []
+        history_dock = QtWidgets.QDockWidget("History", self, objectName="historyDock")
+        history_dock.setWidget(self.history)
+        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, messages_dock)
+        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, history_dock)
+        self.tabifyDockWidget(messages_dock, history_dock)
+        messages_dock.raise_()
+        self.resizeDocks([messages_dock], [150], QtCore.Qt.Vertical)
+        self.docks = (messages_dock, history_dock)
+
+    def _build_menus(self) -> None:
+        file_menu = self.menuBar().addMenu("&File")
+        file_menu.addAction("&Open UVFITS…", QtGui.QKeySequence.Open, self._choose_file)
+        save = file_menu.addAction("Save plots as files…")
+        save.setEnabled(False)
+        save.setToolTip("The command line's --output-dir run from the form (next step)")
+        file_menu.addSeparator()
+        file_menu.addAction("&Quit", QtGui.QKeySequence.Quit, self.close)
+        view = self.menuBar().addMenu("&View")
+        group = QtGui.QActionGroup(self)
+        for theme in THEMES:
+            action = view.addAction(f"{theme.capitalize()} theme", lambda t=theme: self.set_theme(t))
+            action.setCheckable(True)
+            action.setChecked(theme == self.theme)
+            group.addAction(action)
+        view.addSeparator()
+        for dock in self.docks:
+            view.addAction(dock.toggleViewAction())
+        help_menu = self.menuBar().addMenu("&Help")
+        help_menu.addAction("Command-line options…", self._show_cli_help)
+
+    def _build_status_bar(self) -> None:
+        self.file_label = QtWidgets.QLabel("no file")
+        self.statusBar().addPermanentWidget(self.file_label)
+        self.statusBar().showMessage("ready")
+
+    # ---- files -------------------------------------------------------------------
+
+    def _choose_file(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open UVFITS", "", "UVFITS (*.fits *.FITS *.uvfits);;All (*)")
+        if path:
+            self.open_path(path)
+
+    def _choose_cache_dir(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Range cache folder")
+        if path:
+            self.form.cache_edit.setText(path)
+
+    def open_path(self, path: str) -> None:
+        """Read the file's index, headers and tables in the background."""
+        if not path:
+            return
+        self.form.path_edit.setText(path)
+        self.statusBar().showMessage(f"opening {path} …")
+
+        def done(result):
+            self.opened, summary = result
+            self.form.set_file(self.opened, summary)
+            self.file_label.setText(path)
+            self.statusBar().showMessage("file open")
+            self.report("info", f"opened {path}: {summary.n_rows:,} rows, {len(summary.sources)} sources")
+            self._form_changed()
+
+        def failed(message):
+            self.opened = None
+            self.statusBar().showMessage("could not open the file")
+            self.report("warning", message)
+            self._form_changed()
+
+        self._start(lambda: (lambda opened: (opened, summarize(opened)))(open_file(path)), done, failed)
+
+    # ---- the form -------------------------------------------------------------------
+
+    def _form_changed(self) -> None:
+        """Check the form (field checks, then the request as the command line
+        checks it), show its command, and recount the selection shortly."""
+        problem, request = None, None
+        invalid = self.form.invalid_fields()
+        if invalid:
+            problem = f"check {', '.join('--' + d.replace('_', '-') for d in invalid)} (red frame; its tooltip says why)"
+        else:
+            try:
+                request = self.form.request()
+            except (ValueError, TypeError) as err:
+                problem = str(err)
+        if request is None:
+            self.form_command.set_text(f"(no command until the form is fixed: {problem})")
+        else:
+            self.form_command.set_text(request.command_line())
+            if not request.fits_path:
+                problem = "open a file first"
+            else:
+                try:
+                    check_request(request)
+                except RequestError as err:
+                    problem = str(err)
+                except Exception:  # a bug here must not freeze the form: say so
+                    problem = "the request could not be checked (details in Messages)"
+                    self.report("warning", traceback.format_exc())
+        if self.opened is None and not problem:
+            problem = "the file is still opening" if self._tasks else "open the file (Enter in the File field)"
+        self.problem.setText(problem or "")
+        self.plot_button.setEnabled(problem is None)
+        self.plot_button.setToolTip(problem or "Plot this request in a new tab")
+        if self.opened is not None and request is not None:
+            self.count_timer.start()
+
+    def _count(self) -> None:
+        if self.opened is None:
+            return
+        self._count_generation += 1
+        generation = self._count_generation
+        try:
+            request = self.form.request()
+        except (ValueError, TypeError):
+            return  # the form shows the problem
+        opened = self.opened
+
+        def done(count):
+            if generation == self._count_generation:
+                self.counts.setText(f"Selected: {count.rows:,} rows × {count.samples_per_row:,} = {count.samples:,} "
+                                    f"samples\n{count.gigabytes:.1f} GB of visibilities to read for a data plot")
+
+        def failed(message):
+            if generation == self._count_generation:
+                self.counts.setText(f"selection: {message}")
+
+        self.counts.setText("counting …")
+        self._start(lambda: count_selection(request, opened), done, failed)
+
+    # ---- plotting --------------------------------------------------------------------
+
+    def _plot(self) -> None:
+        """Run the form's request as the command line does, into a new tab."""
+        request = self.form.request()
+        opened = self.opened
+        self.plot_button.setEnabled(False)
+        self.statusBar().showMessage("preparing the plot …")
+        self.report("info", f"plot: {request.command_line()}")
+
+        def done(run):
+            from visplot.qt_inspector import InspectorWindow
+
+            panel = InspectorWindow(run.source, run.figures(), labels=run.labels, cache=run.cache, cached=run.cached)
+            panel.setWindowFlags(QtCore.Qt.Widget)
+            tab = QtWidgets.QWidget()
+            layout = QtWidgets.QVBoxLayout(tab)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(panel, 1)
+            footer = QtWidgets.QHBoxLayout()
+            footer.setContentsMargins(6, 2, 6, 4)
+            command = CommandLine()
+            command.set_text(request.command_line())
+            copy = QtWidgets.QToolButton(text="Copy")
+            copy.clicked.connect(lambda: QtGui.QGuiApplication.clipboard().setText(command.text()))
+            footer.addWidget(QtWidgets.QLabel("Command:"))
+            footer.addWidget(command, 1)
+            footer.addWidget(copy)
+            layout.addLayout(footer)
+            tab.panel, tab.request, tab.run = panel, request, run
+            title = ", ".join(name for name, _ in run.figures())
+            self.tabs.setCurrentIndex(self.tabs.addTab(tab, title))
+            self._add_history(request, title)
+            self.statusBar().showMessage(f"{title}: reading and drawing; progress is under the plot", 8000)
+            self._form_changed()
+
+        def failed(message):
+            self.report("warning", message)
+            self.statusBar().showMessage("the plot could not be prepared")
+            self._form_changed()
+
+        self._start(lambda: prepare(request, opened, report=self.report), done, failed)
+
+    def _close_tab(self, index: int) -> None:
+        tab = self.tabs.widget(index)
+        if hasattr(tab, "panel"):
+            tab.panel.close()  # stops its reading
+        self.tabs.removeTab(index)
+        tab.deleteLater()
+
+    def _clear_plots(self) -> None:
+        for index in reversed(range(self.tabs.count())):
+            if hasattr(self.tabs.widget(index), "panel"):
+                self._close_tab(index)
+
+    def _add_history(self, request, title: str) -> None:
+        if self.history.rowCount() >= MAX_HISTORY:
+            self.history.removeRow(0)
+            self._history_requests.pop(0)
+        self._history_requests.append(request)
+        row = self.history.rowCount()
+        self.history.insertRow(row)
+        for column, text in enumerate((time.strftime("%H:%M:%S"), title, request.command_line())):
+            self.history.setItem(row, column, QtWidgets.QTableWidgetItem(text))
+
+    def _load_history(self, row: int, _column: int) -> None:
+        self.form.load(self._history_requests[row])
+        self.report("info", "loaded a plot's request into the form")
+
+    # ---- messages, tasks, themes ------------------------------------------------------
+
+    def report(self, level: str, text: str) -> None:
+        """A run's report callback: safe from any thread; shown on the next poll."""
+        with self._reports_lock:
+            self._pending_reports.append((level, text))
+
+    def _start(self, fn, on_done, on_error) -> None:
+        task = _Task(fn, on_done, on_error)
+        self._tasks.append(task)
+        task.thread.start()
+
+    def _poll(self) -> None:
+        with self._reports_lock:
+            reports, self._pending_reports = self._pending_reports, []
+        for level, text in reports:
+            item = QtWidgets.QListWidgetItem(f"{time.strftime('%H:%M:%S')}  {'WARNING: ' if level == 'warning' else ''}{text}")
+            if level == "warning":
+                item.setForeground(QtGui.QColor("#c93c37"))
+                self.docks[0].raise_()
+            self.messages.addItem(item)
+        while self.messages.count() > MAX_MESSAGES:
+            self.messages.takeItem(0)
+        if reports:
+            self.messages.scrollToBottom()
+        for task in [t for t in self._tasks if t.done]:
+            self._tasks.remove(task)
+            if task.error is None:
+                task.on_done(task.result)
+            else:
+                task.on_error(task.error)
+
+    def set_theme(self, theme: str) -> None:
+        self.theme = theme
+        apply_theme(QtWidgets.QApplication.instance(), theme)
+
+    def _show_cli_help(self) -> None:
+        box = QtWidgets.QDialog(self)
+        box.setWindowTitle("bin/visplot.sh --help")
+        layout = QtWidgets.QVBoxLayout(box)
+        text = QtWidgets.QPlainTextEdit(build_arg_parser().format_help(), readOnly=True)
+        text.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont))
+        layout.addWidget(text)
+        box.resize(900, 700)
+        box.show()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        self._clear_plots()
+        super().closeEvent(event)
+
+
+def run_gui(fits_path: str | None = None) -> int:
+    """Open the GUI (with `fits_path`, if given) and run until it is closed."""
+    import signal
+
+    signal.signal(signal.SIGINT, signal.SIG_DFL)  # Ctrl-C in the terminal closes the window
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    apply_theme(app, "light")
+    window = VisplotWindow(fits_path)
+    window.resize(1500, 950)
+    window.show()
+    return app.exec()

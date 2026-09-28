@@ -1,11 +1,14 @@
-"""Pure argument-resolution logic for `bin/visplot.sh` -- translating CLI
-strings into what `select_rows`, `iter_visibility_chunks` and the plot specs
-take, via the resolvers in `visplot/` and `instruments/gmrt/`. Kept separate
-from the argparse/orchestration in `cli/visplot.py` so this logic is
-directly testable without invoking a subprocess.
+"""The grammar of a plot request's option values -- translating the strings
+the command line and the GUI's fields take into what `select_rows`,
+`iter_visibility_chunks` and the plot specs take, via the resolvers in
+`visplot/` and `instruments/gmrt/`. The command line and the GUI both check
+and resolve their values here (`visplot.run`), so they accept exactly the
+same text.
 """
 
 from __future__ import annotations
+
+import textwrap
 
 import astropy.units as u
 
@@ -13,19 +16,44 @@ from data_io.antenna_table import Antenna
 from instruments.gmrt.antenna_selection import resolve_antenna_selection
 from visplot.channel_selection import resolve_channel_selection
 from visplot.plot_spec import PRESETS
-from visplot.quantities import QUANTITIES
+from visplot.quantities import ALIASES, QUANTITIES, RETIRED_NAMES
 from visplot.range_spec import parse_single_quantity_range, parse_single_range
 from visplot.time_range import resolve_time_range_jd
 
 TABLE_PLOTS = {"antenna-layout", "source-listing"}  # drawn from the file's tables
 NAMED_PLOTS = TABLE_PLOTS | set(PRESETS)
-QUANTITY_NAMES = set(QUANTITIES)
+QUANTITY_NAMES = set(QUANTITIES) | set(ALIASES)  # earlier names that carry a unit still work
 CATEGORY_NAMES = {name for name, q in QUANTITIES.items() if q.categorical}
+
+
+def quantity_help(indent: int = 4, width: int = 79) -> str:
+    """The quantities and their units, for --help, from the registry:
+    quantities sharing a description on one entry."""
+    groups: list[tuple[list[str], str]] = []
+    for name, q in QUANTITIES.items():
+        if groups and groups[-1][1] == q.description:
+            groups[-1][0].append(name)
+        else:
+            groups.append(([name], q.description))
+    column = indent + 17
+    lines = []
+    for names, description in groups:
+        head = " " * indent + ", ".join(names)
+        text = textwrap.wrap(description, width - column)
+        if len(head) >= column - 1:
+            lines.append(head)
+        else:
+            lines.append(head.ljust(column) + text.pop(0))
+        lines += [" " * column + t for t in text]
+    aliases = ", ".join(f"{name} ({q} in {unit})" for name, (q, unit) in ALIASES.items())
+    lines += textwrap.wrap(f"earlier names carrying a unit still work: {aliases}", width,
+                           initial_indent=" " * indent, subsequent_indent=" " * indent)
+    return "\n".join(lines)
 
 
 def parse_plot_names(spec: str) -> list[str]:
     """`--plots` into an ordered list of plot names, e.g.
-    "antenna-layout,amp-vs-time_h" -- each one checked by
+    "antenna-layout,amp-vs-time" -- each one checked by
     `validate_plot_name`, so a bad name fails before any data is read."""
     names = [p.strip() for p in spec.split(",") if p.strip()]
     if not names:
@@ -48,24 +76,28 @@ def validate_plot_name(name: str) -> None:
     if name in QUANTITY_NAMES:
         raise ValueError(
             f"{name!r} is a quantity; a plot needs two, written 'Y-vs-X', "
-            f"e.g. 'amp-vs-{name}' or '{name}-vs-time_h'"
+            f"e.g. 'amp-vs-{name}' or '{name}-vs-time'"
         )
     raise ValueError(
         f"unrecognized plot name {name!r}: expected one of {sorted(NAMED_PLOTS)} "
-        f"or a 'Y-vs-X' pair of quantities from {sorted(QUANTITY_NAMES)}"
+        f"or a 'Y-vs-X' pair of quantities from {sorted(QUANTITIES)}"
     )
 
 
 def validate_quantity_name(name: str, context: str = "") -> None:
+    if name in RETIRED_NAMES:
+        raise ValueError(f"{name!r} is no longer available: use {RETIRED_NAMES[name]}")
     if name not in QUANTITY_NAMES:
         where = f" {context}" if context else ""
-        raise ValueError(f"unknown quantity {name!r}{where}: expected one of {sorted(QUANTITY_NAMES)}")
+        raise ValueError(f"unknown quantity {name!r}{where}: expected one of {sorted(QUANTITIES)} "
+                         f"(or an earlier name: {sorted(ALIASES)})")
 
 
 def parse_quantity_pair(name: str) -> tuple[str, str]:
     """A generic "Y-vs-X" plot name into (y_quantity, x_quantity) -- names
     from the quantity registry, joined by the separator "-vs-"
-    (distinct from the underscores within a quantity name like "freq_mhz")."""
+    (distinct from the underscores within a quantity name like "freq_mhz",
+    an earlier name for freq in MHz)."""
     if "-vs-" not in name:
         raise ValueError(f"{name!r} is not a recognized plot name (not one of {sorted(NAMED_PLOTS)}, no '-vs-')")
     y_name, x_name = name.split("-vs-", 1)
@@ -82,8 +114,9 @@ def resolve_channels_arg(spec: str | None, chan_freqs_hz) -> list[int] | None:
     return resolve_channel_selection(spec, chan_freqs_hz) if spec else None
 
 
-def resolve_time_range_arg(spec: str | None, reference_jd: float) -> tuple[float, float] | None:
-    return resolve_time_range_jd(spec, reference_jd) if spec else None
+def resolve_time_range_arg(spec: str | None, reference_jd: float,
+                           recorded_minus_utc_s: float = 0.0) -> tuple[float, float] | None:
+    return resolve_time_range_jd(spec, reference_jd, recorded_minus_utc_s) if spec else None
 
 
 def resolve_uvdist_range_arg(spec: str | None) -> tuple[float, float] | None:

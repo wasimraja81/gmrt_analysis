@@ -96,7 +96,7 @@ def test_locate_lists_the_samples_in_a_box_and_saves_them():
     path = scratch / "located.csv"
     window.save_locate_csv(str(path))  # all 4 were kept: written from memory
     rows = [line for line in path.read_text().splitlines() if not line.startswith("#")]
-    assert rows[0].startswith("baseline,ant1,ant2,time_utc,jd,channel,freq_mhz,stokes")
+    assert rows[0].startswith("baseline,ant1,ant2,time_utc,jd_recorded,channel,freq_mhz,stokes")
     assert len(rows) == 1 + 4
     assert rows[1].split(",")[0] in {"C00:01-C01:02", "C00:01-C02:03", "C01:02-C02:03"}
     assert "# total: 4 samples in the box, all listed above" in path.read_text()
@@ -186,10 +186,37 @@ def test_equal_aspect_toggle_redraws_with_equal_scaling():
     _wait(app, window)
     panel = window.panels[plot]
     ax = panel.figure.ax
-    window._toggle_aspect(panel, True)
+    assert not panel.aspect_box.isChecked()
+    panel.aspect_box.click()  # through the toolbar's check box
     _wait(app, window)
     (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
     bbox = ax.get_window_extent()
     assert (x1 - x0) / bbox.width == pytest.approx((y1 - y0) / bbox.height, rel=1e-2)
     assert panel.drawn and (panel.grid.x_extent, panel.grid.y_extent) == ((x0, x1), (y0, y1))
+    window.close()
+
+
+def test_equal_aspect_off_returns_to_the_datas_range_and_on_widens_again():
+    plot = PlotSpec(y="v", x="u", x_unit="m", y_unit="m", name="v-vs-u")  # auto: equal scale
+    app, window, _ = _window("qt_aspect_off", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    ax = panel.figure.ax
+
+    def view():
+        return [*ax.get_xlim(), *ax.get_ylim()]
+
+    data_view = [v for lim in window.extents[plot] for v in lim]
+    assert panel.aspect_box.isChecked()
+    widened = view()
+    assert widened != pytest.approx(data_view)
+
+    panel.aspect_box.click()  # off
+    _wait(app, window)
+    assert view() == pytest.approx(data_view)
+    assert [*panel.grid.x_extent, *panel.grid.y_extent] == pytest.approx(data_view)
+
+    panel.aspect_box.click()  # on again
+    _wait(app, window)
+    assert view() == pytest.approx(widened)
     window.close()

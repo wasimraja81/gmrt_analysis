@@ -1,0 +1,537 @@
+"""Running a plot request: the steps the command line (`cli/run_visplot.py`)
+and the GUI (`visplot/gui/`) share, so both run exactly the same code.
+
+- `check_request`: what can be checked without the file (plot names,
+  units, ranges, option combinations).
+- `open_file`: the file's row index, headers and tables, read once (the GUI
+  keeps them while the file is open).
+- `prepare`: the units that depend on the file, the time system, the row
+  selection, the quantity context, the streaming source and the figures.
+- `run_locate`, `save_outputs`: the batch work, for the command line or a
+  GUI "save" action.
+
+A request that cannot run raises `RequestError`, whose message says why;
+everything worth telling the user goes to a `report(level, text)` callback
+("info" or "warning"), which the command line prints and the GUI lists.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from functools import cached_property
+from pathlib import Path
+from typing import Callable
+
+import numpy as np
+from astropy.io import fits
+from astropy.time import Time
+
+from data_io.antenna_table import read_antenna_table, read_array_earth_location, read_time_reference
+from data_io.astrometry import DEFAULT_UT1, fallback_message
+from data_io.row_index import default_row_index_path, load_row_index
+from data_io.row_selection import select_rows
+from data_io.source_table import read_source_table
+from data_io.timestamp_check import check_timestamps
+from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observatory_time_zone
+from visplot.antenna_layout import antenna_layout
+from visplot.locate_csv import LocateCsvWriter
+from visplot.plot_spec import PlotSpec, expand_plot_name
+from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_table, local_time_zone, utc_jd, \
+    utc_offset_text
+from visplot.range_cache import RangeCache
+from visplot.request import PlotRequest
+from visplot.request_args import (
+    TABLE_PLOTS,
+    parse_plot_names,
+    resolve_antennas_arg,
+    resolve_channels_arg,
+    resolve_deg_range_arg,
+    resolve_ha_range_arg,
+    resolve_klambda_range_arg,
+    resolve_locate_box_arg,
+    resolve_percentiles_arg,
+    resolve_plain_range_arg,
+    resolve_stokes_axis_selection,
+    resolve_time_range_arg,
+    resolve_uvdist_range_arg,
+    validate_colorize_by,
+)
+from visplot.source_listing import source_listing
+from visplot.stream import LocateReducer
+from visplot.xy_figure import XYFigure, grid_summary
+from visplot.xy_session import (
+    PassProgress,
+    XYSource,
+    cached_ranges,
+    describe_passes,
+    pass_progress,
+    plot_grids,
+    range_pass_axes,
+    range_pass_reads_data,
+    resolve_extents,
+    stream_chunk_bytes,
+)
+
+GEOMETRY_QUANTITIES = {"ha", "az", "el", "pa"}
+LOWRES_DPI = 150
+HIGHRES_DPI = 600  # a whole multiple of LOWRES_DPI: the 150 dpi grid is an exact 4x4 reduction
+
+Report = Callable[[str, str], None]  # (level: "info" or "warning", text)
+# Makes the on_chunk callback of one pass from its progress (e.g. printing every 10%).
+ProgressFactory = Callable[[PassProgress], Callable[[int], bool]]
+
+
+class RequestError(ValueError):
+    """A request that cannot run as given; the message says why."""
+
+
+class MissingIndexError(RequestError):
+    """The FITS file has no row index yet."""
+
+
+def _silent(level: str, text: str) -> None:
+    pass
+
+
+@dataclass
+class CheckedRequest:
+    """A request's plots, checked without the file."""
+
+    plot_names: list[str]
+    plots_by_name: dict[str, list[PlotSpec]]  # streamed plots per name (table plots have none)
+    locate_box: tuple | None
+
+
+def check_request(request: PlotRequest) -> CheckedRequest:
+    """Everything about `request` that needs no file: plot names, ranges,
+    percentiles, the locate box, scales, and units (all but the visibility
+    quantities', which depend on the file's BUNIT). Raises RequestError."""
+    try:
+        plot_names = parse_plot_names(request.plots)
+        if request.colorize_by:
+            validate_colorize_by(request.colorize_by)
+        x_range = resolve_plain_range_arg(request.x_range)
+        y_range = resolve_plain_range_arg(request.y_range)
+        range_percentiles = resolve_percentiles_arg(request.range_percentiles)
+        locate_box = resolve_locate_box_arg(request.locate)
+        if locate_box is not None and not request.locate_csv:
+            raise ValueError("--locate needs --locate-csv FILE")
+        if request.scale_linear_width <= 0:
+            raise ValueError("--scale-linear-width must be positive")
+        for axis, scale, fixed in (("x", request.x_scale, x_range), ("y", request.y_scale, y_range)):
+            if scale == "log" and fixed is not None and fixed[0] <= 0:
+                raise ValueError(f"--{axis}-scale log shows positive values only; --{axis}-range starts at {fixed[0]:g}")
+        style = PlotSpec(
+            y="", x="", colorize_by=request.colorize_by, show_flagged=request.show_flagged, mirror=request.mirror,
+            x_range=x_range, y_range=y_range, point_size=request.point_size, color=request.color,
+            x_scale=request.x_scale, y_scale=request.y_scale, x_range_mode=request.x_range_mode,
+            y_range_mode=request.y_range_mode, range_percentiles=range_percentiles,
+            scale_linear_width=request.scale_linear_width, aspect=request.aspect,
+            x_unit=request.x_unit, y_unit=request.y_unit,
+        )
+    except ValueError as err:
+        raise RequestError(str(err)) from err
+    plots_by_name = {}
+    for name in plot_names:
+        if name in TABLE_PLOTS:
+            continue
+        try:
+            plots = expand_plot_name(name, style)
+            for p in plots:
+                for axis in ("x", "y"):
+                    quantity = p.x if axis == "x" else p.y
+                    if QUANTITIES[quantity].categorical and not p.axis_scale(axis).is_linear:
+                        raise ValueError(f"--{axis}-scale applies to numeric axes; {quantity!r} is a category")
+                if p.aspect == "equal" and not (p.axis_scale("x").is_linear and p.axis_scale("y").is_linear):
+                    raise ValueError("--aspect equal needs linear axes (--x-scale and --y-scale linear)")
+        except ValueError as err:
+            raise RequestError(f"plot {name!r}: {err}") from err
+        plots_by_name[name] = plots
+    if locate_box is not None:
+        n_streamed = sum(len(p) for p in plots_by_name.values())
+        if n_streamed != 1:
+            raise RequestError(f"--locate needs exactly one streamed plot; --plots gives {n_streamed}")
+    return CheckedRequest(plot_names, plots_by_name, locate_box)
+
+
+def _header_keyword(fits_path, keyword: str) -> str | None:
+    with fits.open(fits_path) as hdul:
+        value = str(hdul[0].header.get(keyword, "")).strip()
+    return value or None
+
+
+@dataclass
+class OpenedFile:
+    """A FITS file's row index, headers and tables, read once."""
+
+    fits_path: str
+    index: object  # RowIndex
+    antennas: list
+    array_location: object  # EarthLocation
+    source_table: dict
+    telescope: str | None
+    bunit: str | None
+    time_reference: object  # TimeReference
+
+    @property
+    def reference_date_jd(self) -> float | None:
+        date = self.time_reference.reference_date
+        return float(Time(date, scale="utc").jd) if date else None
+
+    @cached_property
+    def timestamp_check(self):
+        """The timestamps checked against the file's u, v, w (about 2 s; once
+        per file)."""
+        try:
+            declared = self.time_reference.recorded_minus_utc_s
+        except ValueError:
+            declared = float("nan")
+        return check_timestamps(self.index, self.antennas, self.source_table, declared)
+
+
+def open_file(fits_path) -> OpenedFile:
+    """Read what every request on this file needs. Raises MissingIndexError
+    when the row index has not been built."""
+    idx_path = default_row_index_path(fits_path)
+    if not idx_path.exists():
+        raise MissingIndexError(f"no row index at {idx_path} -- build it first (the pipeline's build_index stage)")
+    return OpenedFile(
+        fits_path=str(fits_path), index=load_row_index(idx_path), antennas=read_antenna_table(fits_path),
+        array_location=read_array_earth_location(fits_path), source_table=read_source_table(fits_path),
+        telescope=_header_keyword(fits_path, "TELESCOP"), bunit=_header_keyword(fits_path, "BUNIT"),
+        time_reference=read_time_reference(fits_path),
+    )
+
+
+@dataclass
+class PreparedRun:
+    """A request ready to stream: its selection, context, source and figures."""
+
+    request: PlotRequest
+    file: OpenedFile
+    plot_names: list[str]
+    plots_by_name: dict[str, list[PlotSpec]]
+    locate_box: tuple | None
+    ctx: QuantityContext
+    selection: object  # RowSelection
+    source: XYSource
+    xy_figures: dict[PlotSpec, XYFigure]
+    cache: RangeCache | None
+    cached: dict
+    labels: tuple[str, str]
+    _figures: list | None = field(default=None, repr=False)
+
+    @property
+    def xy_plots(self) -> list[PlotSpec]:
+        return [p for plots in self.plots_by_name.values() for p in plots]
+
+    def figures(self) -> list[tuple[str, object]]:
+        """Every figure, in the order the plots were named (table plots drawn
+        from the file's tables, once)."""
+        if self._figures is None:
+            f = self.file
+            figures = []
+            for name in self.plot_names:
+                if name == "antenna-layout":
+                    figures.append((name, antenna_layout(f.antennas, f.array_location, telescope=f.telescope,
+                                                         source_path=f.fits_path)))
+                elif name == "source-listing":
+                    figures.append((name, source_listing(f.source_table)))
+                else:
+                    figures += [(p.name, self.xy_figures[p]) for p in self.plots_by_name[name]]
+            self._figures = figures
+        return self._figures
+
+
+def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Report = _silent,
+            checked: CheckedRequest | None = None) -> PreparedRun:
+    """Everything before the first pass: see the module docstring. Raises
+    RequestError (MissingIndexError when `opened` is not given and the file
+    has no index)."""
+    checked = checked or check_request(request)
+    opened = opened or open_file(request.fits_path)
+    index = opened.index
+    time_zone = request.time_zone or observatory_time_zone(opened.telescope)
+    try:
+        recorded_minus_utc_s = opened.time_reference.recorded_minus_utc_s
+    except ValueError as err:
+        raise RequestError(str(err)) from err
+
+    # The units that depend on the file: BUNIT's, and local time's zone. Every plot then
+    # names its units explicitly.
+    header_ctx = QuantityContext(
+        time_reference_jd=float(index.jd.min()), bunit=opened.bunit, time_zone=time_zone,
+        reference_date_jd=opened.reference_date_jd, time_system=opened.time_reference.time_system,
+        recorded_minus_utc_s=recorded_minus_utc_s,
+    )
+    plots_by_name = {}
+    for name, plots in checked.plots_by_name.items():
+        try:
+            for p in plots:
+                p.check_units(header_ctx)
+                if any(p.unit(axis, header_ctx).base == "local" for axis in ("x", "y")):
+                    _check_time_zone(time_zone, opened.telescope, header_ctx.time_reference_jd)
+        except ValueError as err:
+            raise RequestError(f"plot {name!r}: {err}") from err
+        plots_by_name[name] = [p.with_units(header_ctx) for p in plots]
+    xy_plots = [p for plots in plots_by_name.values() for p in plots]
+    if _reads_utc(xy_plots, header_ctx, request):
+        report("info", f"time system: {opened.time_reference.describe()}")
+        check = opened.timestamp_check
+        report("info" if check.agrees else "warning", check.summary())
+
+    selected = select(request, opened, recorded_minus_utc_s)
+    selection, axis_selection, stokes_labels = selected.selection, selected.axis_selection, selected.stokes_labels
+    report("info", f"selected {selection.n_rows:,} rows; sources present: {selection.sources}")
+
+    time_reference_jd = float(index.jd[selection.row_indices].min()) if selection.n_rows else float(index.jd.min())
+    ctx = context_from_source_table(
+        time_reference_jd, opened.source_table, opened.array_location, opened.bunit, stokes_labels,
+        antenna_names={a.station_number: a.name for a in opened.antennas}, time_zone=time_zone,
+        reference_date_jd=opened.reference_date_jd, time_system=opened.time_reference.time_system,
+        recorded_minus_utc_s=recorded_minus_utc_s,
+    )
+    source = XYSource(request.fits_path, index, selection.row_indices, axis_selection, ctx,
+                      stream_chunk_bytes(), threads=max(1, request.threads))
+    sources_present = list(selection.sources.values())
+    xy_figures = {p: XYFigure(p, ctx, sources_present, opened.telescope, request.fits_path) for p in xy_plots}
+    cache = RangeCache(request.cache_dir) if request.cache_dir else None
+    if cache is not None:
+        for stale in cache.remove_stale_partials():
+            report("info", f"removed {stale} (left by an earlier run that stopped while writing)")
+    cached = cached_ranges(source, xy_plots, cache)
+    if xy_plots and (checked.locate_box is None or request.output_dir):
+        for line in describe_passes(source, xy_plots, cached):
+            report("info", line)
+    elif checked.locate_box is not None:
+        reads = (f"reads visibility data, {source.n_rows * source.row_bytes / 1e9:.1f} GB"
+                 if xy_plots[0].needs_data else "row metadata only, no visibility data read")
+        report("info", f"one pass: locate the samples of {xy_plots[0].title} in the box ({reads})")
+    _report_ut1(index, selection, xy_plots, xy_figures, ctx, selected.geometry_filters, report)
+    _report_local_time(index, selection, xy_plots, xy_figures, ctx, report)
+    n_passes = 2 if [k for k in range_pass_axes(xy_plots) if k not in cached] else 1
+    labels = (f"pass 1 of {n_passes}: finding data ranges", f"pass {n_passes} of {n_passes}: drawing")
+    return PreparedRun(request, opened, checked.plot_names, plots_by_name, checked.locate_box, ctx, selection,
+                       source, xy_figures, cache, cached, labels)
+
+
+@dataclass
+class Selected:
+    """The rows and axis indices a request selects."""
+
+    selection: object  # RowSelection
+    axis_selection: dict | None  # FREQ / STOKES indices; None: every channel and Stokes
+    stokes_labels: list[str]  # of the selected Stokes
+    geometry_filters: bool  # hour angle, Az/El or parallactic angle filters given
+
+
+def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float) -> Selected:
+    """The request's row selection (`select_rows`) and channel/Stokes
+    selection. Raises RequestError for a filter that does not parse or
+    match."""
+    index = opened.index
+    geometry_filters = any(v is not None for v in (request.ha_range, request.az_range, request.el_range,
+                                                    request.pa_range))
+    try:
+        select_kwargs = dict(
+            sources=[s.strip() for s in request.sources.split(",")] if request.sources else None,
+            correlation_type=request.correlation_type,
+            antennas=resolve_antennas_arg(request.antennas, opened.antennas),
+            exclude_antennas=resolve_antennas_arg(request.exclude_antennas, opened.antennas),
+            jd_range=resolve_time_range_arg(request.time_range, float(index.jd.min()), recorded_minus_utc_s),
+            uvdist_range_m=resolve_uvdist_range_arg(request.uvdist_range),
+            u_range_klambda=resolve_klambda_range_arg(request.u_range_klambda),
+            v_range_klambda=resolve_klambda_range_arg(request.v_range_klambda),
+            w_range_klambda=resolve_klambda_range_arg(request.w_range_klambda),
+            uvdist_range_klambda=resolve_klambda_range_arg(request.uvdist_range_klambda),
+            ha_range_hours=resolve_ha_range_arg(request.ha_range),
+            az_range_deg=resolve_deg_range_arg(request.az_range),
+            el_range_deg=resolve_deg_range_arg(request.el_range),
+            parallactic_angle_range_deg=resolve_deg_range_arg(request.pa_range),
+            every_nth=request.every_nth,
+            random_subset_n=request.random_subset_n,
+            random_seed=request.random_seed,
+        )
+        if geometry_filters:
+            select_kwargs.update(source_table=opened.source_table, array_location=opened.array_location,
+                                 recorded_minus_utc_s=recorded_minus_utc_s)
+        # The kλ row filters evaluate each row at the edges of a frequency span:
+        # that span must be the band of the selected channels.
+        channel_indices = resolve_channels_arg(request.channels, index.chan_freqs_hz)
+        if channel_indices is not None:
+            selected_freqs_hz = np.asarray(index.chan_freqs_hz)[channel_indices]
+            select_kwargs["freq_range_hz"] = (float(selected_freqs_hz.min()), float(selected_freqs_hz.max()))
+        stokes_indices = resolve_stokes_axis_selection(request.stokes, index.stokes_labels)
+        selection = select_rows(index, **select_kwargs)
+    except ValueError as err:
+        raise RequestError(str(err)) from err
+    axis_selection = {}
+    if channel_indices is not None:
+        axis_selection["FREQ"] = np.array(channel_indices)
+    if stokes_indices is not None:
+        axis_selection["STOKES"] = np.array(stokes_indices)
+    stokes_labels = list(index.stokes_labels or [])
+    if stokes_indices is not None:
+        stokes_labels = [stokes_labels[i] for i in stokes_indices]
+    return Selected(selection, axis_selection or None, stokes_labels, geometry_filters)
+
+
+@dataclass(frozen=True)
+class SelectionCount:
+    rows: int
+    samples_per_row: int  # visibility samples per row under the channel/Stokes selection
+    gigabytes: float  # visibility data read when a plot needs it (whole rows)
+
+    @property
+    def samples(self) -> int:
+        return self.rows * self.samples_per_row
+
+
+def count_selection(request: PlotRequest, opened: OpenedFile) -> SelectionCount:
+    """How much a request selects, without reading visibility data (the
+    same `select` a plot runs). Raises RequestError."""
+    try:
+        recorded_minus_utc_s = opened.time_reference.recorded_minus_utc_s
+    except ValueError as err:
+        raise RequestError(str(err)) from err
+    selected = select(request, opened, recorded_minus_utc_s)
+    source = XYSource(request.fits_path, opened.index, selected.selection.row_indices, selected.axis_selection,
+                      ctx=None, chunk_bytes=0)
+    return SelectionCount(source.n_rows, source.samples_per_row, source.n_rows * source.row_bytes / 1e9)
+
+
+def _uses_unit_base(plot, ctx, *bases: str) -> bool:
+    return any(plot.unit(axis, ctx).base in bases for axis in ("x", "y"))
+
+
+def _reads_utc(plots, ctx, request: PlotRequest) -> bool:
+    """Whether this run reads timestamps as UTC: a geometry quantity, a UTC,
+    local or LST axis, a geometry filter, or an absolute --time-range."""
+    for p in plots:
+        if GEOMETRY_QUANTITIES.intersection(p.quantities) or _uses_unit_base(p, ctx, "utc", "local", "lst"):
+            return True
+    if any(v is not None for v in (request.ha_range, request.az_range, request.el_range, request.pa_range)):
+        return True
+    spec = (request.time_range or "").strip().lower()
+    return "/" in spec or spec.endswith("jd")
+
+
+def _check_time_zone(time_zone, telescope, jd) -> None:
+    if not time_zone:
+        known = ", ".join(f"{k}: {v}" for k, v in OBSERVATORY_TIME_ZONES.items())
+        raise ValueError(f"local time needs the observatory's time zone; TELESCOP {telescope!r} is not among "
+                         f"the known ones ({known}): give --time-zone, an IANA name such as Asia/Kolkata")
+    local_time_zone(time_zone, jd)  # raises for a zone the system does not know
+
+
+def _report_local_time(index, selection, xy_plots, xy_figures, ctx, report: Report) -> None:
+    """Local time is drawn at the zone's UTC offset at the first selected
+    integration; if the offset differs at the last (a daylight-saving
+    change), say so, before any pass and on the plot."""
+    local_plots = [p for p in xy_plots if _uses_unit_base(p, ctx, "local")]
+    if not local_plots:
+        return
+    jd = index.jd[selection.row_indices] if selection.n_rows else index.jd
+    start, abbreviation = local_time_zone(ctx.time_zone, float(utc_jd(ctx, jd.min())))
+    end, _ = local_time_zone(ctx.time_zone, float(utc_jd(ctx, jd.max())))
+    report("info", f"local time: {ctx.time_zone} ({abbreviation}, {utc_offset_text(start)})")
+    if end != start:
+        text = (f"{ctx.time_zone} changes from {utc_offset_text(start)} to {utc_offset_text(end)} during the "
+                f"selection; local time is drawn at {utc_offset_text(start)} throughout")
+        report("warning", text)
+        for p in local_plots:
+            xy_figures[p].set_note(text)
+
+
+def _report_ut1(index, selection, xy_plots, xy_figures, ctx, geometry_filters: bool, report: Report) -> None:
+    """Where UT1 - UTC comes from for this selection's dates, before any
+    pass; a fallback to UT1 = UTC is also noted on every geometry plot
+    (hour angle, azimuth, elevation, parallactic angle, LST)."""
+    geometry_plots = [p for p in xy_plots
+                      if GEOMETRY_QUANTITIES.intersection(p.quantities) or _uses_unit_base(p, ctx, "lst")]
+    if not geometry_plots and not geometry_filters:
+        return
+    jd = index.jd[selection.row_indices] if selection.n_rows else index.jd
+    DEFAULT_UT1.ut1_minus_utc_s(utc_jd(ctx, [float(jd.min()), float(jd.max())]))
+    report("info", f"UT1 - UTC (for hour angle, azimuth, elevation, parallactic angle, LST): "
+                   f"{', '.join(sorted(DEFAULT_UT1.sources_used))}")
+    if DEFAULT_UT1.fallback_used:
+        report("warning", fallback_message())
+        for p in geometry_plots:
+            xy_figures[p].set_note("UT1 = UTC assumed: hour angle and LST may be off by up to 0.9 s of time")
+
+
+def _no_progress(progress: PassProgress) -> Callable[[int], bool]:
+    return lambda rows_done: True
+
+
+def run_locate(run: PreparedRun, report: Report = _silent, progress: ProgressFactory = _no_progress) -> Path | None:
+    """Write every sample of the run's one streamed plot inside its locate
+    box to the request's --locate-csv. Returns the path written, or None if
+    the pass stopped early."""
+    plot = run.xy_plots[0]
+    box = run.locate_box
+    locate = LocateReducer(plot, box[0], box[1], limit=0)
+    writer = LocateCsvWriter(run.request.locate_csv, locate, run.source.ctx, fits_path=run.request.fits_path)
+    locate.sink = writer
+    on_chunk = progress(pass_progress(run.source, "locating samples", plot.needs_data))
+    completed = run.source.stream([locate], read_data=plot.needs_data, on_chunk=on_chunk)
+    written = writer.close(locate, completed)
+    n = len(locate.by_baseline)
+    report("info", f"located {locate.n_found:,} samples on {n:,} baseline{'s' if n != 1 else ''}; wrote {written}")
+    return written
+
+
+def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressFactory = _no_progress) -> list[Path]:
+    """The range pass (when needed) and one plotting pass at 600 dpi, then
+    one PNG per plot at 150 dpi (the exact 4x4 reduction) and the low- and
+    high-resolution PDFs, in the request's --output-dir. Returns the paths
+    written."""
+    request, source, xy_plots, xy_figures = run.request, run.source, run.xy_plots, run.xy_figures
+    extents = {}
+    if xy_plots:
+        on_chunk = progress(pass_progress(source, run.labels[0], range_pass_reads_data(xy_plots, run.cached)))
+        extents = resolve_extents(source, xy_plots, on_chunk=on_chunk, cache=run.cache)
+    factor = HIGHRES_DPI // LOWRES_DPI
+    shapes = {}
+    for p in xy_plots:
+        extents[p] = xy_figures[p].set_view(*extents[p])  # the limits after the aspect applies
+        h, w = xy_figures[p].grid_shape(LOWRES_DPI)
+        shapes[p] = (h * factor, w * factor)
+    grids = {}
+    if xy_plots:
+        on_chunk = progress(pass_progress(source, run.labels[1], any(p.needs_data for p in xy_plots)))
+        grids, _ = plot_grids(source, xy_plots, extents, shapes, on_chunk=on_chunk)
+
+    def _mpl_figure(item):
+        return item.fig if isinstance(item, XYFigure) else item
+
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    output_dir = Path(request.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for item in xy_figures.values():
+        item.set_status(grid_summary(grids[item.plot], source.n_rows))
+    written = []
+    lowres_path = output_dir / f"{request.output_prefix}_lowres.pdf"
+    with PdfPages(lowres_path) as pdf:
+        for name, item in run.figures():
+            if isinstance(item, XYFigure):
+                item.show(grids[item.plot], display_dpi=LOWRES_DPI, downsample=factor)
+            png_path = output_dir / f"{request.output_prefix}_{name}.png"
+            _mpl_figure(item).savefig(png_path, dpi=LOWRES_DPI)
+            pdf.savefig(_mpl_figure(item), dpi=LOWRES_DPI)
+            report("info", f"saved {png_path}")
+            written.append(png_path)
+    report("info", f"saved {lowres_path}")
+    written.append(lowres_path)
+    if not request.no_highres_pdf:
+        highres_path = output_dir / f"{request.output_prefix}_highres.pdf"
+        with PdfPages(highres_path) as pdf:
+            for _, item in run.figures():
+                if isinstance(item, XYFigure):
+                    item.show(grids[item.plot], display_dpi=HIGHRES_DPI)
+                pdf.savefig(_mpl_figure(item), dpi=HIGHRES_DPI)
+        report("info", f"saved {highres_path}")
+        written.append(highres_path)
+    return written
