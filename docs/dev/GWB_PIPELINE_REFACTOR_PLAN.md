@@ -482,6 +482,13 @@ Buildable now, ahead of Phase C.
   redraw, locate with CSV, export size. On 3C286 RR, headless: 141.7M samples drawn in
   9.1 s; a locate at 36-37.5 kλ found 30,045 samples, all on E06:19-S06:24, in 6.8 s;
   an export at 300 dpi took 5.9 s.
+  First trial by the user: export worked; Locate did nothing but zoom. Cause: matplotlib's
+  zoom and pan modes lock the canvas, and the box selector ignores events while another
+  tool holds the lock, so with zoom still on the drag zoomed. The headless test had
+  called the locate method directly, bypassing the toolbar and mouse path. Fixed: Locate
+  is a mode exclusive with zoom and pan, with status-bar guidance, and the CSV button is
+  enabled once there is a result; a test now drives the toolbar button and a simulated
+  mouse drag with zoom left on.
   Next: pages, then flagging, then the layout items.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point

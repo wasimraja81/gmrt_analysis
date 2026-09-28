@@ -117,3 +117,44 @@ def test_export_re_reads_the_view_at_the_chosen_dpi():
     fig_w, fig_h = window.panels[plot].figure.fig.get_size_inches()
     assert (width, height) == (round(fig_w * 200), round(fig_h * 200))
     window.close()
+
+
+def _drag(canvas, ax, start, end):
+    """A left-button drag from `start` to `end` (data coordinates), as a user makes it."""
+    from matplotlib.backend_bases import MouseEvent
+
+    (x0, y0), (x1, y1) = ax.transData.transform([start, end])
+    MouseEvent("button_press_event", canvas, x0, y0, button=1)._process()
+    MouseEvent("motion_notify_event", canvas, (x0 + x1) / 2, (y0 + y1) / 2, button=1)._process()
+    MouseEvent("motion_notify_event", canvas, x1, y1, button=1)._process()
+    MouseEvent("button_release_event", canvas, x1, y1, button=1)._process()
+
+
+def test_locate_through_the_toolbar_and_a_mouse_drag_after_zooming():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_locate_ui", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    ax = panel.figure.ax
+    limits = (ax.get_xlim(), ax.get_ylim())
+
+    panel.toolbar.zoom()  # zoom mode left on, as after zooming
+    assert panel.toolbar.mode.name == "ZOOM"
+    assert not window.save_locate_button.isEnabled()
+    panel.locate_action.setChecked(True)  # the Locate button
+    assert panel.toolbar.mode.name == "NONE"  # zoom turned off, so the drag reaches Locate
+
+    _drag(panel.canvas, ax, (400.5, 4.5), (401.5, 6.5))
+    _wait(app, window)
+    assert (ax.get_xlim(), ax.get_ylim()) == limits  # the drag did not zoom
+    assert window.locate is not None and window.locate.n_found == 4
+    assert window.locate_table.rowCount() == 4
+    assert window.save_locate_button.isEnabled()
+    assert window.statusBar().currentMessage() == "located 4 samples; listed in the table below"
+
+    panel.toolbar.pan()  # turning pan on turns Locate off
+    app.processEvents()
+    time.sleep(0.2)
+    app.processEvents()
+    assert not panel.locate_action.isChecked()
+    window.close()

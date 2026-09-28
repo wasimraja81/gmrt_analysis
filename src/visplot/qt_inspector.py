@@ -95,6 +95,7 @@ class _Panel:
     changed_at: float = 0.0
     selector: RectangleSelector | None = None
     locate_action: QtGui.QAction | None = None
+    toolbar: NavigationToolbar2QT | None = None
     extent: tuple | None = None
 
 
@@ -148,7 +149,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(widget)
         canvas = FigureCanvasQTAgg(figure.fig)
         toolbar = NavigationToolbar2QT(canvas, widget)
-        panel = _Panel(figure.plot, figure, canvas)
+        panel = _Panel(figure.plot, figure, canvas, toolbar=toolbar)
         panel.locate_action = toolbar.addAction("Locate")
         panel.locate_action.setCheckable(True)
         panel.locate_action.setToolTip("Drag a box to list the samples inside it")
@@ -172,11 +173,12 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self.locate_table = QtWidgets.QTableWidget(0, len(_LOCATE_COLUMNS))
         self.locate_table.setHorizontalHeaderLabels([c for c, _ in _LOCATE_COLUMNS])
         self.locate_table.setSortingEnabled(True)
-        save = QtWidgets.QPushButton("Save as CSV…")
-        save.clicked.connect(self._save_locate_csv)
+        self.save_locate_button = QtWidgets.QPushButton("Save as CSV…")
+        self.save_locate_button.setEnabled(False)  # until something is located
+        self.save_locate_button.clicked.connect(self._save_locate_csv)
         layout.addWidget(self.locate_summary)
         layout.addWidget(self.locate_table)
-        layout.addWidget(save)
+        layout.addWidget(self.save_locate_button)
         dock.setWidget(body)
         self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, dock)
         self.locate_dock = dock
@@ -291,8 +293,11 @@ class InspectorWindow(QtWidgets.QMainWindow):
         panel.canvas.draw_idle()
 
     def _check_views(self, now: float) -> None:
-        """After a zoom or pan settles, re-draw that plot over the new limits."""
+        """After a zoom or pan settles, re-draw that plot over the new limits.
+        Zoom or pan turned on while Locate is on turns Locate off."""
         for plot, panel in self.panels.items():
+            if panel.selector is not None and panel.toolbar.mode.name != "NONE":
+                panel.locate_action.setChecked(False)
             if panel.grid is None or panel.figure.image is None:
                 continue
             limits = (tuple(panel.figure.ax.get_xlim()), tuple(panel.figure.ax.get_ylim()))
@@ -309,11 +314,19 @@ class InspectorWindow(QtWidgets.QMainWindow):
     # ---- locate -------------------------------------------------------------
 
     def _toggle_locate(self, panel: _Panel, on: bool) -> None:
+        """Locate is a mode like zoom and pan: turning it on turns them off.
+        (Zoom and pan lock the canvas, and the box selector ignores every
+        event while they hold the lock.)"""
         if on:
+            if panel.toolbar.mode.name == "ZOOM":
+                panel.toolbar.zoom()
+            elif panel.toolbar.mode.name == "PAN":
+                panel.toolbar.pan()
             panel.selector = RectangleSelector(
                 panel.figure.ax, lambda press, release, p=panel: self._locate(p, press, release),
                 useblit=True, button=[1], interactive=False, minspanx=2, minspany=2, spancoords="pixels",
             )
+            self.statusBar().showMessage("Locate: drag a box on the plot to list the samples inside it")
         elif panel.selector is not None:
             panel.selector.set_active(False)
             panel.selector = None
@@ -325,7 +338,11 @@ class InspectorWindow(QtWidgets.QMainWindow):
             return
         locate = LocateReducer(panel.plot, box_x, box_y, limit=LOCATE_LIMIT)
         read_data = panel.plot.needs_data
-        self.locate_summary.setText("reading the selection to find the samples in the box…")
+        self.locate_summary.setText(
+            f"reading the selection to find the samples in x {min(box_x):.4g} to {max(box_x):.4g}, "
+            f"y {min(box_y):.4g} to {max(box_y):.4g}…")
+        self.locate_dock.show()
+        self.locate_dock.raise_()
 
         def run(on_chunk):
             return self.source.stream([locate], read_data=read_data, on_chunk=on_chunk)
@@ -334,6 +351,9 @@ class InspectorWindow(QtWidgets.QMainWindow):
             if job.completed:
                 self.locate = locate
                 self._show_locate(locate)
+                self.save_locate_button.setEnabled(locate.n_found > 0)
+                self.statusBar().showMessage(
+                    f"located {locate.n_found:,} samples; listed in the table below")
             else:
                 self.locate_summary.setText("locate stopped before the end of the selection")
 
