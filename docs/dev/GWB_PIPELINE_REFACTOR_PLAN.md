@@ -424,9 +424,17 @@ Buildable now, ahead of Phase C.
   the named directory, one clear filename prefix, written under a temporary name and
   renamed when complete, and a command that removes them.
 
-- **T25 — visPlot axis range modes and scaling — NOT STARTED (added 2026-09-28).** From
-  the review (point C). Range from the data's min/max (default, outliers visible) or a
-  percentile range, and axis scales (linear, log, symlog, asinh).
+- **T25 — visPlot axis range modes and scaling — DONE (2026-09-28).** From the review
+  (point C). `--x-range-mode`/`--y-range-mode`: `minmax` (default; outliers visible) or
+  `percentile` (`--range-percentiles`, default 0.1:99.9), from a histogram of values in
+  fixed log-magnitude bins (`visplot/value_histogram.py`: 1000 per decade, 0.23% value
+  resolution, ~0.5 MB) filled during the existing range pass. `--x-scale`/`--y-scale`:
+  linear, log, symlog, asinh (`--scale-linear-width` for the last two); samples are binned
+  evenly in the scale's own coordinate using matplotlib's transform for that scale, and
+  a test checks pixels line up with the drawn axis to 1e-9 of its length. Samples outside
+  an axis range, or not positive on a log axis, are counted and stated on the plot.
+  Checked on 3C286 RR amplitude vs uv distance: a log y-axis shows ten decades; the
+  percentile range leaves 138,636 of 141.7M samples (0.098%) outside, stated on the plot.
 
 - **T26 — visPlot inspection window — DESIGN (added 2026-09-28).** From the review (point
   F): an interactive window for locating samples, flagging (to a flag table, never the

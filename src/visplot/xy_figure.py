@@ -142,17 +142,51 @@ class XYFigure:
         offsets = marker_offsets(marker_radius_px(size, display_dpi), auto_square_marker(n))
         layers = draw_markers(downsample_layers(grid.layers_2d(), downsample), offsets)
         rgba = layers_to_rgba(layers, layer_colors(self.plot, grid.seen_codes))
-        extent = (*grid.x_extent, *grid.y_extent)
+        if self.image is None:
+            self._set_scales()
+            if not self.linear:
+                # limits first, autoscaling off: a pinned image's 0-1 extent must not reach the limits
+                self.ax.set_xlim(grid.x_extent)
+                self.ax.set_ylim(grid.y_extent)
+                self.ax.set_autoscale_on(False)
+        if self.linear:
+            # pixels uniform in data space: placed by data extent, so they follow zoom and pan
+            extent, transform = (*grid.x_extent, *grid.y_extent), self.ax.transData
+        else:
+            # pixels uniform in the axis scale's coordinate: placed over the axes area, which
+            # matches the scale when the axis limits equal the grid's extent (set below)
+            extent, transform = (0.0, 1.0, 0.0, 1.0), self.ax.transAxes
         if self.image is None:
             self.image = self.ax.imshow(rgba, origin="lower", extent=extent, interpolation="nearest",
-                                        aspect="auto", zorder=0)
+                                        aspect="auto", zorder=0, transform=transform)
             self.ax.set_xlim(grid.x_extent)
             self.ax.set_ylim(grid.y_extent)
         else:
             self.image.set_data(rgba)
             self.image.set_extent(extent)
+            if not self.linear:
+                self.ax.set_xlim(grid.x_extent)
+                self.ax.set_ylim(grid.y_extent)
+        self.image.set_visible(True)
         self._legend(grid)
         self._category_ticks()
+
+    @property
+    def linear(self) -> bool:
+        return self.plot.axis_scale("x").is_linear and self.plot.axis_scale("y").is_linear
+
+    def _set_scales(self) -> None:
+        if not self.plot.axis_scale("x").is_linear:
+            self.ax.set_xscale(**self.plot.axis_scale("x").mpl_kwargs())
+        if not self.plot.axis_scale("y").is_linear:
+            self.ax.set_yscale(**self.plot.axis_scale("y").mpl_kwargs())
+
+    def hide_if_view_moved(self, grid: GridReducer) -> None:
+        """On a non-linear axis the image is pinned to the axes area, so after
+        a zoom or pan it no longer lines up; hide it until the view is redrawn."""
+        if not self.linear and self.image is not None:
+            in_place = (tuple(self.ax.get_xlim()), tuple(self.ax.get_ylim())) == (grid.x_extent, grid.y_extent)
+            self.image.set_visible(in_place)
 
     def _legend(self, grid: GridReducer) -> None:
         handles = []
@@ -185,3 +219,13 @@ class XYFigure:
         """A caveat shown on the plot itself (bottom left), e.g. a warning
         about how a quantity was computed."""
         self.note.set_text(text)
+
+
+def grid_summary(grid: GridReducer, n_rows: int) -> str:
+    """What a finished plot shows: samples drawn, rows read, and samples
+    left out because they fall outside the axis ranges (or, on a log axis,
+    are not positive)."""
+    text = f"{grid.n_samples:,} samples from {n_rows:,} rows"
+    if grid.n_outside:
+        text += f"; {grid.n_outside:,} outside the axis ranges, left out"
+    return text

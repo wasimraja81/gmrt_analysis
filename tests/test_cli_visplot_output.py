@@ -180,3 +180,34 @@ def test_ut1_fallback_is_warned_in_the_terminal_and_on_the_plot(monkeypatch, cap
     assert "WARNING: UT1 - UTC unavailable" in capsys.readouterr().err
     assert notes == ["UT1 = UTC assumed: hour angle may be off by up to 0.9 s of time"]  # the HA plot only
     plt.close("all")
+
+
+def test_scale_on_a_category_axis_is_rejected(capsys):
+    scratch = make_scratch_dir("cli_visplot_scale_category")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    with pytest.raises(SystemExit):
+        main(["visplot", str(path), "--plots", "amp-vs-stokes", "--x-scale", "log"])
+    assert "applies to numeric axes" in capsys.readouterr().err
+
+
+def test_log_scale_with_a_non_positive_range_is_rejected(capsys):
+    with pytest.raises(SystemExit):
+        main(["visplot", "x.fits", "--plots", "amp-vs-freq_mhz", "--y-scale", "log", "--y-range", "0:100"])
+    assert "positive values only" in capsys.readouterr().err
+
+
+def test_log_scale_and_percentile_range_run_end_to_end(monkeypatch):
+    scratch = make_scratch_dir("cli_visplot_log_percentile")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    statuses = []
+
+    import cli.visplot as cli
+
+    original_set_status = cli.XYFigure.set_status
+    monkeypatch.setattr(cli.XYFigure, "set_status",
+                        lambda self, text: (statuses.append(text), original_set_status(self, text)))
+    assert main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--y-scale", "log",
+                 "--y-range-mode", "percentile", "--range-percentiles", "10:90",
+                 "--output-dir", str(scratch / "out"), "--no-highres-pdf"]) == 0
+    assert any("outside the axis ranges, left out" in s for s in statuses)
+    plt.close("all")

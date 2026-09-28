@@ -44,6 +44,7 @@ from cli.visplot_args import (  # noqa: E402
     resolve_deg_range_arg,
     resolve_ha_range_arg,
     resolve_klambda_range_arg,
+    resolve_percentiles_arg,
     resolve_plain_range_arg,
     resolve_stokes_axis_selection,
     resolve_time_range_arg,
@@ -56,10 +57,11 @@ from data_io.row_index import default_row_index_path, load_row_index  # noqa: E4
 from data_io.row_selection import select_rows  # noqa: E402
 from data_io.source_table import read_source_table  # noqa: E402
 from visplot.antenna_layout import antenna_layout  # noqa: E402
+from visplot.axis_scale import SCALE_NAMES  # noqa: E402
 from visplot.plot_spec import PlotSpec, expand_plot_name  # noqa: E402
-from visplot.quantities import context_from_source_table  # noqa: E402
+from visplot.quantities import QUANTITIES, context_from_source_table  # noqa: E402
 from visplot.source_listing import source_listing  # noqa: E402
-from visplot.xy_figure import XYFigure  # noqa: E402
+from visplot.xy_figure import XYFigure, grid_summary  # noqa: E402
 from visplot.xy_interactive import run_interactive  # noqa: E402
 from visplot.xy_session import (  # noqa: E402
     DEFAULT_STREAM_THREADS,
@@ -97,6 +99,13 @@ plot names (--plots, comma-separated):
   e.g. amp-vs-uvdist_klambda, phase_deg-vs-time_h, v_klambda-vs-u_klambda.
   Every generic plot names two quantities; a single name such as
   uvdist_klambda is rejected.
+
+axis ranges and scales: without --x-range/--y-range, an axis spans the data's
+minimum to maximum, outliers included; --x-range-mode/--y-range-mode percentile
+narrows it to --range-percentiles. Samples outside an axis range are left out
+and counted on the plot. --x-scale/--y-scale choose linear, log (positive values
+only), symlog or asinh; samples are binned evenly in the scale, so each pixel
+spans the same width on screen.
 
 how plots are drawn: the selection is read in chunks and each chunk's
 samples are marked on a fixed pixel grid per plot, then dropped, so memory
@@ -222,6 +231,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
     style.add_argument("--mirror", action="store_true", help="also plot (-x, -y), e.g. for UV coverage")
     style.add_argument("--x-range", help="'lo:hi' x-axis range in the quantity's units (default: from the data)")
     style.add_argument("--y-range", help="'lo:hi' y-axis range in the quantity's units (default: from the data)")
+    for axis in ("x", "y"):
+        style.add_argument(
+            f"--{axis}-range-mode", choices=["minmax", "percentile"], default="minmax",
+            help=f"when --{axis}-range is not given: the data's minimum to maximum, outliers included "
+            "(default), or the --range-percentiles range",
+        )
+    style.add_argument(
+        "--range-percentiles", default="0.1:99.9", metavar="LO:HI",
+        help="percentiles for the percentile range mode (default: 0.1:99.9)",
+    )
+    for axis in ("x", "y"):
+        style.add_argument(
+            f"--{axis}-scale", choices=list(SCALE_NAMES), default="linear",
+            help=f"{axis}-axis scale (default: linear); log shows positive values only",
+        )
+    style.add_argument(
+        "--scale-linear-width", type=float, default=1.0, metavar="W",
+        help="for symlog and asinh scales: the width around zero that stays linear (default: 1)",
+    )
 
     out = parser.add_argument_group("output")
     out.add_argument(
@@ -286,6 +314,12 @@ def main(argv: list[str]) -> int:
             validate_colorize_by(args.colorize_by)
         x_range = resolve_plain_range_arg(args.x_range)
         y_range = resolve_plain_range_arg(args.y_range)
+        range_percentiles = resolve_percentiles_arg(args.range_percentiles)
+        if args.scale_linear_width <= 0:
+            raise ValueError("--scale-linear-width must be positive")
+        for axis, scale, fixed in (("x", args.x_scale, x_range), ("y", args.y_scale, y_range)):
+            if scale == "log" and fixed is not None and fixed[0] <= 0:
+                raise ValueError(f"--{axis}-scale log shows positive values only; --{axis}-range starts at {fixed[0]:g}")
     except ValueError as err:
         parser.error(str(err))
 
@@ -341,9 +375,16 @@ def main(argv: list[str]) -> int:
     style = PlotSpec(
         y="", x="", colorize_by=args.colorize_by, show_flagged=args.show_flagged, mirror=args.mirror,
         x_range=x_range, y_range=y_range, point_size=args.point_size, color=args.color,
+        x_scale=args.x_scale, y_scale=args.y_scale, x_range_mode=args.x_range_mode, y_range_mode=args.y_range_mode,
+        range_percentiles=range_percentiles, scale_linear_width=args.scale_linear_width,
     )
     plots_by_name = {name: expand_plot_name(name, style) for name in plot_names if name not in TABLE_PLOTS}
     xy_plots = [p for plots in plots_by_name.values() for p in plots]
+    for p in xy_plots:
+        for axis in ("x", "y"):
+            name = p.x if axis == "x" else p.y
+            if QUANTITIES[name].categorical and not p.axis_scale(axis).is_linear:
+                parser.error(f"--{axis}-scale applies to numeric axes; {name!r} is a category")
 
     axis_selection = {}
     if channel_indices is not None:
@@ -423,7 +464,7 @@ def _save_outputs(args, source, xy_plots, xy_figures, extents, figures, draw_lab
     output_dir.mkdir(parents=True, exist_ok=True)
     for item in xy_figures.values():
         grid = grids[item.plot]
-        item.set_status(f"{grid.n_samples:,} samples from {source.n_rows:,} rows")
+        item.set_status(grid_summary(grid, source.n_rows))
 
     lowres_path = output_dir / f"{args.output_prefix}_lowres.pdf"
     with PdfPages(lowres_path) as pdf:

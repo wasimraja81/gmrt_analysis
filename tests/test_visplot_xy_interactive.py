@@ -67,7 +67,7 @@ def _run(stop_after_passes, zoom_to=None):
 def test_window_fills_and_reports_samples():
     figure, source = _run(stop_after_passes=1)
     assert len(source.passes) == 1
-    assert figure.status.get_text() == "10 samples plotted from 10 rows"
+    assert figure.status.get_text() == "10 samples from 10 rows"
     assert figure.image is not None
     plt.close("all")
 

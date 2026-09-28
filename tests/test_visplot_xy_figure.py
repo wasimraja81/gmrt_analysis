@@ -92,3 +92,27 @@ def test_xy_figure_shows_a_grid_as_an_image_with_its_extent():
     assert [t.get_text() for t in fig.ax.get_legend().get_texts()] == ["RR", "LL"]
     assert [t.get_text() for t in fig.ax.get_xticklabels()] == ["RR", "LL"]
     plt.close(fig.fig)
+
+
+def test_xy_figure_non_linear_axis_uses_the_scale_and_pins_the_image_to_the_axes():
+    plot = PlotSpec(y="amp", x="freq_mhz", y_scale="log")
+    grid = GridReducer(plot, (100.0, 200.0), (1.0, 1000.0), height=4, width=4)
+    grid.layers[5] = 1
+    grid.n_samples = 1
+    fig = XYFigure(plot, CTX)
+    fig.show(grid, display_dpi=100)
+    assert fig.ax.get_yscale() == "log"
+    assert fig.image.get_transform() == fig.ax.transAxes
+    assert fig.image.get_extent() == [0.0, 1.0, 0.0, 1.0]
+    fig.ax.set_ylim(10.0, 100.0)  # a zoom: the pinned image no longer matches
+    fig.hide_if_view_moved(grid)
+    assert not fig.image.get_visible()
+    plt.close(fig.fig)
+
+
+def test_grid_summary_mentions_samples_left_out():
+    from visplot.xy_figure import grid_summary
+
+    grid = GridReducer(PlotSpec(y="amp", x="freq_mhz"), (0.0, 1.0), (0.0, 1.0), height=1, width=1)
+    grid.n_samples, grid.n_outside = 1200, 3
+    assert grid_summary(grid, 40) == "1,200 samples from 40 rows; 3 outside the axis ranges, left out"

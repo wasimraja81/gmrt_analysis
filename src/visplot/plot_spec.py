@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from visplot.axis_scale import AxisScale
 from visplot.quantities import QUANTITIES
 
 
@@ -23,6 +24,18 @@ class PlotSpec:
     color: str = "tab:blue"
     name: str = ""  # used in output filenames
     reference_lines: tuple[tuple[str, float], ...] = ()  # ("x" or "y", value): dashed lines, e.g. transit
+    x_scale: str = "linear"  # linear, log, symlog, asinh
+    y_scale: str = "linear"
+    x_range_mode: str = "minmax"  # minmax, or percentile (range_percentiles) -- when no range is given
+    y_range_mode: str = "minmax"
+    range_percentiles: tuple[float, float] = (0.1, 99.9)
+    scale_linear_width: float = 1.0  # symlog's linthresh, asinh's linear width
+
+    def axis_scale(self, axis: str) -> AxisScale:
+        return AxisScale(self.x_scale if axis == "x" else self.y_scale, self.scale_linear_width)
+
+    def range_mode(self, axis: str) -> str:
+        return self.x_range_mode if axis == "x" else self.y_range_mode
 
     @property
     def quantities(self) -> list[str]:

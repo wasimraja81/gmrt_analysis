@@ -144,7 +144,12 @@ def describe_passes(source: XYSource, plots: list[PlotSpec]) -> list[str]:
     passes = []
     ranged = range_pass_axes(plots)
     if ranged:
-        names = sorted({quantity_label(p.x if axis == "x" else p.y, source.ctx) for p, axis in ranged})
+        names = sorted({
+            quantity_label(p.x if axis == "x" else p.y, source.ctx)
+            + (f" (percentiles {p.range_percentiles[0]:g}-{p.range_percentiles[1]:g})"
+               if p.range_mode(axis) == "percentile" else "")
+            for p, axis in ranged
+        })
         passes.append(f"find the data range of {', '.join(names)} ({reads(range_pass_reads_data(plots))})")
     passes.append(f"draw the plots ({reads(any(p.needs_data for p in plots))})")
     for i, text in enumerate(passes, start=1):

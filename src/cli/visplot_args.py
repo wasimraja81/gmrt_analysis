@@ -137,3 +137,11 @@ def validate_colorize_by(name: str) -> None:
 def resolve_plain_range_arg(spec: str | None) -> tuple[float, float] | None:
     """--x-range/--y-range: 'lo:hi' in the axis quantity's own units."""
     return parse_single_range(spec) if spec else None
+
+
+def resolve_percentiles_arg(spec: str) -> tuple[float, float]:
+    """--range-percentiles 'LO:HI', with 0 <= LO < HI <= 100."""
+    lo, hi = parse_single_range(spec)
+    if not 0.0 <= lo < hi <= 100.0:
+        raise ValueError(f"--range-percentiles needs 0 <= LO < HI <= 100, got {spec!r}")
+    return lo, hi

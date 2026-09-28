@@ -25,6 +25,7 @@ import numpy as np
 from data_io.visibility_data import VisibilityBlock, slice_block
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import QUANTITIES, QuantityContext
+from visplot.value_histogram import ValueHistogram
 
 EMPTY_LAYER = 0
 # Smallest block a worker thread gets: below this, splitting a chunk costs
@@ -204,54 +205,80 @@ def _prefetched(chunks: Iterable[VisibilityBlock]):
 
 
 class RangeReducer:
-    """Min/max of one axis ("x" or "y") of a plot. Evaluates only that axis's
-    quantity, so a range pass reads visibility data only when that quantity
-    needs it; flagged samples are left out when the chunk carries weights
-    (and the plot applies flags), and a mirrored plot's range covers the
-    negated values too."""
+    """The range of one axis ("x" or "y") of a plot: min/max, and in
+    percentile mode a histogram of values for the percentiles. Evaluates
+    only that axis's quantity, so a range pass reads visibility data only
+    when that quantity needs it; flagged samples are left out when the chunk
+    carries weights (and the plot applies flags); values the axis scale
+    cannot show (log: non-positive) are left out; a mirrored plot's range
+    covers the negated values too."""
 
     def __init__(self, plot: PlotSpec, axis: str):
         self.plot = plot
         self.axis = axis
         self.quantity = plot.x if axis == "x" else plot.y
+        self.scale = plot.axis_scale(axis)
+        self.mode = plot.range_mode(axis)
         self.lo = np.inf
         self.hi = -np.inf
+        self.histogram = ValueHistogram() if self.mode == "percentile" else None
 
     def compute(self, values: ChunkValues):
-        """This chunk's (lo, hi), or None if it has no finite value. Safe to
-        call from worker threads."""
+        """This chunk's (lo, hi, histogram or None), or None if it has no
+        value to show. Safe to call from worker threads."""
         v = values[self.quantity]
         weight = values.block.weight
         if self.plot.apply_flags and not self.plot.show_flagged and weight is not None:
             v, good = np.broadcast_arrays(v, weight > 0)
             v = v[good]
         v = v[np.isfinite(v)]
+        valid = self.scale.valid(v)
+        if valid is not None:
+            v = v[valid]
         if not v.size:
             return None
         lo, hi = float(v.min()), float(v.max())
+        histogram = None
+        if self.histogram is not None:
+            histogram = ValueHistogram()
+            histogram.add(np.asarray(v, dtype=np.float64).ravel())
+            if self.plot.mirror:
+                histogram.add(-np.asarray(v, dtype=np.float64).ravel())
         if self.plot.mirror:
             lo, hi = min(lo, -hi), max(hi, -lo)
-        return lo, hi
+        return lo, hi, histogram
 
     def apply(self, result) -> None:
         if result is not None:
             self.lo = min(self.lo, result[0])
             self.hi = max(self.hi, result[1])
+            if result[2] is not None:
+                self.histogram.merge(result[2])
 
     def update(self, values: ChunkValues) -> None:
         self.apply(self.compute(values))
 
     def extent(self, margin: float = 0.03) -> tuple[float, float]:
-        """The range with a margin on each side, so edge samples are not cut
-        by the axes frame; a category axis gets half a slot each side."""
+        """The range with a margin on each side (in the axis scale's
+        coordinate), so edge samples are not cut by the axes frame; a
+        category axis gets half a slot each side. Percentile mode narrows
+        the range to `range_percentiles` of the values."""
         if not np.isfinite(self.lo):
-            return (0.0, 1.0)
-        name = self.plot.x if self.axis == "x" else self.plot.y
-        if QUANTITIES[name].categorical:
+            return (1.0, 10.0) if self.scale.name == "log" else (0.0, 1.0)
+        if QUANTITIES[self.quantity].categorical:
             return (self.lo - 0.5, self.hi + 0.5)
-        span = self.hi - self.lo
-        pad = span * margin if span > 0 else max(abs(self.lo) * margin, 0.5)
-        return (self.lo - pad, self.hi + pad)
+        lo, hi = self.lo, self.hi
+        if self.histogram is not None and self.histogram.counts.any():
+            p_lo, p_hi = self.plot.range_percentiles
+            lo = max(lo, self.histogram.percentile(p_lo, upper=False))
+            hi = min(hi, self.histogram.percentile(p_hi, upper=True))
+            if self.plot.mirror:
+                lo, hi = min(lo, -hi), max(hi, -lo)
+        t_lo, t_hi = (float(t) for t in self.scale.forward(np.array([lo, hi], dtype=np.float64)))
+        span = t_hi - t_lo
+        pad = span * margin if span > 0 else max(abs(t_lo) * margin, 0.5)
+        lo, hi = (float(v) for v in self.scale.inverse(np.array([t_lo - pad, t_hi + pad])))
+        return (lo, hi)
 
 
 class GridReducer:
@@ -267,9 +294,15 @@ class GridReducer:
         self.y_extent = tuple(float(v) for v in y_extent)
         self.height = height
         self.width = width
+        self.x_scale = plot.axis_scale("x")
+        self.y_scale = plot.axis_scale("y")
+        # grid edges in each axis scale's coordinate (log10 of the value for a log axis, ...)
+        self._tx = tuple(float(t) for t in self.x_scale.forward(np.array(self.x_extent)))
+        self._ty = tuple(float(t) for t in self.y_scale.forward(np.array(self.y_extent)))
         self.layers = np.zeros(height * width, dtype=np.int16)
         self.seen_codes: set[int] = set()
         self.n_samples = 0
+        self.n_outside = 0  # samples outside the extent, or not showable on the axis scale
 
     def compute(self, values: ChunkValues):
         """This chunk's samples as (pixel, code, flagged) inside the grid, or
@@ -277,38 +310,44 @@ class GridReducer:
         x, y, code, flagged = values.samples(self.plot)
         if x.size == 0:
             return None
-        (x0, x1), (y0, y1) = self.x_extent, self.y_extent
-        # Pixel coordinates in place: one temporary per axis.
-        tx = x - x0
-        tx *= self.width / (x1 - x0)
-        ty = y - y0
-        ty *= self.height / (y1 - y0)
-        inside = tx >= 0
-        inside &= tx <= self.width
-        inside &= ty >= 0
-        inside &= ty <= self.height
-        pixel = ty.astype(np.int64)
-        np.minimum(pixel, self.height - 1, out=pixel)
-        pixel *= self.width
-        ix = tx.astype(np.int64)
-        np.minimum(ix, self.width - 1, out=ix)
-        pixel += ix
+        (x0, x1), (y0, y1) = self._tx, self._ty
+        # Pixel coordinates in place: one temporary per axis (after the
+        # scale's transform, for a non-linear axis).
+        with np.errstate(invalid="ignore", divide="ignore"):  # log of non-positive: NaN, outside
+            tx = x - x0 if self.x_scale.is_linear else self.x_scale.forward(x) - x0
+            ty = y - y0 if self.y_scale.is_linear else self.y_scale.forward(y) - y0
+            tx *= self.width / (x1 - x0)
+            ty *= self.height / (y1 - y0)
+            inside = tx >= 0
+            inside &= tx <= self.width
+            inside &= ty >= 0
+            inside &= ty <= self.height
+            n_outside = int(inside.size - np.count_nonzero(inside))
+            pixel = ty.astype(np.int64)
+            np.minimum(pixel, self.height - 1, out=pixel)
+            pixel *= self.width
+            ix = tx.astype(np.int64)
+            np.minimum(ix, self.width - 1, out=ix)
+            pixel += ix
         del tx, ty, ix
         if not inside.all():
             pixel = pixel[inside]
             code = code[inside] if code is not None else None
             flagged = flagged[inside] if flagged is not None else None
         if pixel.size == 0:
-            return None
+            return None if not n_outside else (pixel, code, flagged, n_outside)
         if code is not None and code.max() + 1 >= FLAGGED_LAYER:
             raise ValueError(f"category code {code.max()} too large for the layer grid")
-        return pixel, code, flagged
+        return pixel, code, flagged, n_outside
 
     def apply(self, result) -> None:
         """Write one block's samples into the grid (one thread only)."""
         if result is None:
             return
-        pixel, code, flagged = result
+        pixel, code, flagged, n_outside = result
+        self.n_outside += n_outside
+        if pixel.size == 0:
+            return
         if code is None and flagged is None and not self.plot.show_flagged:
             self.layers[pixel] = 1  # one layer, nothing above it: direct writes
             self.seen_codes.add(0)

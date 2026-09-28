@@ -186,3 +186,31 @@ def test_prefetched_stream_stops_its_reader_when_stopped_early():
     assert run_stream(chunks(), CTX, [grid], on_chunk=lambda rows: rows < 3) is False
     assert len(produced) < 10  # the reader stayed at most a chunk or two ahead
     assert not any(t.name == "visplot-reader" for t in threading.enumerate())
+
+
+def test_range_reducer_percentile_mode_narrows_to_the_bulk():
+    # amp grows with row: rows 0..999 give amp 1..1000; the 1-99 percentiles leave out the lowest and highest 1%
+    plot = PlotSpec(y="amp", x="time_h", y_range_mode="percentile", range_percentiles=(1.0, 99.0))
+    ry = RangeReducer(plot, "y")
+    run_stream([_block(range(0, 1000))], CTX, [ry])
+    lo, hi = ry.extent(margin=0.0)
+    assert (ry.lo, ry.hi) == (1.0, 1000.0)
+    assert 10.0 <= lo <= 11.1 and 990.0 <= hi <= 991.1
+
+
+def test_range_reducer_log_scale_ignores_non_positive_values():
+    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False, x_scale="log")
+    rx = RangeReducer(plot, "x")
+    run_stream([_block([0, 1, 10])], CTX, [rx])  # time_h 0 cannot be shown on a log axis
+    assert (rx.lo, rx.hi) == pytest.approx((1.0, 10.0))
+    lo, hi = rx.extent(margin=0.1)  # margin in decades: 10% of one decade each side
+    assert lo == pytest.approx(10 ** -0.1) and hi == pytest.approx(10 ** 1.1)
+
+
+def test_grid_reducer_bins_evenly_in_the_log_coordinate_and_counts_what_it_leaves_out():
+    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False, x_scale="log")
+    grid = GridReducer(plot, (1.0, 1000.0), (-1.0, 2000e-6), height=1, width=3)
+    run_stream([_block([0, 2, 20, 200, 5000])], CTX, [grid])  # time 0 is not positive; 5000 is beyond the range
+    columns = np.flatnonzero(grid.layers_2d()[0])
+    assert columns.tolist() == [0, 1, 2]  # one decade per pixel: 2, 20, 200
+    assert grid.n_samples == 3 and grid.n_outside == 2

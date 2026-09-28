@@ -16,7 +16,7 @@ import time
 import matplotlib.pyplot as plt
 
 from visplot.stream import GridReducer
-from visplot.xy_figure import XYFigure
+from visplot.xy_figure import XYFigure, grid_summary
 from visplot.xy_session import PassProgress, XYSource
 
 
@@ -94,6 +94,8 @@ def run_interactive(source: XYSource, figures: dict, extents: dict, first_pass_l
         open_pending = [p for p in pending if plt.fignum_exists(figures[p].fig.number)]
         if not open_pending:
             plt.pause(0.1)
+            for p, figure in figures.items():
+                figure.hide_if_view_moved(grids[p])
             restart_zoomed()
             continue
 
@@ -118,5 +120,5 @@ def run_interactive(source: XYSource, figures: dict, extents: dict, first_pass_l
             pending.difference_update(open_pending)
             drawn_once.update(open_pending)
             for p in open_pending:
-                refresh([p], f"{grids[p].n_samples:,} samples plotted from {source.n_rows:,} rows")
+                refresh([p], grid_summary(grids[p], source.n_rows))
             plt.pause(0.001)
