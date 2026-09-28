@@ -504,8 +504,61 @@ Buildable now, ahead of Phase C.
   reading, and on a fallback prints the warning and puts it on every geometry plot.
   First use now takes 0.48 s (was 10 s).
 
-- **T19 review point D** (progressive chunk order, instant zoom preview, zoom pruning,
-  re-bin on resize): on hold until the user has tried the interactive windows.
+- **T19 review point D — interactive responsiveness — NOT STARTED (on hold since
+  2026-09-28).** Four items from the T22 review, distinct from the locate/zoom fix:
+  progressive chunk order (read chunks in a spread-out order, so an early window shows a
+  sparse sample of the whole selection; in time order it shows only the first part);
+  instant zoom preview
+  (show the existing image enlarged at once, sharpened when the re-read finishes); zoom
+  pruning (skip rows or channels outside the new limits for time, u/v/w, uv distance and
+  frequency); re-bin on window resize. To be built with the GUI (T32), where they matter.
+
+- **T28 — Locate: save every located sample — NOT STARTED (added 2026-09-28).** User's
+  question: the table and the CSV stop at the first 10,000 samples (the CSV adds only
+  the total and per-baseline counts). Add "Save all as CSV": the locate pass writes every
+  located sample to the chosen file as it finds them (memory bounded); the table keeps
+  the first 10,000.
+
+- **T29 — Plot aspect — NOT STARTED (added 2026-09-28).** Equal aspect when x and y share
+  a unit (u vs v, real vs imag), free otherwise (amp vs time, amp vs uv distance); a
+  toolbar toggle and `--aspect equal|auto`; the pixel grid sized after the aspect applies.
+
+- **T30 — Units per axis — NOT STARTED (added 2026-09-28).** The user chooses the unit an
+  axis is shown in (`--x-unit`/`--y-unit`, and a unit selector per axis in the GUI), via
+  astropy.units: frequency Hz..GHz; time s/min/h since the first integration, or UTC or
+  LST clock time; u, v, w and uv distance in s/ns, m/km or λ/kλ/Mλ (so `u_klambda` and
+  `u_sec` become one quantity `u` with units; the old names stay as aliases); phase and
+  angles deg/rad, hour angle h/deg. Amplitude keeps the file's BUNIT; conversion only
+  where BUNIT is a flux unit (e.g. Jy to mJy).
+
+- **T31 — Provenance for every plot — NOT STARTED (added 2026-09-28).** Every GUI "Plot"
+  click and every CLI run records the explicit CLI-equivalent command (every option
+  including defaults, absolute paths, view ranges, figure size, dpi, theme) through
+  `provenance/manifest.py`'s RunManifest (stage "visplot"): host, UTC time, git commit
+  and branch with the dirty diff, Python and key package versions, fingerprints of the
+  FITS file and its row index, and the outputs. The user: "absolute reproducibility
+  required! No compromise. Record the host name as well." Where records go (a directory
+  the user names, with a visible default) to be settled with the GUI design.
+
+- **T32 — visplot GUI — DESIGN (added 2026-09-28).** A plotms-style front end on the
+  existing engine: file and selection controls, x/y from the quantity registry with units
+  and scales, display options, Plot/Clear; `bin/visplot.sh` with no arguments opens it.
+  The CLI stays first-class (programmatic probes and batch generation); GUI and CLI share
+  one request model, and every GUI setting has a CLI option. User's brief: "a
+  professional design ... robust, efficient, fool-proof, good-looking". Design presented
+  for review before building. Folds in T19 point D and T26's remaining controls.
+
+- **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
+  matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in
+  lightness; saved files light unless chosen otherwise.
+
+- **T20 fits here too:** its file summary (channel width, integration time, sources,
+  dates) belongs in the GUI's data panel.
+
+  Agreed order (2026-09-28): T28 and T29, then T30 and T31 (the GUI's unit selectors and
+  its Plot button need them), then T32 with T33 and point D, then T26's remaining items
+  (pages, flagging, layouts) as GUI controls with CLI options; T20 alongside T32; T21
+  after.
 
 ### Phase C — Primary Calibration (3C48)
 
