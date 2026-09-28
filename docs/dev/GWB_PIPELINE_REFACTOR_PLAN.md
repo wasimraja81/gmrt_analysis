@@ -1,8 +1,9 @@
 # GWB Pipeline Rebuild — Plan
 
-**Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). 102 tests
-passing. `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the real 389GB
-GWB file (2026-09-25), producing a validated row index — see Phase C (T5c) for details
+**Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
+and T22 (visPlot, streaming) done 2026-09-27, 277 tests passing; T20, T21 not started.
+`bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
+(2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
 sanity checks (frequency-band, expected-calibrators) were dropped after review found them
 mis-scoped, not deferred — see Phase C for why.
@@ -11,11 +12,11 @@ Phases re-ordered 2026-09-25 around the pipeline's own high-level stages (raw da
 index → know your data → curation → cal solve → split-with-cal-applied → imaging); see
 Phase B, added the same day, and the `## Sequencing` note below.
 
-T19 (Phase B, visPlot app) is done (250 tests passing, 2026-09-27) -- the CLI
-(`bin/visplot.sh`), every selection/plotting piece it wires together, and the shared
-plot-title helper are all built and verified against the real GWB file; see T19's own
-status. T20 (observation metadata aggregator) and T5d (Phase C, outer solve/diagnose/flag
-loop) are both reasonable next steps; neither blocks the other.
+T19 (Phase B, visPlot app) is done, and T22 rebuilt its plotting to stream the selection
+through fixed pixel grids, so memory no longer depends on how much is selected (924
+million samples plotted in 1.40 GB; 2026-09-27). T20 (observation metadata aggregator),
+T21 (density mode) and T5d (Phase C, outer solve/diagnose/flag loop) are the open next
+steps; none blocks another.
 
 ## Objective
 
@@ -199,7 +200,7 @@ at that point).
 **Added 2026-09-25, from a high-level re-framing of the pipeline's own stages** (raw data
 → index → know your data → curation → cal solve → split-with-cal-applied → imaging):
 nothing in the original ticket list covered looking at the data *before* calibration
-starts, even though `select_rows`/`read_visibility_data` already give everything this
+starts, even though `select_rows` and the visibility reader already give everything this
 needs — source list, UV-coverage, frequency sampling, integration counts, uncalibrated
 amplitude/phase checks — with no dependency on Phase C (calibration) existing first.
 Buildable now, ahead of Phase C.
@@ -209,10 +210,9 @@ Buildable now, ahead of Phase C.
   `legacy_gsb_40_014/src/plotVis.py` (1492 lines, "generalized plotVis utility ... single
   multi-panel figure with selectable products and selectors") per standing rule 8 —
   checked directly before designing its replacement (its own "any panel, any product"
-  design is the precedent for `scatter_xy` below, arrived at independently before
-  rereading it). CLI-first per the user (2026-09-25): no Jupyter, a future Qt GUI reuses
-  the same `src/visplot/` functions from its own widget callbacks rather than
-  reimplementing plotting logic.
+  design is the precedent for the generic Y-vs-X plot below, arrived at independently
+  before rereading it). CLI-first per the user (2026-09-25): no Jupyter; a future Qt GUI
+  reuses the same `src/visplot/` classes from its own widget callbacks.
 
   **Done:**
   - Foundation: `data_io/source_table.py` (AIPS SU table, including a corrected
@@ -232,13 +232,14 @@ Buildable now, ahead of Phase C.
   - `src/visplot/`: `antenna_layout` (density-based compact-core detection, not
     centroid-distance, since GMRT's own layout shows those disagree; a dynamically
     positioned, exact-collision-avoiding-label inset; a title with optional
-    telescope/source-file provenance), `source_listing`, `hour_angle_range`,
-    `az_el_range`, `parallactic_angle_range`, and a generic engine
-    (`derived_quantities.compute_quantity` + `scatter_xy`) that replaced the two
-    originally-built specific functions (`amplitude_phase`, `uv_coverage`) once it became
-    clear they had no genuine reason to be separate from "pick two named quantities and
-    plot them, with optional per-category coloring, flag handling, and a `mirror` option
-    for a measurement-and-its-conjugate pair like UV coverage".
+    telescope/source-file provenance), `source_listing`, and a generic "pick two named
+    quantities and plot them" engine (with per-category coloring, flag handling, and a
+    `mirror` option for a measurement-and-its-conjugate pair like UV coverage) that
+    replaced the two originally-built specific functions (`amplitude_phase`,
+    `uv_coverage`). First built as `derived_quantities` + `scatter_xy`, with separate
+    `hour_angle_range`/`az_el_range`/`parallactic_angle_range` functions; rebuilt as a
+    streaming design in T22, where the geometry plots became presets of the generic
+    plot.
   - `src/visplot/range_spec.py` (`"1:5,10,12:14"` set/range grammar, plus
     `astropy.units`-based conversion for genuine physical units — not kilo-wavelengths,
     which isn't one), `channel_selection.py` (index or frequency band, resolved against a
@@ -265,8 +266,8 @@ Buildable now, ahead of Phase C.
     an image (150 and 600 dpi), since vector points made a 520k-point page take ~20 s to
     render in poppler and MuPDF alike; dense plots get smaller, square markers;
     `read_visibility_data` reads in bounded chunks, so its memory follows the selection
-    (before, it held the longest contiguous run of full rows). Remaining memory limit:
-    T22.
+    (before, it held the longest contiguous run of full rows). Memory still grew with
+    the selection until T22.
 
   **Remaining:**
   - T20 (below): the AIPS FQ table and AN-table polarization columns, and DATE-OBS /
@@ -318,57 +319,79 @@ Buildable now, ahead of Phase C.
   the approach of Datashader and `mpl-scatter-density`, and close to AIPS UVPLT's own
   "array method" (which fills an in-memory pixel array and displays it as an image).
   Plain points overplot: at hundreds of thousands of samples, later points hide earlier
-  ones and the plot shows only coverage. Proposed: a `--density` style option, built
-  from `numpy.histogram2d` plus `imshow` with a logarithmic color scale (no new
-  dependency); pixel grid sized to the axes at the output dpi; axis labels and titles as
-  for the point style. Deferred by the user behind the PDF-output and marker work
-  (2026-09-27). Largely falls out of T22, which accumulates per-pixel counts anyway.
+  ones and the plot shows only coverage. Proposed, on T22's design: a `--density` style
+  option backed by a counting reducer (samples per pixel, e.g. uint32) fed by the same
+  `run_stream`, drawn by `XYFigure` with a logarithmic color scale; no new dependency.
+  Deferred by the user behind the PDF-output and marker work (2026-09-27).
 
-- **T22 — visPlot streaming generic plots — DESIGN, FOR REVIEW (added 2026-09-27).**
-  *Problem.* A generic Y-vs-X plot holds the whole selection in memory at once: the
+- **T22 — visPlot streaming plots — DONE (added and built 2026-09-27).**
+  *Problem.* A generic Y-vs-X plot held the whole selection in memory at once: the
   reader's output (complex128 + float64 weight, 24 bytes per sample, twice the file's
   float32 12), then each plotted quantity as float64, masks and filtered copies, and
-  matplotlib's own float64 offsets — a measured peak of ~110 bytes per sample (3C286 and
-  3C468.1, 10-122 million samples; checked at 122M: 13.5 GB estimated, 13.7 GB measured).
-  3C468.1, RR, all channels is 924 million samples, ~101.6 GB — more than this 67 GB
-  host, for data that is 11.1 GB on disk (44.3 GB read from disk, since Stokes are
-  interleaved within each channel). The PDFs already draw points as an image, so holding
-  every sample is never needed. The interim guard (`_READ_TO_PLOT_BYTES` in
-  `cli/visplot.py`) refuses such selections; this ticket removes the limit.
+  matplotlib's own float64 offsets — a measured peak of ~110 bytes per sample (checked at
+  122M samples: 13.7 GB). 3C468.1, RR, all channels is 924 million samples, ~101.6 GB —
+  more than this 67 GB host, for data that is 11.1 GB on disk (44.3 GB read from disk,
+  since Stokes are interleaved within each channel). An interim guard refused such
+  selections; the user rejected it as hiding the problem, and asked for plotting whose
+  memory does not depend on the data size, on a Raspberry Pi as on a large machine.
 
-  *Approach* — AIPS UVPLT's "array method" (fill a pixel array in memory, display it as
-  an image): read the selected rows in bounded chunks (the reader already chunks
-  internally since 2026-09-27), compute x and y for the chunk, add the chunk's samples
-  into a fixed pixel grid of counts, discard the chunk. Memory: one chunk plus the grid
-  (~70 MB for the 600 dpi page), independent of selection size.
+  *Design* (one path for every streamed plot; the user asked for a single scalable
+  design over several code paths):
+  - One reader, `data_io.visibility_data.iter_visibility_chunks`, yielding one bounded
+    chunk of rows at a time (`read_visibility_data`, the whole-selection reader, is
+    removed). Chunk size follows index building's budget convention (`ram_fraction` of
+    RAM); `read_data=False` yields metadata-only chunks with no disk read.
+  - One quantity registry, `visplot/quantities.py`: name, display name, unit (fixed, or
+    the file's `BUNIT`), whether it needs visibility data, whether it is a category, and
+    one evaluate function. Values keep size-1 axes where they don't vary, so a pair
+    broadcasts only to the shape it needs (hour angle vs time: one value per row).
+    Includes the geometry quantities (ha_h, az_deg, el_deg, pa_deg) and the categories
+    stokes and source.
+  - One stream runner, `visplot/stream.py`: `run_stream` feeds each chunk to reducers and
+    drops it. `RangeReducer` is the axis-range pre-pass; `GridReducer` marks which
+    pixels of a fixed grid the samples fall in, one int16 per pixel storing the top
+    layer in paint order (category code + 1, flagged on top), whatever the number of
+    categories. Re-adding the same samples leaves a grid unchanged, so restarting an
+    interrupted pass is harmless.
+  - One renderer, `visplot/xy_figure.py`: the grid drawn as an image on vector axes, with
+    markers stamped at occupied pixels (size and shape chosen from the sample count),
+    titles naming sources, telescope and file, and units on both axes.
+  - Saved output: one plotting pass at a 600 dpi grid; the 150 dpi PNG and PDF use its
+    exact 4x4 reduction.
+  - Windows (`visplot/xy_interactive.py`): each plot fills as chunks arrive, with rows
+    read shown; after a zoom or pan settles, that plot re-streams the selection over the
+    new limits at the window's resolution.
+  - Axis ranges: a `--x-range`/`--y-range` is used as given; otherwise one pre-pass over
+    the selection, reading visibility data only for a visibility axis (amp, real, imag,
+    phase) — the user chose an exact min/max pre-pass over a percentile estimate.
+  - Named geometry plots (`ha-range`, `az-el-range`, `parallactic-angle-range`) became
+    presets of the generic plot, colored by source, reading no visibility data;
+    `geometry_range.py`, `scatter_xy.py` and `derived_quantities.py` are removed.
 
-  *Axis ranges* (the grid needs them before binning):
-  - from the row index, with no data read: time_h, u/v/w (s), uvdist_m, freq_mhz, and
-    the kilo-wavelength quantities (row values x the selected band's edge frequencies);
-  - fixed: phase_deg (-180 to 180);
-  - from the data (amp, real, imag): one extra pass over the chunks computing min/max,
-    unless the user supplies `--x-range`/`--y-range`, which skip that pass;
-  - `--mirror` widens a range to be symmetric.
+  *Measured* (2026-09-27, archival GWB file, amp-vs-uvdist_klambda, 256 MiB chunks):
+  - RR, 3C286, 21M samples: 1.34 GB peak (old design 2.48 GB).
+  - RR, 3C468.1, 122M samples: 1.33 GB peak (old design 13.7 GB).
+  - All four Stokes, 3C286, 84M samples: 3.73 GB peak, against 0.23 GB for a run that
+    reads no visibilities — ~13 bytes of working memory per chunk byte, the worst case;
+    `STREAM_MEMORY_PER_CHUNK_BYTE = 14` sizes chunks from it.
+  - RR, 3C468.1, all channels, 924M samples (the selection the old design refused):
+    1.40 GB peak; 505 s for two passes of 44.3 GB each, while a second process was
+    reading the same disk.
 
-  *Rendering.* Pixels with count > 0 drawn in the plot color (the point style); a
-  marker size above one pixel becomes a dilation of the occupied mask. `--colorize-by`
-  and `--show-flagged` keep one grid per category, composited in a fixed order. T21's
-  density mode colors the same counts on a log scale. Axes, labels and titles stay
-  matplotlib vector, via `imshow` with `extent` on the same axes, so both PDFs, the PNG,
-  titles, units and legends are unchanged. Low-res and high-res outputs bin at their own
-  dpi from the same pass (two grids), or the high-res grid is downsampled.
+  *Behavior changes against the first visPlot:* `az-el-range` is two pages (elevation,
+  azimuth) where it was one figure with two panels sharing the time axis; flagged
+  samples are light-red markers of the plot's own shape, where they were crosses;
+  overlapping markers paint in a fixed order (higher category on top, flagged above
+  all), where they were 0.7-transparent; `--colorize-by` takes a category (stokes,
+  source), where it took any quantity; `--linewidths` is removed, since stamped markers
+  have no separate edge; zooming in a window re-reads the selection, where matplotlib
+  zoomed into points already in memory. The transit (HA = 0) and horizon (el = 0) lines
+  were dropped in the first cut of this ticket and restored as preset reference lines.
 
-  *Interactive window* (no `--output-dir`): shows the same image, so zooming enlarges
-  the pixels. Re-binning the visible region on zoom (re-reading its chunks) is possible
-  later and out of scope here.
-
-  *Removes* the interim guard, and with it the need for any memory advice.
-
-  *Open questions for review:* default grid size for the interactive window; whether
-  amp/real/imag default to the data pass or to a robust range (e.g. 0.1-99.9
-  percentile from a first chunk), since outliers such as the ~499.9 MHz channel's
-  amplitudes (to ~9000, against at most a few hundred in the other channels, seen in
-  3C286) can compress the rest of a plot.
+  *Open:* re-streaming on zoom re-reads the whole selection; a quantity could tell the
+  reader which rows or channels fall outside the new limits so they are skipped.
+  `astrometry.local_sidereal_time_hours` takes ~10 s on first use per process (astropy
+  looking up UT1 from IERS tables), which geometry quantities inherit.
 
 ### Phase C — Primary Calibration (3C48)
 
@@ -458,8 +481,9 @@ Buildable now, ahead of Phase C.
   mapping needed no dedicated GMRT code in the end: it's fully self-contained in the
   UVFITS metadata already (`chan_freqs_hz`, generic), so any caller turns a frequency
   range into channel indices directly and passes them to `read_visibility_data`'s
-  `axis_selection`. This is where GMRT-specific FITS-format knowledge belongs — not in
-  `src/engine/`. Produces the vis/model/antenna-index arrays T5a's solver consumes.
+  `axis_selection` (since replaced by `iter_visibility_chunks`, T22). This is where
+  GMRT-specific FITS-format knowledge belongs, outside `src/engine/`. Produces the
+  vis/model/antenna-index arrays T5a's solver consumes.
   T5b's audit is done: the row-index builder loads everything unconditionally (no
   correlation-type filtering), matching every other consumer except the solve
   itself — that's the design followed here and in `select_rows`.
@@ -521,8 +545,10 @@ Buildable now, ahead of Phase C.
     silent downsampling — `every_nth`/`random_subset_n` are explicit, named, and
     `random_subset_n` requires a `random_seed` (no seed-less path exists). Cheap and
     file-I/O-free: works purely from `RowIndex`'s in-memory arrays; the row bytes
-    themselves are read separately, by `read_visibility_data`.
-  - `visibility_data.py`: `read_visibility_data()` reads the actual visibility bytes for
+    themselves are read separately, by `read_visibility_data` (since replaced by
+    `iter_visibility_chunks`, T22).
+  - `visibility_data.py` (reader since replaced by `iter_visibility_chunks`, T22):
+    `read_visibility_data()` reads the visibility bytes for
     a `select_rows()` result. Every axis except `COMPLEX` (mandatorily decoded into
     real/imag/weight — that's what the FITS convention defines that axis to mean) is
     handled by one symmetric mechanism, selectable by CTYPE name via `axis_selection`,
@@ -558,7 +584,8 @@ Buildable now, ahead of Phase C.
   `dead_this_observation_names=["C03","C10"]`, row-count consistency reports a clean
   match — 378 rows/integration for 28 active antennas, exactly as predicted. Returns
   the plain, unmodified `RowIndex` — downstream code calls
-  `select_rows`/`read_visibility_data` directly on it, no GMRT-specific wrapper needed
+  `select_rows`/`read_visibility_data` (now `iter_visibility_chunks`) directly on it, no
+  GMRT-specific wrapper needed
   for either. 17 new tests (`test_instruments_gmrt_row_index.py`,
   `test_instruments_gmrt_sanity_checks.py`).
 
