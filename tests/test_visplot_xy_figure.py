@@ -152,3 +152,19 @@ def test_axes_are_labelled_in_their_units_and_clock_time_as_a_time_of_day():
     assert [t.get_text() for t in fig.ax.get_xticklabels()] == [
         "00:22:00:00", "00:23:00:00", "01:00:00:00", "01:01:00:00", "01:02:00:00"]
     plt.close(fig.fig)
+
+
+def test_equal_aspect_gives_a_square_box_with_the_same_span_on_both_axes():
+    fig = XYFigure(PlotSpec(y="v", x="u", mirror=True), CTX, figsize=(8, 6))
+    (x0, x1), (y0, y1) = fig.set_view((-20.0, 20.0), (-35.0, 35.0))
+    fig.fig.canvas.draw()
+    box = fig.ax.get_window_extent()
+    assert box.width == pytest.approx(box.height, rel=1e-3)
+    assert (x0, x1) == pytest.approx((-35.0, 35.0)) and (y0, y1) == pytest.approx((-35.0, 35.0))
+    height, width = fig.grid_shape(150)
+    assert height == width
+    fig.equal_override = False  # off: the data's own ranges in the full-width box
+    assert fig.set_view(*fig.view_request) == ((-20.0, 20.0), (-35.0, 35.0))
+    fig.fig.canvas.draw()
+    assert fig.ax.get_window_extent().width > fig.ax.get_window_extent().height
+    plt.close(fig.fig)

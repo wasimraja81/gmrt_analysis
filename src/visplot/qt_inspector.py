@@ -320,8 +320,9 @@ class InspectorWindow(QtWidgets.QMainWindow):
             if panel.mouse_down or now - panel.changed_at < SETTLE_S:
                 continue
             if limits != (panel.grid.x_extent, panel.grid.y_extent) and limits != tuple(panel.extent):
-                panel.extent = limits
-                panel.figure.view_request = limits  # the zoomed view is what the aspect toggle returns to
+                # the zoomed view, kept as the view the aspect toggle returns to; with equal
+                # aspect, widened again so both axes keep one scale and one span
+                panel.extent = panel.figure.set_view(*limits)
                 self.request_draw([plot])
 
     def _toggle_aspect(self, panel: _Panel, equal: bool) -> None:

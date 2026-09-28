@@ -537,6 +537,10 @@ Buildable now, ahead of Phase C.
   would have cut data off. The grid is sized to the limits after the aspect applies. The
   window has an "Equal aspect" toggle per plot (to be recorded in the reproducing
   command by T31). `--aspect equal` requires linear axes.
+  Amended 2026-09-28 at the user's request (u and v at one scale but different spans were
+  hard to read): equal aspect now draws a square axes box and widens the shorter range to
+  the longer's span, so both axes show one scale and one span (a mirrored u-v plot: both
+  +-R); a window re-applies this after each zoom.
 
 - **T30 — Units per axis — DONE (added and built 2026-09-28).** The user chooses the unit
   an axis is shown in (`--x-unit`/`--y-unit`; the GUI's unit selectors come with T32).

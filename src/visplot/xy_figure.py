@@ -142,21 +142,24 @@ class XYFigure:
 
     def set_view(self, x_extent, y_extent) -> tuple[tuple, tuple]:
         """Set the axes' scales, limits and aspect for these extents, and return
-        the limits the axes end up with: with equal aspect one axis's range
-        widens so a unit is the same length on both (the axes box keeps its
-        shape), and a grid binned over the returned limits fills the axes.
-        The extents asked for are kept (`view_request`), so turning equal
-        scale off again returns to them."""
+        the limits the axes end up with: with equal aspect the axes box is
+        square and the shorter range widens about its centre to the longer's
+        span, so a unit is the same length on both axes and both show the same
+        span (a mirrored u-v plot: both +-R); a grid binned over the returned
+        limits fills the axes. The extents asked for are kept
+        (`view_request`), so turning equal scale off again returns to them."""
         self.view_request = (tuple(x_extent), tuple(y_extent))
         self._set_scales()
         equal = self.plot.equal_aspect if self.equal_override is None else self.equal_override
+        # Equal scale is the square box and equal spans; matplotlib's own data aspect stays
+        # "auto" (a window re-applies set_view after a zoom, keeping the scale equal).
+        self.ax.set_box_aspect(1.0 if equal and self.linear else None)
+        self.ax.set_aspect("auto")
+        self.ax.apply_aspect()  # the box's shape settles before its size is read below
         if equal and self.linear:
             x_extent, y_extent = self._widened_for_equal_scale(x_extent, y_extent)
         self.ax.set_xlim(x_extent)
         self.ax.set_ylim(y_extent)
-        # Limits already at equal scale: matplotlib keeps them; "datalim" keeps later zooms equal too.
-        self.ax.set_aspect("equal" if equal and self.linear else "auto", adjustable="datalim")
-        self.ax.apply_aspect()
         return tuple(self.ax.get_xlim()), tuple(self.ax.get_ylim())
 
     def _widened_for_equal_scale(self, x_extent, y_extent):
