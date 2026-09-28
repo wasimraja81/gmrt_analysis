@@ -128,11 +128,14 @@ def _uvdist_sec(block):
 
 
 _ALL = [
-    # visibility data
+    # visibility data: stored at the file's float32; amplitude and phase are
+    # computed in float64, so a sample on a pixel boundary bins the same way
+    # whatever the storage precision
     Quantity("real", "Real", UNIT_FROM_BUNIT, True, False, lambda b, c: b.data.real),
     Quantity("imag", "Imag", UNIT_FROM_BUNIT, True, False, lambda b, c: b.data.imag),
-    Quantity("amp", "Amplitude", UNIT_FROM_BUNIT, True, False, lambda b, c: np.abs(b.data)),
-    Quantity("phase_deg", "Phase", "deg", True, False, lambda b, c: np.degrees(np.angle(b.data))),
+    Quantity("amp", "Amplitude", UNIT_FROM_BUNIT, True, False, lambda b, c: np.abs(b.data.astype(np.complex128))),
+    Quantity("phase_deg", "Phase", "deg", True, False,
+             lambda b, c: np.degrees(np.angle(b.data.astype(np.complex128)))),
     # per row
     Quantity("time_h", "Time", "h", False, False,
              lambda b, c: _row((b.jd - c.time_reference_jd) * 24.0, b)),

@@ -60,6 +60,7 @@ from visplot.source_listing import source_listing  # noqa: E402
 from visplot.xy_figure import XYFigure  # noqa: E402
 from visplot.xy_interactive import run_interactive  # noqa: E402
 from visplot.xy_session import (  # noqa: E402
+    DEFAULT_STREAM_THREADS,
     XYSource,
     describe_passes,
     pass_progress,
@@ -231,6 +232,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="skip PREFIX_highres.pdf (write only the PNGs and PREFIX_lowres.pdf)",
     )
 
+    perf = parser.add_argument_group("performance")
+    perf.add_argument(
+        "--threads", type=int, default=DEFAULT_STREAM_THREADS, metavar="N",
+        help=f"worker threads computing each chunk (default: {DEFAULT_STREAM_THREADS}); "
+        "reading the next chunk overlaps with computing in any case",
+    )
+
     return parser
 
 
@@ -343,7 +351,8 @@ def main(argv: list[str]) -> int:
 
     time_reference_jd = float(index.jd[selection.row_indices].min()) if selection.n_rows else float(index.jd.min())
     ctx = context_from_source_table(time_reference_jd, source_table, array_location, bunit, stokes_labels)
-    source = XYSource(fits_path, index, selection.row_indices, axis_selection or None, ctx, stream_chunk_bytes())
+    source = XYSource(fits_path, index, selection.row_indices, axis_selection or None, ctx, stream_chunk_bytes(),
+                      threads=max(1, args.threads))
     sources_present = list(selection.sources.values())
     xy_figures = {p: XYFigure(p, ctx, sources_present, telescope, fits_path) for p in xy_plots}
     if xy_plots:

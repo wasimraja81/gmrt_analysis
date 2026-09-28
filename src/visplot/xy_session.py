@@ -7,6 +7,7 @@ number of rows or samples selected.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,15 +23,18 @@ from visplot.quantities import QUANTITIES, QuantityContext
 from visplot.stream import GridReducer, RangeReducer, run_stream
 
 # Peak working memory of the streaming plot path per byte of full rows in a
-# chunk: the chunk's float32 copy, its selected samples as complex128 and
-# float64 weight, and the per-sample arrays a plot builds from them. Measured
-# 2026-09-27 at the worst case (all four Stokes selected, 256 MiB chunks):
-# 3.73 GB peak against 0.23 GB for a run that reads no visibilities, ~13 per
-# chunk byte; with RR alone, ~4.
-STREAM_MEMORY_PER_CHUNK_BYTE = 14
+# chunk: the chunk being processed (selected samples as complex64 and float32
+# weight, and the per-sample arrays its worker threads build), plus the next
+# chunk waiting in the prefetch queue. Measured 2026-09-28 at the worst case
+# (all four Stokes, colored by Stokes, 6 threads, 256 MiB chunks): 2.66 GB peak
+# against 0.20 GB before the pass, ~9.2 per chunk byte.
+STREAM_MEMORY_PER_CHUNK_BYTE = 10
 # Largest chunk whatever the RAM: an interactive window's first image appears
 # after one chunk, and later chunks refresh it.
 MAX_STREAM_CHUNK_BYTES = 256 * 1024**2
+# Worker threads per chunk: the project's convention of 6 (physical cores, no
+# hyperthreading), or fewer on a smaller machine.
+DEFAULT_STREAM_THREADS = min(6, os.cpu_count() or 1)
 
 
 def stream_chunk_bytes(ram_fraction: float = DEFAULT_RAM_FRACTION_TO_USE) -> int:
@@ -52,6 +56,7 @@ class XYSource:
     axis_selection: dict[str, np.ndarray] | None
     ctx: QuantityContext
     chunk_bytes: int
+    threads: int = 1
 
     @property
     def n_rows(self) -> int:
@@ -78,7 +83,7 @@ class XYSource:
             self.fits_path, self.index, self.row_indices, self.axis_selection,
             max_chunk_bytes=self.chunk_bytes, read_data=read_data,
         )
-        return run_stream(chunks, self.ctx, reducers, on_chunk)
+        return run_stream(chunks, self.ctx, reducers, on_chunk, threads=self.threads)
 
 
 def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None) -> dict[PlotSpec, tuple]:

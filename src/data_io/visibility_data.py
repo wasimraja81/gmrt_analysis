@@ -32,10 +32,10 @@ from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_
 @dataclass(frozen=True)
 class VisibilityBlock:
     row_indices: np.ndarray  # absolute row indices, sorted ascending
-    # complex128, shape (n_rows, *one length per axis in axis_types order); None
-    # for a metadata-only chunk (iter_visibility_chunks(read_data=False))
+    # complex64 (the file's float32 real/imag), shape (n_rows, *one length per axis in
+    # axis_types order); None for a metadata-only chunk (iter_visibility_chunks(read_data=False))
     data: np.ndarray | None
-    weight: np.ndarray | None  # float64, same shape as data -- AIPS convention: <=0 means flagged
+    weight: np.ndarray | None  # float32, same shape as data -- AIPS convention: <=0 means flagged
     axis_types: list[str]  # CTYPE label for each of data.shape[1:], in order
     axis_indices: dict[str, np.ndarray]  # axis type -> the pixel indices selected along it
     ant1: np.ndarray
@@ -68,6 +68,8 @@ class _ReadPlan:
     axis selection."""
     axis_types: list[str]
     selected_indices: list[np.ndarray]
+    # per axis: a slice (a contiguous run of indices, so selecting is a view) or an index array
+    selectors: list
     selected_shape: tuple[int, ...]
     row_bytes: int
     data_floats_per_group: int
@@ -110,6 +112,7 @@ def _read_plan(index: RowIndex, axis_selection: dict[str, np.ndarray] | None) ->
     return _ReadPlan(
         axis_types=axis_types,
         selected_indices=selected_indices,
+        selectors=[_selector(idx) for idx in selected_indices],
         selected_shape=tuple(len(idx) for idx in selected_indices),
         row_bytes=(index.pcount + data_floats_per_group) * 4,
         data_floats_per_group=data_floats_per_group,
@@ -118,8 +121,21 @@ def _read_plan(index: RowIndex, axis_selection: dict[str, np.ndarray] | None) ->
     )
 
 
-def _read_run(fits_path, index: RowIndex, plan: _ReadPlan, start: int, stop: int) -> tuple[np.ndarray, np.ndarray]:
-    """Data and weight for the contiguous rows [start, stop), axis selection applied."""
+def _selector(idx: np.ndarray):
+    """A slice for a contiguous ascending run of indices (selecting is then a
+    view, no copy), otherwise the index array itself."""
+    idx = np.asarray(idx)
+    if idx.size and np.all(np.diff(idx) == 1):
+        return slice(int(idx[0]), int(idx[-1]) + 1)
+    return idx
+
+
+def _read_run_into(fits_path, index: RowIndex, plan: _ReadPlan, start: int, stop: int,
+                   data_out: np.ndarray, weight_out: np.ndarray) -> None:
+    """Copy the contiguous rows [start, stop), axis selection applied, into
+    `data_out` (complex64) and `weight_out` (float32). The file's rows are
+    viewed in place, the selection taken as views where it is contiguous, and
+    each value converted (big-endian to native) once, directly into the output."""
     n = stop - start
     raw = open_raw_memmap(
         fits_path,
@@ -127,19 +143,21 @@ def _read_run(fits_path, index: RowIndex, plan: _ReadPlan, start: int, stop: int
         shape=(n, index.pcount + plan.data_floats_per_group),
         offset=index.data_offset + start * plan.row_bytes,
     )
-    vis = np.array(raw[:, index.pcount :], dtype=np.float32)
-    del raw
-    vis = vis.reshape((n, *plan.reshape_dims))
+    vis = raw[:, index.pcount :].reshape((n, *plan.reshape_dims))
 
     # Move COMPLEX to position 1 and every other axis to positions 2.. in
     # axis_types order -- generic for however many axes this file has.
     vis = np.moveaxis(vis, plan.src_positions, list(range(1, len(plan.src_positions) + 1)))
-    for i, idx in enumerate(plan.selected_indices):
-        vis = np.take(vis, idx, axis=2 + i)
+    for i, sel in enumerate(plan.selectors):
+        if isinstance(sel, slice):
+            vis = vis[(slice(None),) * (2 + i) + (sel,)]
+        else:
+            vis = np.take(vis, sel, axis=2 + i)
 
-    data = vis[:, 0].astype(np.float64) + 1j * vis[:, 1].astype(np.float64)
-    weight = vis[:, 2].astype(np.float64)
-    return data, weight
+    data_out.real = vis[:, 0]
+    data_out.imag = vis[:, 1]
+    weight_out[...] = vis[:, 2]
+    del vis, raw
 
 
 def _block(index: RowIndex, plan: _ReadPlan, row_indices: np.ndarray, data, weight) -> VisibilityBlock:
@@ -203,29 +221,56 @@ def iter_visibility_chunks(
         max_chunk_bytes = int(host_total_memory_bytes() * ram_fraction)
     rows_per_chunk = max(1, max_chunk_bytes // plan.row_bytes)
 
-    pending_rows, pending_data, pending_weight = [], [], []
-    n_pending = 0
+    for pieces in _chunk_pieces(row_indices, rows_per_chunk):
+        rows = np.concatenate([np.arange(a, b) for a, b in pieces])
+        if not read_data:
+            yield _block(index, plan, rows, None, None)
+            continue
+        data = np.empty((len(rows), *plan.selected_shape), dtype=np.complex64)
+        weight = np.empty((len(rows), *plan.selected_shape), dtype=np.float32)
+        pos = 0
+        for a, b in pieces:
+            _read_run_into(fits_path, index, plan, a, b, data[pos : pos + b - a], weight[pos : pos + b - a])
+            pos += b - a
+        yield _block(index, plan, rows, data, weight)
+
+
+def _chunk_pieces(row_indices: np.ndarray, rows_per_chunk: int) -> list[list[tuple[int, int]]]:
+    """The selection's contiguous runs, split and grouped into chunks of at
+    most `rows_per_chunk` rows: each chunk a list of (start, stop) pieces."""
+    chunks, current, n_current = [], [], 0
     for run_start, run_stop in _contiguous_runs(row_indices):
         start = run_start
         while start < run_stop:
-            stop = min(run_stop, start + rows_per_chunk - n_pending)
-            data, weight = _read_run(fits_path, index, plan, start, stop) if read_data else (None, None)
-            pending_rows.append(np.arange(start, stop))
-            pending_data.append(data)
-            pending_weight.append(weight)
-            n_pending += stop - start
+            stop = min(run_stop, start + rows_per_chunk - n_current)
+            current.append((start, stop))
+            n_current += stop - start
             start = stop
-            if n_pending == rows_per_chunk:
-                yield _pending_block(index, plan, pending_rows, pending_data, pending_weight)
-                pending_rows, pending_data, pending_weight = [], [], []
-                n_pending = 0
-    if n_pending:
-        yield _pending_block(index, plan, pending_rows, pending_data, pending_weight)
+            if n_current == rows_per_chunk:
+                chunks.append(current)
+                current, n_current = [], 0
+    if current:
+        chunks.append(current)
+    return chunks
 
 
-def _pending_block(index, plan, pending_rows, pending_data, pending_weight) -> VisibilityBlock:
-    rows = np.concatenate(pending_rows)
-    if pending_data[0] is None:
-        return _block(index, plan, rows, None, None)
-    return _block(index, plan, rows, np.concatenate(pending_data), np.concatenate(pending_weight))
-
+def slice_block(block: VisibilityBlock, start: int, stop: int) -> VisibilityBlock:
+    """Rows [start, stop) of a block, as views -- for splitting a chunk
+    across worker threads."""
+    rows = slice(start, stop)
+    return VisibilityBlock(
+        row_indices=block.row_indices[rows],
+        data=block.data[rows] if block.data is not None else None,
+        weight=block.weight[rows] if block.weight is not None else None,
+        axis_types=block.axis_types,
+        axis_indices=block.axis_indices,
+        ant1=block.ant1[rows],
+        ant2=block.ant2[rows],
+        source_id=block.source_id[rows],
+        jd=block.jd[rows],
+        uu_sec=block.uu_sec[rows],
+        vv_sec=block.vv_sec[rows],
+        ww_sec=block.ww_sec[rows],
+        chan_freqs_hz=block.chan_freqs_hz,
+        stokes_labels=block.stokes_labels,
+    )

@@ -40,7 +40,7 @@ def test_samples_drop_flagged_unless_shown():
     weight[0, 0, 0] = -1.0
     values = ChunkValues(_block([0, 1], weight=weight), CTX)
     x, _, _, flagged = values.samples(PlotSpec(y="amp", x="time_h"))
-    assert x.size == 7 and not flagged.any()
+    assert x.size == 7 and flagged is None  # None: no flagged sample is drawn
     x, _, _, flagged = values.samples(PlotSpec(y="amp", x="time_h", show_flagged=True))
     assert x.size == 8 and flagged.sum() == 1
 
@@ -56,8 +56,11 @@ def test_run_stream_feeds_every_chunk_and_can_stop_early():
     seen = []
 
     class Recorder:
-        def update(self, values):
-            seen.append(values.block.row_indices.tolist())
+        def compute(self, values):
+            return values.block.row_indices.tolist()
+
+        def apply(self, rows):
+            seen.append(rows)
 
     assert run_stream([_block([0]), _block([1]), _block([2])], CTX, [Recorder()]) is True
     assert seen == [[0], [1], [2]]
@@ -134,3 +137,52 @@ def test_range_reducer_mirror_covers_the_negated_values():
     rx = RangeReducer(plot, "x")
     run_stream([_block([1, 2])], CTX, [rx])
     assert (rx.lo, rx.hi) == pytest.approx((-2.0, 2.0))
+
+
+def test_threaded_stream_gives_the_same_grid_as_one_thread():
+    weight = np.ones((40, 2, 3))
+    weight[::7, 1, :] = -1.0
+    chunks = [_block(range(0, 40), weight=weight, n_chan=3), _block(range(40, 55), n_chan=3)]
+    plot = PlotSpec(y="amp", x="time_h", colorize_by="stokes", show_flagged=True, mirror=True)
+
+    import visplot.stream as stream
+
+    grids = []
+    for threads in (1, 4):
+        grid = GridReducer(plot, (-60.0, 60.0), (-60.0, 60.0), height=37, width=41)
+        min_rows = stream.MIN_ROWS_PER_THREAD
+        stream.MIN_ROWS_PER_THREAD = 1  # split these small chunks, to exercise the threads
+        try:
+            run_stream(chunks, CTX, [grid], threads=threads)
+        finally:
+            stream.MIN_ROWS_PER_THREAD = min_rows
+        grids.append(grid)
+    np.testing.assert_array_equal(grids[0].layers, grids[1].layers)
+    assert grids[0].n_samples == grids[1].n_samples
+    assert grids[0].seen_codes == grids[1].seen_codes
+
+
+def test_prefetched_stream_raises_reader_errors():
+    def failing_chunks():
+        yield _block([0])
+        raise OSError("disk went away")
+
+    grid = GridReducer(PlotSpec(y="amp", x="time_h"), (0.0, 1.0), (0.0, 1.0), height=2, width=2)
+    with pytest.raises(OSError, match="disk went away"):
+        run_stream(failing_chunks(), CTX, [grid])
+
+
+def test_prefetched_stream_stops_its_reader_when_stopped_early():
+    import threading
+
+    produced = []
+
+    def chunks():
+        for i in range(100):
+            produced.append(i)
+            yield _block([i])
+
+    grid = GridReducer(PlotSpec(y="amp", x="time_h"), (0.0, 200.0), (0.0, 200.0), height=4, width=4)
+    assert run_stream(chunks(), CTX, [grid], on_chunk=lambda rows: rows < 3) is False
+    assert len(produced) < 10  # the reader stayed at most a chunk or two ahead
+    assert not any(t.name == "visplot-reader" for t in threading.enumerate())

@@ -138,7 +138,7 @@ def test_geometry_preset_reads_no_visibility_data(monkeypatch):
     def fail(*args, **kwargs):
         raise AssertionError("a geometry preset read visibility data")
 
-    monkeypatch.setattr(vd, "_read_run", fail)
+    monkeypatch.setattr(vd, "_read_run_into", fail)
     assert main(["visplot", str(path), "--plots", "ha-range", "--output-dir", str(scratch / "out"),
                  "--no-highres-pdf"]) == 0
     plt.close("all")

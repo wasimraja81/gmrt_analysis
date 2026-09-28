@@ -393,6 +393,55 @@ Buildable now, ahead of Phase C.
   `astrometry.local_sidereal_time_hours` takes ~10 s on first use per process (astropy
   looking up UT1 from IERS tables), which geometry quantities inherit.
 
+- **T23 — visPlot streaming speed and per-plot memory — DONE (2026-09-28).** From the T22
+  review (user's points A and E). Before: one pass over 3C286 RR (6.8 GB, in the OS cache)
+  took 33.2 s (205 MB/s), CPU-bound: `np.take` copying full chunks along unselected axes,
+  `np.unique` sorting every chunk's samples, pixel arithmetic, dtype conversions.
+  Changes:
+  - the reader copies each selected Stokes/channel range straight from the file into
+    the chunk's buffer (complex64 / float32, the file's precision), slicing where a
+    selection is contiguous; amplitude and phase are computed in float64, so binning
+    matches the earlier float64 results pixel for pixel (checked: 266,386 pixels both);
+  - samples carry no per-sample category or flag arrays when a plot has none; pixel
+    indices are computed in place; categories are counted with `np.bincount`;
+  - reducers split into `compute` (thread-safe) and `apply` (one thread, row order): a
+    chunk's row blocks are computed by worker threads (default 6, `--threads`), results
+    applied in order, so the grid is identical for any thread count (tested);
+  - a reader thread reads the next chunk while the current one is computed (at most
+    one chunk waiting, in memory; nothing written to disk);
+  - within a chunk, each plot's samples are released once its reducers have them.
+  Measured (same pass, cached): 9.5 s single-threaded, 7.1 s with the reader overlap,
+  4.5 s with 6 threads (1.5 GB/s), identical samples and pixels. Uncached (3C345, 8.7
+  GB): 181 MB/s, the disk's rate, so the CPU no longer sets the pace. Worst-case working
+  memory (all Stokes, colored, 6 threads): 2.66 GB peak for 256 MiB chunks (was 3.73 GB),
+  ~9.2 per chunk byte; `STREAM_MEMORY_PER_CHUNK_BYTE = 10`.
+
+- **T24 — visPlot selection summaries on disk — NOT STARTED (added 2026-09-28).** From
+  the review (point B). The range pass's results for a selection (per-axis min/max and a
+  value histogram, plus per-row min/max of the visibility quantities) saved to a
+  directory the user names, so a later run or zoom over the same selection skips the
+  pass or skips rows. The user asked for no trash without an easy cleanup: files only in
+  the named directory, one clear filename prefix, written under a temporary name and
+  renamed when complete, and a command that removes them.
+
+- **T25 — visPlot axis range modes and scaling — NOT STARTED (added 2026-09-28).** From
+  the review (point C). Range from the data's min/max (default, outliers visible) or a
+  percentile range, and axis scales (linear, log, symlog, asinh).
+
+- **T26 — visPlot inspection window — DESIGN (added 2026-09-28).** From the review (point
+  F): an interactive window for locating samples, flagging (to a flag table, never the
+  raw file), iterating pages (per baseline, antenna, source), and exporting any plot in
+  the usual formats. Design to be presented for review before building.
+
+- **T27 — Astrometry without network access — NOT STARTED (added 2026-09-28).** From the
+  review (point G). `astrometry.local_sidereal_time_hours` asks astropy for UT1, which
+  may try to download IERS tables (~10 s per process here). Try the online tables, fall
+  back to astropy's bundled tables, and if the date is outside those too, compute with
+  UT1 = UTC and warn that hour angle may be off by up to 0.9 s of time (~0.00025 h).
+
+- **T19 review point D** (progressive chunk order, instant zoom preview, zoom pruning,
+  re-bin on resize): on hold until the user has tried the interactive windows.
+
 ### Phase C — Primary Calibration (3C48)
 
 - **T5a — Core per-channel gain solve (generic, `src/engine/bandpass_solve.py`) — DONE
