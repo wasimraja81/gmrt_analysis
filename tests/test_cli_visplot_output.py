@@ -232,3 +232,26 @@ def test_cache_dir_skips_the_range_pass_on_a_repeat_run_and_clear_cache_removes_
     assert "removed 2 visplot cache file(s)" in capsys.readouterr().out
     assert list(cache_dir.iterdir()) == []
     plt.close("all")
+
+
+def test_locate_from_the_command_line_writes_every_sample(capsys):
+    scratch = make_scratch_dir("cli_visplot_locate")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    csv_path = scratch / "located.csv"
+    assert main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--locate", "400.5:401.5,4.5:6.5",
+                 "--locate-csv", str(csv_path)]) == 0
+    assert "located 4 samples on 2 baselines" in capsys.readouterr().out
+    rows = [line for line in csv_path.read_text().splitlines() if not line.startswith("#")]
+    assert len(rows) == 1 + 4
+
+
+def test_locate_needs_one_plot_and_a_csv(capsys):
+    scratch = make_scratch_dir("cli_visplot_locate_errors")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    with pytest.raises(SystemExit):
+        main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--locate", "0:1,0:1"])
+    assert "--locate needs --locate-csv" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        main(["visplot", str(path), "--plots", "amp-vs-freq_mhz,amp-vs-time_h", "--locate", "0:1,0:1",
+              "--locate-csv", str(scratch / "x.csv")])
+    assert "exactly one streamed plot" in capsys.readouterr().err

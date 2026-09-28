@@ -94,12 +94,32 @@ def test_locate_lists_the_samples_in_a_box_and_saves_them():
     assert window.locate_table.rowCount() == 4
     assert "4 samples in the box" in window.locate_summary.text()
     path = scratch / "located.csv"
-    from visplot.qt_inspector import save_locate_csv
+    window.save_locate_csv(str(path))  # all 4 were kept: written from memory
+    rows = [line for line in path.read_text().splitlines() if not line.startswith("#")]
+    assert rows[0].startswith("baseline,ant1,ant2,time_utc,jd,channel,freq_mhz,stokes")
+    assert len(rows) == 1 + 4
+    assert rows[1].split(",")[0] in {"C00:01-C01:02", "C00:01-C02:03", "C01:02-C02:03"}
+    assert "# total: 4 samples in the box, all listed above" in path.read_text()
+    window.close()
 
-    save_locate_csv(path, window.locate, window.source.ctx)
-    lines = path.read_text().splitlines()
-    assert lines[0].startswith("# 4 samples in the box")
-    assert lines[-1].split(",")[0] in {"C00:01-C01:02", "C00:01-C02:03", "C01:02-C02:03"}
+
+def test_saving_more_located_samples_than_the_table_keeps_reads_again_and_writes_all(monkeypatch):
+    import visplot.qt_inspector as qi
+
+    monkeypatch.setattr(qi, "LOCATE_LIMIT", 3)
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, scratch = _window("qt_locate_all", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    window._locate(panel, SimpleNamespace(xdata=399.5, ydata=0.0), SimpleNamespace(xdata=403.5, ydata=100.0))
+    _wait(app, window)
+    assert window.locate.n_found == 319 and window.locate_table.rowCount() == 3  # the table keeps 3
+    path = scratch / "all.csv"
+    window.save_locate_csv(str(path))
+    _wait(app, window)
+    rows = [line for line in path.read_text().splitlines() if not line.startswith("#")]
+    assert len(rows) == 1 + 319  # header + every located sample
+    assert not list(scratch.glob("*.partial"))
     window.close()
 
 

@@ -397,20 +397,53 @@ class GridReducer:
         return self.layers.reshape(self.height, self.width)
 
 
+LOCATE_FIELDS = ("row", "ant1", "ant2", "jd", "source_id", "channel", "freq_hz", "stokes",
+                 "x", "y", "weight", "mirrored")
+
+
 class LocateReducer:
     """The samples of a plot inside a box (x_box, y_box in data units), with
-    where each comes from: up to `limit` of them in detail, and the count of
-    all of them by baseline. A plot that does not vary along an axis (e.g.
-    hour angle vs time, one value per row) reports that axis as "all"."""
+    where each comes from: the first `limit` kept (for a table), every one
+    counted by baseline, and every one passed to `sink` if given (e.g. a CSV
+    writer), in row order. A plot that does not vary along an axis (e.g. hour
+    angle vs time, one value per row) reports that axis as "all" (channel -1,
+    Stokes "all").
 
-    def __init__(self, plot: PlotSpec, x_box, y_box, limit: int = 10_000):
+    Samples are handled as columns (`LOCATE_FIELDS`), one array per field per
+    chunk, so memory is bounded by the chunk however many samples fall in
+    the box."""
+
+    def __init__(self, plot: PlotSpec, x_box, y_box, limit: int = 10_000, sink=None):
         self.plot = plot
         self.x_box = tuple(sorted(float(v) for v in x_box))
         self.y_box = tuple(sorted(float(v) for v in y_box))
         self.limit = limit
-        self.records: list[dict] = []
+        self.sink = sink
+        self._kept: list[dict] = []  # column dicts, up to `limit` samples in total
+        self._n_kept = 0
         self.n_found = 0
         self.by_baseline: Counter = Counter()
+
+    @property
+    def kept_all(self) -> bool:
+        """Whether every located sample was kept (none beyond `limit`)."""
+        return self.n_found <= self.limit
+
+    def kept_columns(self) -> list[dict]:
+        """The kept samples, as the column dicts `sink` receives."""
+        return list(self._kept)
+
+    @property
+    def records(self) -> list[dict]:
+        """The kept samples, one dict per sample."""
+        out = []
+        for columns in self._kept:
+            for i in range(len(columns["row"])):
+                out.append({f: _plain(columns[f][i]) for f in LOCATE_FIELDS})
+        for r in out:
+            r["channel"] = None if r["channel"] < 0 else r["channel"]
+            r["stokes"] = None if r["stokes"] == "all" else r["stokes"]
+        return out
 
     def compute(self, values: ChunkValues):
         block = values.block
@@ -428,7 +461,7 @@ class LocateReducer:
             weight = None
         (x0, x1), (y0, y1) = self.x_box, self.y_box
 
-        found, counts, n_found = [], Counter(), 0
+        pieces, counts, n_found = [], Counter(), 0
         for sign in ((1.0, -1.0) if self.plot.mirror else (1.0,)):
             with np.errstate(invalid="ignore"):
                 sx, sy = sign * x, sign * y
@@ -440,42 +473,60 @@ class LocateReducer:
             if not n:
                 continue
             n_found += n
-            rows = index[0]
-            pairs = np.stack([block.ant1[rows], block.ant2[rows]], axis=1).astype(np.int64)
+            columns = self._columns(block, index, sx, sy, weight, sign < 0)
+            pairs = np.stack([columns["ant1"], columns["ant2"]], axis=1)
             unique, pair_counts = np.unique(pairs, axis=0, return_counts=True)
             counts.update({(int(a), int(b)): int(c) for (a, b), c in zip(unique, pair_counts)})
-            keep = slice(0, max(0, self.limit - len(found)))
-            for position in range(len(rows[keep])):
-                found.append(self._record(block, index, position, sx, sy, weight, sign < 0))
-        return n_found, found, counts
+            pieces.append(columns)
+        return n_found, pieces, counts
 
-    def _record(self, block, index, position, sx, sy, weight, mirrored) -> dict:
-        at = tuple(axis_index[position] for axis_index in index)
-        r = at[0]
-        record = {
-            "row": int(block.row_indices[r]), "ant1": int(block.ant1[r]), "ant2": int(block.ant2[r]),
-            "jd": float(block.jd[r]), "source_id": int(block.source_id[r]),
-            "x": float(sx[at]), "y": float(sy[at]),
-            "weight": float(weight[at]) if weight is not None else float("nan"), "mirrored": mirrored,
-            "channel": None, "freq_hz": float("nan"), "stokes": None,
+    def _columns(self, block, index, sx, sy, weight, mirrored: bool) -> dict:
+        rows = index[0]
+        n = len(rows)
+        columns = {
+            "row": block.row_indices[rows].astype(np.int64),
+            "ant1": block.ant1[rows].astype(np.int64),
+            "ant2": block.ant2[rows].astype(np.int64),
+            "jd": block.jd[rows].astype(np.float64),
+            "source_id": block.source_id[rows].astype(np.int64),
+            "channel": np.full(n, -1, dtype=np.int64),
+            "freq_hz": np.full(n, np.nan),
+            "stokes": np.full(n, "all", dtype=object),
+            "x": np.asarray(sx[index], dtype=np.float64),
+            "y": np.asarray(sy[index], dtype=np.float64),
+            "weight": np.asarray(weight[index], dtype=np.float64) if weight is not None else np.full(n, np.nan),
+            "mirrored": np.full(n, mirrored),
         }
         for k, axis_type in enumerate(block.axis_types, start=1):
             full = len(block.axis_indices[axis_type])
-            varies = sx.shape[k] == full and full > 0
-            if axis_type == "FREQ" and varies:
-                record["channel"] = int(block.axis_indices["FREQ"][at[k]])
-                record["freq_hz"] = float(block.chan_freqs_hz[at[k]])
-            elif axis_type == "STOKES" and varies and block.stokes_labels:
-                record["stokes"] = block.stokes_labels[at[k]]
-        return record
+            if sx.shape[k] != full or full == 0:
+                continue  # the plot does not vary along this axis: "all"
+            if axis_type == "FREQ":
+                columns["channel"] = np.asarray(block.axis_indices["FREQ"])[index[k]].astype(np.int64)
+                columns["freq_hz"] = np.asarray(block.chan_freqs_hz)[index[k]].astype(np.float64)
+            elif axis_type == "STOKES" and block.stokes_labels:
+                columns["stokes"] = np.asarray(block.stokes_labels, dtype=object)[index[k]]
+        return columns
 
     def apply(self, result) -> None:
-        n_found, found, counts = result
+        """Count, keep the first `limit`, and pass every sample to `sink`
+        (one thread only, in row order)."""
+        n_found, pieces, counts = result
         self.n_found += n_found
         self.by_baseline.update(counts)
-        room = self.limit - len(self.records)
-        if room > 0:
-            self.records.extend(found[:room])
+        for columns in pieces:
+            if self.sink is not None:
+                self.sink(columns)
+            room = self.limit - self._n_kept
+            if room > 0:
+                kept = {f: v[:room] for f, v in columns.items()}
+                self._kept.append(kept)
+                self._n_kept += len(kept["row"])
 
     def update(self, values: ChunkValues) -> None:
         self.apply(self.compute(values))
+
+
+def _plain(value):
+    """A numpy scalar as the native Python value (for records and tables)."""
+    return value.item() if hasattr(value, "item") else value

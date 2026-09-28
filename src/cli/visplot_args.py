@@ -145,3 +145,13 @@ def resolve_percentiles_arg(spec: str) -> tuple[float, float]:
     if not 0.0 <= lo < hi <= 100.0:
         raise ValueError(f"--range-percentiles needs 0 <= LO < HI <= 100, got {spec!r}")
     return lo, hi
+
+
+def resolve_locate_box_arg(spec: str | None) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    """--locate 'XLO:XHI,YLO:YHI': a box in the plot's own axis units."""
+    if not spec:
+        return None
+    parts = spec.split(",")
+    if len(parts) != 2:
+        raise ValueError(f"--locate takes 'XLO:XHI,YLO:YHI', got {spec!r}")
+    return parse_single_range(parts[0]), parse_single_range(parts[1])

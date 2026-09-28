@@ -6,8 +6,8 @@ beside matplotlib's own zoom/pan/save:
 
 - Locate: drag a box; the selection is read once and every sample inside is
   listed (baseline, UTC time, channel and frequency, Stokes, values,
-  weight), the first `LOCATE_LIMIT` in detail and all counted by baseline;
-  the list can be saved as CSV.
+  weight), the first `LOCATE_LIMIT` in the table and all counted by baseline;
+  "Save all as CSV" writes every one of them (`locate_csv`).
 - Export: the current view re-read at a chosen dpi and saved (PNG, PDF,
   SVG, EPS, TIFF, JPEG), since the window's own image is at screen
   resolution.
@@ -32,6 +32,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolb
 from matplotlib.widgets import RectangleSelector
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from visplot.locate_csv import LocateCsvWriter, write_kept
 from visplot.plot_spec import PlotSpec
 from visplot.stream import GridReducer, LocateReducer
 from visplot.xy_figure import XYFigure, grid_summary
@@ -173,7 +174,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self.locate_table = QtWidgets.QTableWidget(0, len(_LOCATE_COLUMNS))
         self.locate_table.setHorizontalHeaderLabels([c for c, _ in _LOCATE_COLUMNS])
         self.locate_table.setSortingEnabled(True)
-        self.save_locate_button = QtWidgets.QPushButton("Save as CSV…")
+        self.save_locate_button = QtWidgets.QPushButton("Save all as CSV…")
+        self.save_locate_button.setToolTip("Every located sample (the table shows the first 10,000)")
         self.save_locate_button.setEnabled(False)  # until something is located
         self.save_locate_button.clicked.connect(self._save_locate_csv)
         layout.addWidget(self.locate_summary)
@@ -367,7 +369,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
         baselines = ", ".join(f"{_baseline(a, b, names)}: {n:,}" for (a, b), n in top)
         more = f" (listing the first {shown:,})" if shown < locate.n_found else ""
         self.locate_summary.setText(
-            f"{locate.n_found:,} samples in the box{more}, on {len(locate.by_baseline):,} baselines. "
+            f"{locate.n_found:,} samples in the box{more}, on {len(locate.by_baseline):,} "
+            f"baseline{'s' if len(locate.by_baseline) != 1 else ''}. "
             f"Most: {baselines}" if locate.n_found else "no samples in the box")
         rows = locate_rows(locate.records, self.source.ctx)
         table = self.locate_table
@@ -387,8 +390,33 @@ class InspectorWindow(QtWidgets.QMainWindow):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save located samples", "located_samples.csv",
                                                         "CSV (*.csv)")
         if path:
-            save_locate_csv(path, self.locate, self.source.ctx)
-            self.statusBar().showMessage(f"saved {path}")
+            self.save_locate_csv(path)
+
+    def save_locate_csv(self, path: str) -> None:
+        """Every located sample to `path`: from memory when all were kept,
+        otherwise by reading the selection again and writing each sample as
+        it is found."""
+        located = self.locate
+        if located.kept_all:
+            write_kept(path, located, self.source.ctx, fits_path=self.source.fits_path)
+            self.statusBar().showMessage(f"saved {located.n_found:,} located samples to {path}")
+            return
+        again = LocateReducer(located.plot, located.x_box, located.y_box, limit=0)
+        writer = LocateCsvWriter(path, again, self.source.ctx, fits_path=self.source.fits_path)
+        again.sink = writer
+        read_data = located.plot.needs_data
+
+        def run(on_chunk):
+            return self.source.stream([again], read_data=read_data, on_chunk=on_chunk)
+
+        def done(job):
+            written = writer.close(again, completed=job.completed and job.error is None)
+            self.statusBar().showMessage(
+                f"saved {again.n_found:,} located samples to {written}" if written
+                else "saving the located samples stopped before the end; no file written")
+
+        self._queue(_Job("locate-csv", f"writing all {located.n_found:,} located samples", run, done,
+                         self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
 
     # ---- export ---------------------------------------------------------------
 
@@ -469,18 +497,6 @@ def locate_rows(records: list[dict], ctx) -> list[list]:
             sources.get(r["source_id"], str(r["source_id"])),
         ])
     return rows
-
-
-def save_locate_csv(path, locate: LocateReducer, ctx) -> None:
-    names = ctx.antenna_names or {}
-    with open(path, "w", newline="") as f:
-        f.write(f"# {locate.n_found} samples in the box x={locate.x_box} y={locate.y_box} "
-                f"of plot {locate.plot.title}; {len(locate.records)} listed\n")
-        for (a, b), n in sorted(locate.by_baseline.items(), key=lambda kv: -kv[1]):
-            f.write(f"# baseline {_baseline(a, b, names)}: {n}\n")
-        writer = csv.writer(f)
-        writer.writerow([c for c, _ in _LOCATE_COLUMNS])
-        writer.writerows(locate_rows(locate.records, ctx))
 
 
 def run_inspector(source: XYSource, figures: list[tuple[str, object]], labels, cache=None, cached=None) -> int:

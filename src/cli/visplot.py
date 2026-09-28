@@ -27,7 +27,8 @@ import matplotlib
 # The backend must be chosen before any submodule imports pyplot: Agg
 # (headless, file-only) when only saving is requested, since no display
 # may be available at all in that case; otherwise Qt, for the inspection window.
-matplotlib.use("Agg" if "--output-dir" in sys.argv or "--clear-cache" in " ".join(sys.argv) else "QtAgg")
+_HEADLESS_OPTIONS = ("--output-dir", "--clear-cache", "--locate")
+matplotlib.use("Agg" if any(a.split("=")[0] in _HEADLESS_OPTIONS for a in sys.argv[1:]) else "QtAgg")
 
 import numpy as np
 from astropy.io import fits
@@ -42,6 +43,7 @@ from cli.visplot_args import (  # noqa: E402
     resolve_deg_range_arg,
     resolve_ha_range_arg,
     resolve_klambda_range_arg,
+    resolve_locate_box_arg,
     resolve_percentiles_arg,
     resolve_plain_range_arg,
     resolve_stokes_axis_selection,
@@ -55,11 +57,13 @@ from data_io.row_index import default_row_index_path, load_row_index  # noqa: E4
 from data_io.row_selection import select_rows  # noqa: E402
 from data_io.source_table import read_source_table  # noqa: E402
 from visplot.antenna_layout import antenna_layout  # noqa: E402
+from visplot.locate_csv import LocateCsvWriter  # noqa: E402
 from visplot.axis_scale import SCALE_NAMES  # noqa: E402
 from visplot.plot_spec import PlotSpec, expand_plot_name  # noqa: E402
 from visplot.quantities import QUANTITIES, context_from_source_table  # noqa: E402
 from visplot.range_cache import RangeCache, clear_cache  # noqa: E402
 from visplot.source_listing import source_listing  # noqa: E402
+from visplot.stream import LocateReducer  # noqa: E402
 from visplot.xy_figure import XYFigure, grid_summary  # noqa: E402
 from visplot.xy_session import (  # noqa: E402
     DEFAULT_STREAM_THREADS,
@@ -263,6 +267,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="skip PREFIX_highres.pdf (write only the PNGs and PREFIX_lowres.pdf)",
     )
 
+    locate = parser.add_argument_group("locate (without a window)")
+    locate.add_argument(
+        "--locate", metavar="XLO:XHI,YLO:YHI",
+        help="list every sample of the plot inside this box (in the plot's axis units) into --locate-csv; "
+        "needs exactly one streamed plot; runs without a window",
+    )
+    locate.add_argument("--locate-csv", metavar="FILE", help="CSV file for --locate")
+
     cache = parser.add_argument_group("cache (files only where you name a directory)")
     cache.add_argument(
         "--cache-dir", metavar="DIR",
@@ -336,6 +348,9 @@ def main(argv: list[str]) -> int:
         x_range = resolve_plain_range_arg(args.x_range)
         y_range = resolve_plain_range_arg(args.y_range)
         range_percentiles = resolve_percentiles_arg(args.range_percentiles)
+        locate_box = resolve_locate_box_arg(args.locate)
+        if locate_box is not None and not args.locate_csv:
+            raise ValueError("--locate needs --locate-csv FILE")
         if args.scale_linear_width <= 0:
             raise ValueError("--scale-linear-width must be positive")
         for axis, scale, fixed in (("x", args.x_scale, x_range), ("y", args.y_scale, y_range)):
@@ -428,12 +443,23 @@ def main(argv: list[str]) -> int:
         for stale in cache.remove_stale_partials():
             print(f"removed {stale} (left by an earlier run that stopped while writing)")
     cached = cached_ranges(source, xy_plots, cache)
-    if xy_plots:
+    if xy_plots and (locate_box is None or args.output_dir):
         for line in describe_passes(source, xy_plots, cached):
             print(line)
+    elif locate_box is not None:
+        reads = (f"reads visibility data, {source.n_rows * source.row_bytes / 1e9:.1f} GB"
+                 if xy_plots[0].needs_data else "row metadata only, no visibility data read")
+        print(f"one pass: locate the samples of {xy_plots[0].title} in the box ({reads})")
     _report_ut1(index, selection, xy_plots, xy_figures, geometry_filters=select_kwargs.get("source_table") is not None)
     n_passes = 2 if [k for k in range_pass_axes(xy_plots) if k not in cached] else 1
     labels = (f"pass 1 of {n_passes}: finding data ranges", f"pass {n_passes} of {n_passes}: drawing")
+
+    if locate_box is not None:
+        if len(xy_plots) != 1:
+            parser.error(f"--locate needs exactly one streamed plot; --plots gives {len(xy_plots)}")
+        _locate_to_csv(source, xy_plots[0], locate_box, args.locate_csv, fits_path)
+        if not args.output_dir:
+            return 0
 
     # Figures in the order the plots were named.
     figures: list[tuple[str, object]] = []
@@ -477,6 +503,17 @@ def _report_ut1(index, selection, xy_plots, xy_figures, geometry_filters: bool) 
         print(f"WARNING: {fallback_message()}", file=sys.stderr)
         for p in geometry_plots:
             xy_figures[p].set_note("UT1 = UTC assumed: hour angle may be off by up to 0.9 s of time")
+
+
+def _locate_to_csv(source, plot, box, csv_path, fits_path) -> None:
+    locate = LocateReducer(plot, box[0], box[1], limit=0)
+    writer = LocateCsvWriter(csv_path, locate, source.ctx, fits_path=fits_path)
+    locate.sink = writer
+    progress = pass_progress(source, "locating samples", plot.needs_data)
+    completed = source.stream([locate], read_data=plot.needs_data, on_chunk=_terminal_progress(progress))
+    written = writer.close(locate, completed)
+    n = len(locate.by_baseline)
+    print(f"located {locate.n_found:,} samples on {n:,} baseline{'s' if n != 1 else ''}; wrote {written}")
 
 
 def _save_outputs(args, source, xy_plots, xy_figures, extents, figures, draw_label) -> None:

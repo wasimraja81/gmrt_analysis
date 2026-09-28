@@ -513,11 +513,17 @@ Buildable now, ahead of Phase C.
   pruning (skip rows or channels outside the new limits for time, u/v/w, uv distance and
   frequency); re-bin on window resize. To be built with the GUI (T32), where they matter.
 
-- **T28 — Locate: save every located sample — NOT STARTED (added 2026-09-28).** User's
-  question: the table and the CSV stop at the first 10,000 samples (the CSV adds only
-  the total and per-baseline counts). Add "Save all as CSV": the locate pass writes every
-  located sample to the chosen file as it finds them (memory bounded); the table keeps
-  the first 10,000.
+- **T28 — Locate: save every located sample — DONE (2026-09-28).** User's question: the
+  table and the CSV stopped at the first 10,000 samples. `LocateReducer` now works in
+  columns (one array per field per chunk) with an optional sink; `visplot/locate_csv.py`
+  writes every located sample as it is found (memory bounded by the chunk), as
+  `<name>.<pid>.partial` renamed when complete, with readable and exact columns
+  (baseline names and station numbers, UTC and JD, channel and frequency, Stokes, x, y,
+  weight, mirrored, row, source) and the totals by baseline at the end. The window's
+  "Save all as CSV" writes from memory when every sample was kept, otherwise reads the
+  selection again; the table keeps the first 10,000. CLI parity: `--locate
+  XLO:XHI,YLO:YHI --locate-csv FILE` (one streamed plot; no window). On 3C286 RR, a CLI
+  locate at 36-37.5 kλ wrote all 30,045 samples (E06:19-S06:24) in 3 s.
 
 - **T29 — Plot aspect — NOT STARTED (added 2026-09-28).** Equal aspect when x and y share
   a unit (u vs v, real vs imag), free otherwise (amp vs time, amp vs uv distance); a
@@ -537,8 +543,9 @@ Buildable now, ahead of Phase C.
   `provenance/manifest.py`'s RunManifest (stage "visplot"): host, UTC time, git commit
   and branch with the dirty diff, Python and key package versions, fingerprints of the
   FITS file and its row index, and the outputs. The user: "absolute reproducibility
-  required! No compromise. Record the host name as well." Where records go (a directory
-  the user names, with a visible default) to be settled with the GUI design.
+  required! No compromise. Record the host name as well." Records go to `./visplot_runs/`
+  (the directory visplot starts from) by default, shown in the GUI and printed by the
+  CLI, changeable with `--provenance-dir` (user's choice, 2026-09-28).
 
 - **T32 — visplot GUI — DESIGN (added 2026-09-28).** A plotms-style front end on the
   existing engine: file and selection controls, x/y from the quantity registry with units
@@ -546,7 +553,8 @@ Buildable now, ahead of Phase C.
   The CLI stays first-class (programmatic probes and batch generation); GUI and CLI share
   one request model, and every GUI setting has a CLI option. User's brief: "a
   professional design ... robust, efficient, fool-proof, good-looking". Design presented
-  for review before building. Folds in T19 point D and T26's remaining controls.
+  2026-09-28; the user chose to see the layout first (no wiring, a screenshot for review)
+  and then wire it. Folds in T19 point D and T26's remaining controls.
 
 - **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
   matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in
