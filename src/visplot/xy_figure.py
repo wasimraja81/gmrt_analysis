@@ -13,6 +13,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_rgba
+from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from visplot.plot_spec import PlotSpec
@@ -117,7 +118,9 @@ class XYFigure:
                  figsize=(8, 6)):
         self.plot = plot
         self.ctx = ctx
-        self.fig, self.ax = plt.subplots(figsize=figsize)
+        # A bare Figure (no pyplot): saved with savefig, or embedded in a Qt window.
+        self.fig = Figure(figsize=figsize)
+        self.ax = self.fig.add_subplot()
         self.ax.set_xlabel(quantity_label(plot.x, ctx))
         self.ax.set_ylabel(quantity_label(plot.y, ctx))
         self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path))

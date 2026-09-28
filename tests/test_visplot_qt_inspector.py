@@ -1,0 +1,119 @@
+"""The Qt inspection window, driven headlessly (Qt's offscreen platform)."""
+
+import os
+import time
+from types import SimpleNamespace
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import numpy as np
+import pytest
+
+pytest.importorskip("PySide6")
+# matplotlib's Qt backend reads a Qt attribute that Qt 6 marks deprecated; not from this code.
+pytestmark = pytest.mark.filterwarnings("ignore:Enum value 'Qt.*AA_UseHighDpiPixmaps' is marked as deprecated:DeprecationWarning")
+from PySide6 import QtWidgets  # noqa: E402
+
+from conftest import make_scratch_dir  # noqa: E402
+from data_io.antenna_table import read_antenna_table, read_array_earth_location  # noqa: E402
+from data_io.row_index import default_row_index_path, load_row_index  # noqa: E402
+from data_io.row_selection import select_rows  # noqa: E402
+from data_io.source_table import read_source_table  # noqa: E402
+from test_cli_visplot_output import _make_synthetic_file  # noqa: E402
+from visplot.plot_spec import PlotSpec  # noqa: E402
+from visplot.qt_inspector import InspectorWindow  # noqa: E402
+from visplot.quantities import context_from_source_table  # noqa: E402
+from visplot.xy_figure import XYFigure  # noqa: E402
+from visplot.xy_session import XYSource  # noqa: E402
+
+
+def _window(name, plot):
+    scratch = make_scratch_dir(name)
+    path = _make_synthetic_file(scratch / "obs.fits")
+    index = load_row_index(default_row_index_path(path))
+    selection = select_rows(index)
+    ctx = context_from_source_table(
+        float(index.jd.min()), read_source_table(path), read_array_earth_location(path), "UNCALIB",
+        index.stokes_labels, antenna_names={a.station_number: a.name for a in read_antenna_table(path)},
+    )
+    source = XYSource(path, index, selection.row_indices, None, ctx, chunk_bytes=64 * 1024)
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    figure = XYFigure(plot, ctx)
+    window = InspectorWindow(source, [("plot", figure)])
+    window.resize(900, 700)
+    window.show()
+    return app, window, scratch
+
+
+def _wait(app, window, timeout=30.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        app.processEvents()
+        if window.idle() and not window.to_draw and window.extents is not None:
+            return
+        time.sleep(0.02)
+    raise AssertionError("the window did not finish its jobs")
+
+
+def test_window_draws_every_sample_and_reports_it():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_draw", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    assert panel.drawn and panel.grid.n_samples == 40 * 4 * 2 - 1  # one sample flagged
+    assert panel.figure.status.get_text() == "319 samples from 40 rows"
+    window.close()
+
+
+def test_zoom_redraws_the_view_over_the_new_limits():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_zoom", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    panel.figure.ax.set_xlim(400.5, 402.5)  # channels 1 and 2 (401, 402 MHz)
+    panel.figure.ax.set_ylim(0.0, 50.0)
+    time.sleep(0.4)
+    app.processEvents()
+    time.sleep(0.4)
+    _wait(app, window)
+    assert panel.grid.x_extent == (400.5, 402.5)
+    assert panel.grid.n_samples == 40 * 2 * 2  # rows x the two channels x Stokes
+    window.close()
+
+
+def test_locate_lists_the_samples_in_a_box_and_saves_them():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, scratch = _window("qt_locate", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    press = SimpleNamespace(xdata=400.5, ydata=4.5)  # x 400.5-401.5: channel 1 (401 MHz)
+    release = SimpleNamespace(xdata=401.5, ydata=6.5)  # y 4.5-6.5: amp 5, 6, i.e. rows 4, 5
+    window._locate(panel, press, release)
+    _wait(app, window)
+    assert window.locate.n_found == 2 * 2  # rows 4, 5 x RR, LL at channel 1
+    assert window.locate_table.rowCount() == 4
+    assert "4 samples in the box" in window.locate_summary.text()
+    path = scratch / "located.csv"
+    from visplot.qt_inspector import save_locate_csv
+
+    save_locate_csv(path, window.locate, window.source.ctx)
+    lines = path.read_text().splitlines()
+    assert lines[0].startswith("# 4 samples in the box")
+    assert lines[-1].split(",")[0] in {"C00:01-C01:02", "C00:01-C02:03", "C01:02-C02:03"}
+    window.close()
+
+
+def test_export_re_reads_the_view_at_the_chosen_dpi():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, scratch = _window("qt_export", plot)
+    _wait(app, window)
+    path = scratch / "exported.png"
+    window.export(plot, str(path), dpi=200)
+    _wait(app, window)
+    assert path.exists() and path.stat().st_size > 0
+    from matplotlib.image import imread
+
+    height, width = imread(path).shape[:2]
+    fig_w, fig_h = window.panels[plot].figure.fig.get_size_inches()
+    assert (width, height) == (round(fig_w * 200), round(fig_h * 200))
+    window.close()

@@ -15,8 +15,10 @@ reducers passed and in the `on_chunk` callback.
 
 from __future__ import annotations
 
+import copy as _copy
 import queue
 import threading
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Iterable
 
@@ -310,6 +312,7 @@ class GridReducer:
         self.seen_codes: set[int] = set()
         self.n_samples = 0
         self.n_outside = 0  # samples outside the extent, or not showable on the axis scale
+        self._lock = threading.Lock()  # apply() and snapshot() may run on different threads
 
     def compute(self, values: ChunkValues):
         """This chunk's samples as (pixel, code, flagged) inside the grid, or
@@ -351,6 +354,10 @@ class GridReducer:
         """Write one block's samples into the grid (one thread only)."""
         if result is None:
             return
+        with self._lock:
+            self._apply(result)
+
+    def _apply(self, result) -> None:
         pixel, code, flagged, n_outside = result
         self.n_outside += n_outside
         if pixel.size == 0:
@@ -376,6 +383,99 @@ class GridReducer:
     def update(self, values: ChunkValues) -> None:
         self.apply(self.compute(values))
 
+    def snapshot(self) -> "GridReducer":
+        """A copy of the grid's current state, taken under the lock, for
+        drawing from another thread while this one keeps streaming."""
+        with self._lock:
+            copy = _copy.copy(self)
+            copy.layers = self.layers.copy()
+            copy.seen_codes = set(self.seen_codes)
+        return copy
+
     def layers_2d(self) -> np.ndarray:
         """The layer grid as (height, width), row 0 at the bottom (y0)."""
         return self.layers.reshape(self.height, self.width)
+
+
+class LocateReducer:
+    """The samples of a plot inside a box (x_box, y_box in data units), with
+    where each comes from: up to `limit` of them in detail, and the count of
+    all of them by baseline. A plot that does not vary along an axis (e.g.
+    hour angle vs time, one value per row) reports that axis as "all"."""
+
+    def __init__(self, plot: PlotSpec, x_box, y_box, limit: int = 10_000):
+        self.plot = plot
+        self.x_box = tuple(sorted(float(v) for v in x_box))
+        self.y_box = tuple(sorted(float(v) for v in y_box))
+        self.limit = limit
+        self.records: list[dict] = []
+        self.n_found = 0
+        self.by_baseline: Counter = Counter()
+
+    def compute(self, values: ChunkValues):
+        block = values.block
+        # Weights join the broadcast only when flags apply, as in `ChunkValues.samples`:
+        # a per-row plot without flags stays one sample per row.
+        use_flags = self.plot.apply_flags and block.weight is not None and not self.plot.show_flagged
+        parts = [values[self.plot.x], values[self.plot.y]] + ([block.weight] if use_flags else [])
+        arrays = np.broadcast_arrays(*parts)
+        x, y = arrays[0], arrays[1]
+        if use_flags:
+            weight = arrays[2]
+        elif block.weight is not None and block.weight.shape == x.shape:
+            weight = block.weight
+        else:
+            weight = None
+        (x0, x1), (y0, y1) = self.x_box, self.y_box
+
+        found, counts, n_found = [], Counter(), 0
+        for sign in ((1.0, -1.0) if self.plot.mirror else (1.0,)):
+            with np.errstate(invalid="ignore"):
+                sx, sy = sign * x, sign * y
+                inside = (sx >= x0) & (sx <= x1) & (sy >= y0) & (sy <= y1)
+            if use_flags:
+                inside &= arrays[2] > 0
+            index = np.nonzero(inside)
+            n = len(index[0])
+            if not n:
+                continue
+            n_found += n
+            rows = index[0]
+            pairs = np.stack([block.ant1[rows], block.ant2[rows]], axis=1).astype(np.int64)
+            unique, pair_counts = np.unique(pairs, axis=0, return_counts=True)
+            counts.update({(int(a), int(b)): int(c) for (a, b), c in zip(unique, pair_counts)})
+            keep = slice(0, max(0, self.limit - len(found)))
+            for position in range(len(rows[keep])):
+                found.append(self._record(block, index, position, sx, sy, weight, sign < 0))
+        return n_found, found, counts
+
+    def _record(self, block, index, position, sx, sy, weight, mirrored) -> dict:
+        at = tuple(axis_index[position] for axis_index in index)
+        r = at[0]
+        record = {
+            "row": int(block.row_indices[r]), "ant1": int(block.ant1[r]), "ant2": int(block.ant2[r]),
+            "jd": float(block.jd[r]), "source_id": int(block.source_id[r]),
+            "x": float(sx[at]), "y": float(sy[at]),
+            "weight": float(weight[at]) if weight is not None else float("nan"), "mirrored": mirrored,
+            "channel": None, "freq_hz": float("nan"), "stokes": None,
+        }
+        for k, axis_type in enumerate(block.axis_types, start=1):
+            full = len(block.axis_indices[axis_type])
+            varies = sx.shape[k] == full and full > 0
+            if axis_type == "FREQ" and varies:
+                record["channel"] = int(block.axis_indices["FREQ"][at[k]])
+                record["freq_hz"] = float(block.chan_freqs_hz[at[k]])
+            elif axis_type == "STOKES" and varies and block.stokes_labels:
+                record["stokes"] = block.stokes_labels[at[k]]
+        return record
+
+    def apply(self, result) -> None:
+        n_found, found, counts = result
+        self.n_found += n_found
+        self.by_baseline.update(counts)
+        room = self.limit - len(self.records)
+        if room > 0:
+            self.records.extend(found[:room])
+
+    def update(self, values: ChunkValues) -> None:
+        self.apply(self.compute(values))

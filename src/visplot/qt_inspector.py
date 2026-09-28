@@ -1,0 +1,475 @@
+"""The visplot inspection window (Qt).
+
+One window, a tab per plot. Each streamed plot fills in as the selection is
+read, redraws its region after a zoom or pan settles, and has two tools
+beside matplotlib's own zoom/pan/save:
+
+- Locate: drag a box; the selection is read once and every sample inside is
+  listed (baseline, UTC time, channel and frequency, Stokes, values,
+  weight), the first `LOCATE_LIMIT` in detail and all counted by baseline;
+  the list can be saved as CSV.
+- Export: the current view re-read at a chosen dpi and saved (PNG, PDF,
+  SVG, EPS, TIFF, JPEG), since the window's own image is at screen
+  resolution.
+
+Streams run one at a time on a background thread (they share the disk);
+the window polls the running job and draws from locked snapshots of the
+grids. A locate or export interrupts drawing, which then resumes.
+"""
+
+from __future__ import annotations
+
+import csv
+import threading
+import time
+import traceback
+from dataclasses import dataclass, field
+from typing import Callable
+
+import numpy as np
+from astropy.time import Time
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+from matplotlib.widgets import RectangleSelector
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from visplot.plot_spec import PlotSpec
+from visplot.stream import GridReducer, LocateReducer
+from visplot.xy_figure import XYFigure, grid_summary
+from visplot.xy_session import PassProgress, XYSource, range_pass_axes, range_pass_reads_data, resolve_extents
+
+LOCATE_LIMIT = 10_000
+POLL_MS = 150
+REFRESH_S = 0.5
+SETTLE_S = 0.3
+EXPORT_FILTERS = "PNG (*.png);;PDF (*.pdf);;SVG (*.svg);;EPS (*.eps);;TIFF (*.tif);;JPEG (*.jpg)"
+
+
+class _Job:
+    """One stream on a background thread. `run(on_chunk)` returns whether it
+    ran to the end; the window reads `rows_done`, `done`, `completed` and
+    `error`, and sets `stop` to end it early."""
+
+    def __init__(self, kind: str, label: str, run: Callable, on_done: Callable, bytes_per_row: int, n_rows: int):
+        self.kind = kind
+        self.progress = PassProgress(label, n_rows, bytes_per_row)
+        self.on_done = on_done
+        self.rows_done = 0
+        self.done = False
+        self.completed = False
+        self.error: str | None = None
+        self.stop = False
+        self.started = False
+        self._run = run
+        self._thread = threading.Thread(target=self._body, name=f"visplot-{kind}", daemon=True)
+
+    def start(self) -> None:
+        self.started = True
+        self._thread.start()
+
+    def _body(self) -> None:
+        def on_chunk(rows_done: int) -> bool:
+            self.rows_done = rows_done
+            return not self.stop
+
+        try:
+            self.completed = bool(self._run(on_chunk))
+        except Exception:  # shown in the window; the next job still runs
+            self.error = traceback.format_exc()
+        self.done = True
+
+    def join(self, timeout: float | None = None) -> None:
+        self._thread.join(timeout)
+
+
+@dataclass
+class _Panel:
+    """One streamed plot's tab."""
+
+    plot: PlotSpec
+    figure: XYFigure
+    canvas: FigureCanvasQTAgg
+    grid: GridReducer | None = None
+    drawn: bool = False  # the current grid has had a full pass
+    mouse_down: bool = False
+    last_limits: tuple | None = None
+    changed_at: float = 0.0
+    selector: RectangleSelector | None = None
+    locate_action: QtGui.QAction | None = None
+    extent: tuple | None = None
+
+
+class InspectorWindow(QtWidgets.QMainWindow):
+    def __init__(self, source: XYSource, figures: list[tuple[str, object]], labels=("finding data ranges", "drawing"),
+                 cache=None, cached=None):
+        super().__init__()
+        self.source = source
+        self.labels = labels
+        self.cache = cache
+        self.cached = cached or {}
+        self.setWindowTitle("visplot")
+        self.tabs = QtWidgets.QTabWidget()
+        self.setCentralWidget(self.tabs)
+        self.panels: dict[PlotSpec, _Panel] = {}
+        self.jobs: list[_Job] = []  # queued, the first running
+        self.extents: dict | None = None
+        self.last_refresh = 0.0
+        self.to_draw: set[PlotSpec] = set()  # plots whose current grid still needs a full pass
+        self.locate: LocateReducer | None = None
+
+        for name, item in figures:
+            if isinstance(item, XYFigure):
+                self._add_panel(name, item)
+            else:
+                self._add_static_tab(name, item)
+        self._build_locate_dock()
+        self.statusBar().showMessage("starting")
+
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self._poll)
+        self.timer.start(POLL_MS)
+        if self.panels:
+            self._queue_ranges()
+
+    # ---- tabs ---------------------------------------------------------------
+
+    def _add_static_tab(self, name: str, fig) -> None:
+        import matplotlib.pyplot as plt
+
+        plt.close(fig)  # a pyplot figure: embed it here, without pyplot's own window
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        canvas = FigureCanvasQTAgg(fig)
+        layout.addWidget(NavigationToolbar2QT(canvas, widget))
+        layout.addWidget(canvas)
+        self.tabs.addTab(widget, name)
+
+    def _add_panel(self, name: str, figure: XYFigure) -> None:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        canvas = FigureCanvasQTAgg(figure.fig)
+        toolbar = NavigationToolbar2QT(canvas, widget)
+        panel = _Panel(figure.plot, figure, canvas)
+        panel.locate_action = toolbar.addAction("Locate")
+        panel.locate_action.setCheckable(True)
+        panel.locate_action.setToolTip("Drag a box to list the samples inside it")
+        panel.locate_action.toggled.connect(lambda on, p=panel: self._toggle_locate(p, on))
+        export_action = toolbar.addAction("Export…")
+        export_action.setToolTip("Re-read the current view at a chosen dpi and save it")
+        export_action.triggered.connect(lambda _=False, p=panel: self._export(p))
+        layout.addWidget(toolbar)
+        layout.addWidget(canvas)
+        canvas.mpl_connect("button_press_event", lambda e, p=panel: setattr(p, "mouse_down", True))
+        canvas.mpl_connect("button_release_event", lambda e, p=panel: setattr(p, "mouse_down", False))
+        self.panels[figure.plot] = panel
+        self.tabs.addTab(widget, name)
+
+    def _build_locate_dock(self) -> None:
+        dock = QtWidgets.QDockWidget("Located samples", self)
+        body = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(body)
+        self.locate_summary = QtWidgets.QLabel("Use Locate on a plot's toolbar, then drag a box.")
+        self.locate_summary.setWordWrap(True)
+        self.locate_table = QtWidgets.QTableWidget(0, len(_LOCATE_COLUMNS))
+        self.locate_table.setHorizontalHeaderLabels([c for c, _ in _LOCATE_COLUMNS])
+        self.locate_table.setSortingEnabled(True)
+        save = QtWidgets.QPushButton("Save as CSV…")
+        save.clicked.connect(self._save_locate_csv)
+        layout.addWidget(self.locate_summary)
+        layout.addWidget(self.locate_table)
+        layout.addWidget(save)
+        dock.setWidget(body)
+        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, dock)
+        self.locate_dock = dock
+
+    # ---- jobs -----------------------------------------------------------------
+
+    def _queue(self, job: _Job, front: bool = False) -> None:
+        """Add a job; `front` puts it next, stopping a running draw (whose
+        plots stay waiting and are drawn again afterwards)."""
+        if front and self.jobs:
+            if self.jobs[0].kind == "draw":
+                self.jobs[0].stop = True
+            self.jobs.insert(1, job)
+        elif front:
+            self.jobs.insert(0, job)
+        else:
+            self.jobs.append(job)
+
+    def _queue_ranges(self) -> None:
+        plots = list(self.panels)
+        pending = [k for k in range_pass_axes(plots) if k not in self.cached]
+        read_data = range_pass_reads_data(plots, self.cached)
+
+        def run(on_chunk):
+            self.extents = resolve_extents(self.source, plots, on_chunk=on_chunk, cache=self.cache)
+            return self.extents is not None
+
+        def done(job):
+            if job.completed:
+                for plot, panel in self.panels.items():
+                    panel.extent = self.extents[plot]
+                self.request_draw(list(self.panels))
+
+        label = self.labels[0] if pending else "reading ranges from the cache"
+        self._queue(_Job("ranges", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows))
+
+    def _window_grid(self, panel: _Panel, extent) -> GridReducer:
+        panel.canvas.draw()
+        bbox = panel.figure.ax.get_window_extent()
+        return GridReducer(panel.plot, extent[0], extent[1], max(1, int(bbox.height)), max(1, int(bbox.width)))
+
+    def request_draw(self, plots: list[PlotSpec]) -> None:
+        """Mark plots for drawing over their current extent (a new grid where
+        the extent changed). A running draw is stopped so the next one covers
+        every plot waiting; unfinished plots stay waiting."""
+        for plot in plots:
+            panel = self.panels[plot]
+            if panel.grid is None or (panel.grid.x_extent, panel.grid.y_extent) != tuple(panel.extent):
+                panel.grid = self._window_grid(panel, panel.extent)
+            panel.drawn = False
+            self.to_draw.add(plot)
+        running = self.jobs[0] if self.jobs else None
+        if running is not None and running.kind == "draw":
+            running.stop = True
+
+    def _start_draw(self) -> None:
+        plots = list(self.to_draw)
+        grids = {p: self.panels[p].grid for p in plots}
+        read_data = any(p.needs_data for p in plots)
+        first = not any(self.panels[p].figure.image is not None for p in plots)
+        label = self.labels[1] if first else "re-drawing the view"
+
+        def run(on_chunk):
+            return self.source.stream(list(grids.values()), read_data=read_data, on_chunk=on_chunk)
+
+        def done(job):
+            if not job.completed:
+                return
+            for plot, grid in grids.items():
+                panel = self.panels[plot]
+                if panel.grid is grid:  # not replaced by a zoom meanwhile
+                    panel.drawn = True
+                    self.to_draw.discard(plot)
+                    self._render(panel, final=True)
+
+        self._queue(_Job("draw", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows))
+
+    def _poll(self) -> None:
+        now = time.monotonic()
+        if not self.jobs and self.to_draw and self.extents is not None:
+            self._start_draw()
+        if self.jobs:
+            job = self.jobs[0]
+            if not job.started:
+                job.start()
+            if job.done:
+                self.jobs.pop(0)
+                if job.error:
+                    self.statusBar().showMessage(f"{job.progress.label} failed; see the terminal")
+                    print(job.error)
+                else:
+                    self.statusBar().showMessage(job.progress.text(job.rows_done))
+                job.on_done(job)
+            else:
+                self.statusBar().showMessage(job.progress.text(job.rows_done))
+                if job.kind == "draw" and now - self.last_refresh >= REFRESH_S:
+                    for plot in self.to_draw:
+                        self._render(self.panels[plot])
+                    self.last_refresh = now
+        elif self.statusBar().currentMessage().endswith("elapsed"):
+            self.statusBar().showMessage("ready")
+        self._check_views(now)
+
+    def _render(self, panel: _Panel, final: bool = False) -> None:
+        snapshot = panel.grid.snapshot()
+        panel.figure.show(snapshot, display_dpi=panel.figure.fig.dpi)
+        if final:
+            panel.figure.set_status(grid_summary(snapshot, self.source.n_rows))
+        else:
+            job = self.jobs[0] if self.jobs else None
+            panel.figure.set_status(job.progress.text(job.rows_done) if job else "")
+        panel.canvas.draw_idle()
+
+    def _check_views(self, now: float) -> None:
+        """After a zoom or pan settles, re-draw that plot over the new limits."""
+        for plot, panel in self.panels.items():
+            if panel.grid is None or panel.figure.image is None:
+                continue
+            limits = (tuple(panel.figure.ax.get_xlim()), tuple(panel.figure.ax.get_ylim()))
+            if limits != panel.last_limits:
+                panel.last_limits, panel.changed_at = limits, now
+                panel.figure.hide_if_view_moved(panel.grid)
+                continue
+            if panel.mouse_down or now - panel.changed_at < SETTLE_S:
+                continue
+            if limits != (panel.grid.x_extent, panel.grid.y_extent) and limits != tuple(panel.extent):
+                panel.extent = limits
+                self.request_draw([plot])
+
+    # ---- locate -------------------------------------------------------------
+
+    def _toggle_locate(self, panel: _Panel, on: bool) -> None:
+        if on:
+            panel.selector = RectangleSelector(
+                panel.figure.ax, lambda press, release, p=panel: self._locate(p, press, release),
+                useblit=True, button=[1], interactive=False, minspanx=2, minspany=2, spancoords="pixels",
+            )
+        elif panel.selector is not None:
+            panel.selector.set_active(False)
+            panel.selector = None
+
+    def _locate(self, panel: _Panel, press, release) -> None:
+        box_x = (press.xdata, release.xdata)
+        box_y = (press.ydata, release.ydata)
+        if None in box_x or None in box_y:
+            return
+        locate = LocateReducer(panel.plot, box_x, box_y, limit=LOCATE_LIMIT)
+        read_data = panel.plot.needs_data
+        self.locate_summary.setText("reading the selection to find the samples in the box…")
+
+        def run(on_chunk):
+            return self.source.stream([locate], read_data=read_data, on_chunk=on_chunk)
+
+        def done(job):
+            if job.completed:
+                self.locate = locate
+                self._show_locate(locate)
+            else:
+                self.locate_summary.setText("locate stopped before the end of the selection")
+
+        self._queue(_Job("locate", "locating samples", run, done,
+                         self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
+
+    def _show_locate(self, locate: LocateReducer) -> None:
+        names = self.source.ctx.antenna_names or {}
+        shown = len(locate.records)
+        top = sorted(locate.by_baseline.items(), key=lambda kv: -kv[1])[:10]
+        baselines = ", ".join(f"{_baseline(a, b, names)}: {n:,}" for (a, b), n in top)
+        more = f" (listing the first {shown:,})" if shown < locate.n_found else ""
+        self.locate_summary.setText(
+            f"{locate.n_found:,} samples in the box{more}, on {len(locate.by_baseline):,} baselines. "
+            f"Most: {baselines}" if locate.n_found else "no samples in the box")
+        rows = locate_rows(locate.records, self.source.ctx)
+        table = self.locate_table
+        table.setSortingEnabled(False)
+        table.setRowCount(len(rows))
+        for i, row in enumerate(rows):
+            for j, value in enumerate(row):
+                item = QtWidgets.QTableWidgetItem()
+                item.setData(QtCore.Qt.DisplayRole, value)
+                table.setItem(i, j, item)
+        table.setSortingEnabled(True)
+        self.locate_dock.show()
+
+    def _save_locate_csv(self) -> None:
+        if self.locate is None:
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save located samples", "located_samples.csv",
+                                                        "CSV (*.csv)")
+        if path:
+            save_locate_csv(path, self.locate, self.source.ctx)
+            self.statusBar().showMessage(f"saved {path}")
+
+    # ---- export ---------------------------------------------------------------
+
+    def _export(self, panel: _Panel) -> None:
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export plot", f"{panel.plot.name}.png", EXPORT_FILTERS)
+        if not path:
+            return
+        dpi, ok = QtWidgets.QInputDialog.getInt(self, "Export resolution", "dots per inch:", 600, 50, 2400)
+        if ok:
+            self.export(panel.plot, path, dpi)
+
+    def export(self, plot: PlotSpec, path: str, dpi: int) -> None:
+        """Re-read the plot's current view at `dpi` and save it to `path`."""
+        panel = self.panels[plot]
+        limits = (tuple(panel.figure.ax.get_xlim()), tuple(panel.figure.ax.get_ylim()))
+        height, width = panel.figure.grid_shape(dpi)
+        grid = GridReducer(plot, limits[0], limits[1], height, width)
+        read_data = plot.needs_data
+
+        def run(on_chunk):
+            return self.source.stream([grid], read_data=read_data, on_chunk=on_chunk)
+
+        def done(job):
+            if not job.completed:
+                return
+            panel.figure.show(grid, display_dpi=dpi)
+            status = panel.figure.status.get_text()
+            panel.figure.set_status(grid_summary(grid, self.source.n_rows))
+            panel.figure.fig.savefig(path, dpi=dpi)
+            panel.figure.set_status(status)
+            if panel.grid is not None:  # back to the window's own image
+                panel.figure.show(panel.grid.snapshot(), display_dpi=panel.figure.fig.dpi)
+            panel.canvas.draw_idle()
+            self.statusBar().showMessage(f"exported {path} at {dpi} dpi")
+
+        self._queue(_Job("export", f"exporting at {dpi} dpi", run, done,
+                         self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
+
+    # ---- closing ----------------------------------------------------------------
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        for job in self.jobs:
+            job.stop = True
+        for job in self.jobs[:1]:
+            job.join(timeout=5)
+        self.timer.stop()
+        super().closeEvent(event)
+
+    def idle(self) -> bool:
+        return not self.jobs
+
+
+_LOCATE_COLUMNS = [
+    ("baseline", str), ("time (UTC)", str), ("channel", str), ("freq (MHz)", float), ("Stokes", str),
+    ("x", float), ("y", float), ("weight", float), ("mirrored", str), ("row", int), ("source", str),
+]
+
+
+def _baseline(a: int, b: int, names: dict) -> str:
+    return f"{names.get(a, a)}-{names.get(b, b)}"
+
+
+def locate_rows(records: list[dict], ctx) -> list[list]:
+    """Located samples as table rows, in `_LOCATE_COLUMNS` order."""
+    if not records:
+        return []
+    names = ctx.antenna_names or {}
+    sources = ctx.source_names or {}
+    times = Time(np.array([r["jd"] for r in records]), format="jd", scale="utc").isot
+    rows = []
+    for r, t in zip(records, times):
+        rows.append([
+            _baseline(r["ant1"], r["ant2"], names), t,
+            "all" if r["channel"] is None else str(r["channel"]),
+            float("nan") if r["channel"] is None else r["freq_hz"] / 1e6,
+            "all" if r["stokes"] is None else r["stokes"],
+            r["x"], r["y"], r["weight"], "yes" if r["mirrored"] else "no", r["row"],
+            sources.get(r["source_id"], str(r["source_id"])),
+        ])
+    return rows
+
+
+def save_locate_csv(path, locate: LocateReducer, ctx) -> None:
+    names = ctx.antenna_names or {}
+    with open(path, "w", newline="") as f:
+        f.write(f"# {locate.n_found} samples in the box x={locate.x_box} y={locate.y_box} "
+                f"of plot {locate.plot.title}; {len(locate.records)} listed\n")
+        for (a, b), n in sorted(locate.by_baseline.items(), key=lambda kv: -kv[1]):
+            f.write(f"# baseline {_baseline(a, b, names)}: {n}\n")
+        writer = csv.writer(f)
+        writer.writerow([c for c, _ in _LOCATE_COLUMNS])
+        writer.writerows(locate_rows(locate.records, ctx))
+
+
+def run_inspector(source: XYSource, figures: list[tuple[str, object]], labels, cache=None, cached=None) -> int:
+    """Open the inspection window and run until it is closed."""
+    import signal
+
+    signal.signal(signal.SIGINT, signal.SIG_DFL)  # Ctrl-C in the terminal closes the window
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    window = InspectorWindow(source, figures, labels=labels, cache=cache, cached=cached)
+    window.resize(1100, 900)
+    window.show()
+    return app.exec()

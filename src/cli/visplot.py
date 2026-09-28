@@ -10,7 +10,7 @@ uv distance, kilo-wavelength and observing-geometry ranges), then draws:
   streaming the selection chunk by chunk into a fixed pixel grid per plot
   (`visplot.xy_session`), so memory does not grow with the selection.
 Saves PNGs and PDFs with --output-dir; otherwise opens windows that fill as
-the data streams in and re-stream on zoom (`visplot.xy_interactive`).
+the data streams in, re-stream on zoom, and locate and export (`visplot.qt_inspector`).
 """
 
 from __future__ import annotations
@@ -26,10 +26,8 @@ import matplotlib
 
 # The backend must be chosen before any submodule imports pyplot: Agg
 # (headless, file-only) when only saving is requested, since no display
-# may be available at all in that case; otherwise this host's own default
-# interactive backend.
-if "--output-dir" in sys.argv:
-    matplotlib.use("Agg")
+# may be available at all in that case; otherwise Qt, for the inspection window.
+matplotlib.use("Agg" if "--output-dir" in sys.argv or "--clear-cache" in " ".join(sys.argv) else "QtAgg")
 
 import numpy as np
 from astropy.io import fits
@@ -63,7 +61,6 @@ from visplot.quantities import QUANTITIES, context_from_source_table  # noqa: E4
 from visplot.range_cache import RangeCache, clear_cache  # noqa: E402
 from visplot.source_listing import source_listing  # noqa: E402
 from visplot.xy_figure import XYFigure, grid_summary  # noqa: E402
-from visplot.xy_interactive import run_interactive  # noqa: E402
 from visplot.xy_session import (  # noqa: E402
     DEFAULT_STREAM_THREADS,
     XYSource,
@@ -115,10 +112,12 @@ does not depend on how much is selected. The first pass finds each axis's
 range (reading visibility data only for amp, real, imag or phase axes);
 --x-range/--y-range skip it for that axis.
 
-windows (no --output-dir): each plot fills in as chunks are read, with the
-rows read so far shown at the bottom right. After a zoom or pan, the plot
+window (no --output-dir): one window, a tab per plot. Each plot fills in as
+chunks are read, with progress in the status bar; after a zoom or pan it
 re-reads the selection and redraws the new region at the window's own
-resolution.
+resolution. On a plot's toolbar, Locate lists the samples in a dragged box
+(baseline, time, channel, Stokes, values; saved as CSV) and Export re-reads
+the view at a chosen dpi and saves it (PNG, PDF, SVG, EPS, TIFF, JPEG).
 
 examples:
   # antenna layout and source list only (reads no visibilities)
@@ -418,7 +417,8 @@ def main(argv: list[str]) -> int:
         stokes_labels = [stokes_labels[i] for i in stokes_indices]
 
     time_reference_jd = float(index.jd[selection.row_indices].min()) if selection.n_rows else float(index.jd.min())
-    ctx = context_from_source_table(time_reference_jd, source_table, array_location, bunit, stokes_labels)
+    ctx = context_from_source_table(time_reference_jd, source_table, array_location, bunit, stokes_labels,
+                                    antenna_names={a.station_number: a.name for a in antennas})
     source = XYSource(fits_path, index, selection.row_indices, axis_selection or None, ctx, stream_chunk_bytes(),
                       threads=max(1, args.threads))
     sources_present = list(selection.sources.values())
@@ -452,7 +452,9 @@ def main(argv: list[str]) -> int:
             extents = resolve_extents(source, xy_plots, on_chunk=_terminal_progress(progress), cache=cache)
         _save_outputs(args, source, xy_plots, xy_figures, extents, figures, labels[1])
     else:
-        _show_windows(source, xy_plots, xy_figures, figures, labels, cache, cached)
+        from visplot.qt_inspector import run_inspector
+
+        run_inspector(source, figures, labels, cache=cache, cached=cached)
     if cache is not None:
         n_files, n_bytes = cache.usage()
         size = f"{n_bytes / 1e6:.1f} MB" if n_bytes >= 1e6 else f"{n_bytes / 1e3:.0f} KB"
@@ -517,45 +519,6 @@ def _save_outputs(args, source, xy_plots, xy_figures, extents, figures, draw_lab
                     item.show(grids[item.plot], display_dpi=HIGHRES_DPI)
                 pdf.savefig(_mpl_figure(item), dpi=HIGHRES_DPI)
         print(f"saved {highres_path}")
-
-
-def _show_windows(source, xy_plots, xy_figures, figures, labels, cache=None, cached=None) -> None:
-    """Open every window first, so the range pass (if any) shows its progress
-    in the windows as well as the terminal; then draw."""
-    import time
-
-    import matplotlib.pyplot as plt
-
-    plt.ion()
-    for _, item in figures:
-        (item.fig if isinstance(item, XYFigure) else item).show()
-    plt.pause(0.001)
-
-    if xy_figures:
-        progress = pass_progress(source, labels[0], range_pass_reads_data(xy_plots, cached))
-        to_terminal = _terminal_progress(progress)
-        last = [0.0]
-
-        def on_chunk(rows_done: int) -> bool:
-            to_terminal(rows_done)
-            if time.monotonic() - last[0] >= 0.5:
-                for figure in xy_figures.values():
-                    figure.set_status(progress.text(rows_done))
-                    figure.fig.canvas.draw_idle()
-                plt.pause(0.001)
-                last[0] = time.monotonic()
-            return any(plt.fignum_exists(f.fig.number) for f in xy_figures.values())
-
-        if [k for k in range_pass_axes(xy_plots) if k not in (cached or {})]:
-            for figure in xy_figures.values():
-                figure.set_status(progress.text(0))
-            plt.pause(0.001)
-        extents = resolve_extents(source, xy_plots, on_chunk=on_chunk, cache=cache)
-        if any(plt.fignum_exists(f.fig.number) for f in xy_figures.values()):
-            run_interactive(source, xy_figures, extents, first_pass_label=labels[1])
-    plt.ioff()
-    if plt.get_fignums():  # table figures still open after the streamed ones close
-        plt.show()
 
 
 if __name__ == "__main__":

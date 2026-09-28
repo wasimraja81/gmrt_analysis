@@ -442,10 +442,47 @@ Buildable now, ahead of Phase C.
   Checked on 3C286 RR amplitude vs uv distance: a log y-axis shows ten decades; the
   percentile range leaves 138,636 of 141.7M samples (0.098%) outside, stated on the plot.
 
-- **T26 — visPlot inspection window — DESIGN (added 2026-09-28).** From the review (point
-  F): an interactive window for locating samples, flagging (to a flag table, never the
-  raw file), iterating pages (per baseline, antenna, source), and exporting any plot in
-  the usual formats. Design to be presented for review before building.
+- **T26 — visPlot inspection window — IN PROGRESS (added 2026-09-28).** From the review
+  (point F). User's decisions (2026-09-28):
+  - Toolkit: Qt (PySide6-Essentials 6.11.2, added to the venv and
+    `config/requirements.txt`). The Qt window replaces the matplotlib windows of
+    `xy_interactive.py`, keeping one interactive path; saved output is unchanged.
+  - Build order: locate and export first, then pages (per baseline/antenna/source/
+    Stokes), then flagging, then the review's layout items (multi-panel pages sharing an
+    axis, e.g. elevation and azimuth; legends outside the axes; distinct colors beyond 10
+    categories).
+  - Flags: atomic, a visibility being a function of time, channel, Stokes and baseline.
+    The archived pipeline's format (legacy `bandpass_and_flag_table_spec.md`, decoded by
+    `ugmrt_query.expand_flag_table_to_mask`) is JSON `ugmrt_flag_table` v1/v2:
+    `bad_antennas`, `bad_baselines`, and `bad_antenna_timeranges`/
+    `bad_baseline_timeranges` entries of ISO-UTC `intervals` with an optional absolute
+    `chanrange`; it has no polarisation field by design (the archived notes record
+    all-correlation flagging as the only supported mode). Proposed: the same kind, version
+    3, with an optional per-entry `stokes` list (absent = all Stokes, as before) and
+    `reason`/`created` fields; an atomic flag is one entry (baseline, time interval,
+    channel range, Stokes). The archived decoder ignores the added keys, so it reads a v3
+    Stokes-specific entry as all Stokes (it over-flags, never under-flags). A converter
+    writes an AIPS FG table: FG rows carry an antenna pair, time range, channel range and
+    per-Stokes `PFLAGS`, one row per entry; how AIPS loads a standalone FG table to be
+    checked when the converter is built.
+  Plan: locate (drag a box; stream the selection once; table of samples: baseline by
+  antenna names, UTC time, channel and frequency, Stokes, values, weight; capped, with
+  totals; saved as CSV) and export (re-stream the current view at a chosen dpi, save
+  PNG/PDF/SVG) first.
+
+  Done (2026-09-28), awaiting the user's trial with a display: `visplot/qt_inspector.py`,
+  one window with a tab per plot; each streamed plot fills as chunks arrive (status bar:
+  pass, rows, GB read, elapsed) and redraws after a zoom or pan settles; Locate (drag a
+  box: `LocateReducer` lists up to 10,000 samples with baseline by antenna names, UTC
+  time, channel, frequency, Stokes, values, weight, and counts all by baseline; saved as
+  CSV) and Export (re-reads the view at a chosen dpi; PNG, PDF, SVG, EPS, TIFF, JPEG).
+  Streams run one at a time on a background thread; drawing reads locked grid snapshots;
+  a locate or export interrupts drawing, which resumes. Replaces the matplotlib windows
+  (`xy_interactive.py`, removed). Tested headlessly (Qt offscreen): drawing, zoom
+  redraw, locate with CSV, export size. On 3C286 RR, headless: 141.7M samples drawn in
+  9.1 s; a locate at 36-37.5 kλ found 30,045 samples, all on E06:19-S06:24, in 6.8 s;
+  an export at 300 dpi took 5.9 s.
+  Next: pages, then flagging, then the layout items.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

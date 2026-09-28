@@ -214,3 +214,53 @@ def test_grid_reducer_bins_evenly_in_the_log_coordinate_and_counts_what_it_leave
     columns = np.flatnonzero(grid.layers_2d()[0])
     assert columns.tolist() == [0, 1, 2]  # one decade per pixel: 2, 20, 200
     assert grid.n_samples == 3 and grid.n_outside == 2
+
+
+def test_locate_finds_the_samples_in_a_box_with_where_each_comes_from():
+    from visplot.stream import LocateReducer
+
+    # amp = row + 1 for every Stokes and channel; box around rows 2-3 (amp 3-4), channel 1 only (1.05 GHz)
+    plot = PlotSpec(y="amp", x="freq_mhz")
+    locate = LocateReducer(plot, (1040.0, 1060.0), (2.5, 4.5))
+    run_stream([_block(range(0, 6), n_chan=3)], CTX, [locate])
+    assert locate.n_found == 2 * 2  # rows 2, 3 x Stokes RR, LL
+    got = sorted((r["row"], r["channel"], r["stokes"]) for r in locate.records)
+    assert got == [(2, 1, "LL"), (2, 1, "RR"), (3, 1, "LL"), (3, 1, "RR")]
+    assert all(r["freq_hz"] == 1.05e9 and r["weight"] == 1.0 for r in locate.records)
+    assert locate.by_baseline == {(1, 2): 4}
+
+
+def test_locate_on_a_per_row_plot_reports_channel_and_stokes_as_all():
+    from visplot.stream import LocateReducer
+
+    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False)
+    locate = LocateReducer(plot, (0.5, 2.5), (0.0, 1.0))
+    run_stream([_block(range(0, 5))], CTX, [locate])
+    assert [r["row"] for r in locate.records] == [1, 2]
+    assert all(r["channel"] is None and r["stokes"] is None for r in locate.records)
+
+
+def test_locate_keeps_at_most_limit_records_but_counts_all():
+    from visplot.stream import LocateReducer
+
+    locate = LocateReducer(PlotSpec(y="amp", x="time_h"), (-1.0, 100.0), (0.0, 100.0), limit=5)
+    run_stream([_block(range(0, 10)), _block(range(10, 20))], CTX, [locate])
+    assert locate.n_found == 20 * 2 * 2 and len(locate.records) == 5
+
+
+def test_locate_marks_mirrored_samples():
+    from visplot.stream import LocateReducer
+
+    plot = PlotSpec(y="u_sec", x="time_h", apply_flags=False, mirror=True)
+    locate = LocateReducer(plot, (-2.5, -1.5), (-3e-6, 0.0))  # the mirror of row 2 (time 2 h, u 2 us)
+    run_stream([_block(range(0, 5))], CTX, [locate])
+    assert [(r["row"], r["mirrored"]) for r in locate.records] == [(2, True)]
+
+
+def test_grid_snapshot_is_an_independent_copy():
+    grid = GridReducer(PlotSpec(y="amp", x="time_h"), (0.0, 10.0), (0.0, 10.0), height=4, width=4)
+    run_stream([_block([1])], CTX, [grid])
+    snap = grid.snapshot()
+    run_stream([_block([8])], CTX, [grid])
+    assert snap.n_samples < grid.n_samples
+    assert (snap.layers > 0).sum() < (grid.layers > 0).sum()

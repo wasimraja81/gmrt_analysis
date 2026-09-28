@@ -46,9 +46,11 @@ class QuantityContext:
     source_ra_deg: np.ndarray | None = None  # indexed by source id
     source_dec_deg: np.ndarray | None = None
     array_location: object | None = None  # astropy EarthLocation
+    antenna_names: dict[int, str] | None = None  # station number -> name, for reporting baselines
 
 
-def context_from_source_table(time_reference_jd, source_table, array_location, bunit=None, stokes_labels=()):
+def context_from_source_table(time_reference_jd, source_table, array_location, bunit=None, stokes_labels=(),
+                              antenna_names=None):
     """A `QuantityContext` with per-source coordinate lookup arrays built once
     from `read_source_table`'s dict (source id -> Source)."""
     max_id = max(source_table) if source_table else 0
@@ -65,6 +67,7 @@ def context_from_source_table(time_reference_jd, source_table, array_location, b
         source_ra_deg=ra,
         source_dec_deg=dec,
         array_location=array_location,
+        antenna_names=antenna_names,
     )
 
 
