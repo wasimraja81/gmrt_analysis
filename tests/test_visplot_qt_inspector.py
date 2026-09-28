@@ -178,3 +178,18 @@ def test_locate_through_the_toolbar_and_a_mouse_drag_after_zooming():
     app.processEvents()
     assert not panel.locate_action.isChecked()
     window.close()
+
+
+def test_equal_aspect_toggle_redraws_with_equal_scaling():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_aspect", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    ax = panel.figure.ax
+    window._toggle_aspect(panel, True)
+    _wait(app, window)
+    (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
+    bbox = ax.get_window_extent()
+    assert (x1 - x0) / bbox.width == pytest.approx((y1 - y0) / bbox.height, rel=1e-2)
+    assert panel.drawn and (panel.grid.x_extent, panel.grid.y_extent) == ((x0, x1), (y0, y1))
+    window.close()

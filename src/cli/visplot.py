@@ -252,6 +252,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
             help=f"{axis}-axis scale (default: linear); log shows positive values only",
         )
     style.add_argument(
+        "--aspect", choices=["auto", "equal", "free"], default="auto",
+        help="equal: one unit the same length on both axes; auto (default): equal when x and y are the same "
+        "kind of quantity (u, v, w; real, imag) on linear axes, free otherwise",
+    )
+    style.add_argument(
         "--scale-linear-width", type=float, default=1.0, metavar="W",
         help="for symlog and asinh scales: the width around zero that stays linear (default: 1)",
     )
@@ -412,7 +417,7 @@ def main(argv: list[str]) -> int:
         y="", x="", colorize_by=args.colorize_by, show_flagged=args.show_flagged, mirror=args.mirror,
         x_range=x_range, y_range=y_range, point_size=args.point_size, color=args.color,
         x_scale=args.x_scale, y_scale=args.y_scale, x_range_mode=args.x_range_mode, y_range_mode=args.y_range_mode,
-        range_percentiles=range_percentiles, scale_linear_width=args.scale_linear_width,
+        range_percentiles=range_percentiles, scale_linear_width=args.scale_linear_width, aspect=args.aspect,
     )
     plots_by_name = {name: expand_plot_name(name, style) for name in plot_names if name not in TABLE_PLOTS}
     xy_plots = [p for plots in plots_by_name.values() for p in plots]
@@ -421,6 +426,8 @@ def main(argv: list[str]) -> int:
             name = p.x if axis == "x" else p.y
             if QUANTITIES[name].categorical and not p.axis_scale(axis).is_linear:
                 parser.error(f"--{axis}-scale applies to numeric axes; {name!r} is a category")
+        if p.aspect == "equal" and not (p.axis_scale("x").is_linear and p.axis_scale("y").is_linear):
+            parser.error("--aspect equal needs linear axes (--x-scale and --y-scale linear)")
 
     axis_selection = {}
     if channel_indices is not None:
@@ -521,6 +528,7 @@ def _save_outputs(args, source, xy_plots, xy_figures, extents, figures, draw_lab
     factor = HIGHRES_DPI // LOWRES_DPI
     shapes = {}
     for p in xy_plots:
+        extents[p] = xy_figures[p].set_view(*extents[p])  # the limits after the aspect applies
         h, w = xy_figures[p].grid_shape(LOWRES_DPI)
         shapes[p] = (h * factor, w * factor)
     grids = {}

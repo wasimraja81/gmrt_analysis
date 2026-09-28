@@ -129,8 +129,38 @@ class XYFigure:
             line = self.ax.axhline if axis == "y" else self.ax.axvline
             line(value, color="0.5", lw=0.8, ls="--", zorder=1)
         self.image = None
+        self._scales_set = False
+        self.equal_override: bool | None = None  # set from a window's aspect toggle
         self.status = self.fig.text(0.99, 0.005, "", ha="right", va="bottom", fontsize=8, color="0.4")
         self.note = self.fig.text(0.01, 0.005, "", ha="left", va="bottom", fontsize=7, color="darkred", wrap=True)
+
+    def set_view(self, x_extent, y_extent) -> tuple[tuple, tuple]:
+        """Set the axes' scales, limits and aspect for these extents, and return
+        the limits the axes end up with: with equal aspect one axis's range
+        widens so a unit is the same length on both (the axes box keeps its
+        shape), and a grid binned over the returned limits fills the axes."""
+        self._set_scales()
+        equal = self.plot.equal_aspect if self.equal_override is None else self.equal_override
+        if equal and self.linear:
+            x_extent, y_extent = self._widened_for_equal_scale(x_extent, y_extent)
+        self.ax.set_xlim(x_extent)
+        self.ax.set_ylim(y_extent)
+        # Limits already at equal scale: matplotlib keeps them; "datalim" keeps later zooms equal too.
+        self.ax.set_aspect("equal" if equal and self.linear else "auto", adjustable="datalim")
+        self.ax.apply_aspect()
+        return tuple(self.ax.get_xlim()), tuple(self.ax.get_ylim())
+
+    def _widened_for_equal_scale(self, x_extent, y_extent):
+        """Widen one axis's range about its centre, never narrow either, so a
+        unit spans the same number of pixels on both axes."""
+        pos = self.ax.get_position()
+        fig_w, fig_h = self.fig.get_size_inches()
+        width, height = pos.width * fig_w, pos.height * fig_h
+        (x0, x1), (y0, y1) = x_extent, y_extent
+        per_inch = max((x1 - x0) / width, (y1 - y0) / height)
+        xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
+        half_x, half_y = per_inch * width / 2, per_inch * height / 2
+        return (xc - half_x, xc + half_x), (yc - half_y, yc + half_y)
 
     def grid_shape(self, dpi: float) -> tuple[int, int]:
         """(height, width) in pixels of the axes area at `dpi`."""
@@ -179,6 +209,9 @@ class XYFigure:
         return self.plot.axis_scale("x").is_linear and self.plot.axis_scale("y").is_linear
 
     def _set_scales(self) -> None:
+        if self._scales_set:
+            return
+        self._scales_set = True
         if not self.plot.axis_scale("x").is_linear:
             self.ax.set_xscale(**self.plot.axis_scale("x").mpl_kwargs())
         if not self.plot.axis_scale("y").is_linear:

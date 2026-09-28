@@ -79,6 +79,9 @@ class Quantity:
     needs_data: bool
     categorical: bool
     evaluate: Callable[[VisibilityBlock, QuantityContext], np.ndarray]
+    # Quantities in the same group are plotted at equal scale by default (--aspect auto),
+    # e.g. u against v: the same kind of quantity in the same unit.
+    aspect_group: str | None = None
 
 
 def _row(values, block: VisibilityBlock) -> np.ndarray:
@@ -134,17 +137,17 @@ _ALL = [
     # visibility data: stored at the file's float32; amplitude and phase are
     # computed in float64, so a sample on a pixel boundary bins the same way
     # whatever the storage precision
-    Quantity("real", "Real", UNIT_FROM_BUNIT, True, False, lambda b, c: b.data.real),
-    Quantity("imag", "Imag", UNIT_FROM_BUNIT, True, False, lambda b, c: b.data.imag),
+    Quantity("real", "Real", UNIT_FROM_BUNIT, True, False, lambda b, c: b.data.real, aspect_group="complex"),
+    Quantity("imag", "Imag", UNIT_FROM_BUNIT, True, False, lambda b, c: b.data.imag, aspect_group="complex"),
     Quantity("amp", "Amplitude", UNIT_FROM_BUNIT, True, False, lambda b, c: np.abs(b.data.astype(np.complex128))),
     Quantity("phase_deg", "Phase", "deg", True, False,
              lambda b, c: np.degrees(np.angle(b.data.astype(np.complex128)))),
     # per row
     Quantity("time_h", "Time", "h", False, False,
              lambda b, c: _row((b.jd - c.time_reference_jd) * 24.0, b)),
-    Quantity("u_sec", "U", "s", False, False, lambda b, c: _row(b.uu_sec, b)),
-    Quantity("v_sec", "V", "s", False, False, lambda b, c: _row(b.vv_sec, b)),
-    Quantity("w_sec", "W", "s", False, False, lambda b, c: _row(b.ww_sec, b)),
+    Quantity("u_sec", "U", "s", False, False, lambda b, c: _row(b.uu_sec, b), aspect_group="uvw_s"),
+    Quantity("v_sec", "V", "s", False, False, lambda b, c: _row(b.vv_sec, b), aspect_group="uvw_s"),
+    Quantity("w_sec", "W", "s", False, False, lambda b, c: _row(b.ww_sec, b), aspect_group="uvw_s"),
     Quantity("uvdist_m", "UV distance", "m", False, False,
              lambda b, c: _row(_uvdist_sec(b) * SPEED_OF_LIGHT_M_PER_S, b)),
     Quantity("ha_h", "Hour angle", "h", False, False, _hour_angle),
@@ -152,9 +155,12 @@ _ALL = [
     Quantity("el_deg", "Elevation", "deg", False, False, _elevation),
     Quantity("pa_deg", "Parallactic angle", "deg", False, False, _parallactic_angle),
     # per row and channel
-    Quantity("u_klambda", "U", "kλ", False, False, lambda b, c: _row(b.uu_sec, b) * _freq_hz(b) / 1e3),
-    Quantity("v_klambda", "V", "kλ", False, False, lambda b, c: _row(b.vv_sec, b) * _freq_hz(b) / 1e3),
-    Quantity("w_klambda", "W", "kλ", False, False, lambda b, c: _row(b.ww_sec, b) * _freq_hz(b) / 1e3),
+    Quantity("u_klambda", "U", "kλ", False, False, lambda b, c: _row(b.uu_sec, b) * _freq_hz(b) / 1e3,
+             aspect_group="uvw_kl"),
+    Quantity("v_klambda", "V", "kλ", False, False, lambda b, c: _row(b.vv_sec, b) * _freq_hz(b) / 1e3,
+             aspect_group="uvw_kl"),
+    Quantity("w_klambda", "W", "kλ", False, False, lambda b, c: _row(b.ww_sec, b) * _freq_hz(b) / 1e3,
+             aspect_group="uvw_kl"),
     Quantity("uvdist_klambda", "UV distance", "kλ", False, False,
              lambda b, c: _row(_uvdist_sec(b), b) * _freq_hz(b) / 1e3),
     # per channel

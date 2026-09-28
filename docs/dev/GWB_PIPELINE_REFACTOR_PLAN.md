@@ -525,9 +525,15 @@ Buildable now, ahead of Phase C.
   XLO:XHI,YLO:YHI --locate-csv FILE` (one streamed plot; no window). On 3C286 RR, a CLI
   locate at 36-37.5 kλ wrote all 30,045 samples (E06:19-S06:24) in 3 s.
 
-- **T29 — Plot aspect — NOT STARTED (added 2026-09-28).** Equal aspect when x and y share
-  a unit (u vs v, real vs imag), free otherwise (amp vs time, amp vs uv distance); a
-  toolbar toggle and `--aspect equal|auto`; the pixel grid sized after the aspect applies.
+- **T29 — Plot aspect — DONE (2026-09-28).** `--aspect auto|equal|free`; `auto` (default)
+  is equal when x and y are the same kind of quantity, by an `aspect_group` in the
+  quantity registry (u/v/w in s, u/v/w in kλ, real/imag), on linear axes, and free
+  otherwise (a shared unit is not enough: hour angle and time are both in hours). Equal
+  scale widens one axis's range about its centre, never narrowing either, computed here:
+  matplotlib's own `adjustable="datalim"` narrowed x from ±10 to ±2.68 in a test, which
+  would have cut data off. The grid is sized to the limits after the aspect applies. The
+  window has an "Equal aspect" toggle per plot (to be recorded in the reproducing
+  command by T31). `--aspect equal` requires linear axes.
 
 - **T30 — Units per axis — NOT STARTED (added 2026-09-28).** The user chooses the unit an
   axis is shown in (`--x-unit`/`--y-unit`, and a unit selector per axis in the GUI), via

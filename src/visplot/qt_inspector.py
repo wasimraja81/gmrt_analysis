@@ -155,6 +155,11 @@ class InspectorWindow(QtWidgets.QMainWindow):
         panel.locate_action.setCheckable(True)
         panel.locate_action.setToolTip("Drag a box to list the samples inside it")
         panel.locate_action.toggled.connect(lambda on, p=panel: self._toggle_locate(p, on))
+        aspect_action = toolbar.addAction("Equal aspect")
+        aspect_action.setCheckable(True)
+        aspect_action.setChecked(figure.plot.equal_aspect)
+        aspect_action.setToolTip("One unit the same length on both axes")
+        aspect_action.toggled.connect(lambda on, p=panel: self._toggle_aspect(p, on))
         export_action = toolbar.addAction("Export…")
         export_action.setToolTip("Re-read the current view at a chosen dpi and save it")
         export_action.triggered.connect(lambda _=False, p=panel: self._export(p))
@@ -211,7 +216,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         def done(job):
             if job.completed:
                 for plot, panel in self.panels.items():
-                    panel.extent = self.extents[plot]
+                    panel.extent = panel.figure.set_view(*self.extents[plot])
                 self.request_draw(list(self.panels))
 
         label = self.labels[0] if pending else "reading ranges from the cache"
@@ -312,6 +317,14 @@ class InspectorWindow(QtWidgets.QMainWindow):
             if limits != (panel.grid.x_extent, panel.grid.y_extent) and limits != tuple(panel.extent):
                 panel.extent = limits
                 self.request_draw([plot])
+
+    def _toggle_aspect(self, panel: _Panel, equal: bool) -> None:
+        panel.figure.equal_override = equal
+        if panel.extent is None:
+            return  # applied when the ranges are known
+        panel.extent = panel.figure.set_view(panel.figure.ax.get_xlim(), panel.figure.ax.get_ylim())
+        panel.last_limits = (tuple(panel.extent[0]), tuple(panel.extent[1]))
+        self.request_draw([panel.plot])
 
     # ---- locate -------------------------------------------------------------
 

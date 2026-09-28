@@ -30,6 +30,18 @@ class PlotSpec:
     y_range_mode: str = "minmax"
     range_percentiles: tuple[float, float] = (0.1, 99.9)
     scale_linear_width: float = 1.0  # symlog's linthresh, asinh's linear width
+    aspect: str = "auto"  # auto (equal for same-kind axes, e.g. u vs v), equal, free
+
+    @property
+    def equal_aspect(self) -> bool:
+        """Whether one unit is drawn the same length on both axes. `auto`:
+        when x and y are the same kind of quantity (their aspect group, e.g.
+        u and v in kλ) and both axes are linear."""
+        if self.aspect != "auto":
+            return self.aspect == "equal"
+        gx, gy = QUANTITIES[self.x].aspect_group, QUANTITIES[self.y].aspect_group
+        linear = self.axis_scale("x").is_linear and self.axis_scale("y").is_linear
+        return gx is not None and gx == gy and linear
 
     def axis_scale(self, axis: str) -> AxisScale:
         return AxisScale(self.x_scale if axis == "x" else self.y_scale, self.scale_linear_width)

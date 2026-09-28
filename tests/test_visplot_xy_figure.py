@@ -3,6 +3,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import numpy as np
+import pytest
 
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import QuantityContext
@@ -116,3 +117,26 @@ def test_grid_summary_mentions_samples_left_out():
     grid = GridReducer(PlotSpec(y="amp", x="freq_mhz"), (0.0, 1.0), (0.0, 1.0), height=1, width=1)
     grid.n_samples, grid.n_outside = 1200, 3
     assert grid_summary(grid, 40) == "1,200 samples from 40 rows; 3 outside the axis ranges, left out"
+
+
+def test_auto_aspect_is_equal_only_for_the_same_kind_of_quantity_on_linear_axes():
+    assert PlotSpec(y="v_klambda", x="u_klambda").equal_aspect
+    assert PlotSpec(y="imag", x="real").equal_aspect
+    assert not PlotSpec(y="amp", x="uvdist_klambda").equal_aspect
+    assert not PlotSpec(y="ha_h", x="time_h").equal_aspect  # both in hours, different kinds
+    assert not PlotSpec(y="v_klambda", x="u_klambda", y_scale="symlog").equal_aspect
+    assert PlotSpec(y="amp", x="time_h", aspect="equal").equal_aspect
+    assert not PlotSpec(y="v_klambda", x="u_klambda", aspect="free").equal_aspect
+
+
+def test_set_view_with_equal_aspect_gives_equal_pixels_per_unit():
+    plot = PlotSpec(y="v_klambda", x="u_klambda")
+    fig = XYFigure(plot, CTX, figsize=(8, 6))
+    (x0, x1), (y0, y1) = fig.set_view((-10.0, 10.0), (-2.0, 2.0))
+    bbox = fig.ax.get_window_extent()
+    assert (x1 - x0) / bbox.width == pytest.approx((y1 - y0) / bbox.height, rel=1e-3)
+    assert (x0, x1) == pytest.approx((-10.0, 10.0))  # never narrowed: no data cut off
+    assert (y1 - y0) > 4.0  # the y range widened instead
+    free = XYFigure(PlotSpec(y="amp", x="uvdist_klambda"), CTX)
+    assert free.set_view((0.0, 40.0), (0.0, 5.0)) == ((0.0, 40.0), (0.0, 5.0))
+    plt.close(fig.fig)
