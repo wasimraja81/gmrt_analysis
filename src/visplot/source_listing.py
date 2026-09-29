@@ -5,7 +5,7 @@ iteration order is not guaranteed to match the file's own id order).
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from data_io.source_table import Source
@@ -27,7 +27,11 @@ def source_listing(source_table: dict[int, Source]) -> Figure:
             source.calcode or "--", flux_i,
         ])
 
-    fig, ax = plt.subplots(figsize=(9, 0.4 * max(len(rows), 1) + 1))
+    # A bare Figure with its own Agg canvas (no pyplot): made on any thread, saved with
+    # savefig, or embedded in a Qt window.
+    fig = Figure(figsize=(9, 0.4 * max(len(rows), 1) + 1))
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
     ax.axis("off")
     if rows:
         table = ax.table(cellText=rows, colLabels=_COLUMNS, cellLoc="center", bbox=[0, 0, 1, 1])

@@ -224,7 +224,68 @@ def test_a_plot_whose_record_cannot_be_written_is_not_made():
     _settle(app, window, lambda: True)
     assert window.tabs.count() == n_tabs
     texts = [window.messages.item(i).text() for i in range(window.messages.count())]
-    assert any("not plotted: the provenance record could not be written" in t for t in texts)
+    assert any("the provenance record could not be written in" in t and "nothing was run" in t for t in texts)
+    window.close()
+
+
+def test_save_writes_what_the_command_lines_save_writes_with_its_record():
+    app, window, path = _window("gui_save")
+    runs = path.parent / "runs"
+    window.form.provenance_edit.setText(str(runs))
+    # at 100 dpi: the streamed plot at --figure-size 5,4; the antenna layout at its own 11 x 11 in
+    for plots, name, pixels in ((("amp", "freq"), "amp-vs-freq", (400, 500)),
+                                ("antenna-layout", "antenna-layout", (1100, 1100))):
+        if isinstance(plots, tuple):
+            select_data(window.form.kind, "generic")
+            select_data(window.form.y.quantity, plots[0])
+            select_data(window.form.x.quantity, plots[1])
+        else:
+            select_data(window.form.kind, plots)
+        _settle(app, window, lambda: window.plot_button.isEnabled() and window.save_action.isEnabled())
+        gui_out, cli_out = path.parent / f"gui_{name}", path.parent / f"cli_{name}"
+        request = window.form.request(output_dir=str(gui_out), dpi=100, figure_size="5,4", no_highres_pdf=True)
+        window.save(request)
+        _settle(app, window, lambda: gui_out.exists() and not window._tasks)
+
+        (record,) = [r for r in _records(runs) if r["details"]["action"] == "save" and
+                     r["parameters"]["output_dir"] == str(gui_out)]
+        assert record["outcome"]["status"] == "success"
+        assert record["details"]["session"] == window.session.session_id
+        assert sorted(record["outputs"]) == sorted(str(p) for p in gui_out.iterdir())
+        assert window.history.item(window.history.rowCount() - 1, 1).text() == record["run_id"]
+
+        # The command line's run of the same request writes the same files, pixel for pixel.
+        from cli.run_visplot import main
+
+        assert main(["visplot", *request.replace(output_dir=str(cli_out)).to_argv()]) == 0
+        assert sorted(p.name for p in gui_out.iterdir()) == sorted(p.name for p in cli_out.iterdir())
+        png = f"visplot_{name}.png"
+        assert plt.imread(gui_out / png).shape[:2] == pixels
+        np.testing.assert_array_equal(plt.imread(gui_out / png), plt.imread(cli_out / png))
+    window.close()
+
+
+def test_the_save_dialog_builds_the_forms_request_with_the_save_options():
+    from visplot.gui.save_dialog import SaveDialog
+
+    app, window, path = _window("gui_save_dialog")
+    dialog = SaveDialog(window.form.request)
+    save_button = dialog.buttons.button(QtWidgets.QDialogButtonBox.Save)
+    assert not save_button.isEnabled() and "choose a folder" in dialog.problem.text()
+    dialog.folder.setText(str(path.parent / "out"))
+    dialog.prefix.setText("run1")
+    dialog.dpi.setValue(300)
+    dialog.width.setValue(10.5)
+    dialog.height.setValue(7.25)
+    dialog.highres.setChecked(False)
+    expected = window.form.request(output_dir=str(path.parent / "out"), output_prefix="run1", dpi=300,
+                                   figure_size="10.5,7.25", no_highres_pdf=True)
+    assert dialog.request() == expected and save_button.isEnabled()
+    assert dialog.command.text() == expected.command_line()
+    assert "at 600 dpi" in dialog.highres.text()
+
+    again = SaveDialog(window.form.request, dialog.actions())  # the next save offers the same options
+    assert again.request() == expected
     window.close()
 
 

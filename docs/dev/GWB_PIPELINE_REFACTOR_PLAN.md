@@ -2,7 +2,7 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, 413 tests passing; T26, T32 in progress; T33, point D, T20, T21 open (order in
+2026-09-29, 416 tests passing; T26, T32 in progress; T33, point D, T20, T21 open (order in
 Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -745,9 +745,18 @@ Buildable now, ahead of Phase C.
     pixels.
   Measured on 3C286 RR (141.7M samples, 6.8 GB): the GUI's Plot drew it in 12 s.
   Done since: provenance records from Plot, Locate's CSV and Export (T31, 2026-09-29).
-  Next: File > Save plots (the request's --output-dir), a Build index button (the
-  pipeline's build_index stage, for a file without its row index; user's request,
-  2026-09-28), then point D and T26's controls.
+  File > Save plots as files (2026-09-29, `gui/save_dialog.py`): folder, filename prefix,
+  `--dpi`, `--figure-size` and the high-resolution PDF, with the command it runs and the
+  files it would replace, checked by `check_request`; it runs `prepare` and
+  `save_outputs` on a background thread, with the save's record (`records.recorded_run`,
+  now also around the CLI's run and the GUI's Plot) and progress in the status bar; the
+  last save's options are offered again. Test: the GUI's save and the command line's run
+  of the same request write the same files, pixel for pixel, for a streamed plot and the
+  antenna layout. For the save off the main thread, the antenna layout and source listing
+  are now bare Figures with their own Agg canvas (pyplot's figures are Qt objects under
+  the Qt backend); the GWB file's antenna layout renders identically before and after.
+  Next: a Build index button (the pipeline's build_index stage, for a file without its
+  row index; user's request, 2026-09-28), then point D and T26's controls.
 
 - **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
   matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in

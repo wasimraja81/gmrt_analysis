@@ -126,3 +126,15 @@ def test_located_samples_name_their_command_and_record(capsys):
     assert f"# command: {record['details']['command']}" in header
     assert f"# provenance record: run {record['run_id']}, " in "\n".join(header)
     assert any(line.startswith("# written: 20") for line in header)
+
+
+def test_a_run_whose_record_cannot_be_written_is_not_run(capsys):
+    scratch = make_scratch_dir("records_cli_unwritable")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    blocker = scratch / "a_file"
+    blocker.write_text("")
+    with pytest.raises(SystemExit):
+        main(["visplot", str(path), "--plots", "amp-vs-freq", "--output-dir", str(scratch / "out"),
+              "--provenance-dir", str(blocker)])
+    assert "the provenance record could not be written in" in capsys.readouterr().err
+    assert not (scratch / "out").exists()

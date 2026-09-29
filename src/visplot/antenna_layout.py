@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 from astropy.coordinates import EarthLocation
-import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 
@@ -319,7 +319,11 @@ def antenna_layout(
     )
     names = [a.name for a in antennas]
 
-    fig, ax = plt.subplots(figsize=(11, 11))
+    # A bare Figure with its own Agg canvas (no pyplot): made on any thread, measured for the
+    # label placement below, saved with savefig, or embedded in a Qt window.
+    fig = Figure(figsize=(11, 11))
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot()
     ax.scatter(east_m, north_m, s=30, c="tab:blue")
     ax.set_xlabel("East (m)")
     ax.set_ylabel("North (m)")

@@ -31,7 +31,7 @@ matplotlib.use("Agg" if any(a.split("=")[0] in _HEADLESS_OPTIONS for a in sys.ar
 
 from data_io.astrometry import AstrometryWarning  # noqa: E402
 from visplot.range_cache import clear_cache  # noqa: E402
-from visplot.records import PlotRecord, WindowProvenance  # noqa: E402
+from visplot.records import PlotRecord, WindowProvenance, recorded_run  # noqa: E402
 from visplot.request import PlotRequest, build_arg_parser  # noqa: E402,F401  (build_arg_parser: for callers)
 from visplot.run import MissingIndexError, RequestError, prepare, run_locate, save_outputs  # noqa: E402
 
@@ -81,29 +81,19 @@ def main(argv: list[str]) -> int:
     warnings.simplefilter("ignore", AstrometryWarning)  # reported once, through the run's report
 
     action = ", ".join(name for name, on in (("locate", request.locate), ("save", request.output_dir)) if on)
-    record = PlotRecord(request, action or "window")
-    print(f"provenance record: {record.describe()}", flush=True)
     try:
-        return _run(request, record, parser)
+        with recorded_run(request, action or "window") as record:
+            print(f"provenance record: {record.describe()}", flush=True)
+            return _run(request, record, parser)
     except MissingIndexError as err:
-        record.finish(str(err))
         print(err, file=sys.stderr)
         return 1
     except RequestError as err:
-        record.finish(str(err))
         parser.error(str(err))
-    except BaseException as err:  # KeyboardInterrupt included: the record says how the run ended
-        record.finish(f"{type(err).__name__}: {err}")
-        raise
-    finally:
-        record.finish()  # the run completed (no-op after a failure)
 
 
 def _run(request: PlotRequest, record: PlotRecord, parser: argparse.ArgumentParser) -> int:
-    def report(level: str, text: str) -> None:
-        _print_report(level, text)
-        record.log(level, text)
-
+    report = record.reporting(_print_report)
     run = prepare(request, report=report)
     if run.locate_box is not None:
         written = run_locate(run, report, _terminal_progress, record=record.describe())

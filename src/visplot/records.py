@@ -23,13 +23,16 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Iterator
 
 from data_io.row_index import default_row_index_path
 from provenance.logging_setup import stage_log_path
 from provenance.manifest import RunManifest
 from visplot.request import PlotRequest
+from visplot.run import RequestError
 
 PLOT_STAGE = "visplot"
 SESSION_STAGE = "visplot_session"
@@ -86,6 +89,13 @@ class PlotRecord:
         if not self.finished:
             (self.manifest.logger.warning if level == "warning" else self.manifest.logger.info)(text)
 
+    def reporting(self, report: Callable[[str, str], None]) -> Callable[[str, str], None]:
+        """A run's report callback: `report`, and into this record's log."""
+        def both(level: str, text: str) -> None:
+            report(level, text)
+            self.log(level, text)
+        return both
+
     def add_output(self, path) -> None:
         self.manifest.add_output(Path(path).resolve())
 
@@ -98,6 +108,24 @@ class PlotRecord:
             self.manifest.__exit__(None, None, None)
         else:
             self.manifest.__exit__(RuntimeError, RuntimeError(error), None)
+
+
+@contextmanager
+def recorded_run(request: PlotRequest, action: str, session_id: str | None = None) -> Iterator[PlotRecord]:
+    """A `PlotRecord` around a run: complete when the block ends, failed
+    with the reason when it raises (the exception goes on). A record that
+    cannot be written raises RequestError before anything runs."""
+    try:
+        record = PlotRecord(request, action, session_id=session_id)
+    except Exception as err:
+        raise RequestError(f"the provenance record could not be written in {request.provenance_dir} "
+                           f"({type(err).__name__}: {err}); nothing was run") from err
+    try:
+        yield record
+    except BaseException as err:  # KeyboardInterrupt included: the record says how the run ended
+        record.finish(str(err) if isinstance(err, RequestError) else f"{type(err).__name__}: {err}")
+        raise
+    record.finish()
 
 
 class SessionRecord:

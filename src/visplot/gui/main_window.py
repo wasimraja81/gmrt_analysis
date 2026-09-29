@@ -9,14 +9,17 @@ command line prints it) and the history of plots made.
 Plot builds a `PlotRequest` from the form and runs it through
 `visplot.run` -- the same `check_request`, `prepare` and plot window the
 command line runs -- so a GUI plot and its command line are one run.
-Opening a file, counting a selection and preparing a plot run on
-background threads; the window polls them.
+File > Save plots as files (`gui.save_dialog`) adds the save's options
+(folder, prefix, dpi, figure size) and runs `prepare` and `save_outputs`,
+as the command line's --output-dir run does. Opening a file, counting a
+selection, preparing a plot and saving run on background threads; the
+window polls them.
 
 Provenance (T31, `visplot.records`): the window's session has a record
-whose log keeps every message the window shows; each Plot, and each CSV or
-export a plot tab saves, has its own record (under the request's
---provenance-dir), naming the session. A plot's record is complete when
-its tab opens.
+whose log keeps every message the window shows; each Plot and save, and
+each CSV or export a plot tab saves, has its own record (under the
+request's --provenance-dir), naming the session. A plot's record is
+complete when its tab opens, a save's when its files are written.
 """
 
 from __future__ import annotations
@@ -30,11 +33,12 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from visplot.file_summary import summarize
 from visplot.gui.form import RequestForm
+from visplot.gui.save_dialog import SaveDialog
 from visplot.gui.widgets import CommandLine
 from visplot.gui.style import THEMES, apply_theme
-from visplot.records import PlotRecord, SessionRecord, WindowProvenance
+from visplot.records import PlotRecord, SessionRecord, WindowProvenance, recorded_run
 from visplot.request import build_arg_parser
-from visplot.run import RequestError, check_request, count_selection, open_file, prepare
+from visplot.run import RequestError, check_request, count_selection, open_file, prepare, save_outputs
 
 POLL_MS = 100
 COUNT_DELAY_MS = 400
@@ -53,6 +57,7 @@ class _Task:
         self.result = None
         self.error: str | None = None
         self.done = False
+        self.status = ""  # progress text `fn` may set, shown in the status bar
         self.thread = threading.Thread(target=self._body, daemon=True)
 
     def _body(self):
@@ -202,9 +207,10 @@ class VisplotWindow(QtWidgets.QMainWindow):
     def _build_menus(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction("&Open UVFITS…", QtGui.QKeySequence.Open, self._choose_file)
-        save = file_menu.addAction("Save plots as files…")
-        save.setEnabled(False)
-        save.setToolTip("The command line's --output-dir run from the form (next step)")
+        self.save_action = file_menu.addAction("&Save plots as files…", QtGui.QKeySequence.Save, self._save_dialog)
+        self.save_action.setToolTip("The form's request saved as PNGs and PDFs, as the command line's "
+                                    "--output-dir run saves it")
+        self._save_options: dict | None = None  # the last save's folder, prefix, dpi, ..., offered again
         file_menu.addSeparator()
         file_menu.addAction("&Quit", QtGui.QKeySequence.Quit, self.close)
         view = self.menuBar().addMenu("&View")
@@ -298,6 +304,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.problem.setText(problem or "")
         self.plot_button.setEnabled(problem is None)
         self.plot_button.setToolTip(problem or "Plot this request in a new tab")
+        self.save_action.setEnabled(problem is None)
         if self.opened is not None and request is not None:
             self.count_timer.start()
 
@@ -336,23 +343,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage("preparing the plot …")
 
         def work():
-            try:
-                record = PlotRecord(request, "plot", session_id=session_id)
-            except Exception as err:
-                raise RequestError(f"not plotted: the provenance record could not be written in "
-                                   f"{request.provenance_dir} ({type(err).__name__}: {err})") from err
-            self.report("info", f"plot {record.run_id}: {record.command}")
-
-            def report(level: str, text: str) -> None:
-                self.report(level, text)
-                record.log(level, text)
-
-            try:
-                run = prepare(request, opened, report=report)
-            except BaseException as err:
-                record.finish(str(err) if isinstance(err, RequestError) else f"{type(err).__name__}: {err}")
-                raise
-            record.finish()
+            with recorded_run(request, "plot", session_id) as record:
+                self.report("info", f"plot {record.run_id}: {record.command}")
+                run = prepare(request, opened, report=record.reporting(self.report))
             return run, record
 
         def done(result):
@@ -396,6 +389,48 @@ class VisplotWindow(QtWidgets.QMainWindow):
 
         self._start(work, done, failed)
 
+    # ---- saving -----------------------------------------------------------------------
+
+    def _save_dialog(self) -> None:
+        dialog = SaveDialog(self.form.request, self._save_options, self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self._save_options = dialog.actions()
+            self.save(dialog.request())
+
+    def save(self, request) -> None:
+        """Save `request`'s plots as files (it names --output-dir), as the
+        command line does: the same `prepare` and `save_outputs`, on a
+        background thread, with the run's provenance record."""
+        opened = self.opened
+        session_id = self.session.session_id
+        self.statusBar().showMessage(f"saving to {request.output_dir} …")
+
+        def progress(pass_progress):
+            def on_chunk(rows_done: int) -> bool:
+                task.status = pass_progress.text(rows_done)
+                return True
+            return on_chunk
+
+        def work():
+            with recorded_run(request, "save", session_id) as record:
+                self.report("info", f"save {record.run_id}: {record.command}")
+                report = record.reporting(self.report)
+                run = prepare(request, opened, report=report)
+                for path in save_outputs(run, report, progress):
+                    record.add_output(path)
+            return record
+
+        def done(record):
+            self._add_history(request, record, f"saved to {request.output_dir}")
+            self.statusBar().showMessage(f"saved to {request.output_dir}", 8000)
+
+        def failed(message):
+            self.report("warning", message)
+            self.statusBar().showMessage("the plots could not be saved")
+
+        task = _Task(work, done, failed)
+        self._launch(task)
+
     def _close_tab(self, index: int) -> None:
         tab = self.tabs.widget(index)
         if hasattr(tab, "panel"):
@@ -433,12 +468,17 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self._pending_reports.append((level, text))
 
     def _start(self, fn, on_done, on_error) -> None:
-        task = _Task(fn, on_done, on_error)
+        self._launch(_Task(fn, on_done, on_error))
+
+    def _launch(self, task: _Task) -> None:
         self._tasks.append(task)
         task.thread.start()
 
     def _poll(self) -> None:
         self._show_reports()
+        running = [t.status for t in self._tasks if t.status and not t.done]
+        if running and running[-1] != self.statusBar().currentMessage():
+            self.statusBar().showMessage(running[-1])
         for task in [t for t in self._tasks if t.done]:
             self._tasks.remove(task)
             if task.error is None:

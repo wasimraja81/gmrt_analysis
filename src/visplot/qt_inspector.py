@@ -151,9 +151,6 @@ class InspectorWindow(QtWidgets.QMainWindow):
     # ---- tabs ---------------------------------------------------------------
 
     def _add_static_tab(self, name: str, fig) -> None:
-        import matplotlib.pyplot as plt
-
-        plt.close(fig)  # a pyplot figure: embed it here, without pyplot's own window
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         canvas = FigureCanvasQTAgg(fig)
