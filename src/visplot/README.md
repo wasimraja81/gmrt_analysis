@@ -18,8 +18,9 @@ Plotting for exploring a UVFITS observation, driven by `bin/visplot.sh` (`src/cl
 - `xy_session`: chunk size, range pre-pass and plotting pass.
 - `xy_figure`: a pixel grid drawn as an image on vector axes; `plot_panel`: the panel under
   each plot (color key, Stokes, channels, baselines, sources, time, filters, what was
-  drawn, the provenance record); `clock_axis`: ticks and labels for clock-time axes
-  (dd:hh:mm:ss).
+  drawn, the provenance record); `fonts`: the panel's fonts, loaded from their files in
+  the venv (`config/fonts.txt`, installed by `bin/build_venv.sh`); `clock_axis`: ticks and labels
+  for clock-time axes (dd:hh:mm:ss).
 - `axis_scale`, `value_histogram`, `range_cache`: axis scales, percentile ranges, and axis
   ranges cached on disk.
 - `qt_inspector`: the Qt window: plots fill as the data streams in and re-stream on zoom;

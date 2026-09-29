@@ -6,9 +6,9 @@ what was drawn, how flags combine where a point stands for several samples,
 and the provenance record of the run that made the figure.
 
 `PanelFacts` is what a run selected (`panel_facts`, from `visplot.run`);
-`PlotPanel` draws it, one line per anchored box, in the Helvetica family
-(CERN ROOT's default text font; its metric clones TeX Gyre Heros and Nimbus
-Sans where installed, else DejaVu Sans, matplotlib's own). The panel is laid
+`PlotPanel` draws it, one line per anchored box, in the request's
+--panel-font (`visplot.fonts`: TeX Gyre Heros, Helvetica's metric clone,
+installed in the venv; or DejaVu Sans), loaded from its file. The panel is laid
 out in inches from the figure's bottom edge, so it keeps its size when a
 window resizes the figure; `XYFigure` places its axes above it. Red is kept
 for flagged samples, drawn as light-coral crosses: the category palettes have
@@ -23,15 +23,14 @@ from functools import lru_cache
 import matplotlib
 import numpy as np
 from astropy.time import Time
-from matplotlib import font_manager
 from matplotlib.colors import to_rgba
-from matplotlib.font_manager import FontProperties
 from matplotlib.lines import Line2D
 from matplotlib.offsetbox import AnchoredOffsetbox, DrawingArea, HPacker, TextArea
 from matplotlib.patches import Rectangle
 from matplotlib.textpath import TextPath
 from matplotlib.transforms import blended_transform_factory
 
+from visplot.fonts import DEFAULT_PANEL_FONT, font_properties
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import QUANTITIES, QuantityContext, category_label, utc_jd
 from visplot.stream import FLAGGED_LAYER
@@ -41,8 +40,6 @@ FLAGGED_COLOR = "lightcoral"
 _PALETTE_SMALL = [c for i, c in enumerate(matplotlib.colormaps["tab10"].colors) if i not in (3, 6)]
 _PALETTE_LARGE = [c for i, c in enumerate(matplotlib.colormaps["tab20"].colors) if i not in (6, 7, 12, 13)]
 
-# Helvetica's metric clones first; DejaVu Sans ships with matplotlib, so there is always one.
-PANEL_FONTS = ("TeX Gyre Heros", "Nimbus Sans", "Liberation Sans", "DejaVu Sans")
 FONT_PT = 9.0
 FOOTER_PT = 7.0
 LINE_IN = 0.21  # one line of the panel
@@ -60,13 +57,6 @@ _FILTERS = (("antennas", "antennas {}"), ("exclude_antennas", "excluding {}"), (
             ("w_range_klambda", "w {} kλ"), ("uvdist_range_klambda", "uv distance {} kλ"),
             ("ha_range", "hour angle {}"), ("az_range", "azimuth {}"), ("el_range", "elevation {}"),
             ("pa_range", "parallactic angle {}"))
-
-
-@lru_cache(maxsize=1)
-def panel_font() -> str:
-    """The first of PANEL_FONTS installed."""
-    installed = {f.name for f in font_manager.fontManager.ttflist}
-    return next(name for name in PANEL_FONTS if name in installed or name == "DejaVu Sans")
 
 
 def category_palette(n: int) -> list[tuple]:
@@ -173,23 +163,22 @@ def _cross(color) -> DrawingArea:
 
 
 @lru_cache(maxsize=4096)
-def _text_width_pt(text: str, size: float = FONT_PT) -> float:
-    """`text`'s width in points in the panel's font, from the font's own
+def _text_width_pt(text: str, font: str = DEFAULT_PANEL_FONT, size: float = FONT_PT) -> float:
+    """`text`'s width in points in --panel-font `font`, from the font's own
     metrics (no renderer); trailing spaces count as a space's advance each."""
     stripped = text.rstrip()
-    prop = FontProperties(family=panel_font(), size=size)
-    width = TextPath((0, 0), stripped, prop=prop).get_extents().width if stripped else 0.0
+    width = TextPath((0, 0), stripped, prop=font_properties(font, size)).get_extents().width if stripped else 0.0
     return width + (len(text) - len(stripped)) * 0.28 * size
 
 
-def _ellipsize(text: str, width_pt: float) -> str:
+def _ellipsize(text: str, width_pt: float, font: str = DEFAULT_PANEL_FONT) -> str:
     """`text`, cut with "…" to fit `width_pt`."""
-    if _text_width_pt(text) <= width_pt:
+    if _text_width_pt(text, font) <= width_pt:
         return text
     lo, hi = 0, len(text)
     while lo < hi:  # the longest prefix that fits with the ellipsis
         mid = (lo + hi + 1) // 2
-        lo, hi = (mid, hi) if _text_width_pt(text[:mid] + "…") <= width_pt else (lo, mid - 1)
+        lo, hi = (mid, hi) if _text_width_pt(text[:mid] + "…", font) <= width_pt else (lo, mid - 1)
     return text[:lo] + "…"
 
 
@@ -200,22 +189,22 @@ class PlotPanel:
     across rebuilds; `set_note` sets the caveat in the footer."""
 
     def __init__(self, fig, plot: PlotSpec, ctx: QuantityContext, facts: PanelFacts | None = None,
-                 sources: list[str] | None = None):
-        self.fig, self.plot, self.ctx, self.facts = fig, plot, ctx, facts
+                 sources: list[str] | None = None, font: str = DEFAULT_PANEL_FONT):
+        self.fig, self.plot, self.ctx, self.facts, self.font = fig, plot, ctx, facts, font
         self.source_names = [name for _, name in facts.sources] if facts else list(sources or [])
-        font = panel_font()
-        self.label_props = dict(family=font, size=FONT_PT, color=LABEL_COLOR)
-        self.value_props = dict(family=font, size=FONT_PT, color=VALUE_COLOR)
-        footer_props = dict(family=font, size=FOOTER_PT, color=LABEL_COLOR)
+        text_font = font_properties(font, FONT_PT)
+        self.label_props = dict(fontproperties=text_font, color=LABEL_COLOR)
+        self.value_props = dict(fontproperties=text_font, color=VALUE_COLOR)
+        footer_props = dict(fontproperties=font_properties(font, FOOTER_PT), color=LABEL_COLOR)
         self.status = TextArea("", textprops=self.value_props)
         self.flagged = TextArea("flagged", textprops=self.value_props)  # "flagged: none" when none are drawn
         self.record = TextArea("", textprops=footer_props)
         self.transform = blended_transform_factory(fig.transFigure, fig.dpi_scale_trans)  # x: fraction, y: inches
         self.note = fig.text(_LEFT, 0.06, "", transform=self.transform, ha="left", va="bottom",
-                             color="darkred", wrap=True, family=font, size=FOOTER_PT)
+                             color="darkred", wrap=True, fontproperties=font_properties(font, FOOTER_PT))
         self._record_box = HPacker(children=[TextArea("record", textprops=footer_props), self.record],
                                    align="baseline", pad=0, sep=4)
-        self.label_width_pt = max(_text_width_pt(label) for label in _LABELS) + 8
+        self.label_width_pt = max(_text_width_pt(label, font) for label in _LABELS) + 8
         self.n_lines = 0
         self._artists: list = []
         self._built_for = None
@@ -322,8 +311,8 @@ class PlotPanel:
                 units.append([item])
         lines, current, used = [], [], 0.0
         for unit in units:
-            width = sum(_text_width_pt(i) if isinstance(i, str) else
-                        (_SWATCH_PT if isinstance(i, DrawingArea) else _text_width_pt(i.get_text())) + 4
+            width = sum(_text_width_pt(i, self.font) if isinstance(i, str) else
+                        (_SWATCH_PT if isinstance(i, DrawingArea) else _text_width_pt(i.get_text(), self.font)) + 4
                         for i in unit)
             if current and used + width > room:
                 lines.append(current)
@@ -340,11 +329,11 @@ class PlotPanel:
         return FOOTER_IN + self.n_lines * LINE_IN + RULE_GAP_IN
 
     def _line_box(self, label: str, items, width_pt: float) -> HPacker:
-        spacer = DrawingArea(max(0.0, self.label_width_pt - _text_width_pt(label)), 1)
+        spacer = DrawingArea(max(0.0, self.label_width_pt - _text_width_pt(label, self.font)), 1)
         children = [TextArea(label, textprops=self.label_props), spacer]
         room = width_pt - self.label_width_pt
         for item in items:
-            children.append(TextArea(_ellipsize(item, room), textprops=self.value_props) if isinstance(item, str)
+            children.append(TextArea(_ellipsize(item, room, self.font), textprops=self.value_props) if isinstance(item, str)
                             else item)
         return HPacker(children=children, align="center", pad=0, sep=4)
 

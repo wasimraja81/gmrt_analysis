@@ -8,3 +8,7 @@ because it happened to work for GSB.
 
 `requirements.txt` — the frozen `gmrt/` venv dependency list. See
 `../docs/dev/ENVIRONMENT_SETUP.md` for rebuild instructions.
+
+`fonts.txt` — the fonts visplot draws with, pinned by version, download URL and SHA-256;
+building the venv (`../bin/build_venv.sh`) installs them into it, with the packages of
+`requirements.txt` (see the same document).

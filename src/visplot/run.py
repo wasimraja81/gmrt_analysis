@@ -35,6 +35,7 @@ from data_io.source_table import read_source_table
 from data_io.timestamp_check import check_timestamps
 from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observatory_time_zone
 from visplot.antenna_layout import antenna_layout
+from visplot.fonts import font_file
 from visplot.locate_csv import LocateCsvWriter
 from visplot.plot_panel import panel_facts
 from visplot.plot_spec import PlotSpec, expand_plot_name
@@ -119,6 +120,7 @@ def check_request(request: PlotRequest) -> CheckedRequest:
     try:
         resolve_dpi_arg(request.dpi)
         figure_size = resolve_figure_size_arg(request.figure_size)
+        font_file(request.panel_font)  # installed in the venv (FontNotInstalled says how to install it)
         samplers = {"--every-nth": request.every_nth, "--every-nth-integration": request.every_nth_integration,
                     "--random-subset-n": request.random_subset_n}
         given = [name for name, value in samplers.items() if value is not None]
@@ -331,7 +333,8 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     facts = panel_facts(request, index, selection.row_indices, channel_indices, stokes_labels, selection.sources, ctx,
                         stride_pairs=selection.stride_pairs)
     xy_figures = {p: XYFigure(p, ctx, sources_present, opened.telescope, request.fits_path,
-                              figsize=checked.figure_size, facts=facts) for p in xy_plots}
+                              figsize=checked.figure_size, facts=facts, panel_font=request.panel_font)
+                  for p in xy_plots}
     cache = RangeCache(request.cache_dir) if request.cache_dir else None
     if cache is not None:
         for stale in cache.remove_stale_partials():

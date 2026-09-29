@@ -18,6 +18,7 @@ import shlex
 from pathlib import Path
 
 from visplot.axis_scale import SCALE_NAMES
+from visplot.fonts import DEFAULT_PANEL_FONT, PANEL_FONTS
 from visplot.request_args import CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DPI_LIMITS, quantity_help
 from visplot.xy_session import DEFAULT_STREAM_THREADS
 
@@ -210,6 +211,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "left out)",
     )
     style.add_argument("--mirror", action="store_true", help="also plot (-x, -y), e.g. for UV coverage")
+    style.add_argument(
+        "--panel-font", choices=sorted(PANEL_FONTS), default=DEFAULT_PANEL_FONT,
+        help="font of the panel under each plot, loaded from its file: tex-gyre-heros (default; Helvetica's "
+        "metric clone, installed into the venv by bin/build_venv.sh) or dejavu-sans (matplotlib's own)",
+    )
     for axis in ("x", "y"):
         style.add_argument(
             f"--{axis}-unit", metavar="UNIT",

@@ -15,6 +15,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from visplot.clock_axis import ClockFormatter, ClockLocator
+from visplot.fonts import DEFAULT_PANEL_FONT
 from visplot.plot_panel import PanelFacts, PlotPanel
 from visplot.plot_spec import PlotSpec
 from visplot.plot_title import build_plot_title
@@ -128,13 +129,13 @@ class XYFigure:
     without them the panel shows what was drawn and the record)."""
 
     def __init__(self, plot: PlotSpec, ctx: QuantityContext, sources=None, telescope=None, source_path=None,
-                 figsize=(8, 7), facts: PanelFacts | None = None):
+                 figsize=(8, 7), facts: PanelFacts | None = None, panel_font: str = DEFAULT_PANEL_FONT):
         self.plot = plot
         self.ctx = ctx
         # A bare Figure (no pyplot): saved with savefig, or embedded in a Qt window.
         self.fig = Figure(figsize=figsize)
         self.ax = self.fig.add_subplot()
-        self.panel = PlotPanel(self.fig, plot, ctx, facts, sources)
+        self.panel = PlotPanel(self.fig, plot, ctx, facts, sources, font=panel_font)
         self.status = self.panel.status  # what was drawn (get_text / set_text)
         self._seen_codes: tuple = ()
         self.ax.set_xlabel(quantity_label(plot.x, ctx, plot.x_unit))

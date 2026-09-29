@@ -2,9 +2,9 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36, T37 and T39 2026-09-29, 440 tests passing; T26, T32 in progress; T33, T38,
-T40, T41, point D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open,
-parked until the Moon is imaged.
+2026-09-29, T36, T37, T39 and T41 2026-09-29, 446 tests passing; T26, T32 in progress;
+T33, T38, T40, point D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w)
+open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -909,13 +909,36 @@ Buildable now, ahead of Phase C.
   professional displays such as from medical fraternity." T37's panel stays as built
   until then.
 
-- **T41 — Fonts: portable, reproducible, chosen — OPEN (user, 2026-09-29).** The panel's
-  font comes from the system (TeX Gyre Heros, Nimbus Sans, Liberation Sans, else DejaVu
-  Sans), so the same command can draw different pixels on another machine. The user:
-  "I want portability and reproducibility", and a font chooser (a drop-down in the GUI);
-  the axes' fonts are fine as they are. To agree: which fonts to ship in the repository
-  (TeX Gyre fonts are under the GUST Font License, redistributable), whether the choice
-  is a request option (so the command records it), and what it applies to.
+- **T41 — Fonts: portable, reproducible, chosen — DONE (user, 2026-09-29; built the
+  same day).** The panel's font came from the system (TeX Gyre Heros, Nimbus Sans,
+  Liberation Sans, else DejaVu Sans), so the same command could draw different pixels on
+  another machine. The user: "I want portability and reproducibility", a font chooser
+  (a drop-down in the GUI), the axes' fonts fine as they are, and "we want the fonts
+  installed in the venv, not in system". Shipping font files in the repository was set
+  aside: TeX Gyre's licence (the LPPL) counts distributing part of the work as a
+  modification, a reading better not guessed; installing from the publisher avoids
+  redistributing at all. pip cannot install them (no TeX Gyre or Liberation package on
+  PyPI among the names tried).
+  Built: `config/fonts.txt` pins TeX Gyre Heros 2.004 (GUST's OpenType package, its URL
+  and SHA-256 755954b7...265d); `bin/install_fonts.sh` (`src/cli/install_fonts.py`)
+  downloads it into `tmp/`, checks the SHA-256 (a mismatch installs nothing), unpacks
+  the eight files unmodified into `gmrt/share/fonts/tex-gyre-heros/` with a SOURCE.txt,
+  deletes the download, and leaves a font installed from the same pin as it is. Tied to
+  the venv's build (the user: "tie the font installation to the venv building
+  process"): `bin/build_venv.sh` builds the venv in one run -- creates it (with `--clear`,
+  or when missing), installs `config/requirements.txt`, installs `config/fonts.txt`, and
+  checks both (`install_fonts.py --check`); `docs/dev/ENVIRONMENT_SETUP.md` now builds
+  the venv with it. `visplot/fonts.py` loads the panel's font from its file (TeX Gyre
+  Heros from the venv; DejaVu Sans from matplotlib);
+  `--panel-font tex-gyre-heros|dejavu-sans` (default tex-gyre-heros) and the
+  GUI's "Panel font" drop-down choose it; the command records it, and the run's record
+  names the font file and its SHA-256. A font not installed stops the run before the
+  file is read, saying to run `bin/build_venv.sh` or choose dejavu-sans. Tests: the
+  installer on a pinned test zip (once, then "already installed"; a wrong checksum
+  refused; `--check`), the repository's pin against the installed font, the panel
+  drawing with each font's file and its record, a missing font stopping the run.
+  `bin/build_venv.sh` run on the existing venv (2026-09-29): every requirement already
+  satisfied, the font already installed, both checks passing.
 
 - **T20 fits here too:** its file summary (channel width, integration time, sources,
   dates) belongs in the GUI's data panel.

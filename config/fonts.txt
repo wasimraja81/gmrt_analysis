@@ -1,0 +1,8 @@
+# Fonts visplot draws with (T41), installed into the venv as a step of building it
+# (bin/build_venv.sh; on its own, bin/install_fonts.sh): each is downloaded from the
+# publisher, checked against the SHA-256 below, and unpacked
+# unmodified into gmrt/share/fonts/<name>/. Never taken from the system's fonts, so
+# the same command draws the same pixels on every machine built from this file.
+#
+# name            version  sha256                                                            url
+tex-gyre-heros    2.004    755954b7349b803fc1c3d82fe9d9c4f7cf66467af718eaaf4f78ae1a09bf265d  https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros/qhv2.004otf.zip

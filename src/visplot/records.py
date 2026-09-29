@@ -31,6 +31,7 @@ from typing import Callable, Iterator
 from data_io.row_index import default_row_index_path
 from provenance.logging_setup import stage_log_path
 from provenance.manifest import RunManifest
+from visplot.fonts import FontNotInstalled, file_sha256, font_file
 from visplot.request import PlotRequest
 from visplot.run import RequestError, Stopped
 
@@ -38,6 +39,16 @@ PLOT_STAGE = "visplot"
 SESSION_STAGE = "visplot_session"
 PACKAGES = ("numpy", "scipy", "astropy", "pyerfa", "matplotlib", "PySide6_Essentials")
 _NO_CONSOLE = logging.CRITICAL + 10  # records log to their files; the caller shows messages itself
+
+
+def panel_font_details(name: str) -> dict:
+    """The --panel-font's file and its SHA-256 (the file may be missing: the
+    run then stops, and the record says why)."""
+    try:
+        path = font_file(name)
+    except FontNotInstalled:
+        return {"name": name, "file": None, "sha256": None}
+    return {"name": name, "file": str(path), "sha256": file_sha256(path)}
 
 
 def package_versions() -> dict[str, str]:
@@ -66,7 +77,8 @@ class PlotRecord:
             stage=PLOT_STAGE, work_dir=Path(request.provenance_dir), parameters=request.as_dict(), inputs=inputs,
             console_log_level=_NO_CONSOLE,
             details={"action": action, "command": self.command, "session": session_id,
-                     "packages": package_versions(), **(details or {})},
+                     "packages": package_versions(), "panel_font": panel_font_details(request.panel_font),
+                     **(details or {})},
         )
         self.manifest.__enter__()
         self.finished = False

@@ -5,20 +5,42 @@
 All Python work in this repo runs inside the `gmrt/` virtualenv at the repo root. Never
 `pip install` into system Python for this project — every dependency goes into `gmrt/`.
 
-## Rebuilding from scratch
+## Building the venv: `bin/build_venv.sh`
 
 ```bash
 cd /path/to/gmrt_analysis
-python3 -m venv gmrt --clear
-gmrt/bin/python -m pip install --upgrade pip
-gmrt/bin/pip install -r config/requirements.txt
+bin/build_venv.sh           # create gmrt/ if it is missing, else bring it to the pins
+bin/build_venv.sh --clear   # delete gmrt/ and build it afresh
 ```
 
-Verify:
+One script builds all of it, so no part can be left out:
 
-```bash
-gmrt/bin/python -c "import numpy, scipy, astropy, matplotlib, skimage, imageio, yaml; print('OK')"
-```
+1. creates `gmrt/` (`python3 -m venv --clear gmrt`, then upgrades pip) -- with `--clear`,
+   or when there is no venv yet; `PYTHON=python3.12 bin/build_venv.sh` picks the Python;
+2. installs the packages pinned in `config/requirements.txt`;
+3. installs the fonts pinned in `config/fonts.txt` (below);
+4. checks: the main packages import, and every pinned font is installed from its pin.
+
+Run on a venv that already matches the pins, it changes nothing and ends with the checks,
+so it also serves as the verification. To check the fonts alone:
+`bin/install_fonts.sh --check`.
+
+## Fonts: `config/fonts.txt`
+
+visplot draws the panel under each plot in a font loaded from its file, never looked up
+among the system's fonts, so the same command draws the same pixels on every machine
+built this way (T41). `config/fonts.txt` pins each font -- version, the publisher's
+download URL, and the download's SHA-256 -- as `config/requirements.txt` pins packages.
+The venv build (`bin/build_venv.sh`, step 3; on its own, `bin/install_fonts.sh`)
+downloads each into the repository's `tmp/`, checks the SHA-256,
+unpacks it unmodified into `gmrt/share/fonts/<name>/` with a `SOURCE.txt` saying where
+it came from, and deletes the download; a font already installed from the same pin is
+left as it is. The script exists because pip cannot install these fonts: none of the names
+tried for TeX Gyre or Liberation on PyPI exists (2026-09-29).
+The pinned font is TeX Gyre Heros 2.004 (Helvetica's metric clone, from GUST, under the
+GUST Font License); visplot's `--panel-font dejavu-sans` uses matplotlib's own DejaVu
+Sans instead. Without the installed font, a visplot run stops and says to run
+`bin/build_venv.sh`.
 
 ## What's in `config/requirements.txt`
 

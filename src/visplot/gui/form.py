@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from PySide6 import QtCore, QtWidgets
 
 from instruments.observatory_time_zones import observatory_time_zone
+from visplot.fonts import PANEL_FONTS
 from visplot.gui.widgets import CheckedLineEdit, CollapsibleSection, form_layout, grouped_combo, hint, row, select_data
 from visplot.plot_spec import PRESETS
 from visplot.quantities import QUANTITIES, QuantityContext, units_of
@@ -416,6 +417,11 @@ class RequestForm(QtWidgets.QWidget):
         form.addRow("Marker size", box)
         form.addRow("", self._add(flag_field("show_flagged", QtWidgets.QCheckBox("show flagged samples (light-coral crosses)"))))
         form.addRow("", self._add(flag_field("mirror", QtWidgets.QCheckBox("mirror (-x, -y), e.g. uv coverage"))))
+        panel_font = QtWidgets.QComboBox()
+        for name in _parser_choices("panel_font"):
+            panel_font.addItem(PANEL_FONTS[name][0], name)
+        select_data(panel_font, build_arg_parser().get_default("panel_font"))
+        form.addRow("Panel font", self._add(combo_field("panel_font", panel_font)))
         return section
 
     def _performance_section(self) -> CollapsibleSection:
