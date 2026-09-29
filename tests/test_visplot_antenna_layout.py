@@ -1,3 +1,5 @@
+import os
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -9,7 +11,7 @@ import astropy.units as u
 
 from data_io.antenna_table import Antenna
 from visplot.antenna_layout import (
-    _choose_inset_corner,
+    _choose_inset_box,
     _detect_compact_core_mask,
     _ecef_offsets_to_enu_m,
     _largest_relative_gap_threshold,
@@ -155,16 +157,55 @@ def test_antenna_layout_has_no_inset_without_a_compact_core():
     plt.close(fig)
 
 
-def test_choose_inset_corner_picks_the_corner_with_fewest_outside_antennas():
+def _square_axes_0_100():
     fig, ax = plt.subplots()
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(0.0, 100.0)
-    # Points crowd the lower-left, lower-right, and upper-left corners;
-    # upper-right is empty and should be chosen.
-    outside_e = np.array([5.0, 95.0, 5.0])
-    outside_n = np.array([5.0, 5.0, 95.0])
-    corner = _choose_inset_corner(ax, outside_e, outside_n)
-    assert corner == (0.52, 0.52)
+    fig.canvas.draw()
+    return fig, ax
+
+
+def test_choose_inset_box_picks_an_empty_corner_at_full_size():
+    fig, ax = _square_axes_0_100()
+    # Points crowd the lower-left, lower-right, and upper-left corners; upper-right is empty.
+    assert _choose_inset_box(ax, np.array([5.0, 95.0, 5.0]), np.array([5.0, 5.0, 95.0])) == \
+        pytest.approx((0.52, 0.52, 0.46))
+    plt.close(fig)
+
+
+def test_choose_inset_box_shrinks_the_inset_off_a_marker_at_its_edge():
+    fig, ax = _square_axes_0_100()
+    # The upper-right inset's full-size box starts at x = 52; a marker centred at x = 51.5
+    # is outside it, but its disc is not (GMRT's S04 against the lower-right inset).
+    east, north = np.array([5.0, 95.0, 5.0, 51.5]), np.array([5.0, 5.0, 95.0, 75.0])
+    assert _choose_inset_box(ax, east, north) == pytest.approx((0.54, 0.54, 0.44))
+    plt.close(fig)
+
+
+def test_choose_inset_box_keeps_off_the_core_zoom_rectangle():
+    fig, ax = _square_axes_0_100()
+    fx, fy, side = _choose_inset_box(ax, np.array([]), np.array([]), keep_clear=[(60.0, 60.0, 70.0, 70.0)])
+    assert (fx, fy, side) == pytest.approx((0.02, 0.52, 0.46))  # upper left: the upper right holds the box
+    plt.close(fig)
+
+
+REAL_GWB_FITS = "/data1/gmrt/40_014_25JUL2021/40_014_25jul2021_2.6s_gwb.FITS"
+
+
+@pytest.mark.skipif(not os.path.exists(REAL_GWB_FITS), reason="real GWB raw data file not present on this host")
+def test_the_gmrt_layouts_inset_covers_no_antenna():
+    from data_io.antenna_table import read_antenna_table, read_array_earth_location
+
+    fig = antenna_layout(read_antenna_table(REAL_GWB_FITS), read_array_earth_location(REAL_GWB_FITS))
+    ax = fig.axes[0]
+    (axins,) = ax.child_axes
+    fig.canvas.draw()
+    box = axins.get_window_extent()
+    radius_px = np.sqrt(ax.collections[0].get_sizes()[0]) / 2.0 * fig.dpi / 72.0
+    points = ax.transData.transform(ax.collections[0].get_offsets())
+    inside = ((points[:, 0] > box.x0 - radius_px) & (points[:, 0] < box.x1 + radius_px)
+              & (points[:, 1] > box.y0 - radius_px) & (points[:, 1] < box.y1 + radius_px))
+    assert not inside.any()
     plt.close(fig)
 
 

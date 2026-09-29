@@ -265,6 +265,39 @@ def test_save_writes_what_the_command_lines_save_writes_with_its_record():
     window.close()
 
 
+def test_a_save_can_be_stopped_writing_nothing_and_its_record_says_so(monkeypatch):
+    import threading
+
+    import visplot.gui.main_window as main_window
+
+    app, window, path = _window("gui_save_stop")
+    runs = path.parent / "runs"
+    window.form.provenance_edit.setText(str(runs))
+    select_data(window.form.y.quantity, "amp")
+    select_data(window.form.x.quantity, "freq")
+    _settle(app, window, lambda: window.save_action.isEnabled())
+    # The save waits in prepare until Stop has been pressed, so it stops at its first chunk.
+    pressed = threading.Event()
+    real_prepare = main_window.prepare
+    monkeypatch.setattr(main_window, "prepare", lambda *a, **k: (pressed.wait(30), real_prepare(*a, **k))[1])
+
+    out = path.parent / "out"
+    window.save(window.form.request(output_dir=str(out)))
+    assert window.stop_button.isVisible() and not window.save_action.isEnabled()
+    window.stop_save()
+    pressed.set()
+    _settle(app, window, lambda: window._saving is None)
+
+    assert not out.exists()
+    (record,) = [r for r in _records(runs) if r["details"]["action"] == "save"]
+    assert record["outcome"]["status"] == "failed"
+    assert record["outcome"]["error_message"] == "stopped while finding the data ranges; nothing saved"
+    texts = [window.messages.item(i).text() for i in range(window.messages.count())]
+    assert any("stopped while finding the data ranges" in t for t in texts)
+    assert not window.stop_button.isVisible() and window.save_action.isEnabled()
+    window.close()
+
+
 def test_the_save_dialog_builds_the_forms_request_with_the_save_options():
     from visplot.gui.save_dialog import SaveDialog
 

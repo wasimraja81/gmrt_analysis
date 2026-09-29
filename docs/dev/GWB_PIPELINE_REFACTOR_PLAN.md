@@ -2,8 +2,9 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, 416 tests passing; T26, T32 in progress; T33, point D, T20, T21 open (order in
-Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is imaged.
+2026-09-29, T36 2026-09-29, 420 tests passing; T26, T32 in progress; T33, T37, point D,
+T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is
+imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -755,12 +756,39 @@ Buildable now, ahead of Phase C.
   antenna layout. For the save off the main thread, the antenna layout and source listing
   are now bare Figures with their own Agg canvas (pyplot's figures are Qt objects under
   the Qt backend); the GWB file's antenna layout renders identically before and after.
+  Stop for a save (user's request, 2026-09-29): one save runs at a time, with a "Stop
+  saving" button in the status bar; the save stops at its next chunk, writes nothing
+  (`save_outputs` raises `run.Stopped` before any file is opened), and its record is
+  failed with where it stopped; closing the window stops a running save and waits for
+  its record. Found on the way: `resolve_extents` returned ranges from the part of the
+  selection read when its pass was stopped; it now returns None, as the plot window's
+  range job already expected.
   Next: a Build index button (the pipeline's build_index stage, for a file without its
   row index; user's request, 2026-09-28), then point D and T26's controls.
 
 - **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
   matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in
   lightness; saved files light unless chosen otherwise.
+
+- **T36 — Antenna layout: the core inset covered S04 — DONE (found and fixed
+  2026-09-29).** On the GWB file's layout the inset half covered S04:23's marker: the
+  corner search counted marker centres inside the inset box, and S04's centre sat 2 px
+  outside it. `_choose_inset_box` now counts a marker as covered when its disc plus a
+  5 pt clearance reaches the inset (in display pixels, core antennas included), keeps the
+  inset off the core's zoom rectangle, and shrinks the inset from 0.46 of the axes in
+  steps to 0.30 until a corner (upper right, upper left, lower right, lower left) is
+  clear. GMRT's inset is now 0.44, lower right, touching no antenna (test against the
+  file).
+
+- **T37 — A plot states its Stokes and the parameters it shows — OPEN (user,
+  2026-09-29).** "For many of the y-axis quantities, what is that quantity for (which
+  Stokes) is a fundamental attribution"; u, v, w do not need it. A plot names its Stokes
+  today only in the legend, when colored by Stokes. The user's decisions: the axis labels
+  stay as they are (no added clutter); "it is more fundamental than the axis label.
+  Flagging for RR and LL can in principle be different", so plots of visibility
+  quantities get a Stokes legend, keeping the plot's look; channels do not go on the
+  axes, and a text block outside the plot area, as the AIPS TV has, may record the
+  critical parameters shown. Design to be agreed before building.
 
 - **T20 fits here too:** its file summary (channel width, integration time, sources,
   dates) belongs in the GUI's data panel.

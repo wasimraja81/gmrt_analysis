@@ -98,27 +98,45 @@ def _detect_compact_core_mask(
     return nn_m <= threshold_m
 
 
-_INSET_CORNER_CANDIDATES = [(0.52, 0.52), (0.02, 0.52), (0.52, 0.02), (0.02, 0.02)]
-_INSET_SIZE_FRACTION = 0.46
+# The inset is a square in one of the axes' corners, this far (axes fraction) from the edges:
+# upper right, upper left, lower right, lower left, in that order of preference. Its side
+# shrinks through _INSET_SIZES until a corner covers no antenna.
+_INSET_EDGE_MARGIN = 0.02
+_INSET_CORNERS = ((1, 1), (0, 1), (1, 0), (0, 0))  # (right?, top?)
+_INSET_SIZES = (0.46, 0.44, 0.42, 0.40, 0.38, 0.36, 0.34, 0.32, 0.30)
+_MARKER_SIZE = 30  # the main plot's scatter size, points^2
 
 
-def _choose_inset_corner(ax, outside_e: np.ndarray, outside_n: np.ndarray) -> tuple[float, float]:
-    """Which corner (as an axes-fraction (x, y) origin) to put the inset in --
-    whichever has the fewest non-core antennas underneath it, so the inset
-    doesn't cover real data or force those antennas' own labels to compete
-    with it for space. Not fixed to any one corner, since which corner is
-    empty depends on the array's own layout (a Y-shaped array like GMRT's
-    versus any other arrangement)."""
-    xlo, xhi = ax.get_xlim()
-    ylo, yhi = ax.get_ylim()
-    best_corner, best_count = _INSET_CORNER_CANDIDATES[0], None
-    for fx, fy in _INSET_CORNER_CANDIDATES:
-        e_lo, e_hi = xlo + fx * (xhi - xlo), xlo + (fx + _INSET_SIZE_FRACTION) * (xhi - xlo)
-        n_lo, n_hi = ylo + fy * (yhi - ylo), ylo + (fy + _INSET_SIZE_FRACTION) * (yhi - ylo)
-        count = int(np.sum((outside_e >= e_lo) & (outside_e <= e_hi) & (outside_n >= n_lo) & (outside_n <= n_hi)))
-        if best_count is None or count < best_count:
-            best_corner, best_count = (fx, fy), count
-    return best_corner
+def _choose_inset_box(ax, east_m: np.ndarray, north_m: np.ndarray, marker_size: float = _MARKER_SIZE,
+                      keep_clear=()) -> tuple[float, float, float]:
+    """Where to put the inset, as (x, y, side) in axes fractions: the
+    largest square in a corner that covers no antenna's marker -- its disc
+    and _MARKER_CLEARANCE_PT around it, measured in display pixels, core
+    antennas included -- and none of the `keep_clear` data boxes ((e0, n0,
+    e1, n1), e.g. the core's zoom rectangle); if no corner is clear even at
+    the smallest size, the one covering the fewest markers. Not fixed to
+    any one corner, since which corner is empty depends on the array's
+    layout (a Y-shaped array like GMRT's versus any other arrangement).
+    Needs the axes' limits final (after a draw)."""
+    axes_px = ax.get_window_extent()
+    points_px = ax.transData.transform(np.column_stack([east_m, north_m]))
+    clearance_px = (np.sqrt(marker_size) / 2.0 + _MARKER_CLEARANCE_PT) * ax.figure.dpi / 72.0
+    keep_px = [Bbox(ax.transData.transform([(e0, n0), (e1, n1)])) for e0, n0, e1, n1 in keep_clear]
+    best, best_covered = None, None
+    for side in _INSET_SIZES:
+        for right, top in _INSET_CORNERS:
+            fx = 1.0 - _INSET_EDGE_MARGIN - side if right else _INSET_EDGE_MARGIN
+            fy = 1.0 - _INSET_EDGE_MARGIN - side if top else _INSET_EDGE_MARGIN
+            x0, y0 = axes_px.x0 + fx * axes_px.width, axes_px.y0 + fy * axes_px.height
+            x1, y1 = x0 + side * axes_px.width, y0 + side * axes_px.height
+            covered = int(np.sum((points_px[:, 0] > x0 - clearance_px) & (points_px[:, 0] < x1 + clearance_px)
+                                 & (points_px[:, 1] > y0 - clearance_px) & (points_px[:, 1] < y1 + clearance_px)))
+            covered += sum(Bbox([[x0, y0], [x1, y1]]).overlaps(box) for box in keep_px)
+            if covered == 0:
+                return fx, fy, side
+            if best_covered is None or covered < best_covered:
+                best, best_covered = (fx, fy, side), covered
+    return best
 
 
 def _corner_center_angle_deg(corner_x: float, corner_y: float) -> float:
@@ -324,7 +342,7 @@ def antenna_layout(
     fig = Figure(figsize=(11, 11))
     FigureCanvasAgg(fig)
     ax = fig.add_subplot()
-    ax.scatter(east_m, north_m, s=30, c="tab:blue")
+    ax.scatter(east_m, north_m, s=_MARKER_SIZE, c="tab:blue")
     ax.set_xlabel("East (m)")
     ax.set_ylabel("North (m)")
     ax.set_aspect("equal", adjustable="datalim")
@@ -342,9 +360,10 @@ def antenna_layout(
         center_e, center_n = (core_e.max() + core_e.min()) / 2.0, (core_n.max() + core_n.min()) / 2.0
         half_span_m = max(core_e.max() - core_e.min(), core_n.max() - core_n.min()) / 2.0 + pad_m
 
-        fig.canvas.draw()  # finalize ax's autoscaled xlim/ylim before picking a corner in data space
-        corner_x, corner_y = _choose_inset_corner(ax, east_m[~core_mask], north_m[~core_mask])
-        axins = ax.inset_axes([corner_x, corner_y, _INSET_SIZE_FRACTION, _INSET_SIZE_FRACTION])
+        fig.canvas.draw()  # finalize ax's autoscaled xlim/ylim before placing the inset against the markers
+        zoom_box = (center_e - half_span_m, center_n - half_span_m, center_e + half_span_m, center_n + half_span_m)
+        corner_x, corner_y, side = _choose_inset_box(ax, east_m, north_m, keep_clear=[zoom_box])
+        axins = ax.inset_axes([corner_x, corner_y, side, side])
         axins.scatter(core_e, core_n, s=40, c="tab:blue")
         axins.set_xlim(center_e - half_span_m, center_e + half_span_m)
         axins.set_ylim(center_n - half_span_m, center_n + half_span_m)

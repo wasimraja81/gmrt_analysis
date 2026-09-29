@@ -86,9 +86,12 @@ class XYSource:
         return run_stream(chunks, self.ctx, reducers, on_chunk, threads=self.threads)
 
 
-def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None, cache=None) -> dict[PlotSpec, tuple]:
+def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None,
+                    cache=None) -> dict[PlotSpec, tuple] | None:
     """(x_extent, y_extent) per plot: a given range as is, otherwise the
-    data's range from one pre-pass over the selection. The pre-pass reads
+    data's range from one pre-pass over the selection; None when the
+    pre-pass stopped early (`on_chunk` returned False), since the ranges
+    would then cover only part of the selection. The pre-pass reads
     visibility data only if an axis being ranged is a visibility quantity
     (amp, real, imag, phase); a pre-pass over metadata alone covers every
     selected sample, flagged or not.
@@ -108,7 +111,9 @@ def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None, cach
     if to_compute:
         read_data = any(QUANTITIES[r.quantity].needs_data for r in to_compute.values())
         completed = source.stream(list(to_compute.values()), read_data=read_data, on_chunk=on_chunk)
-        if completed and cache is not None:
+        if not completed:
+            return None
+        if cache is not None:
             for (plot, axis), reducer in to_compute.items():
                 if np.isfinite(reducer.lo):
                     cache.save(source.fits_path, _cache_key(cache, source, plot, axis), reducer.lo, reducer.hi,

@@ -32,7 +32,7 @@ from data_io.row_index import default_row_index_path
 from provenance.logging_setup import stage_log_path
 from provenance.manifest import RunManifest
 from visplot.request import PlotRequest
-from visplot.run import RequestError
+from visplot.run import RequestError, Stopped
 
 PLOT_STAGE = "visplot"
 SESSION_STAGE = "visplot_session"
@@ -123,7 +123,7 @@ def recorded_run(request: PlotRequest, action: str, session_id: str | None = Non
     try:
         yield record
     except BaseException as err:  # KeyboardInterrupt included: the record says how the run ended
-        record.finish(str(err) if isinstance(err, RequestError) else f"{type(err).__name__}: {err}")
+        record.finish(str(err) if isinstance(err, (RequestError, Stopped)) else f"{type(err).__name__}: {err}")
         raise
     record.finish()
 

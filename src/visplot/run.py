@@ -91,6 +91,11 @@ class MissingIndexError(RequestError):
     """The FITS file has no row index yet."""
 
 
+class Stopped(Exception):
+    """A run stopped before the end because its progress callback asked it
+    to (e.g. a GUI save's Stop)."""
+
+
 def _silent(level: str, text: str) -> None:
     pass
 
@@ -503,12 +508,15 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     """The range pass (when needed) and one plotting pass at `highres_dpi`,
     then one PNG per plot at the request's --dpi (an exact reduction) and the
     low- and high-resolution PDFs, in the request's --output-dir. Returns the
-    paths written."""
+    paths written. Raises Stopped, with nothing written, when a pass's
+    `progress` callback stops it."""
     request, source, xy_plots, xy_figures = run.request, run.source, run.xy_plots, run.xy_figures
     extents = {}
     if xy_plots:
         on_chunk = progress(pass_progress(source, run.labels[0], range_pass_reads_data(xy_plots, run.cached)))
         extents = resolve_extents(source, xy_plots, on_chunk=on_chunk, cache=run.cache)
+        if extents is None:
+            raise Stopped("stopped while finding the data ranges; nothing saved")
     lowres_dpi, highres = request.dpi, highres_dpi(request.dpi)
     factor = highres // lowres_dpi
     shapes = {}
@@ -519,7 +527,9 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     grids = {}
     if xy_plots:
         on_chunk = progress(pass_progress(source, run.labels[1], any(p.needs_data for p in xy_plots)))
-        grids, _ = plot_grids(source, xy_plots, extents, shapes, on_chunk=on_chunk)
+        grids, completed = plot_grids(source, xy_plots, extents, shapes, on_chunk=on_chunk)
+        if not completed:
+            raise Stopped("stopped while drawing; nothing saved")
 
     def _mpl_figure(item):
         return item.fig if isinstance(item, XYFigure) else item

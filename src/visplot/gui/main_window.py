@@ -38,7 +38,7 @@ from visplot.gui.widgets import CommandLine
 from visplot.gui.style import THEMES, apply_theme
 from visplot.records import PlotRecord, SessionRecord, WindowProvenance, recorded_run
 from visplot.request import build_arg_parser
-from visplot.run import RequestError, check_request, count_selection, open_file, prepare, save_outputs
+from visplot.run import RequestError, Stopped, check_request, count_selection, open_file, prepare, save_outputs
 
 POLL_MS = 100
 COUNT_DELAY_MS = 400
@@ -58,12 +58,13 @@ class _Task:
         self.error: str | None = None
         self.done = False
         self.status = ""  # progress text `fn` may set, shown in the status bar
+        self.stop = False  # set to ask `fn` to stop, for one that checks it (a save)
         self.thread = threading.Thread(target=self._body, daemon=True)
 
     def _body(self):
         try:
             self.result = self.fn()
-        except RequestError as err:
+        except (RequestError, Stopped) as err:
             self.error = str(err)
         except Exception:
             self.error = traceback.format_exc()
@@ -84,6 +85,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self._pending_reports: list[tuple[str, str]] = []
         self._reports_lock = threading.Lock()
         self._count_generation = 0
+        self._saving: _Task | None = None  # the save running, if any (one at a time)
         self.session = SessionRecord(provenance_dir or build_arg_parser().get_default("provenance_dir"))
 
         self.form = RequestForm()
@@ -227,6 +229,11 @@ class VisplotWindow(QtWidgets.QMainWindow):
         help_menu.addAction("Command-line options…", self._show_cli_help)
 
     def _build_status_bar(self) -> None:
+        self.stop_button = QtWidgets.QPushButton("Stop saving")
+        self.stop_button.setToolTip("Stop the save at the next chunk; nothing is written, and its record says so")
+        self.stop_button.clicked.connect(self.stop_save)
+        self.stop_button.hide()
+        self.statusBar().addPermanentWidget(self.stop_button)
         self.file_label = QtWidgets.QLabel("no file")
         self.statusBar().addPermanentWidget(self.file_label)
         self.statusBar().showMessage("ready")
@@ -304,7 +311,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.problem.setText(problem or "")
         self.plot_button.setEnabled(problem is None)
         self.plot_button.setToolTip(problem or "Plot this request in a new tab")
-        self.save_action.setEnabled(problem is None)
+        self.save_action.setEnabled(problem is None and self._saving is None)
+        self.save_action.setToolTip(problem or ("a save is running; Stop saving is in the status bar"
+                                                if self._saving else "Save this request's plots as files"))
         if self.opened is not None and request is not None:
             self.count_timer.start()
 
@@ -400,7 +409,11 @@ class VisplotWindow(QtWidgets.QMainWindow):
     def save(self, request) -> None:
         """Save `request`'s plots as files (it names --output-dir), as the
         command line does: the same `prepare` and `save_outputs`, on a
-        background thread, with the run's provenance record."""
+        background thread, with the run's provenance record. One save runs
+        at a time; `stop_save` stops it."""
+        if self._saving is not None:
+            self.report("warning", "a save is running; stop it or wait for it before the next")
+            return
         opened = self.opened
         session_id = self.session.session_id
         self.statusBar().showMessage(f"saving to {request.output_dir} …")
@@ -408,7 +421,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         def progress(pass_progress):
             def on_chunk(rows_done: int) -> bool:
                 task.status = pass_progress.text(rows_done)
-                return True
+                return not task.stop
             return on_chunk
 
         def work():
@@ -420,16 +433,34 @@ class VisplotWindow(QtWidgets.QMainWindow):
                     record.add_output(path)
             return record
 
+        def finished():
+            self._saving = None
+            self.stop_button.hide()
+            self._form_changed()
+
         def done(record):
+            finished()
             self._add_history(request, record, f"saved to {request.output_dir}")
             self.statusBar().showMessage(f"saved to {request.output_dir}", 8000)
 
         def failed(message):
+            finished()
             self.report("warning", message)
-            self.statusBar().showMessage("the plots could not be saved")
+            self.statusBar().showMessage("the save stopped" if task.stop else "the plots could not be saved")
 
         task = _Task(work, done, failed)
+        self._saving = task
+        self.stop_button.setEnabled(True)
+        self.stop_button.show()
+        self._form_changed()
         self._launch(task)
+
+    def stop_save(self) -> None:
+        """Ask the running save to stop at its next chunk."""
+        if self._saving is not None:
+            self._saving.stop = True
+            self.stop_button.setEnabled(False)
+            self.statusBar().showMessage("stopping the save …")
 
     def _close_tab(self, index: int) -> None:
         tab = self.tabs.widget(index)
@@ -519,6 +550,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt's name)
         self._clear_plots()
+        if self._saving is not None:  # stopped at its next chunk, so its record says how it ended
+            self._saving.stop = True
+            self._saving.thread.join(timeout=30)
         self.poll_timer.stop()
         self._show_reports()  # the last messages, into the session's log
         self.session.close()

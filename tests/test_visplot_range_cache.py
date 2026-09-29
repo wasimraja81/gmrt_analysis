@@ -129,9 +129,10 @@ def test_a_range_found_in_one_unit_serves_every_unit_of_its_base():
     assert (m_lo, m_hi) == pytest.approx((h_lo * 60, h_hi * 60))
 
 
-def test_an_interrupted_pass_saves_nothing():
+def test_an_interrupted_pass_saves_nothing_and_gives_no_ranges():
     scratch = make_scratch_dir("range_cache_interrupted")
     source = _Source(_fits_stand_in(scratch))
     cache = RangeCache(scratch / "cache")
-    resolve_extents(source, [PlotSpec(y="amp", x="time_h")], on_chunk=lambda rows: False, cache=cache)
+    # ranges from part of the selection would pass for the whole selection's
+    assert resolve_extents(source, [PlotSpec(y="amp", x="time_h")], on_chunk=lambda rows: False, cache=cache) is None
     assert cache.written == [] and cache.usage() == (0, 0)
