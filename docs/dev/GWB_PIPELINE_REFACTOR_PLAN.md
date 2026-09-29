@@ -2,9 +2,9 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36 2026-09-29, 420 tests passing; T26, T32 in progress; T33, T37, point D,
-T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is
-imaged.
+2026-09-29, T36 and T37 2026-09-29, 434 tests passing; T26, T32 in progress; T33, T38,
+T39, T40, T41, point D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open,
+parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -788,13 +788,13 @@ Buildable now, ahead of Phase C.
   clear. GMRT's inset is now 0.44, lower right, touching no antenna (test against the
   file).
 
-- **T37 — A plot states its Stokes and the parameters it shows — OPEN (user,
-  2026-09-29).** "For many of the y-axis quantities, what is that quantity for (which
-  Stokes) is a fundamental attribution"; u, v, w do not need it. A plot names its Stokes
-  today only in the legend, when colored by Stokes. The user's decisions: the axis labels
-  stay as they are (no added clutter); "it is more fundamental than the axis label.
-  Flagging for RR and LL can in principle be different", so plots of visibility
-  quantities get a Stokes legend, keeping the plot's look; channels do not go on the
+- **T37 — A plot states its Stokes and the parameters it shows — DONE (user, 2026-09-29;
+  built the same day, below).** "For many of the y-axis quantities, what is that
+  quantity for (which Stokes) is a fundamental attribution"; u, v, w do not need it. A
+  plot named its Stokes only in the legend, when colored by Stokes. The user's decisions:
+  the axis labels stay as they are (no added clutter); "it is more fundamental than the
+  axis label. Flagging for RR and LL can in principle be different", so plots of
+  visibility quantities get a Stokes legend, keeping the plot's look; channels do not go on the
   axes, and a text block outside the plot area, as the AIPS TV has, may record the
   critical parameters shown. Design to be agreed before building; mock (2026-09-29,
   `tmp/t37_mock/`, 3C286 amp vs freq, colored by Stokes): a key and parameter panel
@@ -808,12 +808,103 @@ Buildable now, ahead of Phase C.
   - no --colorize-by: one color, as now, the panel naming what was plotted;
   - default figure 8 x 7 in, the panel taking the extra inch;
   - red is reserved for flagged samples: category palettes without reds or pinks (tab10
-    has 8 colors left; tab20 16, for more categories); flagged samples drawn as "x", at
-    least 5 x 5 px or the samples' marker size, and kept light coral #f08080 (the user;
-    the mock's key swatch was pure red by mistake). Go-ahead given 2026-09-29.
+    has 8 colors left; tab20 16, for more categories); flagged samples drawn as "x" (size:
+    see the revision below), kept light coral #f08080 (the user; the mock's key swatch
+    was pure red by mistake). Go-ahead given 2026-09-29.
   Markers measured (150 dpi PNGs): above 1M samples one pixel, so dot and square are the
   same; 100k-1M a 3x3 square (a disc at that radius is a 5-pixel plus sign); up to 100k
   discs (13 px, 69 px).
+  First build (`visplot/plot_panel.py`, `xy_figure.py`; revised below): `panel_facts`
+  records what the selection holds -- Stokes, channels and their frequency span, baselines,
+  autocorrelations and antennas, sources, the UTC span, the row filters as text; the
+  panel shows it in two columns under a rule: Stokes (the key when colored by Stokes;
+  otherwise the one color's swatch, or "each in its source's color"), Channels,
+  Baselines, Drawn (what was drawn, or the drawing's progress, and the flagged cross,
+  "flagged: none" when none are drawn) | Sources (the key when colored by source),
+  Time, Selection, Record (the provenance record of the run showing or saving the
+  figure; an export names its own). The key is fixed before drawing: colors go by rank
+  among the categories the selection holds (before, by rank among those drawn so far,
+  so a color could change mid-draw), and a long key wraps between entries. The panel is
+  laid out in inches from the figure's bottom (text widths from the font's metrics), the
+  axes above it, and a window re-lays it out on resize. The legend inside the axes, the
+  status line and the note at the figure's corners are gone; the caveat note is the
+  panel's last line. Default figure 8 x 7 in. A u-v plot keeps its Stokes row: with
+  flags applied it draws a sample per Stokes (flags come from per-Stokes weights), so
+  the Stokes selected change the coverage drawn. Checked on the GWB file: amp vs freq
+  colored by Stokes (LR now purple; the light-coral count in the plot area is 0, so the
+  bottom columns the mock showed in red were LR samples, and that selection has no
+  flagged samples), v vs u, amp vs time colored by five sources (key on two lines). The
+  GUI's export and save tests compare whole PNGs, panel included, with the same record
+  id.
+  Revised (2026-09-29, the user on the first build):
+  - Counts: a plot whose quantities do not vary along Stokes (u, v, w, uv distance,
+    time, hour angle, ...) drew one sample per Stokes when flags applied, the samples
+    broadcast to the weights' shape: the GWB u-v render's "28,344,320 samples" was
+    1,730 rows x 2,048 channels x 4 Stokes x 2 (mirrored), four times its 7,086,080
+    points (and per-row quantities, e.g. u in m, were multiplied by the channels too);
+    the auto marker size went by that count. The picture was right (duplicates share a
+    pixel). The user: "keeping the row does not get me the correct statistics".
+  - The flag rule (the user's): flags have the data's shape, one per visibility's time,
+    baseline, channel and Stokes. A point whose quantities do not vary with Stokes (u-v)
+    combines its visibility's selected Stokes and is flagged if any of them is; one
+    Stokes selected, its own flag decides; flagged points are left out unless
+    --show-flagged draws them as crosses. Channels are never combined: a per-row
+    quantity (u in m, time) is one point per channel's visibility. (A first version
+    combined channels too, a point spanning channels flagged only if every channel was;
+    the user: "a single visibility has a unique channel much like it has a unique Stokes,
+    a unique time ... why are you conflating channels again? The dimension of the flags
+    in a UVFITS file is exactly the same shape as that of the visibility data array!";
+    removed.) `stream.combine_flags` applies the rule where samples are built and in the
+    Locate tool, whose counts now match the plot's; located points get a "flagged" column
+    (a point combining Stokes has no one weight). Tests: the rule on a block with chosen
+    flags, and `varies_along` (the panel's knowledge of what a point combines) against
+    the arrays the stream builds, for every quantity and unit.
+  - Flagged crosses the size of the markers (the user: "the same/similar size as the
+    plot markers, not huge!"), at least 3 x 3 px, the smallest "x" (the first build drew
+    at least 5 x 5 px).
+  - The panel, "a bit too cluttered ... the human has to LOOK FOR information": 9 pt
+    (was 7.5); the key on its own first line (swatches, the flagged cross); two columns
+    below (Stokes, Channels, Baselines | Time, Selection, Drawn); a Flags line stating
+    the rule when points combine samples; Sources only as the key (the title lists
+    them); the record id as a small grey footer; each line anchored at its own height.
+    Font, as the user asked, from the packages of CERN/AIPS/NASA: Helvetica (CERN ROOT's
+    default text font; PGPLOT and AIPS draw Hershey stroke fonts, which matplotlib does
+    not render), through its metric clones TeX Gyre Heros or Nimbus Sans where
+    installed, else Liberation Sans, else DejaVu Sans (matplotlib's own). A panel font
+    from the system can differ between machines, so the same command can give different
+    pixels elsewhere: the user wants portability and reproducibility, and a font chooser
+    (T41). The panel's design is to be thought afresh (T40).
+
+- **T38 — Flag rule option: the lenient rule — OPEN (user, 2026-09-29).** T37's rule
+  flags a point combining several Stokes if any of them is flagged (the user's default).
+  An option for the other rule -- such a point shown unless flagged in every selected
+  Stokes (coverage wherever any product has data) -- e.g. `--combine-flags any|all`,
+  stated in the panel's Flags line.
+
+- **T39 — --every-nth skips whole baselines — OPEN (found 2026-09-29).** The user asked
+  why the panel of a 28-antenna plot said "189 baselines": the test renders used
+  `--every-nth 40`, and the GWB file has exactly 378 rows per integration, one per
+  baseline (no autocorrelation rows). A row stride steps through the baseline order
+  within each integration, so a stride sharing a factor with 378 never selects some
+  baselines: on 3C286, every 40th row covers 189 baselines (gcd 2), every 7th 54 (gcd
+  7), every 41st all 378 (gcd 1). The panel's count was right for the rows selected; the
+  sampling misleads. The user's decision (2026-09-29), both: say so in the run's report
+  and the panel when a row stride covers fewer baselines than the selection has, and an
+  integration stride (every Nth integration, all its baselines) beside the row stride.
+
+- **T40 — The panel under a plot, designed afresh — OPEN (user, 2026-09-29).** "Lets
+  discuss the beautification/aesthetics of the text panel at the bottom in a separate
+  ticket. We need to step back on this and think afresh - we could borrow some ideas from
+  professional displays such as from medical fraternity." T37's panel stays as built
+  until then.
+
+- **T41 — Fonts: portable, reproducible, chosen — OPEN (user, 2026-09-29).** The panel's
+  font comes from the system (TeX Gyre Heros, Nimbus Sans, Liberation Sans, else DejaVu
+  Sans), so the same command can draw different pixels on another machine. The user:
+  "I want portability and reproducibility", and a font chooser (a drop-down in the GUI);
+  the axes' fonts are fine as they are. To agree: which fonts to ship in the repository
+  (TeX Gyre fonts are under the GUST Font License, redistributable), whether the choice
+  is a request option (so the command records it), and what it applies to.
 
 - **T20 fits here too:** its file summary (channel width, integration time, sources,
   dates) belongs in the GUI's data panel.

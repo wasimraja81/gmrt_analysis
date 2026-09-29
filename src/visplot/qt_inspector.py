@@ -181,6 +181,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         layout.addWidget(canvas)
         canvas.mpl_connect("button_press_event", lambda e, p=panel: setattr(p, "mouse_down", True))
         canvas.mpl_connect("button_release_event", lambda e, p=panel: setattr(p, "mouse_down", False))
+        canvas.mpl_connect("resize_event", lambda e, f=figure: f.relayout())  # the panel keeps its size
         self.panels[figure.plot] = panel
         self.tabs.addTab(widget, name)
 
@@ -544,14 +545,17 @@ class InspectorWindow(QtWidgets.QMainWindow):
                 self._finish_record(record, "export", None, "stopped before the end of the selection; nothing saved")
                 return
             panel.figure.show(grid, display_dpi=dpi)
-            status = panel.figure.status.get_text()
+            status, shown_record = panel.figure.status.get_text(), panel.figure.record_id
             panel.figure.set_status(grid_summary(grid, self.source.n_rows))
+            if record is not None:
+                panel.figure.set_record(record.run_id)  # the file names the export's own record
             try:
                 panel.figure.fig.savefig(path, dpi=dpi)
                 error = None
             except (OSError, ValueError) as err:
                 error = f"could not save {path}: {err}"
             panel.figure.set_status(status)
+            panel.figure.set_record(shown_record)
             if panel.grid is not None:  # back to the window's own image
                 panel.figure.show(panel.grid.snapshot(), display_dpi=panel.figure.fig.dpi)
             panel.canvas.draw_idle()
@@ -578,7 +582,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
 
 _LOCATE_COLUMNS = [
     ("baseline", str), ("time (UTC)", str), ("channel", str), ("freq (MHz)", float), ("Stokes", str),
-    ("x", float), ("y", float), ("weight", float), ("mirrored", str), ("row", int), ("source", str),
+    ("x", float), ("y", float), ("weight", float), ("flagged", str), ("mirrored", str), ("row", int),
+    ("source", str),
 ]
 
 
@@ -609,7 +614,7 @@ def locate_rows(records: list[dict], ctx) -> list[list]:
             "all" if r["channel"] is None else str(r["channel"]),
             float("nan") if r["channel"] is None else r["freq_hz"] / 1e6,
             "all" if r["stokes"] is None else r["stokes"],
-            r["x"], r["y"], r["weight"], "yes" if r["mirrored"] else "no", r["row"],
+            r["x"], r["y"], r["weight"], r["flagged"], "yes" if r["mirrored"] else "no", r["row"],
             sources.get(r["source_id"], str(r["source_id"])),
         ])
     return rows

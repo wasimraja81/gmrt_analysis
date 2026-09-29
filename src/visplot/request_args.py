@@ -28,7 +28,7 @@ CATEGORY_NAMES = {name for name, q in QUANTITIES.items() if q.categorical}
 # Saved files: --dpi (the plot window's Export offers the same range) and --figure-size.
 DEFAULT_DPI = 150
 DPI_LIMITS = (50, 2400)
-DEFAULT_FIGURE_SIZE = "8,6"
+DEFAULT_FIGURE_SIZE = "8,7"  # 8 x 6 in for the plot, and an inch for the panel under it
 MAX_FIGURE_INCHES = 100.0
 
 

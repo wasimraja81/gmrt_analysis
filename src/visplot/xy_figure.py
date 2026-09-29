@@ -1,6 +1,7 @@
 """Drawing a `GridReducer`'s layer grid as a plot: the grid becomes an image
-on ordinary matplotlib axes, so labels, units, titles, legend and ticks stay
-vector while the samples, however many, are one image.
+on ordinary matplotlib axes, so labels, units, titles, the panel under the
+plot (`visplot.plot_panel`: color key and what the plot shows) and ticks
+stay vector while the samples, however many, are one image.
 
 The same code serves a saved page (grid at 600 dpi, shown at 600 or summed
 down to 150) and an interactive window (grid at the window's own pixels).
@@ -11,12 +12,10 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
 
 from visplot.clock_axis import ClockFormatter, ClockLocator
+from visplot.plot_panel import PanelFacts, PlotPanel
 from visplot.plot_spec import PlotSpec
 from visplot.plot_title import build_plot_title
 from visplot.quantities import QUANTITIES, QuantityContext, category_label, quantity_label
@@ -30,11 +29,18 @@ AUTO_POINT_SIZE_FLOOR = 0.25
 # Above this many samples markers are squares (circles below it): at the
 # sizes used there a square reads as a point.
 DENSE_MARKER_THRESHOLD = 100_000
-CATEGORY_COLORMAP = "tab10"
-FLAGGED_COLOR = "lightcoral"
+# Flagged samples are crosses the size of the markers (the user: "the same/similar size as the
+# plot markers"), and at least this many pixels from centre to tip: 3 x 3 px, the smallest "x".
+FLAGGED_CROSS_MIN_PX = 1
 # Occupied pixels stamped per batch when drawing markers, bounding the
 # coordinate arrays however dense the grid.
 _STAMP_BATCH = 1_000_000
+# The axes' place in the figure: left and right as fractions of its width; above them the
+# title, below them the tick labels and x label and then the panel, in inches, so the
+# panel keeps its size however tall the figure.
+AXES_LEFT, AXES_RIGHT = 0.125, 0.9
+TITLE_IN = 0.72
+XLABEL_IN = 0.55
 
 
 def auto_point_size(n_samples: int) -> float:
@@ -65,10 +71,19 @@ def marker_offsets(radius_px: float, square: bool) -> list[tuple[int, int]]:
     ] or [(0, 0)]
 
 
-def draw_markers(layers: np.ndarray, offsets) -> np.ndarray:
-    """Every occupied pixel stamped with the marker shape; where markers
-    overlap, the higher layer wins, as in paint order."""
-    if offsets == [(0, 0)]:
+def cross_offsets(radius_px: float) -> list[tuple[int, int]]:
+    """Pixel offsets of an "x" around its centre pixel, as far out as a
+    marker of `radius_px` reaches, and at least FLAGGED_CROSS_MIN_PX."""
+    r = max(FLAGGED_CROSS_MIN_PX, int(math.floor(radius_px)))
+    return sorted({(d, d) for d in range(-r, r + 1)} | {(d, -d) for d in range(-r, r + 1)})
+
+
+def draw_markers(layers: np.ndarray, offsets, flagged_offsets=None) -> np.ndarray:
+    """Every occupied pixel stamped with the marker shape -- a flagged one
+    with `flagged_offsets` (default: the same shape); where markers overlap,
+    the higher layer wins, as in paint order (flagged on top)."""
+    flagged_offsets = offsets if flagged_offsets is None else flagged_offsets
+    if offsets == [(0, 0)] and flagged_offsets == [(0, 0)]:
         return layers
     out = layers.copy()
     height, width = layers.shape
@@ -77,11 +92,16 @@ def draw_markers(layers: np.ndarray, offsets) -> np.ndarray:
         batch = flat[start : start + _STAMP_BATCH]
         ys, xs = np.divmod(batch, width)
         values = layers.ravel()[batch]
-        for dy, dx in offsets:
-            ny, nx = ys + dy, xs + dx
-            ok = (ny >= 0) & (ny < height) & (nx >= 0) & (nx < width)
-            ny, nx, v = ny[ok], nx[ok], values[ok]
-            out[ny, nx] = np.maximum(out[ny, nx], v)
+        flagged = values == FLAGGED_LAYER
+        for chosen, shape in ((~flagged, offsets), (flagged, flagged_offsets)):
+            if shape == [(0, 0)] or not chosen.any():
+                continue
+            cy, cx, cv = ys[chosen], xs[chosen], values[chosen]
+            for dy, dx in shape:
+                ny, nx = cy + dy, cx + dx
+                ok = (ny >= 0) & (ny < height) & (nx >= 0) & (nx < width)
+                ny, nx, v = ny[ok], nx[ok], cv[ok]
+                out[ny, nx] = np.maximum(out[ny, nx], v)
     return out
 
 
@@ -94,16 +114,6 @@ def downsample_layers(layers: np.ndarray, factor: int) -> np.ndarray:
     return layers.reshape(h // factor, factor, w // factor, factor).max(axis=(1, 3))
 
 
-def layer_colors(plot: PlotSpec, seen_codes) -> dict[int, tuple]:
-    if plot.colorize_by:
-        cmap = plt.get_cmap(CATEGORY_COLORMAP)
-        colors = {code + 1: cmap(rank % cmap.N) for rank, code in enumerate(sorted(seen_codes))}
-    else:
-        colors = {1: to_rgba(plot.color)}
-    colors[FLAGGED_LAYER] = to_rgba(FLAGGED_COLOR)
-    return colors
-
-
 def layers_to_rgba(layers: np.ndarray, colors: dict[int, tuple]) -> np.ndarray:
     lut = np.zeros((int(FLAGGED_LAYER) + 1, 4), dtype=np.uint8)
     for value, rgba in colors.items():
@@ -113,15 +123,20 @@ def layers_to_rgba(layers: np.ndarray, colors: dict[int, tuple]) -> np.ndarray:
 
 class XYFigure:
     """One plot's figure: vector axes, title and labels, with the samples
-    drawn from a `GridReducer` as an image."""
+    drawn from a `GridReducer` as an image, and the panel under it
+    (`facts`: what the run selected, from `visplot.plot_panel.panel_facts`;
+    without them the panel shows what was drawn and the record)."""
 
     def __init__(self, plot: PlotSpec, ctx: QuantityContext, sources=None, telescope=None, source_path=None,
-                 figsize=(8, 6)):
+                 figsize=(8, 7), facts: PanelFacts | None = None):
         self.plot = plot
         self.ctx = ctx
         # A bare Figure (no pyplot): saved with savefig, or embedded in a Qt window.
         self.fig = Figure(figsize=figsize)
         self.ax = self.fig.add_subplot()
+        self.panel = PlotPanel(self.fig, plot, ctx, facts, sources)
+        self.status = self.panel.status  # what was drawn (get_text / set_text)
+        self._seen_codes: tuple = ()
         self.ax.set_xlabel(quantity_label(plot.x, ctx, plot.x_unit))
         self.ax.set_ylabel(quantity_label(plot.y, ctx, plot.y_unit))
         for axis, mpl_axis in (("x", self.ax.xaxis), ("y", self.ax.yaxis)):
@@ -137,8 +152,19 @@ class XYFigure:
         self._scales_set = False
         self.equal_override: bool | None = None  # set from a window's aspect toggle
         self.view_request: tuple | None = None  # the extents last asked of set_view, before any widening
-        self.status = self.fig.text(0.99, 0.005, "", ha="right", va="bottom", fontsize=8, color="0.4")
-        self.note = self.fig.text(0.01, 0.005, "", ha="left", va="bottom", fontsize=7, color="darkred", wrap=True)
+        self.relayout()
+
+    def relayout(self) -> None:
+        """Place the panel and the axes for the figure's current size: the
+        panel at the bottom, the axes between it and the title (in inches,
+        so a window resizing the figure keeps the panel's size). A window
+        calls this when it resizes the figure."""
+        width_in, height_in = self.fig.get_size_inches()
+        self.panel.build(width_in, self._seen_codes)
+        bottom = min((self.panel.height_in + XLABEL_IN) / height_in, 0.6)
+        top = max(1.0 - TITLE_IN / height_in, bottom + 0.1)
+        self.ax.set_position([AXES_LEFT, bottom, AXES_RIGHT - AXES_LEFT, top - bottom])
+        self.ax.apply_aspect()
 
     def set_view(self, x_extent, y_extent) -> tuple[tuple, tuple]:
         """Set the axes' scales, limits and aspect for these extents, and return
@@ -149,6 +175,7 @@ class XYFigure:
         limits fills the axes. The extents asked for are kept
         (`view_request`), so turning equal scale off again returns to them."""
         self.view_request = (tuple(x_extent), tuple(y_extent))
+        self.relayout()  # the figure's size may have changed (a window)
         self._set_scales()
         equal = self.plot.equal_aspect if self.equal_override is None else self.equal_override
         # Equal scale is the square box and equal spans; matplotlib's own data aspect stays
@@ -184,9 +211,16 @@ class XYFigure:
         """Draw `grid` (binned at `downsample` x `display_dpi`) at `display_dpi`."""
         n = grid.n_samples
         size = self.plot.point_size if self.plot.point_size is not None else auto_point_size(n)
-        offsets = marker_offsets(marker_radius_px(size, display_dpi), auto_square_marker(n))
-        layers = draw_markers(downsample_layers(grid.layers_2d(), downsample), offsets)
-        rgba = layers_to_rgba(layers, layer_colors(self.plot, grid.seen_codes))
+        radius = marker_radius_px(size, display_dpi)
+        layers = draw_markers(downsample_layers(grid.layers_2d(), downsample),
+                              marker_offsets(radius, auto_square_marker(n)), cross_offsets(radius))
+        seen = tuple(sorted(grid.seen_codes)) if self.plot.colorize_by else ()
+        if not set(seen) <= set(self.panel.category_codes()) and seen != self._seen_codes:
+            self._seen_codes = seen  # a category the selection did not list: key it too
+            self.relayout()
+        rgba = layers_to_rgba(layers, self.panel.colors(self._seen_codes))
+        if self.plot.show_flagged:
+            self.panel.set_flagged_drawn(bool((layers == FLAGGED_LAYER).any()))
         if self.image is None:
             self._set_scales()
             if not self.linear:
@@ -213,7 +247,6 @@ class XYFigure:
                 self.ax.set_xlim(grid.x_extent)
                 self.ax.set_ylim(grid.y_extent)
         self.image.set_visible(True)
-        self._legend(grid)
         self._category_ticks()
 
     @property
@@ -236,23 +269,6 @@ class XYFigure:
             in_place = (tuple(self.ax.get_xlim()), tuple(self.ax.get_ylim())) == (grid.x_extent, grid.y_extent)
             self.image.set_visible(in_place)
 
-    def _legend(self, grid: GridReducer) -> None:
-        handles = []
-        if self.plot.colorize_by and len(grid.seen_codes) > 1:
-            colors = layer_colors(self.plot, grid.seen_codes)
-            handles = [
-                Line2D([], [], marker="s", linestyle="", color=colors[code + 1],
-                       label=category_label(self.plot.colorize_by, code, self.ctx))
-                for code in sorted(grid.seen_codes)
-            ]
-        if self.plot.show_flagged and (grid.layers == FLAGGED_LAYER).any():
-            handles.append(Line2D([], [], marker="s", linestyle="", color=FLAGGED_COLOR, label="flagged"))
-        legend = self.ax.get_legend()
-        if legend is not None:
-            legend.remove()
-        if handles:
-            self.ax.legend(handles=handles, fontsize=8, loc="best")
-
     def _category_ticks(self) -> None:
         for name, axis, limits in ((self.plot.x, self.ax.xaxis, self.ax.get_xlim()),
                                    (self.plot.y, self.ax.yaxis, self.ax.get_ylim())):
@@ -261,12 +277,21 @@ class XYFigure:
                 axis.set_ticks(list(codes), [category_label(name, c, self.ctx) for c in codes])
 
     def set_status(self, text: str) -> None:
+        """What was drawn (or the drawing's progress), in the panel."""
         self.status.set_text(text)
 
     def set_note(self, text: str) -> None:
-        """A caveat shown on the plot itself (bottom left), e.g. a warning
-        about how a quantity was computed."""
-        self.note.set_text(text)
+        """A caveat shown on the plot itself (under the panel), e.g. a
+        warning about how a quantity was computed."""
+        self.panel.set_note(text)
+
+    @property
+    def record_id(self) -> str:
+        return self.panel.record.get_text()
+
+    def set_record(self, run_id: str | None) -> None:
+        """The provenance record of the run the figure is shown or saved by."""
+        self.panel.record.set_text(run_id or "")
 
 
 def grid_summary(grid: GridReducer, n_rows: int) -> str:

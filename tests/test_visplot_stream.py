@@ -264,3 +264,60 @@ def test_grid_snapshot_is_an_independent_copy():
     run_stream([_block([8])], CTX, [grid])
     assert snap.n_samples < grid.n_samples
     assert (snap.layers > 0).sum() < (grid.layers > 0).sum()
+
+
+# The flag rule (the user's, 2026-09-29): flags have the data's shape, one per visibility's
+# time, baseline, channel and Stokes; a point whose quantities do not vary with Stokes combines
+# its visibility's selected Stokes and is flagged if any of them is; one Stokes selected, its own
+# flag decides; channels are never combined.
+
+def _flag_block():
+    weight = np.ones((2, 2, 2))  # rows, Stokes (RR, LL), channels
+    weight[0, 0, 0] = -1.0  # row 0: RR flagged in channel 0 (LL is not)
+    weight[1, 1, :] = -1.0  # row 1: LL flagged in both channels
+    return _block([0, 1], weight=weight)
+
+
+def test_a_point_combining_stokes_is_flagged_if_any_stokes_is():
+    from dataclasses import replace
+
+    values = ChunkValues(_flag_block(), CTX)
+    uv = PlotSpec(y="v", x="u")  # in kλ: one point per row and channel, the Stokes combined
+    x, _, _, _ = values.samples(uv)
+    assert x.size == 1  # of 2 rows x 2 channels only row 0, channel 1 has every Stokes unflagged
+    x, _, _, flagged = values.samples(replace(uv, show_flagged=True))
+    assert x.size == 4 and flagged.sum() == 3  # one sample per point, its Stokes combined
+
+
+def test_one_stokes_selected_its_own_flags_decide():
+    from dataclasses import replace
+
+    block = _flag_block()
+    ll_only = replace(block, data=block.data[:, 1:], weight=block.weight[:, 1:],
+                      axis_indices={"STOKES": np.array([1]), "FREQ": np.arange(2)}, stokes_labels=["LL"])
+    x, _, _, _ = ChunkValues(ll_only, QuantityContext(time_reference_jd=2459421.0, stokes_labels=("LL",))).samples(
+        PlotSpec(y="v", x="u"))
+    assert x.size == 2  # row 0's LL is unflagged in both channels; row 1's LL is flagged
+
+
+def test_a_per_row_quantity_is_one_point_per_channels_visibility():
+    from dataclasses import replace
+
+    values = ChunkValues(_flag_block(), CTX)
+    per_row = PlotSpec(y="u", y_unit="km", x="time_h")  # the same u for every channel of a row
+    x, _, _, _ = values.samples(per_row)
+    np.testing.assert_allclose(x, [0.0])  # only row 0, channel 1 has every Stokes unflagged
+    x, _, _, flagged = values.samples(replace(per_row, show_flagged=True))
+    assert x.size == 4 and flagged.sum() == 3  # 2 rows x 2 channels, each channel's own flags
+
+
+def test_locate_finds_the_points_the_plot_draws_with_their_flags():
+    from visplot.stream import LocateReducer
+
+    values = ChunkValues(_flag_block(), CTX)
+    plot = PlotSpec(y="v", x="u", show_flagged=True)
+    n_found, pieces, _ = LocateReducer(plot, (-1e9, 1e9), (-1e9, 1e9)).compute(values)
+    assert n_found == values.samples(plot)[0].size == 4
+    (columns,) = pieces
+    assert list(columns["stokes"]) == ["all"] * 4 and sorted(columns["flagged"]) == ["no", "yes", "yes", "yes"]
+    assert np.isnan(columns["weight"]).all()  # a point combining Stokes has no one weight

@@ -198,9 +198,12 @@ def test_plot_and_export_are_recorded_with_the_session_whose_log_keeps_every_mes
     narrowed, _ = action_request(tab.request, 1, "export", view=view, dpi=100, figure_size_in=figure_size_in)
     assert export_record["parameters"] == narrowed.as_dict()
 
-    # The export's command, run with --output-dir, saves the export's image, pixel for pixel.
+    # The export's command, run with --output-dir, saves the export's image, pixel for pixel
+    # (its panel naming the export's record, as the export's does; a new run names its own).
     repeat = PlotRequest.from_argv(shlex.split(export_record["details"]["command"])[1:])
-    saved = save_outputs(prepare(repeat.replace(output_dir=str(path.parent / "repeat"), no_highres_pdf=True)))
+    repeat_run = prepare(repeat.replace(output_dir=str(path.parent / "repeat"), no_highres_pdf=True))
+    repeat_run.set_record(export_record["run_id"])
+    saved = save_outputs(repeat_run)
     (png,) = [p for p in saved if p.suffix == ".png"]
     np.testing.assert_array_equal(plt.imread(png), plt.imread(exported))
 
@@ -254,10 +257,11 @@ def test_save_writes_what_the_command_lines_save_writes_with_its_record():
         assert sorted(record["outputs"]) == sorted(str(p) for p in gui_out.iterdir())
         assert window.history.item(window.history.rowCount() - 1, 1).text() == record["run_id"]
 
-        # The command line's run of the same request writes the same files, pixel for pixel.
-        from cli.run_visplot import main
-
-        assert main(["visplot", *request.replace(output_dir=str(cli_out)).to_argv()]) == 0
+        # The command line's run of the same request (its parse, prepare and save) writes the same
+        # files, pixel for pixel, its panels naming the same record (a new run names its own).
+        cli_run = prepare(PlotRequest.from_argv(request.replace(output_dir=str(cli_out)).to_argv()))
+        cli_run.set_record(record["run_id"])
+        save_outputs(cli_run)
         assert sorted(p.name for p in gui_out.iterdir()) == sorted(p.name for p in cli_out.iterdir())
         png = f"visplot_{name}.png"
         assert plt.imread(gui_out / png).shape[:2] == pixels

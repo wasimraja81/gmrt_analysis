@@ -355,6 +355,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
             with recorded_run(request, "plot", session_id) as record:
                 self.report("info", f"plot {record.run_id}: {record.command}")
                 run = prepare(request, opened, report=record.reporting(self.report))
+                run.set_record(record.run_id)
             return run, record
 
         def done(result):
@@ -429,6 +430,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
                 self.report("info", f"save {record.run_id}: {record.command}")
                 report = record.reporting(self.report)
                 run = prepare(request, opened, report=report)
+                run.set_record(record.run_id)
                 for path in save_outputs(run, report, progress):
                     record.add_output(path)
             return record

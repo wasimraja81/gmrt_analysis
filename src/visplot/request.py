@@ -103,8 +103,18 @@ labels and titles as vector:
                       at least 600 dpi (600 for 150), for zooming in; the
                       PNGs are exact reductions of it
                       (skip it with --no-highres-pdf)
-Each streamed plot's figure is --figure-size inches (default 8,6); the
-antenna layout and source listing keep their own sizes.
+Each streamed plot's figure is --figure-size inches (default 8,7); the
+antenna layout and source listing keep their own sizes. Under each plot a
+panel states what it shows: the color key (Stokes or sources, as
+--colorize-by chooses; one color without it), the Stokes, channels,
+baselines, time span and row filters of the selection, what was drawn
+(flagged samples as light-coral crosses), how flags combine, and the run's
+provenance record.
+
+flags: each visibility (time, baseline, channel, Stokes) has its own flag.
+A plot whose quantities do not vary with Stokes (e.g. u-v) draws one point
+per visibility's time, baseline and channel, flagged if any of its selected
+Stokes is (select one Stokes for that product's own flags).
 """
 
 
@@ -189,7 +199,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     style.add_argument(
         "--show-flagged", action="store_true",
-        help="also draw flagged samples (weight <= 0), in light red on top (default: flagged samples are left out)",
+        help="also draw flagged samples (weight <= 0), as light-coral crosses on top (default: flagged samples are "
+        "left out)",
     )
     style.add_argument("--mirror", action="store_true", help="also plot (-x, -y), e.g. for UV coverage")
     for axis in ("x", "y"):

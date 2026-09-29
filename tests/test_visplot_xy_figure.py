@@ -90,7 +90,8 @@ def test_xy_figure_shows_a_grid_as_an_image_with_its_extent():
     fig = XYFigure(plot, CTX)
     fig.show(grid, display_dpi=100)
     assert fig.image.get_extent() == [-0.5, 1.5, 0.0, 10.0]
-    assert [t.get_text() for t in fig.ax.get_legend().get_texts()] == ["RR", "LL"]
+    assert fig.ax.get_legend() is None  # the key is in the panel under the plot
+    assert [label for label, _ in fig.panel.key_entries(grid.seen_codes)] == ["RR", "LL"]
     assert [t.get_text() for t in fig.ax.get_xticklabels()] == ["RR", "LL"]
     plt.close(fig.fig)
 

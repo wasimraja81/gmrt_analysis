@@ -36,6 +36,22 @@ MIN_ROWS_PER_THREAD = 512
 FLAGGED_LAYER = np.iinfo(np.int16).max  # flagged samples draw above every category
 
 
+def combine_flags(good: np.ndarray, pair_shape: tuple, axis_types) -> np.ndarray:
+    """The flags of the points a plot draws, from each sample's `good`
+    (weight > 0, shaped like the data: (rows, *axes)) and `pair_shape`, the
+    shape its quantities vary along (1 on an axis they do not vary along).
+    The user's rule (2026-09-29): a point whose quantities do not vary along
+    Stokes (e.g. u-v) combines the selected Stokes of its visibility, and is
+    flagged if any of them is flagged -- one Stokes selected, it is exactly
+    that product's flag. Every other axis keeps the data's own flags: a
+    visibility is its own time, baseline and channel, so a per-row quantity
+    (e.g. u in m) is one point per channel's visibility."""
+    for k, axis_type in enumerate(axis_types, start=1):
+        if axis_type == "STOKES" and pair_shape[k] == 1 and good.shape[k] > 1:
+            good = good.all(axis=k, keepdims=True)
+    return good
+
+
 class ChunkValues:
     """Quantity values for one chunk, each evaluated once per base and once
     per unit."""
@@ -89,13 +105,23 @@ class ChunkValues:
         """Drop `plot`'s samples, once every reducer of that plot has seen them."""
         self._samples.pop(plot, None)
 
+    def good(self, plot: PlotSpec, *arrays) -> np.ndarray | None:
+        """Which of `plot`'s points are unflagged (`combine_flags` over the
+        shape of `arrays`, its quantities), or None when flags do not apply
+        (no weights read, or the plot ignores flags)."""
+        if not plot.apply_flags or self.block.weight is None:
+            return None
+        pair_shape = np.broadcast_shapes(*(a.shape for a in arrays))
+        return combine_flags(self.block.weight > 0, pair_shape, self.block.axis_types)
+
     def _compute_samples(self, plot: PlotSpec):
         arrays = [self.axis(plot, "x"), self.axis(plot, "y")]
         if plot.colorize_by:
             arrays.append(self[plot.colorize_by])
-        use_flags = plot.apply_flags and self.block.weight is not None
+        good = self.good(plot, *arrays)
+        use_flags = good is not None
         if use_flags:
-            arrays.append(self.block.weight > 0)
+            arrays.append(good)
         arrays = [a.reshape(-1) for a in np.broadcast_arrays(*arrays)]
         x = arrays[0].astype(np.float64, copy=False)
         y = arrays[1].astype(np.float64, copy=False)
@@ -427,7 +453,7 @@ class GridReducer:
 
 
 LOCATE_FIELDS = ("row", "ant1", "ant2", "jd", "source_id", "channel", "freq_hz", "stokes",
-                 "x", "y", "weight", "mirrored")
+                 "x", "y", "weight", "flagged", "mirrored")
 
 
 class LocateReducer:
@@ -476,18 +502,18 @@ class LocateReducer:
 
     def compute(self, values: ChunkValues):
         block = values.block
-        # Weights join the broadcast only when flags apply, as in `ChunkValues.samples`:
-        # a per-row plot without flags stays one sample per row.
-        use_flags = self.plot.apply_flags and block.weight is not None and not self.plot.show_flagged
-        parts = [values.axis(self.plot, "x"), values.axis(self.plot, "y")] + ([block.weight] if use_flags else [])
-        arrays = np.broadcast_arrays(*parts)
+        # The points the plot draws, flagged by the plot's own rule (`combine_flags`): a u-v
+        # point is one per row and channel, its Stokes combined; without flags, a per-row
+        # plot stays one point per row.
+        parts = [values.axis(self.plot, "x"), values.axis(self.plot, "y")]
+        if self.plot.colorize_by:
+            parts.append(values[self.plot.colorize_by])
+        good = values.good(self.plot, *parts)
+        arrays = np.broadcast_arrays(*parts, *([good] if good is not None else []))
         x, y = arrays[0], arrays[1]
-        if use_flags:
-            weight = arrays[2]
-        elif block.weight is not None and block.weight.shape == x.shape:
-            weight = block.weight
-        else:
-            weight = None
+        good = arrays[-1] if good is not None else None
+        # a sample's own weight where each point is one sample; none where a point combines several
+        weight = block.weight if block.weight is not None and block.weight.shape == x.shape else None
         (x0, x1), (y0, y1) = self.x_box, self.y_box
 
         pieces, counts, n_found = [], Counter(), 0
@@ -495,21 +521,21 @@ class LocateReducer:
             with np.errstate(invalid="ignore"):
                 sx, sy = sign * x, sign * y
                 inside = (sx >= x0) & (sx <= x1) & (sy >= y0) & (sy <= y1)
-            if use_flags:
-                inside &= arrays[2] > 0
+            if good is not None and not self.plot.show_flagged:
+                inside &= good
             index = np.nonzero(inside)
             n = len(index[0])
             if not n:
                 continue
             n_found += n
-            columns = self._columns(block, index, sx, sy, weight, sign < 0)
+            columns = self._columns(block, index, sx, sy, weight, good, sign < 0)
             pairs = np.stack([columns["ant1"], columns["ant2"]], axis=1)
             unique, pair_counts = np.unique(pairs, axis=0, return_counts=True)
             counts.update({(int(a), int(b)): int(c) for (a, b), c in zip(unique, pair_counts)})
             pieces.append(columns)
         return n_found, pieces, counts
 
-    def _columns(self, block, index, sx, sy, weight, mirrored: bool) -> dict:
+    def _columns(self, block, index, sx, sy, weight, good, mirrored: bool) -> dict:
         rows = index[0]
         n = len(rows)
         columns = {
@@ -524,6 +550,9 @@ class LocateReducer:
             "x": np.asarray(sx[index], dtype=np.float64),
             "y": np.asarray(sy[index], dtype=np.float64),
             "weight": np.asarray(weight[index], dtype=np.float64) if weight is not None else np.full(n, np.nan),
+            # by the plot's rule (`combine_flags`); "" where flags do not apply
+            "flagged": (np.where(good[index], "no", "yes").astype(object) if good is not None
+                        else np.full(n, "", dtype=object)),
             "mirrored": np.full(n, mirrored),
         }
         for k, axis_type in enumerate(block.axis_types, start=1):

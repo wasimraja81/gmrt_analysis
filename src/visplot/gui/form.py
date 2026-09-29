@@ -413,7 +413,7 @@ class RequestForm(QtWidgets.QWidget):
                                           set_size, self.auto_size.toggled)
         size.valueChanged.connect(lambda *_: self.changed.emit())
         form.addRow("Marker size", box)
-        form.addRow("", self._add(flag_field("show_flagged", QtWidgets.QCheckBox("show flagged samples (red)"))))
+        form.addRow("", self._add(flag_field("show_flagged", QtWidgets.QCheckBox("show flagged samples (light-coral crosses)"))))
         form.addRow("", self._add(flag_field("mirror", QtWidgets.QCheckBox("mirror (-x, -y), e.g. uv coverage"))))
         return section
 

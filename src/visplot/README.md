@@ -16,8 +16,10 @@ Plotting for exploring a UVFITS observation, driven by `bin/visplot.sh` (`src/cl
 - `stream`: one loop feeding chunks of a selection to reducers (axis ranges, pixel grids,
   located samples); memory does not grow with the selection.
 - `xy_session`: chunk size, range pre-pass and plotting pass.
-- `xy_figure`: a pixel grid drawn as an image on vector axes; `clock_axis`: ticks and labels
-  for clock-time axes (dd:hh:mm:ss).
+- `xy_figure`: a pixel grid drawn as an image on vector axes; `plot_panel`: the panel under
+  each plot (color key, Stokes, channels, baselines, sources, time, filters, what was
+  drawn, the provenance record); `clock_axis`: ticks and labels for clock-time axes
+  (dd:hh:mm:ss).
 - `axis_scale`, `value_histogram`, `range_cache`: axis scales, percentile ranges, and axis
   ranges cached on disk.
 - `qt_inspector`: the Qt window: plots fill as the data streams in and re-stream on zoom;

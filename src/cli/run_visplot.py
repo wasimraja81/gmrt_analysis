@@ -95,6 +95,7 @@ def main(argv: list[str]) -> int:
 def _run(request: PlotRequest, record: PlotRecord, parser: argparse.ArgumentParser) -> int:
     report = record.reporting(_print_report)
     run = prepare(request, report=report)
+    run.set_record(record.run_id)
     if run.locate_box is not None:
         written = run_locate(run, report, _terminal_progress, record=record.describe())
         if written is None:

@@ -8,8 +8,10 @@ partial file.
 
 Columns give both readable and exact values: baseline by antenna names and
 by station numbers, UTC time and the recorded JD, channel index and frequency, Stokes,
-the plot's x and y (in the axes' units), the weight, and whether the sample
-is a mirrored (conjugate) point. Lines starting with '#' describe the file:
+the plot's x and y (in the axes' units), the weight (a sample's own; empty
+where a point combines several samples), whether the point is flagged by
+the plot's rule (`stream.combine_flags`; empty where flags do not apply),
+and whether it is a mirrored (conjugate) point. Lines starting with '#' describe the file:
 the plot, what x and y hold and in which unit, the box, the command and
 provenance record that wrote it (when given), and (at the end, once known)
 the total and the count by baseline.
@@ -28,7 +30,7 @@ from astropy.time import Time
 from visplot.quantities import utc_jd, value_description
 
 COLUMNS = ("baseline", "ant1", "ant2", "time_utc", "jd_recorded", "channel", "freq_mhz", "stokes",
-           "x", "y", "weight", "mirrored", "row", "source")
+           "x", "y", "weight", "flagged", "mirrored", "row", "source")
 
 
 class LocateCsvWriter:
@@ -55,7 +57,9 @@ class LocateCsvWriter:
         system = f" (TIMSYS {ctx.time_system})" if ctx.time_system else ""
         self._comment(f"jd_recorded: the file's timestamp{system}; time_utc: recorded - "
                       f"{ctx.recorded_minus_utc_s:g} s")
-        self._comment("channel -1 and Stokes 'all': the plot does not vary along that axis")
+        self._comment("channel -1 and Stokes 'all': the plot does not vary along that axis, and a point "
+                      "stands for every selected one; flagged: a point combining several Stokes is flagged "
+                      "if any of them is")
         self._writer.writerow(COLUMNS)
 
     def _comment(self, text: str) -> None:
@@ -79,7 +83,7 @@ class LocateCsvWriter:
             [f"{v:.10f}" for v in columns["jd"]], columns["channel"].tolist(),
             ["" if np.isnan(f) else f"{f:.6f}" for f in freq_mhz], columns["stokes"],
             [f"{v:.10g}" for v in columns["x"]], [f"{v:.10g}" for v in columns["y"]],
-            ["" if np.isnan(w) else f"{w:.6g}" for w in columns["weight"]],
+            ["" if np.isnan(w) else f"{w:.6g}" for w in columns["weight"]], columns["flagged"],
             ["yes" if m else "no" for m in columns["mirrored"]], columns["row"].tolist(), source,
         ))
         self.n_written += n

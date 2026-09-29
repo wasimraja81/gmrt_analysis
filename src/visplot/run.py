@@ -36,6 +36,7 @@ from data_io.timestamp_check import check_timestamps
 from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observatory_time_zone
 from visplot.antenna_layout import antenna_layout
 from visplot.locate_csv import LocateCsvWriter
+from visplot.plot_panel import panel_facts
 from visplot.plot_spec import PlotSpec, expand_plot_name
 from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_table, local_time_zone, utc_jd, \
     utc_offset_text
@@ -236,6 +237,11 @@ class PreparedRun:
     def xy_plots(self) -> list[PlotSpec]:
         return [p for plots in self.plots_by_name.values() for p in plots]
 
+    def set_record(self, run_id: str | None) -> None:
+        """Name the provenance record of this run on every plot's panel."""
+        for figure in self.xy_figures.values():
+            figure.set_record(run_id)
+
     def figures(self) -> list[tuple[str, object]]:
         """Every figure, in the order the plots were named (table plots drawn
         from the file's tables, once)."""
@@ -305,8 +311,10 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     source = XYSource(request.fits_path, index, selection.row_indices, axis_selection, ctx,
                       stream_chunk_bytes(), threads=max(1, request.threads))
     sources_present = list(selection.sources.values())
+    channel_indices = (axis_selection or {}).get("FREQ")
+    facts = panel_facts(request, index, selection.row_indices, channel_indices, stokes_labels, selection.sources, ctx)
     xy_figures = {p: XYFigure(p, ctx, sources_present, opened.telescope, request.fits_path,
-                              figsize=checked.figure_size) for p in xy_plots}
+                              figsize=checked.figure_size, facts=facts) for p in xy_plots}
     cache = RangeCache(request.cache_dir) if request.cache_dir else None
     if cache is not None:
         for stale in cache.remove_stale_partials():
