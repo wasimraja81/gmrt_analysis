@@ -17,6 +17,7 @@ everything worth telling the user goes to a `report(level, text)` callback
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -46,6 +47,8 @@ from visplot.request_args import (
     resolve_antennas_arg,
     resolve_channels_arg,
     resolve_deg_range_arg,
+    resolve_dpi_arg,
+    resolve_figure_size_arg,
     resolve_ha_range_arg,
     resolve_klambda_range_arg,
     resolve_locate_box_arg,
@@ -73,8 +76,7 @@ from visplot.xy_session import (
 )
 
 GEOMETRY_QUANTITIES = {"ha", "az", "el", "pa"}
-LOWRES_DPI = 150
-HIGHRES_DPI = 600  # a whole multiple of LOWRES_DPI: the 150 dpi grid is an exact 4x4 reduction
+HIGHRES_MIN_DPI = 600  # the high-resolution PDF's least dpi
 
 Report = Callable[[str, str], None]  # (level: "info" or "warning", text)
 # Makes the on_chunk callback of one pass from its progress (e.g. printing every 10%).
@@ -100,13 +102,17 @@ class CheckedRequest:
     plot_names: list[str]
     plots_by_name: dict[str, list[PlotSpec]]  # streamed plots per name (table plots have none)
     locate_box: tuple | None
+    figure_size: tuple[float, float]  # inches, of each streamed plot's figure
 
 
 def check_request(request: PlotRequest) -> CheckedRequest:
     """Everything about `request` that needs no file: plot names, ranges,
-    percentiles, the locate box, scales, and units (all but the visibility
-    quantities', which depend on the file's BUNIT). Raises RequestError."""
+    percentiles, the locate box, scales, units (all but the visibility
+    quantities', which depend on the file's BUNIT), dpi and figure size.
+    Raises RequestError."""
     try:
+        resolve_dpi_arg(request.dpi)
+        figure_size = resolve_figure_size_arg(request.figure_size)
         plot_names = parse_plot_names(request.plots)
         if request.colorize_by:
             validate_colorize_by(request.colorize_by)
@@ -151,7 +157,7 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         n_streamed = sum(len(p) for p in plots_by_name.values())
         if n_streamed != 1:
             raise RequestError(f"--locate needs exactly one streamed plot; --plots gives {n_streamed}")
-    return CheckedRequest(plot_names, plots_by_name, locate_box)
+    return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size)
 
 
 def _header_keyword(fits_path, keyword: str) -> str | None:
@@ -294,7 +300,8 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     source = XYSource(request.fits_path, index, selection.row_indices, axis_selection, ctx,
                       stream_chunk_bytes(), threads=max(1, request.threads))
     sources_present = list(selection.sources.values())
-    xy_figures = {p: XYFigure(p, ctx, sources_present, opened.telescope, request.fits_path) for p in xy_plots}
+    xy_figures = {p: XYFigure(p, ctx, sources_present, opened.telescope, request.fits_path,
+                              figsize=checked.figure_size) for p in xy_plots}
     cache = RangeCache(request.cache_dir) if request.cache_dir else None
     if cache is not None:
         for stale in cache.remove_stale_partials():
@@ -485,21 +492,29 @@ def run_locate(run: PreparedRun, report: Report = _silent, progress: ProgressFac
     return written
 
 
+def highres_dpi(dpi: int) -> int:
+    """The high-resolution PDF's dpi for PNGs at `dpi`: the smallest whole
+    multiple of `dpi` that is at least HIGHRES_MIN_DPI (600 for 150), so the
+    `dpi` grid is an exact reduction of it."""
+    return dpi * max(1, math.ceil(HIGHRES_MIN_DPI / dpi))
+
+
 def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressFactory = _no_progress) -> list[Path]:
-    """The range pass (when needed) and one plotting pass at 600 dpi, then
-    one PNG per plot at 150 dpi (the exact 4x4 reduction) and the low- and
-    high-resolution PDFs, in the request's --output-dir. Returns the paths
-    written."""
+    """The range pass (when needed) and one plotting pass at `highres_dpi`,
+    then one PNG per plot at the request's --dpi (an exact reduction) and the
+    low- and high-resolution PDFs, in the request's --output-dir. Returns the
+    paths written."""
     request, source, xy_plots, xy_figures = run.request, run.source, run.xy_plots, run.xy_figures
     extents = {}
     if xy_plots:
         on_chunk = progress(pass_progress(source, run.labels[0], range_pass_reads_data(xy_plots, run.cached)))
         extents = resolve_extents(source, xy_plots, on_chunk=on_chunk, cache=run.cache)
-    factor = HIGHRES_DPI // LOWRES_DPI
+    lowres_dpi, highres = request.dpi, highres_dpi(request.dpi)
+    factor = highres // lowres_dpi
     shapes = {}
     for p in xy_plots:
         extents[p] = xy_figures[p].set_view(*extents[p])  # the limits after the aspect applies
-        h, w = xy_figures[p].grid_shape(LOWRES_DPI)
+        h, w = xy_figures[p].grid_shape(lowres_dpi)
         shapes[p] = (h * factor, w * factor)
     grids = {}
     if xy_plots:
@@ -520,10 +535,10 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     with PdfPages(lowres_path) as pdf:
         for name, item in run.figures():
             if isinstance(item, XYFigure):
-                item.show(grids[item.plot], display_dpi=LOWRES_DPI, downsample=factor)
+                item.show(grids[item.plot], display_dpi=lowres_dpi, downsample=factor)
             png_path = output_dir / f"{request.output_prefix}_{name}.png"
-            _mpl_figure(item).savefig(png_path, dpi=LOWRES_DPI)
-            pdf.savefig(_mpl_figure(item), dpi=LOWRES_DPI)
+            _mpl_figure(item).savefig(png_path, dpi=lowres_dpi)
+            pdf.savefig(_mpl_figure(item), dpi=lowres_dpi)
             report("info", f"saved {png_path}")
             written.append(png_path)
     report("info", f"saved {lowres_path}")
@@ -533,8 +548,8 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
         with PdfPages(highres_path) as pdf:
             for _, item in run.figures():
                 if isinstance(item, XYFigure):
-                    item.show(grids[item.plot], display_dpi=HIGHRES_DPI)
-                pdf.savefig(_mpl_figure(item), dpi=HIGHRES_DPI)
+                    item.show(grids[item.plot], display_dpi=highres)
+                pdf.savefig(_mpl_figure(item), dpi=highres)
         report("info", f"saved {highres_path}")
         written.append(highres_path)
     return written

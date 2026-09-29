@@ -370,3 +370,27 @@ def test_the_launcher_runs_as_a_script():
     result = subprocess.run([str(repo / "bin" / "visplot.sh"), "--help"], capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stderr
     assert "usage: bin/visplot.sh" in result.stdout
+
+
+def test_dpi_and_figure_size_set_the_saved_pngs_pixels():
+    scratch = make_scratch_dir("cli_visplot_dpi_figure_size")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    out = scratch / "out"
+    assert main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--dpi", "100", "--figure-size", "5,4",
+                 "--output-dir", str(out), "--output-prefix", "t", "--no-highres-pdf"]) == 0
+    assert plt.imread(out / "t_amp-vs-freq_mhz.png").shape[:2] == (400, 500)
+    plt.close("all")
+
+
+def test_the_highres_pdf_is_a_whole_multiple_of_the_dpi_at_least_600():
+    from visplot.run import highres_dpi
+
+    assert [highres_dpi(d) for d in (150, 100, 250, 600, 1200, 72)] == [600, 600, 750, 600, 1200, 648]
+
+
+def test_a_dpi_or_figure_size_out_of_range_is_rejected_before_reading(capsys):
+    for args, message in ((["--dpi", "10"], "--dpi needs 50 to 2400"),
+                          (["--figure-size", "8x6"], "--figure-size takes 'W,H' in inches")):
+        with pytest.raises(SystemExit):
+            main(["visplot", "missing.fits", "--plots", "amp-vs-freq", *args])
+        assert message in capsys.readouterr().err

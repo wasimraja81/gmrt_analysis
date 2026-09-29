@@ -41,6 +41,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from visplot.locate_csv import LocateCsvWriter, write_kept
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import utc_jd
+from visplot.request_args import DPI_LIMITS
 from visplot.stream import GridReducer, LocateReducer
 from visplot.xy_figure import XYFigure, grid_summary
 from visplot.xy_session import PassProgress, XYSource, range_pass_axes, range_pass_reads_data, resolve_extents
@@ -520,7 +521,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export plot", f"{panel.plot.name}.png", EXPORT_FILTERS)
         if not path:
             return
-        dpi, ok = QtWidgets.QInputDialog.getInt(self, "Export resolution", "dots per inch:", 600, 50, 2400)
+        dpi, ok = QtWidgets.QInputDialog.getInt(self, "Export resolution", "dots per inch:", 600, *DPI_LIMITS)
         if ok:
             self.export(panel.plot, path, dpi)
 
@@ -528,8 +529,10 @@ class InspectorWindow(QtWidgets.QMainWindow):
         """Re-read the plot's current view at `dpi` and save it to `path`."""
         panel = self.panels[plot]
         limits = (tuple(panel.figure.ax.get_xlim()), tuple(panel.figure.ax.get_ylim()))
+        # the Equal aspect box's override takes effect on linear axes only
+        equal = panel.figure.equal_override if panel.figure.linear else None
         started, record = self._start_record("export", plot, path, view=limits, dpi=dpi,
-                                             figure_size_in=tuple(panel.figure.fig.get_size_inches()))
+                                             figure_size_in=tuple(panel.figure.fig.get_size_inches()), equal=equal)
         if not started:
             return
         height, width = panel.figure.grid_shape(dpi)

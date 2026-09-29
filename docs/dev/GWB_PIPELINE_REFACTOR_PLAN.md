@@ -2,7 +2,7 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, 409 tests passing; T26, T32 in progress; T33, point D, T20, T21 open (order in
+2026-09-29, 413 tests passing; T26, T32 in progress; T33, point D, T20, T21 open (order in
 Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -668,8 +668,8 @@ Buildable now, ahead of Phase C.
   PMRA/PMDEC in the SU table as the first signal); recomputing u, v, w for such scans --
   the user's decisions.
 
-- **T31 — Provenance for every plot — DONE (added 2026-09-28, built 2026-09-29; one
-  gap open, below).** Every GUI "Plot" click and every CLI run records the explicit
+- **T31 — Provenance for every plot — DONE (added 2026-09-28, built 2026-09-29).**
+  Every GUI "Plot" click and every CLI run records the explicit
   CLI-equivalent command (every option including defaults, absolute paths, view ranges,
   figure size, dpi, theme) through `provenance/manifest.py`'s RunManifest (stage
   "visplot"): host, UTC time, git commit and branch with the dirty diff, Python and key
@@ -702,11 +702,17 @@ Buildable now, ahead of Phase C.
   Checked on the GWB file (2026-09-29, `ha-range`, 3C286, 69,174 rows): the record lists
   both inputs (the 389 GB FITS by size and time only, and its index), the two outputs,
   the git diff beside it, and the time-system and timestamp-check messages in its log.
-  Open gap: an export's dpi and figure size are in its record's details only; the command
-  line has no options for them (it saves at 150 and 600 dpi at its own figure size), so an
-  export's command reproduces its view and selection, and its pixel size needs the
-  details. User's decision (2026-09-29): add `--dpi` and `--figure-size` to the command
-  line; next.
+  Exports (closed 2026-09-29, the user's decision): an export's dpi and figure size were
+  in its record's details only, since the command line saved at 150 and 600 dpi at its
+  own figure size. `--dpi N` (50-2400, the Export dialog's range; default 150) sets the
+  PNGs' and the low-resolution PDF's resolution, the high-resolution PDF being at the
+  smallest whole multiple of N that is at least 600 (600 for 150), so the PNGs stay exact
+  reductions of the one plotting pass; `--figure-size W,H` (inches, default 8,6) sizes
+  each streamed plot's saved figure (the antenna layout and source listing keep theirs).
+  An export's command fixes the view's ranges, `--dpi`, `--figure-size`, and `--aspect`
+  when the window's Equal aspect box overrode the request's (on linear axes, where it
+  takes effect); a GUI test runs the command of an export from a window-sized figure
+  with `--output-dir` and gets the export's PNG pixel for pixel.
 
 - **T32 — visplot GUI — IN PROGRESS (added 2026-09-28).** A plotms-style front end on the
   existing engine: file and selection controls, x/y from the quantity registry with units

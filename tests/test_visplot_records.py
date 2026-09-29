@@ -67,12 +67,20 @@ def test_a_window_action_narrows_the_request_to_its_box_or_view():
     assert check_request(located).locate_box == ((1.0, 2.0), (-0.5, 3.0))
     assert PlotRequest.from_argv(located.to_argv()) == located
 
-    exported, full = action_request(request, 1, "export", view=((0.1, 0.2), (-1.0, 1.0)))
+    exported, full = action_request(request, 1, "export", view=((0.1, 0.2), (-1.0, 1.0)), dpi=300,
+                                    figure_size_in=(10.93, 7.42))
     assert full and exported.x_range == "0.1:0.2" and exported.y_range == "-1.0:1.0"
+    assert exported.dpi == 300 and exported.figure_size == "10.93,7.42" and exported.aspect == "auto"
+    assert check_request(exported).figure_size == (10.93, 7.42)
     assert PlotRequest.from_argv(exported.to_argv()) == exported
+    for equal, aspect in ((True, "equal"), (False, "free")):
+        overridden, _ = action_request(request, 1, "export", view=((0.1, 0.2), (-1.0, 1.0)), dpi=300,
+                                       figure_size_in=(8, 6), equal=equal)
+        assert overridden.aspect == aspect
 
     several = PlotRequest("x.fits", "az-el-range")
-    unchanged, full = action_request(several, 2, "export", view=((0.0, 1.0), (0.0, 1.0)))
+    unchanged, full = action_request(several, 2, "export", view=((0.0, 1.0), (0.0, 1.0)), dpi=300,
+                                     figure_size_in=(8, 6))
     assert unchanged == several and not full
 
 

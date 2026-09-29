@@ -4,10 +4,12 @@ own code."""
 
 import json
 import os
+import shlex
 import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -22,7 +24,7 @@ from visplot.gui.main_window import VisplotWindow  # noqa: E402
 from visplot.gui.widgets import select_data  # noqa: E402
 from visplot.records import action_request  # noqa: E402
 from visplot.request import PlotRequest, request_option_names  # noqa: E402
-from visplot.run import prepare  # noqa: E402
+from visplot.run import prepare, save_outputs  # noqa: E402
 from visplot.xy_session import plot_grids  # noqa: E402
 
 
@@ -189,8 +191,18 @@ def test_plot_and_export_are_recorded_with_the_session_whose_log_keeps_every_mes
     assert exported.exists() and export_record["outputs"] == [str(exported.resolve())]
     assert export_record["details"]["from_run"] == tab.record.run_id
     assert export_record["details"]["session"] == window.session.session_id
-    assert export_record["details"]["dpi"] == 100 and len(export_record["details"]["figure_size_in"]) == 2
-    assert export_record["parameters"] == action_request(tab.request, 1, "export", view=view)[0].as_dict()
+    figure_size_in = tuple(tab.panel.panels[plot].figure.fig.get_size_inches())
+    assert figure_size_in != (8.0, 6.0)  # the window's size, so the default figure size would not repeat it
+    assert export_record["details"]["dpi"] == 100
+    assert export_record["details"]["figure_size_in"] == list(figure_size_in)
+    narrowed, _ = action_request(tab.request, 1, "export", view=view, dpi=100, figure_size_in=figure_size_in)
+    assert export_record["parameters"] == narrowed.as_dict()
+
+    # The export's command, run with --output-dir, saves the export's image, pixel for pixel.
+    repeat = PlotRequest.from_argv(shlex.split(export_record["details"]["command"])[1:])
+    saved = save_outputs(prepare(repeat.replace(output_dir=str(path.parent / "repeat"), no_highres_pdf=True)))
+    (png,) = [p for p in saved if p.suffix == ".png"]
+    np.testing.assert_array_equal(plt.imread(png), plt.imread(exported))
 
     session_log = window.session.log_path
     window.close()

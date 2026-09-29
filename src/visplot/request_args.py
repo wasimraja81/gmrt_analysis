@@ -8,6 +8,7 @@ same text.
 
 from __future__ import annotations
 
+import math
 import textwrap
 
 import astropy.units as u
@@ -24,6 +25,33 @@ TABLE_PLOTS = {"antenna-layout", "source-listing"}  # drawn from the file's tabl
 NAMED_PLOTS = TABLE_PLOTS | set(PRESETS)
 QUANTITY_NAMES = set(QUANTITIES) | set(ALIASES)  # earlier names that carry a unit still work
 CATEGORY_NAMES = {name for name, q in QUANTITIES.items() if q.categorical}
+# Saved files: --dpi (the plot window's Export offers the same range) and --figure-size.
+DEFAULT_DPI = 150
+DPI_LIMITS = (50, 2400)
+DEFAULT_FIGURE_SIZE = "8,6"
+MAX_FIGURE_INCHES = 100.0
+
+
+def resolve_dpi_arg(dpi: int) -> int:
+    """--dpi N, within DPI_LIMITS."""
+    lo, hi = DPI_LIMITS
+    if not lo <= dpi <= hi:
+        raise ValueError(f"--dpi needs {lo} to {hi}, got {dpi}")
+    return dpi
+
+
+def resolve_figure_size_arg(spec: str) -> tuple[float, float]:
+    """--figure-size 'W,H': width and height in inches, each above 0 and at
+    most MAX_FIGURE_INCHES."""
+    parts = spec.split(",")
+    try:
+        width, height = (float(p) for p in parts) if len(parts) == 2 else (None, None)
+    except ValueError:
+        width = height = None
+    if width is None or not all(math.isfinite(v) and 0 < v <= MAX_FIGURE_INCHES for v in (width, height)):
+        raise ValueError(f"--figure-size takes 'W,H' in inches, each above 0 and at most {MAX_FIGURE_INCHES:g}, "
+                         f"got {spec!r}")
+    return width, height
 
 
 def quantity_help(indent: int = 4, width: int = 79) -> str:

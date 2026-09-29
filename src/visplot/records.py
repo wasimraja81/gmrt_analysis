@@ -132,16 +132,17 @@ class SessionRecord:
             self.manifest.__exit__(None, None, None)
 
 
-def action_request(request: PlotRequest, n_streamed: int, kind: str, view=None, box=None,
-                   csv_path=None) -> tuple[PlotRequest, bool]:
+def action_request(request: PlotRequest, n_streamed: int, kind: str, view=None, box=None, csv_path=None,
+                   dpi: int | None = None, figure_size_in=None, equal: bool | None = None) -> tuple[PlotRequest, bool]:
     """The request that reproduces a window action on `request`'s plot, and
     whether it reproduces it in full: a locate adds its `box` ((x0, x1),
     (y0, y1)) and CSV path; an export fixes the axis ranges to the exported
-    `view` ((x limits), (y limits)) -- the export's dpi and figure size are
-    in the record's details, since the command line saves at 150 and 600 dpi
-    at its own figure size. A request with several streamed plots
-    (`n_streamed` > 1) cannot be narrowed to one plot's action, so it comes
-    back unchanged."""
+    `view` ((x limits), (y limits)), --dpi and --figure-size to the export's
+    (the window's figure, in inches), and --aspect when the window's Equal
+    aspect box overrode the request's (`equal`; None: not overridden) -- run
+    with --output-dir, it saves the export's image as its PNG. A request with
+    several streamed plots (`n_streamed` > 1) cannot be narrowed to one
+    plot's action, so it comes back unchanged."""
     if n_streamed != 1:
         return request, False
 
@@ -154,7 +155,11 @@ def action_request(request: PlotRequest, n_streamed: int, kind: str, view=None, 
         return request.replace(locate=f"{span(x0, x1)},{span(y0, y1)}", locate_csv=str(csv_path)), True
     if kind == "export":
         (x0, x1), (y0, y1) = view
-        return request.replace(x_range=span(x0, x1), y_range=span(y0, y1)), True
+        width, height = (float(v) for v in figure_size_in)
+        changes = dict(x_range=span(x0, x1), y_range=span(y0, y1), dpi=int(dpi), figure_size=f"{width!r},{height!r}")
+        if equal is not None:
+            changes["aspect"] = "equal" if equal else "free"
+        return request.replace(**changes), True
     raise ValueError(f"unknown window action {kind!r}")
 
 
@@ -174,15 +179,19 @@ class WindowProvenance:
     session_id: str | None = None
 
     def start(self, kind: str, plot_name: str, path, box=None, view=None, dpi: int | None = None,
-              figure_size_in=None) -> PlotRecord:
+              figure_size_in=None, equal: bool | None = None) -> PlotRecord:
         """The record of a save about to be written to `path` from the plot
         `plot_name`: "locate" (the samples in `box`) or "export" (`view` at
-        `dpi`, the window's figure being `figure_size_in`). The caller adds
-        the output and finishes it."""
-        narrowed, full = action_request(self.request, self.n_streamed, kind, view=view, box=box, csv_path=path)
+        `dpi`, the window's figure being `figure_size_in`, `equal` the
+        window's aspect override). The caller adds the output and finishes
+        it. The details repeat the action's values, for a request that
+        cannot be narrowed to it."""
+        narrowed, full = action_request(self.request, self.n_streamed, kind, view=view, box=box, csv_path=path,
+                                        dpi=dpi, figure_size_in=figure_size_in, equal=equal)
         details = {"from_run": self.parent_run_id, "plot": plot_name, "reproduces_in_full": full}
         if kind == "locate":
             details["box"] = _pairs(box)
         else:
-            details.update(view=_pairs(view), dpi=dpi, figure_size_in=[float(v) for v in figure_size_in])
+            details.update(view=_pairs(view), dpi=dpi, figure_size_in=[float(v) for v in figure_size_in],
+                           equal_aspect_override=equal)
         return PlotRecord(narrowed, kind, session_id=self.session_id, details=details)

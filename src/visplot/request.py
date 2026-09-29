@@ -18,7 +18,7 @@ import shlex
 from pathlib import Path
 
 from visplot.axis_scale import SCALE_NAMES
-from visplot.request_args import CATEGORY_NAMES, quantity_help
+from visplot.request_args import CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DPI_LIMITS, quantity_help
 from visplot.xy_session import DEFAULT_STREAM_THREADS
 
 PROG = "bin/visplot.sh"
@@ -68,7 +68,10 @@ chunks are read, with progress in the status bar; after a zoom or pan it
 re-reads the selection and redraws the new region at the window's own
 resolution. On a plot's toolbar, Locate lists the samples in a dragged box
 (baseline, time, channel, Stokes, values; saved as CSV) and Export re-reads
-the view at a chosen dpi and saves it (PNG, PDF, SVG, EPS, TIFF, JPEG).
+the view at a chosen dpi and saves it (PNG, PDF, SVG, EPS, TIFF, JPEG). Each
+save's provenance record has the command that repeats it: an export's fixes
+the view's ranges, --dpi and --figure-size, and with --output-dir saves the
+same image.
 
 examples:
   # antenna layout and source list only (reads no visibilities)
@@ -92,12 +95,16 @@ examples:
 range syntax: 'lo:hi' for one range; several joined by commas ('1:5,10,12:14').
 A unit suffix on any term applies to all terms ('100:100.5MHz,103.5:104MHz').
 
-saved output (--output-dir): one PNG per plot (150 dpi), plus two combined
-PDFs, one page per plot, with the samples as an image and axes, labels and
-titles as vector:
-  PREFIX_lowres.pdf   samples at 150 dpi
-  PREFIX_highres.pdf  samples at 600 dpi, for zooming in
+saved output (--output-dir): one PNG per plot (at --dpi, default 150), plus
+two combined PDFs, one page per plot, with the samples as an image and axes,
+labels and titles as vector:
+  PREFIX_lowres.pdf   samples at --dpi
+  PREFIX_highres.pdf  samples at the smallest whole multiple of --dpi that is
+                      at least 600 dpi (600 for 150), for zooming in; the
+                      PNGs are exact reductions of it
                       (skip it with --no-highres-pdf)
+Each streamed plot's figure is --figure-size inches (default 8,6); the
+antenna layout and source listing keep their own sizes.
 """
 
 
@@ -232,6 +239,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     out.add_argument(
         "--no-highres-pdf", action="store_true",
         help="skip PREFIX_highres.pdf (write only the PNGs and PREFIX_lowres.pdf)",
+    )
+    out.add_argument(
+        "--dpi", type=int, default=DEFAULT_DPI, metavar="N",
+        help=f"resolution of the saved PNGs and PREFIX_lowres.pdf, {DPI_LIMITS[0]} to {DPI_LIMITS[1]} "
+        f"(default: {DEFAULT_DPI}); PREFIX_highres.pdf is at the smallest whole multiple of N that is at "
+        "least 600",
+    )
+    out.add_argument(
+        "--figure-size", default=DEFAULT_FIGURE_SIZE, metavar="W,H",
+        help=f"each streamed plot's saved figure, width and height in inches (default: {DEFAULT_FIGURE_SIZE}); "
+        "in the window, plots take the window's size",
     )
     out.add_argument(
         "--provenance-dir", default=DEFAULT_PROVENANCE_DIR, metavar="DIR",

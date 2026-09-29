@@ -14,7 +14,7 @@ def _every_kind_of_value():
         stokes="RR,LL", point_size=0.25, color="k", colorize_by="stokes", show_flagged=True, mirror=True,
         x_unit="Mlambda", y_unit="UNCALIB", time_zone="Asia/Kolkata", x_range="0:40", y_range_mode="percentile",
         range_percentiles="1:99", y_scale="asinh", aspect="free", scale_linear_width=0.1, output_dir="tmp/out",
-        output_prefix="run1", no_highres_pdf=True, cache_dir="tmp/cache", threads=3,
+        output_prefix="run1", no_highres_pdf=True, dpi=300, figure_size="10.5,7.25", cache_dir="tmp/cache", threads=3,
     )
 
 

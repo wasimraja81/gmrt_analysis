@@ -44,6 +44,8 @@ ACTION_OPTIONS = {
     "output_dir": "File > Save plots as files",
     "output_prefix": "File > Save plots as files",
     "no_highres_pdf": "File > Save plots as files",
+    "dpi": "Export on a plot (its dpi), or File > Save plots as files",
+    "figure_size": "Export on a plot (the plot's size in the window), or File > Save plots as files",
 }
 
 # Quantity groups in the axis lists, in order; a quantity not listed here goes under "Other",

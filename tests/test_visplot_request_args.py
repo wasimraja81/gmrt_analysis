@@ -6,6 +6,8 @@ from visplot.request_args import (
     resolve_antennas_arg,
     resolve_channels_arg,
     resolve_deg_range_arg,
+    resolve_dpi_arg,
+    resolve_figure_size_arg,
     resolve_ha_range_arg,
     resolve_klambda_range_arg,
     resolve_stokes_axis_selection,
@@ -145,3 +147,15 @@ def test_resolve_plain_range_arg():
 def test_parse_plot_names_accepts_quantity_names_and_earlier_names_with_units():
     assert parse_plot_names("amp-vs-uvdist,v-vs-u,amp-vs-uvdist_klambda,phase_deg-vs-time_h") == [
         "amp-vs-uvdist", "v-vs-u", "amp-vs-uvdist_klambda", "phase_deg-vs-time_h"]
+
+
+def test_dpi_and_figure_size_are_checked():
+    assert resolve_dpi_arg(150) == 150
+    for dpi in (49, 2401):
+        with pytest.raises(ValueError, match="--dpi needs 50 to 2400"):
+            resolve_dpi_arg(dpi)
+    assert resolve_figure_size_arg("8,6") == (8.0, 6.0)
+    assert resolve_figure_size_arg("10.93,7.42") == (10.93, 7.42)
+    for spec in ("8", "8,6,1", "8x6", "0,6", "8,-1", "8,nan", "101,6"):
+        with pytest.raises(ValueError, match="--figure-size takes 'W,H' in inches"):
+            resolve_figure_size_arg(spec)
