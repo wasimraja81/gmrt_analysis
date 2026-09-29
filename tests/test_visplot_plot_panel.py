@@ -148,3 +148,11 @@ def test_the_panel_knows_which_axes_a_plot_varies_along_as_the_stream_shapes_it(
                 assert varies_along(plot, axis_type, ctx) == (shape[k] > 1), (name, unit_name, axis_type)
                 checked += 1
     assert checked > 20
+
+
+def test_the_panel_says_what_a_row_stride_kept():
+    _, figure = _run("panel_stride", every_nth=3)  # 3 baselines per integration: every 3rd row keeps one
+    assert figure.panel.facts.stride_pairs == (1, 3)
+    _, figure = _run("panel_integration_stride", every_nth_integration=2)
+    assert figure.panel.facts.stride_pairs is None and figure.panel.facts.n_baselines == 3
+    assert figure.panel.facts.filters == "every 2nd integration"

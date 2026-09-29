@@ -170,7 +170,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sel.add_argument("--pa-range", help="'lo:hi' parallactic angle, degrees by default, or with a 'rad' suffix")
     sel.add_argument(
         "--every-nth", type=int, metavar="N",
-        help="keep every Nth row of those matching all other filters (not with --random-subset-n)",
+        help="keep every Nth row of those matching all other filters. Rows are in baseline order within "
+        "each integration, so an N sharing a factor with the rows per integration skips whole baselines "
+        "(the run warns and says how many it kept); --every-nth-integration keeps them all",
+    )
+    sel.add_argument(
+        "--every-nth-integration", type=int, metavar="N",
+        help="keep every Nth integration of those matching all other filters, with all its rows: every "
+        "baseline stays",
     )
     sel.add_argument(
         "--random-subset-n", type=int, metavar="N",

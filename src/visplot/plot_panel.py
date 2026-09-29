@@ -116,15 +116,17 @@ class PanelFacts:
     n_antennas: int
     time_utc: tuple[str, str] | None  # first and last selected timestamp, UTC
     filters: str  # the row filters given, as text; "" for none
+    # (antenna pairs a row stride kept, pairs the selection has without it); None without one
+    stride_pairs: tuple[int, int] | None = None
 
 
 def selection_filters(request) -> str:
     """A request's row filters, e.g. "uv distance 0:5km, every 40th row"."""
     parts = [text.format(getattr(request, dest)) for dest, text in _FILTERS if getattr(request, dest)]
-    n = request.every_nth
-    if n and n > 1:
-        suffix = "th" if 10 <= n % 100 <= 20 else _ORDINAL.get(n % 10, "th")
-        parts.append(f"every {n}{suffix} row")
+    for n, what in ((request.every_nth, "row"), (request.every_nth_integration, "integration")):
+        if n and n > 1:
+            suffix = "th" if 10 <= n % 100 <= 20 else _ORDINAL.get(n % 10, "th")
+            parts.append(f"every {n}{suffix} {what}")
     if request.random_subset_n:
         seed = f", seed {request.random_seed}" if request.random_seed is not None else ""
         parts.append(f"{request.random_subset_n:,} random rows{seed}")
@@ -132,9 +134,10 @@ def selection_filters(request) -> str:
 
 
 def panel_facts(request, index, row_indices, channel_indices, stokes_labels, sources: dict,
-                ctx: QuantityContext) -> PanelFacts:
+                ctx: QuantityContext, stride_pairs: tuple[int, int] | None = None) -> PanelFacts:
     """The facts of a run's selection: its rows (`row_indices`), channels
-    (`channel_indices`; None: all), Stokes and sources."""
+    (`channel_indices`; None: all), Stokes and sources, and what a row
+    stride kept (`stride_pairs`, `RowSelection.stride_pairs`)."""
     freqs_hz = np.asarray(index.chan_freqs_hz if index.chan_freqs_hz is not None else [])
     chosen = freqs_hz if channel_indices is None else freqs_hz[np.asarray(channel_indices)]
     rows = np.asarray(row_indices)
@@ -152,6 +155,7 @@ def panel_facts(request, index, row_indices, channel_indices, stokes_labels, sou
         n_baselines=len(np.unique(ant1[cross].astype(np.int64) * 65536 + ant2[cross])),
         n_autocorrelations=len(np.unique(ant1[~cross])),
         n_antennas=len(np.union1d(ant1, ant2)), time_utc=time_utc, filters=selection_filters(request),
+        stride_pairs=stride_pairs,
     )
 
 
@@ -288,7 +292,14 @@ class PlotPanel:
             parts = [f"{facts.n_baselines:,} baselines"] if facts.n_baselines else []
             if facts.n_autocorrelations:
                 parts.append(f"{facts.n_autocorrelations:,} autocorrelations")
-            left.append(("Baselines", [f"{' and '.join(parts) or 'none'}, {facts.n_antennas} antennas"]))
+            baselines = f"{' and '.join(parts) or 'none'}, {facts.n_antennas} antennas"
+            if facts.stride_pairs is not None and facts.stride_pairs[0] < facts.stride_pairs[1]:
+                # a row stride skipped some: said in the warning color
+                kept, available = facts.stride_pairs
+                what = "antenna pairs" if facts.n_autocorrelations else "baselines"
+                baselines = TextArea(f"{kept:,} of {available:,} {what} kept by the row stride, "
+                                     f"{facts.n_antennas} antennas", textprops=dict(self.value_props, color="darkred"))
+            left.append(("Baselines", [baselines]))
             if facts.time_utc is not None:
                 t0, t1 = facts.time_utc
                 right.append(("Time", [f"{t0} to {t1[11:] if t1[:10] == t0[:10] else t1} UTC"]))

@@ -373,7 +373,8 @@ class RequestForm(QtWidgets.QWidget):
             ("pa_range", "Parallactic angle", "lo:hi deg, or with rad", resolve_deg_range_arg),
         ):
             more_form.addRow(label, self._add(text_field(dest, CheckedLineEdit(placeholder, _check_with(resolver)))))
-        for dest, label, placeholder in (("every_nth", "Every Nth row", "all rows"),
+        for dest, label, placeholder in (("every_nth_integration", "Every Nth integration", "all integrations"),
+                                         ("every_nth", "Every Nth row", "all rows (can skip baselines)"),
                                          ("random_subset_n", "Random rows", "all rows"),
                                          ("random_seed", "Random seed", "needed for random rows")):
             edit = CheckedLineEdit(placeholder, lambda t: None if int(t) >= 0 else "a whole number, 0 or more")

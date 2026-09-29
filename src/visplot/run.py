@@ -119,6 +119,14 @@ def check_request(request: PlotRequest) -> CheckedRequest:
     try:
         resolve_dpi_arg(request.dpi)
         figure_size = resolve_figure_size_arg(request.figure_size)
+        samplers = {"--every-nth": request.every_nth, "--every-nth-integration": request.every_nth_integration,
+                    "--random-subset-n": request.random_subset_n}
+        given = [name for name, value in samplers.items() if value is not None]
+        if len(given) > 1:
+            raise ValueError(f"give one of --every-nth, --every-nth-integration, --random-subset-n; got {', '.join(given)}")
+        for name in given:
+            if samplers[name] < 1:
+                raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
         plot_names = parse_plot_names(request.plots)
         if request.colorize_by:
             validate_colorize_by(request.colorize_by)
@@ -300,6 +308,14 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     selected = select(request, opened, recorded_minus_utc_s)
     selection, axis_selection, stokes_labels = selected.selection, selected.axis_selection, selected.stokes_labels
     report("info", f"selected {selection.n_rows:,} rows; sources present: {selection.sources}")
+    if selection.stride_pairs is not None and selection.stride_pairs[0] < selection.stride_pairs[1]:
+        kept, available = selection.stride_pairs
+        what = "baselines" if request.correlation_type == "cross" else "antenna pairs"
+        per_integration = int(np.median(np.diff(index.integration_boundaries)))
+        report("warning", f"--every-nth {request.every_nth} keeps {kept:,} of the selection's {available:,} {what}: "
+                          f"rows are in baseline order within each integration ({per_integration:,} rows here), so "
+                          f"a row stride keeps only some {what}; --every-nth-integration {request.every_nth} keeps "
+                          f"every one")
 
     time_reference_jd = float(index.jd[selection.row_indices].min()) if selection.n_rows else float(index.jd.min())
     ctx = context_from_source_table(
@@ -312,7 +328,8 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
                       stream_chunk_bytes(), threads=max(1, request.threads))
     sources_present = list(selection.sources.values())
     channel_indices = (axis_selection or {}).get("FREQ")
-    facts = panel_facts(request, index, selection.row_indices, channel_indices, stokes_labels, selection.sources, ctx)
+    facts = panel_facts(request, index, selection.row_indices, channel_indices, stokes_labels, selection.sources, ctx,
+                        stride_pairs=selection.stride_pairs)
     xy_figures = {p: XYFigure(p, ctx, sources_present, opened.telescope, request.fits_path,
                               figsize=checked.figure_size, facts=facts) for p in xy_plots}
     cache = RangeCache(request.cache_dir) if request.cache_dir else None
@@ -369,6 +386,7 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
             el_range_deg=resolve_deg_range_arg(request.el_range),
             parallactic_angle_range_deg=resolve_deg_range_arg(request.pa_range),
             every_nth=request.every_nth,
+            every_nth_integration=request.every_nth_integration,
             random_subset_n=request.random_subset_n,
             random_seed=request.random_seed,
         )

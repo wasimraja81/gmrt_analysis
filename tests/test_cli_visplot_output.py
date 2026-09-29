@@ -394,3 +394,18 @@ def test_a_dpi_or_figure_size_out_of_range_is_rejected_before_reading(capsys):
         with pytest.raises(SystemExit):
             main(["visplot", "missing.fits", "--plots", "amp-vs-freq", *args])
         assert message in capsys.readouterr().err
+
+
+def test_a_row_stride_that_skips_baselines_is_warned_and_an_integration_stride_keeps_them(capsys):
+    scratch = make_scratch_dir("cli_visplot_strides")
+    path = _make_synthetic_file(scratch / "obs.fits")  # 3 baselines per integration
+    common = ["--plots", "amp-vs-time", "--output-dir", str(scratch / "out"), "--no-highres-pdf"]
+    assert main(["visplot", str(path), *common, "--every-nth", "3"]) == 0  # every 3rd row: baseline 1-2 only
+    err = capsys.readouterr().err
+    assert "--every-nth 3 keeps 1 of the selection's 3 baselines" in err and "--every-nth-integration 3" in err
+    assert main(["visplot", str(path), *common, "--every-nth-integration", "2"]) == 0
+    assert "keeps" not in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        main(["visplot", str(path), *common, "--every-nth", "2", "--every-nth-integration", "2"])
+    assert "give one of --every-nth, --every-nth-integration, --random-subset-n" in capsys.readouterr().err
+    plt.close("all")

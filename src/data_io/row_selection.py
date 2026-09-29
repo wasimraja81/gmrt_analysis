@@ -34,6 +34,15 @@ class RowSelection:
     row_indices: np.ndarray  # absolute row indices into the file, sorted ascending
     n_rows: int
     sources: dict[int, str]  # source id -> name, for sources actually present in the selection
+    # With a row stride (every_nth > 1): (antenna pairs the stride kept, antenna pairs the
+    # selection has without it) -- a stride sharing a factor with the rows per integration
+    # skips whole baselines. None without a row stride.
+    stride_pairs: tuple[int, int] | None = None
+
+
+def _n_pairs(index: RowIndex, rows: np.ndarray) -> int:
+    # one integer per (ant1, ant2): np.unique over a 2-D array's rows is 30x slower
+    return len(np.unique(index.ant1[rows].astype(np.int64) * 65536 + index.ant2[rows]))
 
 
 def _resolve_source_ids(index: RowIndex, sources) -> list[int]:
@@ -121,6 +130,7 @@ def select_rows(
     every_nth: int | None = None,
     random_subset_n: int | None = None,
     random_seed: int | None = None,
+    every_nth_integration: int | None = None,
 ) -> RowSelection:
     """Select rows by identity-based criteria, never by assumed position (standing rule 9).
 
@@ -161,13 +171,19 @@ def select_rows(
     file's recorded time - UTC, `TimeReference.recorded_minus_utc_s`);
     `jd_range` is in recorded time, as the index holds it.
 
-    No silent downsampling: `every_nth` and `random_subset_n` are the only
-    ways to reduce the result below what the filters select, both explicit
-    and named, never a default. `random_subset_n` requires `random_seed`
-    (reproducibility, standing rule 4) -- there is no seed-less path.
+    No silent downsampling: `every_nth`, `every_nth_integration` and
+    `random_subset_n` are the only ways to reduce the result below what the
+    filters select, each explicit and named, never a default, one at a time.
+    `every_nth` keeps every Nth selected row: rows are in baseline order within
+    each integration, so a stride sharing a factor with the rows per
+    integration never keeps some baselines (the result's `stride_pairs` says
+    how many it kept). `every_nth_integration` keeps every Nth selected
+    integration with all its selected rows, every baseline included.
+    `random_subset_n` requires `random_seed` (reproducibility, standing rule
+    4) -- there is no seed-less path.
     """
-    if every_nth is not None and random_subset_n is not None:
-        raise ValueError("pass only one of every_nth, random_subset_n, not both")
+    if sum(n is not None for n in (every_nth, every_nth_integration, random_subset_n)) > 1:
+        raise ValueError("pass only one of every_nth, every_nth_integration, random_subset_n")
     if random_subset_n is not None and random_seed is None:
         raise ValueError("random_subset_n requires an explicit random_seed, for reproducibility")
 
@@ -275,8 +291,16 @@ def select_rows(
 
     row_indices = np.where(mask)[0]
 
+    stride_pairs = None
     if every_nth is not None:
-        row_indices = row_indices[::every_nth]
+        strided = row_indices[::every_nth]
+        if every_nth > 1:
+            stride_pairs = (_n_pairs(index, strided), _n_pairs(index, row_indices))
+        row_indices = strided
+    elif every_nth_integration is not None:
+        integration = np.searchsorted(index.integration_boundaries, row_indices, side="right") - 1
+        ordinal = np.unique(integration, return_inverse=True)[1].ravel()  # among the selected integrations
+        row_indices = row_indices[ordinal % every_nth_integration == 0]
     elif random_subset_n is not None:
         rng = np.random.default_rng(random_seed)
         if random_subset_n < len(row_indices):
@@ -285,4 +309,5 @@ def select_rows(
     present_source_ids = np.unique(index.source_id[row_indices]).tolist()
     sources_present = {sid: index.id_to_name[sid] for sid in present_source_ids if sid in index.id_to_name}
 
-    return RowSelection(row_indices=row_indices, n_rows=len(row_indices), sources=sources_present)
+    return RowSelection(row_indices=row_indices, n_rows=len(row_indices), sources=sources_present,
+                        stride_pairs=stride_pairs)

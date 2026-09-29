@@ -2,8 +2,8 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36 and T37 2026-09-29, 434 tests passing; T26, T32 in progress; T33, T38,
-T39, T40, T41, point D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open,
+2026-09-29, T36, T37 and T39 2026-09-29, 440 tests passing; T26, T32 in progress; T33, T38,
+T40, T41, point D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open,
 parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -881,16 +881,27 @@ Buildable now, ahead of Phase C.
   Stokes (coverage wherever any product has data) -- e.g. `--combine-flags any|all`,
   stated in the panel's Flags line.
 
-- **T39 — --every-nth skips whole baselines — OPEN (found 2026-09-29).** The user asked
-  why the panel of a 28-antenna plot said "189 baselines": the test renders used
+- **T39 — --every-nth skips whole baselines — DONE (found and built 2026-09-29).** The
+  user asked why the panel of a 28-antenna plot said "189 baselines": the test renders used
   `--every-nth 40`, and the GWB file has exactly 378 rows per integration, one per
-  baseline (no autocorrelation rows). A row stride steps through the baseline order
-  within each integration, so a stride sharing a factor with 378 never selects some
+  baseline (no autocorrelation rows), in the same order in all 10,476 integrations
+  (checked), so row k is baseline slot k mod 378. A row stride steps through the
+  baseline order within each integration, so a stride sharing a factor with 378 never selects some
   baselines: on 3C286, every 40th row covers 189 baselines (gcd 2), every 7th 54 (gcd
   7), every 41st all 378 (gcd 1). The panel's count was right for the rows selected; the
   sampling misleads. The user's decision (2026-09-29), both: say so in the run's report
   and the panel when a row stride covers fewer baselines than the selection has, and an
   integration stride (every Nth integration, all its baselines) beside the row stride.
+  Built: `select_rows` gains `every_nth_integration` (every Nth of the selected
+  integrations, with all their selected rows; one of the three ways of thinning at a
+  time, checked before any file is read) and reports what a row stride kept
+  (`RowSelection.stride_pairs`: antenna pairs kept, and in the selection without it).
+  `--every-nth-integration N` (and the GUI's "Every Nth integration"); a row stride that
+  kept fewer is warned in the run's messages ("--every-nth 40 keeps 189 of the
+  selection's 378 baselines: rows are in baseline order within each integration (378
+  rows here) ...") and on the panel's Baselines line, in dark red; `--every-nth`'s help
+  says why. On the GWB file, 3C286 u-v: every 40th row, 1,730 rows and 189 baselines;
+  every 40th integration, 1,890 rows (5 integrations) and all 378.
 
 - **T40 — The panel under a plot, designed afresh — OPEN (user, 2026-09-29).** "Lets
   discuss the beautification/aesthetics of the text panel at the bottom in a separate

@@ -342,3 +342,29 @@ def test_geometry_filters_read_the_timestamps_as_utc_after_the_offset():
                   array_location=array_location)
     assert select_rows(index, recorded_minus_utc_s=offset_s, **kwargs).row_indices.tolist() == [1]
     assert select_rows(index, **kwargs).row_indices.tolist() == []
+
+
+def test_every_nth_integration_keeps_every_row_of_every_nth_integration():
+    index = _make_index()  # integrations: rows 0-2, 3-4, 5-6, 7-9
+    sel = select_rows(index, correlation_type="both", every_nth_integration=2)
+    np.testing.assert_array_equal(sel.row_indices, [0, 1, 2, 5, 6])  # the 1st and 3rd integrations, whole
+    assert sel.stride_pairs is None
+
+
+def test_every_nth_integration_counts_the_selected_integrations():
+    index = _make_index()
+    sel = select_rows(index, sources="3C286", correlation_type="both", every_nth_integration=2)
+    np.testing.assert_array_equal(sel.row_indices, [3, 4])  # 3C286's integrations are the 2nd and 4th
+
+
+def test_a_row_stride_says_how_many_antenna_pairs_it_kept():
+    index = _make_index()
+    sel = select_rows(index, correlation_type="both", every_nth=3)  # rows 0, 3, 6, 9: pairs 1-2, 1-2, 1-1, 3-3
+    assert sel.stride_pairs == (3, 6)  # of 1-2, 1-3, 2-2, 3-3, 2-3, 1-1
+    assert select_rows(index, correlation_type="both", every_nth=1).stride_pairs is None
+
+
+def test_only_one_way_of_thinning_the_rows_at_a_time():
+    index = _make_index()
+    with pytest.raises(ValueError, match="pass only one of"):
+        select_rows(index, every_nth=2, every_nth_integration=2)
