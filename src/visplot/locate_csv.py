@@ -10,8 +10,9 @@ Columns give both readable and exact values: baseline by antenna names and
 by station numbers, UTC time and the recorded JD, channel index and frequency, Stokes,
 the plot's x and y (in the axes' units), the weight, and whether the sample
 is a mirrored (conjugate) point. Lines starting with '#' describe the file:
-the plot, what x and y hold and in which unit, the box, and (at the end,
-once known) the total and the count by baseline.
+the plot, what x and y hold and in which unit, the box, the command and
+provenance record that wrote it (when given), and (at the end, once known)
+the total and the count by baseline.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ COLUMNS = ("baseline", "ant1", "ant2", "time_utc", "jd_recorded", "channel", "fr
 
 
 class LocateCsvWriter:
-    def __init__(self, path, locate, ctx, fits_path=None, command: str | None = None):
+    def __init__(self, path, locate, ctx, fits_path=None, command: str | None = None, record: str | None = None):
         self.path = Path(path)
         self.partial = self.path.with_name(f"{self.path.name}.{os.getpid()}.partial")
         self.ctx = ctx
@@ -48,6 +49,8 @@ class LocateCsvWriter:
             self._comment(f"file: {Path(fits_path).resolve()}")
         if command:
             self._comment(f"command: {command}")
+        if record:
+            self._comment(f"provenance record: {record}")
         self._comment(f"written: {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
         system = f" (TIMSYS {ctx.time_system})" if ctx.time_system else ""
         self._comment(f"jd_recorded: the file's timestamp{system}; time_utc: recorded - "
@@ -100,10 +103,10 @@ class LocateCsvWriter:
         return None
 
 
-def write_kept(path, locate, ctx, fits_path=None, command=None) -> Path:
+def write_kept(path, locate, ctx, fits_path=None, command=None, record=None) -> Path:
     """Write a locate's samples from memory, when all of them were kept
     (`n_found` <= its limit), without reading the selection again."""
-    writer = LocateCsvWriter(path, locate, ctx, fits_path=fits_path, command=command)
+    writer = LocateCsvWriter(path, locate, ctx, fits_path=fits_path, command=command, record=record)
     for columns in locate.kept_columns():
         writer(columns)
     return writer.close(locate, completed=True)

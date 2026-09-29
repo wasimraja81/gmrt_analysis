@@ -465,14 +465,17 @@ def _no_progress(progress: PassProgress) -> Callable[[int], bool]:
     return lambda rows_done: True
 
 
-def run_locate(run: PreparedRun, report: Report = _silent, progress: ProgressFactory = _no_progress) -> Path | None:
+def run_locate(run: PreparedRun, report: Report = _silent, progress: ProgressFactory = _no_progress,
+               record: str | None = None) -> Path | None:
     """Write every sample of the run's one streamed plot inside its locate
-    box to the request's --locate-csv. Returns the path written, or None if
-    the pass stopped early."""
+    box to the request's --locate-csv, whose header names the command and
+    `record` (the run's provenance record, when given). Returns the path
+    written, or None if the pass stopped early."""
     plot = run.xy_plots[0]
     box = run.locate_box
     locate = LocateReducer(plot, box[0], box[1], limit=0)
-    writer = LocateCsvWriter(run.request.locate_csv, locate, run.source.ctx, fits_path=run.request.fits_path)
+    writer = LocateCsvWriter(run.request.locate_csv, locate, run.source.ctx, fits_path=run.request.fits_path,
+                             command=run.request.command_line(), record=record)
     locate.sink = writer
     on_chunk = progress(pass_progress(run.source, "locating samples", plot.needs_data))
     completed = run.source.stream([locate], read_data=plot.needs_data, on_chunk=on_chunk)

@@ -6,6 +6,9 @@ Plotting for exploring a UVFITS observation, driven by `bin/visplot.sh` (`src/cl
   parser; `request_args`: the grammar of its values (ranges, antennas, channels, ...).
 - `run`: running a request (check, open the file, select, prepare, locate, save) -- the one
   code path of the command line and the GUI.
+- `records`: provenance records (T31) under `--provenance-dir` (default `./visplot_runs`):
+  one per command-line run, GUI Plot and file a plot window saves, with the command that
+  reproduces it; one per GUI session, whose log keeps every message the window showed.
 - `quantities`: every quantity a plot can show, with the units it can be shown in, in one
   registry.
 - `plot_spec`: what one plot shows (y vs x, units, coloring, flags, ranges), and the named

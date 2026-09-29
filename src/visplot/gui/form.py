@@ -231,8 +231,9 @@ class AxisControls:
 
 
 class RequestForm(QtWidgets.QWidget):
-    """The request's fields in sections (Data, Selection, Axes, Display,
-    Performance and cache). `fields` maps each option name to its `Field`."""
+    """The request's fields in sections (Data, Axes, Selection, Display;
+    Performance, cache and records). `fields` maps each option name to its
+    `Field`."""
 
     changed = QtCore.Signal()
 
@@ -415,7 +416,7 @@ class RequestForm(QtWidgets.QWidget):
         return section
 
     def _performance_section(self) -> CollapsibleSection:
-        section = CollapsibleSection("Performance and cache", expanded=False)
+        section = CollapsibleSection("Performance, cache and records", expanded=False)
         form = form_layout(section.body)
         threads = QtWidgets.QSpinBox()
         threads.setRange(1, max(1, QtCore.QThread.idealThreadCount()))
@@ -428,8 +429,20 @@ class RequestForm(QtWidgets.QWidget):
         self.cache_button = QtWidgets.QPushButton("Choose…")
         self._add(text_field("cache_dir", self.cache_edit))
         form.addRow("Range cache", row(self.cache_edit, self.cache_button, stretches=(1, 0)))
-        form.addRow(hint("Provenance records (T31): ./visplot_runs, with the command of every plot."))
+        self.provenance_edit = QtWidgets.QLineEdit()
+        default = build_arg_parser().get_default("provenance_dir")
+        self._add(text_field("provenance_dir", self.provenance_edit, default=default))
+        self.provenance_edit.setPlaceholderText(f"./{default}, in the folder visplot started in")
+        self.provenance_button = QtWidgets.QPushButton("Choose…")
+        form.addRow("Records", row(self.provenance_edit, self.provenance_button, stretches=(1, 0)))
+        self.session_hint = hint("")
+        form.addRow(self.session_hint)
         return section
+
+    def show_session(self, session_id: str, log_path) -> None:
+        """Name the GUI session and its log under the Records field."""
+        self.session_hint.setText(f"Each plot, CSV and export is recorded in the Records folder. This session: "
+                                  f"{session_id}; every message is kept in {log_path}")
 
     # ---- the plot choice ----------------------------------------------------
 

@@ -54,8 +54,10 @@ class RunManifest:
         inputs: list[Path | str],
         repo_root: Path | None = None,
         console_log_level: int = logging.INFO,
+        details: dict | None = None,
     ) -> None:
         self.stage = stage
+        self.details = details  # what a tool adds to the record (e.g. the command line); None: nothing
         self.work_dir = Path(work_dir)
         self.parameters = parameters
         self.run_id = _new_run_id()
@@ -102,6 +104,8 @@ class RunManifest:
             "outputs": self.output_paths,
             "outcome": outcome,
         }
+        if self.details is not None:
+            record["details"] = self.details
         self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_text(self.manifest_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
         return record

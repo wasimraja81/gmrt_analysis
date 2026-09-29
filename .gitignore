@@ -13,6 +13,7 @@ __pycache__/
 archive/
 casa_out/
 diagnostics_out/
+visplot_runs/
 /tmp/
 /tmp_*/
 

@@ -22,6 +22,8 @@ from visplot.request_args import CATEGORY_NAMES, quantity_help
 from visplot.xy_session import DEFAULT_STREAM_THREADS
 
 PROG = "bin/visplot.sh"
+# Where each run's provenance record goes (relative: from the directory visplot starts in).
+DEFAULT_PROVENANCE_DIR = "visplot_runs"
 
 _EPILOG = """\
 plot names (--plots, comma-separated):
@@ -231,6 +233,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--no-highres-pdf", action="store_true",
         help="skip PREFIX_highres.pdf (write only the PNGs and PREFIX_lowres.pdf)",
     )
+    out.add_argument(
+        "--provenance-dir", default=DEFAULT_PROVENANCE_DIR, metavar="DIR",
+        help="where each run's provenance record goes: the full command, host, git state, package "
+        f"versions, input files and outputs (default: ./{DEFAULT_PROVENANCE_DIR}, in the directory "
+        "visplot starts in)",
+    )
 
     locate = parser.add_argument_group("locate (without a window)")
     locate.add_argument(
@@ -264,7 +272,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 # Parser actions that are not part of a plot request: help, and --clear-cache (its own command).
 _NOT_REQUEST_OPTIONS = {"help", "clear_cache"}
 # Options naming files or directories: held as absolute paths, so the command runs anywhere.
-PATH_OPTIONS = {"fits_path", "output_dir", "locate_csv", "cache_dir"}
+PATH_OPTIONS = {"fits_path", "output_dir", "locate_csv", "cache_dir", "provenance_dir"}
 
 
 def request_actions(parser: argparse.ArgumentParser | None = None) -> list[argparse.Action]:

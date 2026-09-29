@@ -2,6 +2,7 @@
 exactly the command line's options, and its Plot runs the command line's
 own code."""
 
+import json
 import os
 import time
 
@@ -19,6 +20,7 @@ from test_cli_visplot_output import _make_synthetic_file  # noqa: E402
 from visplot.gui.form import ACTION_OPTIONS, RequestForm  # noqa: E402
 from visplot.gui.main_window import VisplotWindow  # noqa: E402
 from visplot.gui.widgets import select_data  # noqa: E402
+from visplot.records import action_request  # noqa: E402
 from visplot.request import PlotRequest, request_option_names  # noqa: E402
 from visplot.run import prepare  # noqa: E402
 from visplot.xy_session import plot_grids  # noqa: E402
@@ -147,6 +149,70 @@ def test_the_command_box_holds_the_whole_command_from_its_start():
     assert command.text() == window.form.request().command_line()
     assert command.text().startswith("bin/visplot.sh ")
     assert command.horizontalScrollBar().value() == 0
+    window.close()
+
+
+def _plot_amp_vs_freq(app, window):
+    select_data(window.form.y.quantity, "amp")
+    select_data(window.form.x.quantity, "freq")
+    _settle(app, window, lambda: window.plot_button.isEnabled())
+    window._plot()
+    _settle(app, window, lambda: hasattr(window.tabs.currentWidget(), "panel")
+            and window.tabs.currentWidget().panel.idle() and not window.tabs.currentWidget().panel.to_draw)
+    return window.tabs.currentWidget()
+
+
+def _records(folder, stage="visplot"):
+    return [json.loads(p.read_text()) for p in sorted((folder / "provenance" / stage).glob("*.json"))]
+
+
+def test_plot_and_export_are_recorded_with_the_session_whose_log_keeps_every_message():
+    app, window, path = _window("gui_records")
+    runs = path.parent / "runs"
+    window.form.provenance_edit.setText(str(runs))
+    tab = _plot_amp_vs_freq(app, window)
+
+    (plot_record,) = _records(runs)
+    assert plot_record["run_id"] == tab.record.run_id and plot_record["outcome"]["status"] == "success"
+    assert plot_record["details"]["action"] == "plot"
+    assert plot_record["details"]["session"] == window.session.session_id
+    assert plot_record["parameters"] == tab.request.as_dict()
+    assert window.history.item(0, 1).text() == tab.record.run_id
+
+    (plot,) = tab.run.xy_plots
+    ax = tab.panel.panels[plot].figure.ax
+    view = (tuple(ax.get_xlim()), tuple(ax.get_ylim()))
+    exported = path.parent / "export.png"
+    tab.panel.export(plot, str(exported), 100)
+    _settle(app, window, lambda: tab.panel.idle())
+    export_record = next(r for r in _records(runs) if r["details"]["action"] == "export")
+    assert exported.exists() and export_record["outputs"] == [str(exported.resolve())]
+    assert export_record["details"]["from_run"] == tab.record.run_id
+    assert export_record["details"]["session"] == window.session.session_id
+    assert export_record["details"]["dpi"] == 100 and len(export_record["details"]["figure_size_in"]) == 2
+    assert export_record["parameters"] == action_request(tab.request, 1, "export", view=view)[0].as_dict()
+
+    session_log = window.session.log_path
+    window.close()
+    (session,) = [r for r in _records(session_log.parents[2], "visplot_session")
+                  if r["run_id"] == window.session.session_id]
+    assert session["outcome"]["status"] == "success"
+    log = session_log.read_text()
+    assert f"plot {tab.record.run_id}: " in log and f"export {export_record['run_id']}: saved " in log
+
+
+def test_a_plot_whose_record_cannot_be_written_is_not_made():
+    app, window, path = _window("gui_record_fails")
+    blocker = path.parent / "a_file"
+    blocker.write_text("")
+    window.form.provenance_edit.setText(str(blocker))
+    _settle(app, window, lambda: window.plot_button.isEnabled())
+    n_tabs = window.tabs.count()
+    window._plot()
+    _settle(app, window, lambda: True)
+    assert window.tabs.count() == n_tabs
+    texts = [window.messages.item(i).text() for i in range(window.messages.count())]
+    assert any("not plotted: the provenance record could not be written" in t for t in texts)
     window.close()
 
 

@@ -1,8 +1,9 @@
 # GWB Pipeline Rebuild — Plan
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
-and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, 400
-tests passing; T26, T32 in progress; T31, T33, point D, T20, T21 open (order in Phase B).
+and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
+2026-09-29, 409 tests passing; T26, T32 in progress; T33, point D, T20, T21 open (order in
+Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -609,15 +610,103 @@ Buildable now, ahead of Phase C.
   and declared differ by more than 0.1 s (the method's own spread is 0.05 s) or the offset
   cannot be measured. On the GWB file it warns: 0.922 s apart.
 
-- **T31 — Provenance for every plot — NOT STARTED (added 2026-09-28).** Every GUI "Plot"
-  click and every CLI run records the explicit CLI-equivalent command (every option
-  including defaults, absolute paths, view ranges, figure size, dpi, theme) through
-  `provenance/manifest.py`'s RunManifest (stage "visplot"): host, UTC time, git commit
-  and branch with the dirty diff, Python and key package versions, fingerprints of the
-  FITS file and its row index, and the outputs. The user: "absolute reproducibility
-  required! No compromise. Record the host name as well." Records go to `./visplot_runs/`
-  (the directory visplot starts from) by default, shown in the GUI and printed by the
-  CLI, changeable with `--provenance-dir` (user's choice, 2026-09-28).
+- **T35 — Moon scans' u, v, w point 130-143 degrees from the Moon — OPEN, found
+  2026-09-28; parked until the Moon is imaged (2026-09-29).** The user saw projected
+  spacings below the 45 m dish diameter in MOON0520 (v vs u, λ, 300-316 MHz): 684 rows, all on C05:06-C06:07 (103 m; 9.4-15.1 m in the file)
+  and C01:02-C02:03 (329 m; 26.9-40.2 m), unflagged. Fitting the direction each
+  integration's stored u, v, w were computed for (w = b·s over 378 baselines, exact to
+  0.000 m): 10 of 13 sources match their own SU coordinates to 0.000 degrees (3C286,
+  3C345, 3C303, 3C468.1, Cas-A, B1929+10, 3C48, MOON0625, MOON0635, DA240), so rows are
+  labelled correctly; MOON0520, MOON0545, MOON0605 match directions 130-143 degrees from
+  the Moon (RA 109.8/116.4/130.5, Dec -11.2/-10.7/-13.3; hour angle about -6 h, just
+  below the eastern horizon), fixed in RA/Dec within a scan apart from a Moon-like drift
+  (about 0.1 degrees per 15 min), jumping between scans; their SU coordinates match the
+  Moon's topocentric position to 0.1 degrees. The two short baselines are level and run
+  east-west (azimuth 285 and 277 degrees), within 6-8 degrees of that wrong direction,
+  hence the short projections; towards the Moon they project to 84-87 m and 249-261 m.
+  visplot plots the stored u, v, w as they are (3C286's shortest is 50.67 λ at 300 MHz).
+  The user's u-v plot of MOON0605 and MOON0625 (same target, 6 min apart) showed different
+  coverages; predicted for the Moon's direction from the antenna positions, SU position and
+  time, the two continue each other, and the file's u, v match that prediction to 0.0 m
+  rms for MOON0625 (44,604 rows) but differ by 12.3 km rms for MOON0605 (124,740 rows).
+  The GSB file of the same night (`40_014_25jul2021_gsb.FITS`, 8.1 GB, 1,312,794 rows,
+  8.05 s integrations, RR/LL, 256 channels 306-339 MHz; row index built in memory, nothing
+  written beside it) behaves the same (2026-09-28): the same three Moon scans' stored u,
+  v, w point 125.6 / 131.2 / 141.1 degrees from their SU positions (GWB: 130.2 / 135.7 /
+  143.2), MOON0625/0635 and the other 8 sources match to 0.000 degrees. Its timestamps
+  follow the same rule as GWB's: TIMSYS 'IAT', DATUTC 0, IATUTC 34 (GWB: 35), and the u,
+  v, w put recorded - UTC at 33.078 s (GWB: 34.078 s) -- in both files IATUTC - 0.922 s,
+  so the two files' timestamps differ by 1 s. The archived GSB Moon trajectory plots
+  checked the SU/FIELD position, which is right in both files; the u, v, w are a separate
+  record in each row.
+  Fringe-stopping test (GSB, 2026-09-29): median raw amplitude by physical baseline length,
+  channels 64-191, RR/LL, unflagged, MOON0520 / MOON0625: 0.91 (0-300 m), 1.23
+  (0.3-1 km), 1.12 (1-3 km), 0.56 (3-10 km), 0.37 (10-30 km); MOON0605 / MOON0625: 0.98,
+  1.27, 1.19, 0.82, 0.64. Short baselines carry the Moon's flux in all scans (the dishes
+  pointed at the Moon), and 1-3 km baselines are not decorrelated, as they would be
+  (to about 1-30%) had fringes been stopped 125-143 degrees away: the correlator tracked
+  the Moon; only the u, v, w written for MOON0520/0545/0605 are wrong, and must be
+  recomputed (AN positions, SU phase centre, time) before those scans are plotted in u, v
+  or imaged. The weaker long baselines in MOON0520 are not yet explained. The archived
+  movie (`uv_coverage_movie.py`, e88ae13 on develop; the user's MOON0520 movie) plots the
+  split file's stored u, v -- copied unchanged by `visSplit.py` -- without the four
+  baselines under 70 λ, which were flagged in the split, hence its "shortest ~72 λ".
+  SU table (2026-09-29): the three scans are exactly the SU entries with non-zero proper
+  motion, the same in both files: PMRA / PMDEC (deg/day) 8.856 / 5.796 (MOON0520),
+  9.288 / 5.940 (MOON0545), 9.684 / 6.012 (MOON0605); MOON0625, MOON0635 and every other
+  source have 0 / 0. The three were set up as a moving source, the last two as fixed
+  positions; the fitted direction's drift within a scan (about 0.1 degrees per 15 min,
+  about 10 degrees/day) is of the order of PMRA. How the u, v, w writer used PMRA/PMDEC is
+  not known.
+  Open puzzle, parked until imaging (user, 2026-09-29): the spacings below 45 m are what
+  the stored u, v, w give, yet the archived Moon imaging from the split data worked. The
+  user will pull the split, flagged data and image it; of the candidate u, v, w (stored;
+  recomputed towards the fixed SU position; recomputed towards a centre moving at
+  PMRA/PMDEC), the right one shows the Moon's disk. Also open: the weaker long baselines
+  in MOON0520; whether the correlator stopped fringes towards a moving centre in these
+  three scans; a per-scan u, v, w consistency check at indexing (extending T34; a non-zero
+  PMRA/PMDEC in the SU table as the first signal); recomputing u, v, w for such scans --
+  the user's decisions.
+
+- **T31 — Provenance for every plot — DONE (added 2026-09-28, built 2026-09-29; one
+  gap open, below).** Every GUI "Plot" click and every CLI run records the explicit
+  CLI-equivalent command (every option including defaults, absolute paths, view ranges,
+  figure size, dpi, theme) through `provenance/manifest.py`'s RunManifest (stage
+  "visplot"): host, UTC time, git commit and branch with the dirty diff, Python and key
+  package versions, fingerprints of the FITS file and its row index, and the outputs. The
+  user: "absolute reproducibility required! No compromise. Record the host name as well."
+  Records go to `./visplot_runs/` (the directory visplot starts from) by default, shown in
+  the GUI and printed by the CLI, changeable with `--provenance-dir` (user's choice,
+  2026-09-28).
+  Built (`visplot/records.py`; RunManifest gained a `details` entry for what a tool adds):
+  - `PlotRecord`, one per command-line run (action save, locate, window), GUI Plot, and
+    file a plot window saves (Locate's CSV, Export): the request as parameters, its
+    command line, the GUI session, package versions; the run's messages in its log; the
+    files written as outputs; failed with the reason when the run stops (a request that
+    cannot run, a missing index, an interrupt). The CLI prints the record's run id and
+    path first.
+  - `SessionRecord`, one per GUI window (stage "visplot_session"): its log keeps every
+    message the window shows (the Messages list keeps the newest 5000), each plot's and
+    save's run id and command among them.
+  - `WindowProvenance`: the plot window's saves are recorded by the same code for a
+    window the CLI opened and a GUI tab: the request narrowed to the action (a CSV adds
+    `--locate` with the box and `--locate-csv`; an export fixes `--x-range`/`--y-range` to
+    the exported view), the parent run's id, dpi and figure size. A save or plot whose
+    record cannot be written is not made, and the window says why.
+  - A located-samples CSV names its command and record in its header. The GUI shows each
+    plot's run id in its tab and in History, and has a Records field (`--provenance-dir`)
+    naming the session's log. Tests: `test_visplot_records.py`, and GUI tests for the
+    plot, export and session records and for a plot refused when its record fails; test
+    records go to `tmp/pytest/visplot_runs` (conftest). The theme is a window preference;
+    plots are drawn the same in either (T33 brings plot themes as a request option).
+  Checked on the GWB file (2026-09-29, `ha-range`, 3C286, 69,174 rows): the record lists
+  both inputs (the 389 GB FITS by size and time only, and its index), the two outputs,
+  the git diff beside it, and the time-system and timestamp-check messages in its log.
+  Open gap: an export's dpi and figure size are in its record's details only; the command
+  line has no options for them (it saves at 150 and 600 dpi at its own figure size), so an
+  export's command reproduces its view and selection, and its pixel size needs the
+  details. User's decision (2026-09-29): add `--dpi` and `--figure-size` to the command
+  line; next.
 
 - **T32 — visplot GUI — IN PROGRESS (added 2026-09-28).** A plotms-style front end on the
   existing engine: file and selection controls, x/y from the quantity registry with units
@@ -649,8 +738,10 @@ Buildable now, ahead of Phase C.
     the command line's run of the same request select the same rows and give the same
     pixels.
   Measured on 3C286 RR (141.7M samples, 6.8 GB): the GUI's Plot drew it in 12 s.
-  Next: File > Save plots (the request's --output-dir), the Locate tool recording its
-  request, the first T31 provenance records from Plot, then point D and T26's controls.
+  Done since: provenance records from Plot, Locate's CSV and Export (T31, 2026-09-29).
+  Next: File > Save plots (the request's --output-dir), a Build index button (the
+  pipeline's build_index stage, for a file without its row index; user's request,
+  2026-09-28), then point D and T26's controls.
 
 - **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
   matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in

@@ -12,6 +12,11 @@ beside matplotlib's own zoom/pan/save:
   SVG, EPS, TIFF, JPEG), since the window's own image is at screen
   resolution.
 
+Given a `visplot.records.WindowProvenance`, each saved CSV and export gets
+its provenance record (T31), with the request that reproduces it; a save
+whose record cannot be written is not made. Given a `report(level, text)`
+callback, the window says what it saved and what failed through it.
+
 Streams run one at a time on a background thread (they share the disk);
 the window polls the running job and draws from locked snapshots of the
 grids. A locate or export interrupts drawing, which then resumes.
@@ -24,7 +29,8 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass, field
-from typing import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 from astropy.time import Time
@@ -38,6 +44,9 @@ from visplot.quantities import utc_jd
 from visplot.stream import GridReducer, LocateReducer
 from visplot.xy_figure import XYFigure, grid_summary
 from visplot.xy_session import PassProgress, XYSource, range_pass_axes, range_pass_reads_data, resolve_extents
+
+if TYPE_CHECKING:
+    from visplot.records import PlotRecord, WindowProvenance
 
 LOCATE_LIMIT = 10_000
 POLL_MS = 150
@@ -104,12 +113,15 @@ class _Panel:
 
 class InspectorWindow(QtWidgets.QMainWindow):
     def __init__(self, source: XYSource, figures: list[tuple[str, object]], labels=("finding data ranges", "drawing"),
-                 cache=None, cached=None):
+                 cache=None, cached=None, provenance: WindowProvenance | None = None,
+                 report: Callable[[str, str], None] | None = None):
         super().__init__()
         self.source = source
         self.labels = labels
         self.cache = cache
         self.cached = cached or {}
+        self.provenance = provenance
+        self.report = report
         self.setWindowTitle("visplot")
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.setTabBarAutoHide(True)  # one plot: no tab bar
@@ -279,8 +291,12 @@ class InspectorWindow(QtWidgets.QMainWindow):
             if job.done:
                 self.jobs.pop(0)
                 if job.error:
-                    self.statusBar().showMessage(f"{job.progress.label} failed; see the terminal")
-                    print(job.error)
+                    if self.report is None:
+                        self.statusBar().showMessage(f"{job.progress.label} failed; see the terminal")
+                        print(job.error)
+                    else:
+                        self.statusBar().showMessage(f"{job.progress.label} failed; see the messages")
+                        self.report("warning", f"{job.progress.label} failed:\n{job.error}")
                 else:
                     self.statusBar().showMessage(job.progress.text(job.rows_done))
                 job.on_done(job)
@@ -426,12 +442,26 @@ class InspectorWindow(QtWidgets.QMainWindow):
         otherwise by reading the selection again and writing each sample as
         it is found."""
         located = self.locate
+        started, record = self._start_record("locate", located.plot, path, box=(located.x_box, located.y_box))
+        if not started:
+            return
+        header = dict(fits_path=self.source.fits_path, command=record and record.command,
+                      record=record and record.describe())
         if located.kept_all:
-            write_kept(path, located, self.source.ctx, fits_path=self.source.fits_path)
+            try:
+                written = write_kept(path, located, self.source.ctx, **header)
+            except OSError as err:
+                self._finish_record(record, "locate", None, f"could not write {path}: {err}")
+                return
+            self._finish_record(record, "locate", written, None)
             self.statusBar().showMessage(f"saved {located.n_found:,} located samples to {path}")
             return
         again = LocateReducer(located.plot, located.x_box, located.y_box, limit=0)
-        writer = LocateCsvWriter(path, again, self.source.ctx, fits_path=self.source.fits_path)
+        try:
+            writer = LocateCsvWriter(path, again, self.source.ctx, **header)
+        except OSError as err:
+            self._finish_record(record, "locate", None, f"could not write {path}: {err}")
+            return
         again.sink = writer
         read_data = located.plot.needs_data
 
@@ -440,12 +470,49 @@ class InspectorWindow(QtWidgets.QMainWindow):
 
         def done(job):
             written = writer.close(again, completed=job.completed and job.error is None)
+            self._finish_record(record, "locate", written,
+                                None if written else "stopped before the end of the selection; no file written")
             self.statusBar().showMessage(
                 f"saved {again.n_found:,} located samples to {written}" if written
                 else "saving the located samples stopped before the end; no file written")
 
         self._queue(_Job("locate-csv", f"writing all {located.n_found:,} located samples", run, done,
                          self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
+
+    # ---- provenance of saved files -----------------------------------------------
+
+    def _report(self, level: str, text: str) -> None:
+        if self.report is not None:
+            self.report(level, text)
+
+    def _start_record(self, kind: str, plot: PlotSpec, path, **details) -> tuple[bool, PlotRecord | None]:
+        """(whether to go ahead with the save, its record). Without
+        provenance there is no record; a record that cannot be written stops
+        the save."""
+        if self.provenance is None:
+            return True, None
+        try:
+            return True, self.provenance.start(kind, plot.name, str(Path(path).resolve()), **details)
+        except Exception as err:
+            text = f"{kind} not saved: its provenance record could not be written ({type(err).__name__}: {err})"
+            self._report("warning", text)
+            self.statusBar().showMessage(text)
+            return False, None
+
+    def _finish_record(self, record: PlotRecord | None, kind: str, written, error: str | None) -> None:
+        if error is not None:
+            self.statusBar().showMessage(f"{kind} failed: {error}")
+        if record is None:
+            if error is not None:
+                self._report("warning", f"{kind} failed: {error}")
+            return
+        if written is not None:
+            record.add_output(written)
+        record.finish(error)
+        if error is None:
+            self._report("info", f"{kind} {record.run_id}: saved {written}; command: {record.command}")
+        else:
+            self._report("warning", f"{kind} {record.run_id} failed: {error}")
 
     # ---- export ---------------------------------------------------------------
 
@@ -461,6 +528,10 @@ class InspectorWindow(QtWidgets.QMainWindow):
         """Re-read the plot's current view at `dpi` and save it to `path`."""
         panel = self.panels[plot]
         limits = (tuple(panel.figure.ax.get_xlim()), tuple(panel.figure.ax.get_ylim()))
+        started, record = self._start_record("export", plot, path, view=limits, dpi=dpi,
+                                             figure_size_in=tuple(panel.figure.fig.get_size_inches()))
+        if not started:
+            return
         height, width = panel.figure.grid_shape(dpi)
         grid = GridReducer(plot, limits[0], limits[1], height, width)
         read_data = plot.needs_data
@@ -470,16 +541,23 @@ class InspectorWindow(QtWidgets.QMainWindow):
 
         def done(job):
             if not job.completed:
+                self._finish_record(record, "export", None, "stopped before the end of the selection; nothing saved")
                 return
             panel.figure.show(grid, display_dpi=dpi)
             status = panel.figure.status.get_text()
             panel.figure.set_status(grid_summary(grid, self.source.n_rows))
-            panel.figure.fig.savefig(path, dpi=dpi)
+            try:
+                panel.figure.fig.savefig(path, dpi=dpi)
+                error = None
+            except (OSError, ValueError) as err:
+                error = f"could not save {path}: {err}"
             panel.figure.set_status(status)
             if panel.grid is not None:  # back to the window's own image
                 panel.figure.show(panel.grid.snapshot(), display_dpi=panel.figure.fig.dpi)
             panel.canvas.draw_idle()
-            self.statusBar().showMessage(f"exported {path} at {dpi} dpi")
+            self._finish_record(record, "export", None if error else path, error)
+            if error is None:
+                self.statusBar().showMessage(f"exported {path} at {dpi} dpi")
 
         self._queue(_Job("export", f"exporting at {dpi} dpi", run, done,
                          self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
@@ -537,13 +615,15 @@ def locate_rows(records: list[dict], ctx) -> list[list]:
     return rows
 
 
-def run_inspector(source: XYSource, figures: list[tuple[str, object]], labels, cache=None, cached=None) -> int:
+def run_inspector(source: XYSource, figures: list[tuple[str, object]], labels, cache=None, cached=None,
+                  provenance: WindowProvenance | None = None, report: Callable[[str, str], None] | None = None) -> int:
     """Open the inspection window and run until it is closed."""
     import signal
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)  # Ctrl-C in the terminal closes the window
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    window = InspectorWindow(source, figures, labels=labels, cache=cache, cached=cached)
+    window = InspectorWindow(source, figures, labels=labels, cache=cache, cached=cached, provenance=provenance,
+                             report=report)
     window.resize(1100, 900)
     window.show()
     return app.exec()

@@ -11,6 +11,12 @@ Plot builds a `PlotRequest` from the form and runs it through
 command line runs -- so a GUI plot and its command line are one run.
 Opening a file, counting a selection and preparing a plot run on
 background threads; the window polls them.
+
+Provenance (T31, `visplot.records`): the window's session has a record
+whose log keeps every message the window shows; each Plot, and each CSV or
+export a plot tab saves, has its own record (under the request's
+--provenance-dir), naming the session. A plot's record is complete when
+its tab opens.
 """
 
 from __future__ import annotations
@@ -26,13 +32,14 @@ from visplot.file_summary import summarize
 from visplot.gui.form import RequestForm
 from visplot.gui.widgets import CommandLine
 from visplot.gui.style import THEMES, apply_theme
+from visplot.records import PlotRecord, SessionRecord, WindowProvenance
 from visplot.request import build_arg_parser
 from visplot.run import RequestError, check_request, count_selection, open_file, prepare
 
 POLL_MS = 100
 COUNT_DELAY_MS = 400
 # The Messages list keeps the newest this many (about 600 bytes each: a few MB at most);
-# History keeps this many plots. Older entries stay in the session's log (T31).
+# History keeps this many plots. Every message stays in the session's log.
 MAX_MESSAGES = 5000
 MAX_HISTORY = 1000
 
@@ -59,7 +66,11 @@ class _Task:
 
 
 class VisplotWindow(QtWidgets.QMainWindow):
-    def __init__(self, fits_path: str | None = None, theme: str = "light"):
+    """`provenance_dir`: where the session's record goes (default: the
+    --provenance-dir default); each plot's record goes to its request's
+    --provenance-dir, the form's Records field."""
+
+    def __init__(self, fits_path: str | None = None, theme: str = "light", provenance_dir: str | None = None):
         super().__init__()
         self.setWindowTitle("visplot")
         self.theme = theme
@@ -68,11 +79,14 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self._pending_reports: list[tuple[str, str]] = []
         self._reports_lock = threading.Lock()
         self._count_generation = 0
+        self.session = SessionRecord(provenance_dir or build_arg_parser().get_default("provenance_dir"))
 
         self.form = RequestForm()
         self.form.open_button.clicked.connect(self._choose_file)
         self.form.path_edit.returnPressed.connect(lambda: self.open_path(self.form.path_edit.text().strip()))
         self.form.cache_button.clicked.connect(self._choose_cache_dir)
+        self.form.provenance_button.clicked.connect(self._choose_provenance_dir)
+        self.form.show_session(self.session.session_id, self.session.log_path)
         self.form.changed.connect(self._form_changed)
 
         splitter = QtWidgets.QSplitter()
@@ -90,6 +104,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.poll_timer = QtCore.QTimer(self, interval=POLL_MS)
         self.poll_timer.timeout.connect(self._poll)
         self.poll_timer.start()
+        self.report("info", f"session {self.session.session_id}; every message is kept in {self.session.log_path}")
         self._form_changed()
         if fits_path:
             self.open_path(fits_path)
@@ -167,8 +182,8 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.messages.setWordWrap(True)
         messages_dock = QtWidgets.QDockWidget("Messages", self, objectName="messagesDock")
         messages_dock.setWidget(self.messages)
-        self.history = QtWidgets.QTableWidget(0, 3)
-        self.history.setHorizontalHeaderLabels(["time", "plot", "command"])
+        self.history = QtWidgets.QTableWidget(0, 4)
+        self.history.setHorizontalHeaderLabels(["time", "record", "plot", "command"])
         self.history.horizontalHeader().setStretchLastSection(True)
         self.history.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.history.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -221,6 +236,11 @@ class VisplotWindow(QtWidgets.QMainWindow):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Range cache folder")
         if path:
             self.form.cache_edit.setText(path)
+
+    def _choose_provenance_dir(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Folder for provenance records")
+        if path:
+            self.form.provenance_edit.setText(path)
 
     def open_path(self, path: str) -> None:
         """Read the file's index, headers and tables in the background."""
@@ -307,17 +327,42 @@ class VisplotWindow(QtWidgets.QMainWindow):
     # ---- plotting --------------------------------------------------------------------
 
     def _plot(self) -> None:
-        """Run the form's request as the command line does, into a new tab."""
+        """Run the form's request as the command line does, into a new tab,
+        with its provenance record (no record, no plot)."""
         request = self.form.request()
         opened = self.opened
+        session_id = self.session.session_id
         self.plot_button.setEnabled(False)
         self.statusBar().showMessage("preparing the plot …")
-        self.report("info", f"plot: {request.command_line()}")
 
-        def done(run):
+        def work():
+            try:
+                record = PlotRecord(request, "plot", session_id=session_id)
+            except Exception as err:
+                raise RequestError(f"not plotted: the provenance record could not be written in "
+                                   f"{request.provenance_dir} ({type(err).__name__}: {err})") from err
+            self.report("info", f"plot {record.run_id}: {record.command}")
+
+            def report(level: str, text: str) -> None:
+                self.report(level, text)
+                record.log(level, text)
+
+            try:
+                run = prepare(request, opened, report=report)
+            except BaseException as err:
+                record.finish(str(err) if isinstance(err, RequestError) else f"{type(err).__name__}: {err}")
+                raise
+            record.finish()
+            return run, record
+
+        def done(result):
             from visplot.qt_inspector import InspectorWindow
 
-            panel = InspectorWindow(run.source, run.figures(), labels=run.labels, cache=run.cache, cached=run.cached)
+            run, record = result
+            provenance = WindowProvenance(request, len(run.xy_plots), parent_run_id=record.run_id,
+                                          session_id=session_id)
+            panel = InspectorWindow(run.source, run.figures(), labels=run.labels, cache=run.cache, cached=run.cached,
+                                    provenance=provenance, report=self.report)
             panel.setWindowFlags(QtCore.Qt.Widget)
             tab = QtWidgets.QWidget()
             layout = QtWidgets.QVBoxLayout(tab)
@@ -329,14 +374,18 @@ class VisplotWindow(QtWidgets.QMainWindow):
             command.set_text(request.command_line())
             copy = QtWidgets.QToolButton(text="Copy")
             copy.clicked.connect(lambda: QtGui.QGuiApplication.clipboard().setText(command.text()))
+            record_label = QtWidgets.QLabel(f"record {record.run_id}", objectName="hint")
+            record_label.setToolTip(str(record.path))
+            record_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             footer.addWidget(QtWidgets.QLabel("Command:"))
             footer.addWidget(command, 1)
             footer.addWidget(copy)
+            footer.addWidget(record_label)
             layout.addLayout(footer)
-            tab.panel, tab.request, tab.run = panel, request, run
+            tab.panel, tab.request, tab.run, tab.record = panel, request, run, record
             title = ", ".join(name for name, _ in run.figures())
             self.tabs.setCurrentIndex(self.tabs.addTab(tab, title))
-            self._add_history(request, title)
+            self._add_history(request, record, title)
             self.statusBar().showMessage(f"{title}: reading and drawing; progress is under the plot", 8000)
             self._form_changed()
 
@@ -345,7 +394,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage("the plot could not be prepared")
             self._form_changed()
 
-        self._start(lambda: prepare(request, opened, report=self.report), done, failed)
+        self._start(work, done, failed)
 
     def _close_tab(self, index: int) -> None:
         tab = self.tabs.widget(index)
@@ -359,15 +408,18 @@ class VisplotWindow(QtWidgets.QMainWindow):
             if hasattr(self.tabs.widget(index), "panel"):
                 self._close_tab(index)
 
-    def _add_history(self, request, title: str) -> None:
+    def _add_history(self, request, record: PlotRecord, title: str) -> None:
         if self.history.rowCount() >= MAX_HISTORY:
             self.history.removeRow(0)
             self._history_requests.pop(0)
         self._history_requests.append(request)
         row = self.history.rowCount()
         self.history.insertRow(row)
-        for column, text in enumerate((time.strftime("%H:%M:%S"), title, request.command_line())):
-            self.history.setItem(row, column, QtWidgets.QTableWidgetItem(text))
+        for column, text in enumerate((time.strftime("%H:%M:%S"), record.run_id, title, request.command_line())):
+            item = QtWidgets.QTableWidgetItem(text)
+            if column == 1:
+                item.setToolTip(str(record.path))
+            self.history.setItem(row, column, item)
 
     def _load_history(self, row: int, _column: int) -> None:
         self.form.load(self._history_requests[row])
@@ -386,9 +438,21 @@ class VisplotWindow(QtWidgets.QMainWindow):
         task.thread.start()
 
     def _poll(self) -> None:
+        self._show_reports()
+        for task in [t for t in self._tasks if t.done]:
+            self._tasks.remove(task)
+            if task.error is None:
+                task.on_done(task.result)
+            else:
+                task.on_error(task.error)
+
+    def _show_reports(self) -> None:
+        """The messages reported since the last poll: into the session's log
+        and the Messages list."""
         with self._reports_lock:
             reports, self._pending_reports = self._pending_reports, []
         for level, text in reports:
+            self.session.log(level, text)
             item = QtWidgets.QListWidgetItem(f"{time.strftime('%H:%M:%S')}  {'WARNING: ' if level == 'warning' else ''}{text}")
             if level == "warning":
                 item.setForeground(QtGui.QColor("#c93c37"))
@@ -398,12 +462,6 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self.messages.takeItem(0)
         if reports:
             self.messages.scrollToBottom()
-        for task in [t for t in self._tasks if t.done]:
-            self._tasks.remove(task)
-            if task.error is None:
-                task.on_done(task.result)
-            else:
-                task.on_error(task.error)
 
     def set_theme(self, theme: str) -> None:
         self.theme = theme
@@ -421,6 +479,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt's name)
         self._clear_plots()
+        self.poll_timer.stop()
+        self._show_reports()  # the last messages, into the session's log
+        self.session.close()
         super().closeEvent(event)
 
 

@@ -7,7 +7,9 @@ With no arguments, or a FITS path alone, it opens the GUI (`visplot.gui`).
 Otherwise the arguments become a `visplot.request.PlotRequest`, run by `visplot.run`,
 the same code the GUI runs: this module only parses, prints what the run
 reports, and chooses between saving (--output-dir), locating (--locate) and
-the window (`visplot.qt_inspector`). See `bin/visplot.sh --help`.
+the window (`visplot.qt_inspector`). Each run has a provenance record
+(`visplot.records`, under --provenance-dir), as does each file its window
+saves. See `bin/visplot.sh --help`.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ matplotlib.use("Agg" if any(a.split("=")[0] in _HEADLESS_OPTIONS for a in sys.ar
 
 from data_io.astrometry import AstrometryWarning  # noqa: E402
 from visplot.range_cache import clear_cache  # noqa: E402
+from visplot.records import PlotRecord, WindowProvenance  # noqa: E402
 from visplot.request import PlotRequest, build_arg_parser  # noqa: E402,F401  (build_arg_parser: for callers)
 from visplot.run import MissingIndexError, RequestError, prepare, run_locate, save_outputs  # noqa: E402
 
@@ -77,24 +80,47 @@ def main(argv: list[str]) -> int:
     request = PlotRequest.from_namespace(parser.parse_args(argv[1:]))
     warnings.simplefilter("ignore", AstrometryWarning)  # reported once, through the run's report
 
+    action = ", ".join(name for name, on in (("locate", request.locate), ("save", request.output_dir)) if on)
+    record = PlotRecord(request, action or "window")
+    print(f"provenance record: {record.describe()}", flush=True)
     try:
-        run = prepare(request, report=_print_report)
+        return _run(request, record, parser)
     except MissingIndexError as err:
+        record.finish(str(err))
         print(err, file=sys.stderr)
         return 1
     except RequestError as err:
+        record.finish(str(err))
         parser.error(str(err))
+    except BaseException as err:  # KeyboardInterrupt included: the record says how the run ended
+        record.finish(f"{type(err).__name__}: {err}")
+        raise
+    finally:
+        record.finish()  # the run completed (no-op after a failure)
 
+
+def _run(request: PlotRequest, record: PlotRecord, parser: argparse.ArgumentParser) -> int:
+    def report(level: str, text: str) -> None:
+        _print_report(level, text)
+        record.log(level, text)
+
+    run = prepare(request, report=report)
     if run.locate_box is not None:
-        run_locate(run, _print_report, _terminal_progress)
+        written = run_locate(run, report, _terminal_progress, record=record.describe())
+        if written is None:
+            raise RuntimeError("the locate pass stopped before the end; no file written")
+        record.add_output(written)
         if not request.output_dir:
             return 0
     if request.output_dir:
-        save_outputs(run, _print_report, _terminal_progress)
+        for path in save_outputs(run, report, _terminal_progress):
+            record.add_output(path)
     else:
         from visplot.qt_inspector import run_inspector
 
-        run_inspector(run.source, run.figures(), run.labels, cache=run.cache, cached=run.cached)
+        provenance = WindowProvenance(request, len(run.xy_plots), parent_run_id=record.run_id)
+        run_inspector(run.source, run.figures(), run.labels, cache=run.cache, cached=run.cached,
+                      provenance=provenance, report=report)
     if run.cache is not None:
         n_files, n_bytes = run.cache.usage()
         size = f"{n_bytes / 1e6:.1f} MB" if n_bytes >= 1e6 else f"{n_bytes / 1e3:.0f} KB"
