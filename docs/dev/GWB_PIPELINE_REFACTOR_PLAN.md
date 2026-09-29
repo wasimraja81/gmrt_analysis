@@ -763,8 +763,16 @@ Buildable now, ahead of Phase C.
   its record. Found on the way: `resolve_extents` returned ranges from the part of the
   selection read when its pass was stopped; it now returns None, as the plot window's
   range job already expected.
+  Opening a file (2026-09-29): the user asked for a progress bar by the File field while a
+  large file loads. Timed on the GWB file: reading the index and tables took 0.18 s, the
+  file summary 6.9 s, of which 6.2 s was `np.unique(..., axis=0)` over 4.0M antenna
+  pairs; counting the pairs as one integer each gives the same 378 baselines in 0.2 s,
+  and opening now takes 0.7 s (a test checks the summary's counts). The progress bar
+  (under the File field; row counts where a step has them, e.g. building an index)
+  comes with the Build index button.
   Next: a Build index button (the pipeline's build_index stage, for a file without its
-  row index; user's request, 2026-09-28), then point D and T26's controls.
+  row index; user's request, 2026-09-28) with the progress bar, then point D and T26's
+  controls.
 
 - **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
   matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in
@@ -788,7 +796,24 @@ Buildable now, ahead of Phase C.
   Flagging for RR and LL can in principle be different", so plots of visibility
   quantities get a Stokes legend, keeping the plot's look; channels do not go on the
   axes, and a text block outside the plot area, as the AIPS TV has, may record the
-  critical parameters shown. Design to be agreed before building.
+  critical parameters shown. Design to be agreed before building; mock (2026-09-29,
+  `tmp/t37_mock/`, 3C286 amp vs freq, colored by Stokes): a key and parameter panel
+  below the axes. Found in the mock: colored by Stokes on the GWB file's four products,
+  LR takes the category palette's red (tab10's fourth color), next to the red of flagged
+  samples. The user on the mock: "looks good in a general sense". Decisions (2026-09-29):
+  - one color dimension, the one --colorize-by names, with its key in the panel below
+    the axes (outside the plot area, so it covers no data, in the window and in saved
+    files alike); the other dimension stated as text in the panel; both separated by one
+    plot per value (T26's pages);
+  - no --colorize-by: one color, as now, the panel naming what was plotted;
+  - default figure 8 x 7 in, the panel taking the extra inch;
+  - red is reserved for flagged samples: category palettes without reds or pinks (tab10
+    has 8 colors left; tab20 16, for more categories); flagged samples drawn as "x", at
+    least 5 x 5 px or the samples' marker size, and kept light coral #f08080 (the user;
+    the mock's key swatch was pure red by mistake). Go-ahead given 2026-09-29.
+  Markers measured (150 dpi PNGs): above 1M samples one pixel, so dot and square are the
+  same; 100k-1M a 3x3 square (a disc at that radius is a 5-pixel plus sign); up to 100k
+  discs (13 px, 69 px).
 
 - **T20 fits here too:** its file summary (channel width, integration time, sources,
   dates) belongs in the GUI's data panel.
