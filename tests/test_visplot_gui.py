@@ -398,3 +398,45 @@ def test_stopping_an_index_build_saves_nothing_and_says_so(monkeypatch):
     assert window.opened is None and window.form.build_button.isEnabled() and window.form.index_row.isVisible()
     assert not window.form.progress_row.isVisible()
     window.close()
+
+
+def test_the_plot_theme_colors_the_plot_on_screen_and_exported_whatever_the_windows_theme():
+    from matplotlib.colors import to_rgba
+
+    from visplot.plot_theme import PLOT_THEMES
+
+    dark = PLOT_THEMES["dark"].figure_face
+    app, window, path = _window("gui_themes")
+    window.form.provenance_edit.setText(str(path.parent / "runs"))
+    window.form.fields["plot_theme"].set("dark")
+    tab = _plot_amp_vs_freq(app, window)
+    (plot,) = tab.run.xy_plots
+    figure = tab.panel.panels[plot].figure
+    assert "--plot-theme dark" in tab.request.command_line()
+    assert figure.theme.name == "dark" and figure.fig.get_facecolor() == to_rgba(dark)
+
+    exported = path.parent / "export.png"
+    tab.panel.export(plot, str(exported), 100)
+    _settle(app, window, lambda: tab.panel.idle())
+    assert tuple(plt.imread(exported)[0, 0, :3]) == pytest.approx(to_rgba(dark)[:3], abs=1 / 255)
+
+    window.set_theme("dark")
+    window.set_theme("light")  # the window's own theme: the plot keeps its --plot-theme
+    assert figure.fig.get_facecolor() == to_rgba(dark)
+    window.close()
+
+
+def test_a_table_plot_is_drawn_in_the_plot_theme():
+    from matplotlib.colors import to_rgba
+
+    from visplot.plot_theme import PLOT_THEMES
+
+    app, window, _ = _window("gui_table_theme")
+    window.form.fields["plots"].set("antenna-layout")
+    window.form.fields["plot_theme"].set("dark")
+    _settle(app, window, lambda: window.plot_button.isEnabled())
+    window._plot()
+    _settle(app, window, lambda: hasattr(window.tabs.currentWidget(), "panel"))
+    ((name, fig),) = window.tabs.currentWidget().run.figures()
+    assert name == "antenna-layout" and fig.get_facecolor() == to_rgba(PLOT_THEMES["dark"].figure_face)
+    window.close()

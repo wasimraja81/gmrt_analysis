@@ -628,6 +628,8 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self.messages.scrollToBottom()
 
     def set_theme(self, theme: str) -> None:
+        """The window's own theme; a plot is drawn in its request's
+        --plot-theme (the form's Plot theme)."""
         self.theme = theme
         apply_theme(QtWidgets.QApplication.instance(), theme)
 

@@ -2,9 +2,9 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36, T37, T39 and T41 2026-09-29, 449 tests passing; T26, T32 in progress;
-T33, T38, T40, point D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w)
-open, parked until the Moon is imaged.
+2026-09-29, T36, T37, T39 and T41 2026-09-29, T33 2026-09-30, 459 tests passing; T26,
+T32 in progress; T38, T40, T42, T43, point D, T20, T21 open (order in Phase B); T35 (Moon
+scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -328,6 +328,12 @@ Buildable now, ahead of Phase C.
   option backed by a counting reducer (samples per pixel, e.g. uint32) fed by the same
   `run_stream`, drawn by `XYFigure` with a logarithmic color scale; no new dependency.
   Deferred by the user behind the PDF-output and marker work (2026-09-27).
+  The user (2026-09-30): a 2D density plot, showing which x-y regions hold many samples
+  and which few; for colouring by category, each category its own hue with its own
+  density, and one category at a time where that is too cluttered. Datashader's
+  categorical shading does this: a pixel's hue mixes its categories' colours by their
+  counts, its intensity follows the total count. Where categories overlap (RR and LL of
+  an unpolarised source, almost everywhere) the pixel shows the mixed hue.
 
 - **T22 — visPlot streaming plots — DONE (added and built 2026-09-27).**
   *Problem.* A generic Y-vs-X plot held the whole selection in memory at once: the
@@ -495,6 +501,36 @@ Buildable now, ahead of Phase C.
   enabled once there is a result; a test now drives the toolbar button and a simulated
   mouse drag with zoom left on.
   Next: pages, then flagging, then the layout items.
+  Flagging here means writing flags: drag a box and record entries for those samples in a
+  flag file of its own, the raw file untouched (the T26 proposal of 2026-09-28, point 2).
+  The user (2026-09-30): writing flags is to be discussed before it is built; reading
+  flag and calibration tables to apply while plotting is T42. The user's direction, the
+  same day: Locate is the listing (like AIPS UVLIST: each visibility as the file records
+  it, with its flag), and flagging is editing that listing -- flag or unflag chosen
+  visibilities -- written to a flag file that this code, AIPS and CASA can read; the input
+  file is never modified. Checked (2026-09-30): AIPS UVFLG reads a text file of commands
+  (INTEXT; adverbs per entry ending in "/", up to 40,000 entries: ANTENNAS/BASELINE,
+  TIMERANG as day, h, m, s, BCHAN/ECHAN, STOKES as names or a bit mask, REASON, OPCODE
+  'FLAG' or 'UFLG', the latter removing FG entries that match exactly); CASA flagdata
+  mode='list' reads a text file of one command per line (antenna='A&B',
+  timerange='YYYY/MM/DD/hh:mm:ss~...', spw='0:5~61', correlation='RR', mode='manual' or
+  'unflag'). The two syntaxes differ, so the proposal is a flag file of this code's own as
+  the record, written out as a UVFLG INTEXT file and a flagdata list file. To settle in the
+  design discussion: Locate lists one row per visibility (a u-v point now stands for all
+  selected Stokes) and lists flagged ones for unflagging; whether AIPS and CASA can unflag
+  what the file flags by its weights (UVFLG's help describes UFLG for FG entries only);
+  each package's time convention for this file (recorded times are IAT, T34); merging a
+  box's visibilities into ranges.
+  Terms (user, 2026-09-30: "we need to design our definition consistently with
+  conventions used in radio astronomy data processing packages"): a row is one baseline
+  at one time, numbered as in the file, its data and flags of shape [nchan x nStokes] (the
+  MS's main-table row, DATA and FLAG [ncorr, nchan]); a visibility is one (channel,
+  Stokes) element of a row, the unit a flag applies to; a point is what a plot draws --
+  one visibility on a per-Stokes plot, one (row, channel) standing for every selected
+  Stokes on a u-v plot. The editor shows each selected row with its [nchan x nStokes]
+  flag grid, the selected visibilities marked; a flag or unflag applies to a cell, a
+  channel across Stokes, a Stokes across channels, or the row. Flag file entries use the
+  same terms: time range, baseline, channel range, Stokes set.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
@@ -790,9 +826,29 @@ Buildable now, ahead of Phase C.
   file; Stop ending a build with nothing built and saying so.
   Next: point D and T26's controls.
 
-- **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
-  matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in
-  lightness; saved files light unless chosen otherwise.
+- **T33 — Themes — DONE (added 2026-09-28, built 2026-09-30).** Light and dark themes for
+  Qt and matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in
+  lightness; saved files light unless chosen otherwise. The Qt window had its light and
+  dark themes (View menu) already; T33 themes the plots. `visplot/plot_theme.py`: the
+  light theme is matplotlib's default look -- the GSB file's 3C286 plots (amplitude vs uv
+  distance colored by Stokes, hour angle, antenna layout, source listing) render pixel
+  for pixel as before themes, apart from the record id; the dark theme uses the GUI's
+  dark window colors. The contrast rule, the user's choice (2026-09-30) between it
+  applying to both themes or the dark one only: dark only. On the dark axes a marker
+  color below 3:1 (WCAG's minimum for graphics) is mirrored in lightness, hue kept, and
+  lightened further where the mirror falls short -- tab10's brown (2.85:1), `k` (1.24:1)
+  and `0.3` (1.98:1) among the colors offered; on white, tab10's orange (2.53:1), olive,
+  cyan, light coral and 11 of tab20's 16 are below 3:1 and stay as they are.
+  `--plot-theme light|dark` (default light; the GUI's "Plot theme") colors a plot on
+  screen and saved, as its command states; the View menu themes the window. First built
+  with the plots on screen following the window's theme and only saved files and exports
+  following --plot-theme; the user's trial (2026-09-30): "View-> Light/Dark does
+  something. But Plot theme: Light/Dark has no effect" -- a new tab took the window's
+  theme, so the field changed nothing on screen. Now a plot is drawn in its request's
+  theme wherever it is shown, and the tab's command reproduces what it shows. Tests: the
+  contrast ratio and the rule; a dark figure's colors, on screen and saved; the source
+  listing's table; in the GUI, the plot theme coloring the plot and its export whatever
+  the window's theme, and a table plot drawn in it.
 
 - **T36 — Antenna layout: the core inset covered S04 — DONE (found and fixed
   2026-09-29).** On the GWB file's layout the inset half covered S04:23's marker: the
@@ -956,13 +1012,40 @@ Buildable now, ahead of Phase C.
   `bin/build_venv.sh` run on the existing venv (2026-09-29): every requirement already
   satisfied, the font already installed, both checks passing.
 
+- **T42 — Flag and calibration tables read and applied while plotting — OPEN (user,
+  2026-09-30).** "We should in fact allow reading of gains/leakage etc tables as well so
+  that we can 'apply' calibration on the fly when plotting." Flags from a flag table
+  combine with the file's own; gains and bandpass divide each visibility by its two
+  antennas' gains per channel and polarisation; leakage (D-terms) mixes the four
+  correlations, so a leakage-corrected RR needs RL, LR and LL read as well (the GSB file
+  has RR and LL only). The formats come from Phase C's solver (the archived pipeline's
+  are the bandpass `.npz` and the `ugmrt_flag_table` JSON of
+  `legacy_gsb_40_014/bandpass_and_flag_table_spec.md`); one apply path serves plotting
+  and the calibrated split (stage 6 of the user's outline, 2026-09-25).
+
+- **T43 — visplot leaves the structural DUD entries in — OPEN (found 2026-09-30).** The
+  GSB file's antenna layout drew 32 antennas and put its inset on three points 1 m apart,
+  W06:30, C07:31 and S05:32: C07 and S05 are GMRT's structural DUD entries
+  (`GMRT_STRUCTURAL_DUD_NAMES`), placeholders appended after the 30 stations. The user:
+  "You forgot DUD antennas! GMRT has only 30 antennas." visplot's `open_file` reads the
+  whole AN table, so the layout, `--antennas` matching and the GUI's antenna check see
+  32; standing rule 8 excludes DUDs once, before anything downstream. The file summary
+  counts antennas from the rows and is right. Fix: `open_file` leaves out the
+  telescope's structural DUD entries (GMRT's from `instruments.gmrt`), kept as
+  `dud_antennas`; the layout draws the 30 and names the entries left out.
+
 - **T20 fits here too:** its file summary (channel width, integration time, sources,
-  dates) belongs in the GUI's data panel.
+  dates) belongs in the GUI's data panel. The user (2026-09-30): the data panel already
+  lists much of it; a listObs of its own, perhaps a new tab with controls choosing what
+  to list, designed with the user before it is built.
 
   Agreed order (2026-09-28): T28 and T29, then T30 and T31 (the GUI's unit selectors and
   its Plot button need them), then T32 with T33 and point D, then T26's remaining items
   (pages, flagging, layouts) as GUI controls with CLI options; T20 alongside T32; T21
   after.
+  Order to finish the GUI (user, 2026-09-30, easier first): T33, T38, point D, T21, T26
+  pages; then T20 (a listObs tab) and T26's flag editing, each designed with the user;
+  T40 later; T42 with Phase C; then the data analysis.
 
 ### Phase C — Primary Calibration (3C48)
 

@@ -19,6 +19,7 @@ from pathlib import Path
 
 from visplot.axis_scale import SCALE_NAMES
 from visplot.fonts import DEFAULT_PANEL_FONT, PANEL_FONTS
+from visplot.plot_theme import DEFAULT_PLOT_THEME, MIN_CONTRAST, PLOT_THEMES
 from visplot.request_args import CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DPI_LIMITS, quantity_help
 from visplot.xy_session import DEFAULT_STREAM_THREADS
 
@@ -215,6 +216,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--panel-font", choices=sorted(PANEL_FONTS), default=DEFAULT_PANEL_FONT,
         help="font of the panel under each plot, loaded from its file: tex-gyre-heros (default; Helvetica's "
         "metric clone, installed into the venv by bin/build_venv.sh) or dejavu-sans (matplotlib's own)",
+    )
+    style.add_argument(
+        "--plot-theme", choices=list(PLOT_THEMES), default=DEFAULT_PLOT_THEME,
+        help="colors of the plots, shown and saved: light (default; matplotlib's own) or dark (the GUI's dark "
+        f"window colors; a marker color with less than {MIN_CONTRAST:g}:1 contrast against its background is "
+        "mirrored in lightness)",
     )
     for axis in ("x", "y"):
         style.add_argument(

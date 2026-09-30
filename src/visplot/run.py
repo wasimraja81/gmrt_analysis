@@ -256,14 +256,14 @@ class PreparedRun:
         """Every figure, in the order the plots were named (table plots drawn
         from the file's tables, once)."""
         if self._figures is None:
-            f = self.file
+            f, theme = self.file, self.request.plot_theme
             figures = []
             for name in self.plot_names:
                 if name == "antenna-layout":
                     figures.append((name, antenna_layout(f.antennas, f.array_location, telescope=f.telescope,
-                                                         source_path=f.fits_path)))
+                                                         source_path=f.fits_path, theme=theme)))
                 elif name == "source-listing":
-                    figures.append((name, source_listing(f.source_table)))
+                    figures.append((name, source_listing(f.source_table, theme=theme)))
                 else:
                     figures += [(p.name, self.xy_figures[p]) for p in self.plots_by_name[name]]
             self._figures = figures
@@ -333,7 +333,8 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     facts = panel_facts(request, index, selection.row_indices, channel_indices, stokes_labels, selection.sources, ctx,
                         stride_pairs=selection.stride_pairs)
     xy_figures = {p: XYFigure(p, ctx, sources_present, opened.telescope, request.fits_path,
-                              figsize=checked.figure_size, facts=facts, panel_font=request.panel_font)
+                              figsize=checked.figure_size, facts=facts, panel_font=request.panel_font,
+                              theme=request.plot_theme)
                   for p in xy_plots}
     cache = RangeCache(request.cache_dir) if request.cache_dir else None
     if cache is not None:

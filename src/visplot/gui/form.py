@@ -442,6 +442,13 @@ class RequestForm(QtWidgets.QWidget):
             panel_font.addItem(PANEL_FONTS[name][0], name)
         select_data(panel_font, build_arg_parser().get_default("panel_font"))
         form.addRow("Panel font", self._add(combo_field("panel_font", panel_font)))
+        plot_theme = QtWidgets.QComboBox()
+        for name in _parser_choices("plot_theme"):
+            plot_theme.addItem(name, name)
+        select_data(plot_theme, build_arg_parser().get_default("plot_theme"))
+        plot_theme.setToolTip("The plot's colors, on screen and saved (--plot-theme); the View menu sets the "
+                              "window's own")
+        form.addRow("Plot theme", self._add(combo_field("plot_theme", plot_theme)))
         return section
 
     def _performance_section(self) -> CollapsibleSection:

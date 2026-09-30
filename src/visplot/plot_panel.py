@@ -8,7 +8,8 @@ and the provenance record of the run that made the figure.
 `PanelFacts` is what a run selected (`panel_facts`, from `visplot.run`);
 `PlotPanel` draws it, one line per anchored box, in the request's
 --panel-font (`visplot.fonts`: TeX Gyre Heros, Helvetica's metric clone,
-installed in the venv; or DejaVu Sans), loaded from its file. The panel is laid
+installed in the venv; or DejaVu Sans), loaded from its file, in the colors of
+its --plot-theme (`visplot.plot_theme`). The panel is laid
 out in inches from the figure's bottom edge, so it keeps its size when a
 window resizes the figure; `XYFigure` places its axes above it. Red is kept
 for flagged samples, drawn as light-coral crosses: the category palettes have
@@ -32,6 +33,7 @@ from matplotlib.transforms import blended_transform_factory
 
 from visplot.fonts import DEFAULT_PANEL_FONT, font_properties
 from visplot.plot_spec import PlotSpec
+from visplot.plot_theme import DEFAULT_PLOT_THEME, plot_theme, readable
 from visplot.quantities import QUANTITIES, QuantityContext, category_label, utc_jd
 from visplot.stream import FLAGGED_LAYER
 
@@ -49,7 +51,6 @@ _LEFT, _MIDDLE, _RIGHT = 0.03, 0.53, 0.97  # figure fractions: the left column, 
 _SWATCH_PT = 9.0
 _LABELS = ("Stokes", "Sources", "Channels", "Baselines", "Time", "Selection", "Drawn", "Flags")
 _ORDINAL = {1: "st", 2: "nd", 3: "rd"}
-LABEL_COLOR, VALUE_COLOR = "0.42", "0.08"
 
 # Row filters of a request, as the panel names them.
 _FILTERS = (("antennas", "antennas {}"), ("exclude_antennas", "excluding {}"), ("time_range", "time {}"),
@@ -189,19 +190,20 @@ class PlotPanel:
     across rebuilds; `set_note` sets the caveat in the footer."""
 
     def __init__(self, fig, plot: PlotSpec, ctx: QuantityContext, facts: PanelFacts | None = None,
-                 sources: list[str] | None = None, font: str = DEFAULT_PANEL_FONT):
+                 sources: list[str] | None = None, font: str = DEFAULT_PANEL_FONT, theme: str = DEFAULT_PLOT_THEME):
         self.fig, self.plot, self.ctx, self.facts, self.font = fig, plot, ctx, facts, font
+        self.theme = plot_theme(theme)
         self.source_names = [name for _, name in facts.sources] if facts else list(sources or [])
         text_font = font_properties(font, FONT_PT)
-        self.label_props = dict(fontproperties=text_font, color=LABEL_COLOR)
-        self.value_props = dict(fontproperties=text_font, color=VALUE_COLOR)
-        footer_props = dict(fontproperties=font_properties(font, FOOTER_PT), color=LABEL_COLOR)
+        self.label_props = dict(fontproperties=text_font, color=self.theme.panel_label)
+        self.value_props = dict(fontproperties=text_font, color=self.theme.panel_value)
+        footer_props = dict(fontproperties=font_properties(font, FOOTER_PT), color=self.theme.panel_label)
         self.status = TextArea("", textprops=self.value_props)
         self.flagged = TextArea("flagged", textprops=self.value_props)  # "flagged: none" when none are drawn
         self.record = TextArea("", textprops=footer_props)
         self.transform = blended_transform_factory(fig.transFigure, fig.dpi_scale_trans)  # x: fraction, y: inches
         self.note = fig.text(_LEFT, 0.06, "", transform=self.transform, ha="left", va="bottom",
-                             color="darkred", wrap=True, fontproperties=font_properties(font, FOOTER_PT))
+                             color=self.theme.warning, wrap=True, fontproperties=font_properties(font, FOOTER_PT))
         self._record_box = HPacker(children=[TextArea("record", textprops=footer_props), self.record],
                                    align="baseline", pad=0, sep=4)
         self.label_width_pt = max(_text_width_pt(label, font) for label in _LABELS) + 8
@@ -224,18 +226,20 @@ class PlotPanel:
 
     def colors(self, seen=()) -> dict[int, tuple]:
         """Grid layer -> RGBA: layer code + 1 per category, or 1 for the one
-        color, and the flagged layer's."""
+        color, and the flagged layer's -- each readable on the theme's axes."""
         if self.plot.colorize_by:
-            colors = {code + 1: rgba for code, rgba in category_colors(self.category_codes(seen)).items()}
+            colors = {code + 1: readable(rgba, self.theme)
+                      for code, rgba in category_colors(self.category_codes(seen)).items()}
         else:
-            colors = {1: to_rgba(self.plot.color)}
-        colors[FLAGGED_LAYER] = to_rgba(FLAGGED_COLOR)
+            colors = {1: readable(self.plot.color, self.theme)}
+        colors[FLAGGED_LAYER] = readable(FLAGGED_COLOR, self.theme)
         return colors
 
     def key_entries(self, seen=()) -> list[tuple[str, tuple]]:
         """(label, RGBA) of each colored category, in key order."""
         colors = category_colors(self.category_codes(seen))
-        return [(category_label(self.plot.colorize_by, code, self.ctx), rgba) for code, rgba in colors.items()]
+        return [(category_label(self.plot.colorize_by, code, self.ctx), readable(rgba, self.theme))
+                for code, rgba in colors.items()]
 
     # ---- what the panel says -------------------------------------------------------
 
@@ -255,9 +259,9 @@ class PlotPanel:
             for label, rgba in self.key_entries(seen):
                 items += [_swatch(rgba), f"{label}   "]
         elif self.plot.show_flagged:
-            items += [_swatch(to_rgba(self.plot.color)), "unflagged   "]
+            items += [_swatch(readable(self.plot.color, self.theme)), "unflagged   "]
         if self.plot.show_flagged:
-            items += [_cross(to_rgba(FLAGGED_COLOR)), self.flagged]
+            items += [_cross(readable(FLAGGED_COLOR, self.theme)), self.flagged]
         return items
 
     def _lines(self, seen, width_in: float) -> tuple[list, list, list, list]:
@@ -287,7 +291,8 @@ class PlotPanel:
                 kept, available = facts.stride_pairs
                 what = "antenna pairs" if facts.n_autocorrelations else "baselines"
                 baselines = TextArea(f"{kept:,} of {available:,} {what} kept by the row stride, "
-                                     f"{facts.n_antennas} antennas", textprops=dict(self.value_props, color="darkred"))
+                                     f"{facts.n_antennas} antennas",
+                                     textprops=dict(self.value_props, color=self.theme.warning))
             left.append(("Baselines", [baselines]))
             if facts.time_utc is not None:
                 t0, t1 = facts.time_utc
@@ -358,7 +363,7 @@ class PlotPanel:
         self.n_lines = len(key) + rows + len(bottom)
         top_in = FOOTER_IN + self.n_lines * LINE_IN
         rule = Line2D([_LEFT, _RIGHT], [top_in + RULE_GAP_IN * 0.6] * 2, transform=self.transform, lw=0.6,
-                      color="0.75")
+                      color=self.theme.panel_rule)
         self._artists.append(self.fig.add_artist(rule))
         full_pt, left_pt, right_pt = ((_RIGHT - _LEFT) * width_in * 72.0, (_MIDDLE - _LEFT) * width_in * 72.0 - 10,
                                       (_RIGHT - _MIDDLE) * width_in * 72.0)

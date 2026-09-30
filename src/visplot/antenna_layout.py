@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 
 from data_io.antenna_table import Antenna
+from visplot.plot_theme import DEFAULT_PLOT_THEME, PLOT_THEMES, PlotTheme, color_axes, plot_theme, readable
 
 def _directions_deg(angles_deg) -> list[tuple[float, float]]:
     return [(float(np.cos(np.radians(a))), float(np.sin(np.radians(a)))) for a in angles_deg]
@@ -244,6 +245,7 @@ def _min_clear_radius_px(anchor_px, direction, half_w_px, half_h_px, obstacles, 
 def _place_labels_without_overlap(
     ax, renderer, labels, e, n, fontsize, avoid_bboxes=(),
     preferred_directions=None, exclude_center_deg=None, strict_directions=False,
+    theme: PlotTheme = PLOT_THEMES[DEFAULT_PLOT_THEME],
 ):
     """Place each label as close to its point as it can be while overlapping
     neither the point's own marker nor any already-placed label (or one of
@@ -262,8 +264,9 @@ def _place_labels_without_overlap(
     drops directions pointing into that quadrant (e.g. the inset's own) from
     the full compass search too, not just the preferred set. Returns the
     placed label bboxes, so a caller can chain further placement calls that
-    avoid them too."""
+    avoid them too. Labels, boxes and leaders are in `theme`'s colors."""
     fallback_directions = _exclude_directions_near(_LABEL_DIRECTIONS, exclude_center_deg) or _LABEL_DIRECTIONS
+    box = dict(boxstyle="round,pad=0.2", fc=theme.box_face, ec=theme.box_edge, lw=0.5, alpha=0.85)
     fig = ax.figure
     marker_clearance_px = _MARKER_CLEARANCE_PT * fig.dpi / 72.0
     axes_bbox = ax.get_window_extent(renderer=renderer)
@@ -287,7 +290,7 @@ def _place_labels_without_overlap(
 
         probe = ax.annotate(
             label, (ei, ni), textcoords="offset points", xytext=(0, 0), fontsize=fontsize, ha="center", va="center",
-            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="0.6", lw=0.5, alpha=0.85),
+            bbox=box,
         )
         probe_bbox = probe.get_window_extent(renderer=renderer)
         half_w_px, half_h_px = probe_bbox.width / 2.0, probe_bbox.height / 2.0
@@ -305,9 +308,8 @@ def _place_labels_without_overlap(
         text = ax.annotate(
             label, (ei, ni), textcoords="offset points",
             xytext=(best_direction[0] * radius_pt, best_direction[1] * radius_pt),
-            fontsize=fontsize, ha="center", va="center",
-            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="0.6", lw=0.5, alpha=0.85),
-            arrowprops=dict(arrowstyle="-", color="0.5", lw=0.6, shrinkA=0, shrinkB=3),
+            fontsize=fontsize, ha="center", va="center", color=theme.text, bbox=box,
+            arrowprops=dict(arrowstyle="-", color=theme.leader, lw=0.6, shrinkA=0, shrinkB=3),
         )
         placed_bboxes.append(text.get_window_extent(renderer=renderer))
     return placed_bboxes
@@ -315,7 +317,7 @@ def _place_labels_without_overlap(
 
 def antenna_layout(
     antennas: list[Antenna], array_location: EarthLocation,
-    telescope: str | None = None, source_path: str | Path | None = None,
+    telescope: str | None = None, source_path: str | Path | None = None, theme: str = DEFAULT_PLOT_THEME,
 ) -> Figure:
     """Antenna positions in local East-North metres, relative to
     `array_location`, labeled by name. Adds a zoomed inset over the compact
@@ -325,7 +327,10 @@ def antenna_layout(
     `telescope` (e.g. the primary header's TELESCOP) and `source_path` (the
     UVFITS file this was read from) are both optional and purely for the
     title -- this function still does no file I/O of its own; a caller
-    reads these once from the file it already opened and passes them in."""
+    reads these once from the file it already opened and passes them in.
+    `theme` is the --plot-theme (`visplot.plot_theme`)."""
+    colors = plot_theme(theme)
+    marker = readable("tab:blue", colors)
     x_m = np.array([a.x_m for a in antennas])
     y_m = np.array([a.y_m for a in antennas])
     z_m = np.array([a.z_m for a in antennas])
@@ -339,10 +344,10 @@ def antenna_layout(
 
     # A bare Figure with its own Agg canvas (no pyplot): made on any thread, measured for the
     # label placement below, saved with savefig, or embedded in a Qt window.
-    fig = Figure(figsize=(11, 11))
+    fig = Figure(figsize=(11, 11), facecolor=colors.figure_face)
     FigureCanvasAgg(fig)
     ax = fig.add_subplot()
-    ax.scatter(east_m, north_m, s=_MARKER_SIZE, c="tab:blue")
+    ax.scatter(east_m, north_m, s=_MARKER_SIZE, color=[marker])
     ax.set_xlabel("East (m)")
     ax.set_ylabel("North (m)")
     ax.set_aspect("equal", adjustable="datalim")
@@ -350,7 +355,8 @@ def antenna_layout(
     if source_path is not None:
         title += f"\n(file: {Path(source_path).name})"
     ax.set_title(title)
-    ax.grid(True, alpha=0.3)
+    color_axes(ax, colors)
+    ax.grid(True, alpha=0.3, color=colors.grid)
 
     axins = None
     core_mask = _detect_compact_core_mask(east_m, north_m)
@@ -364,7 +370,7 @@ def antenna_layout(
         zoom_box = (center_e - half_span_m, center_n - half_span_m, center_e + half_span_m, center_n + half_span_m)
         corner_x, corner_y, side = _choose_inset_box(ax, east_m, north_m, keep_clear=[zoom_box])
         axins = ax.inset_axes([corner_x, corner_y, side, side])
-        axins.scatter(core_e, core_n, s=40, c="tab:blue")
+        axins.scatter(core_e, core_n, s=40, color=[marker])
         axins.set_xlim(center_e - half_span_m, center_e + half_span_m)
         axins.set_ylim(center_n - half_span_m, center_n + half_span_m)
         axins.set_aspect("equal")
@@ -374,10 +380,10 @@ def antenna_layout(
         if corner_x > 0.25:
             axins.yaxis.tick_right()
         axins.tick_params(labelsize=6)
-        axins.grid(True, alpha=0.3)
-        axins.patch.set_facecolor("aliceblue")
+        color_axes(axins, colors, face=colors.inset_face)
+        axins.grid(True, alpha=0.3, color=colors.grid)
         axins.patch.set_alpha(1.0)  # fully opaque -- a partial alpha let the main plot's own grid show through and clash with the inset's
-        ax.indicate_inset_zoom(axins, edgecolor="black")
+        ax.indicate_inset_zoom(axins, edgecolor=colors.text)
 
     # Labels are placed only once every axes limit is final (inset zoom
     # included), and only after one draw so get_window_extent reflects the
@@ -387,7 +393,8 @@ def antenna_layout(
     avoid_bboxes = [axins.get_window_extent(renderer=renderer)] if axins is not None else []
 
     if core_mask is None:
-        _place_labels_without_overlap(ax, renderer, names, east_m, north_m, fontsize=7, avoid_bboxes=avoid_bboxes)
+        _place_labels_without_overlap(ax, renderer, names, east_m, north_m, fontsize=7, avoid_bboxes=avoid_bboxes,
+                                      theme=colors)
     else:
         excluded_center_deg = _corner_center_angle_deg(corner_x, corner_y)
 
@@ -404,6 +411,7 @@ def antenna_layout(
         _place_labels_without_overlap(
             ax, renderer, outside_names, outside_e, outside_n, fontsize=7, avoid_bboxes=avoid_bboxes,
             preferred_directions=arm_directions, exclude_center_deg=excluded_center_deg, strict_directions=True,
+            theme=colors,
         )
 
         # Core antennas are not labeled in the main plot at all -- at this
@@ -412,6 +420,6 @@ def antenna_layout(
         # labels for space; the inset already shows every core antenna
         # clearly labeled, which is what it is for.
         core_names = [name for name, keep in zip(names, core_mask) if keep]
-        _place_labels_without_overlap(axins, renderer, core_names, core_e, core_n, fontsize=6)
+        _place_labels_without_overlap(axins, renderer, core_names, core_e, core_n, fontsize=6, theme=colors)
 
     return fig

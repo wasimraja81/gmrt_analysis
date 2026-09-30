@@ -5,6 +5,8 @@ stay vector while the samples, however many, are one image.
 
 The same code serves a saved page (grid at 600 dpi, shown at 600 or summed
 down to 150) and an interactive window (grid at the window's own pixels).
+Its colors are those of its --plot-theme (`visplot.plot_theme`), on screen
+and saved.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from visplot.clock_axis import ClockFormatter, ClockLocator
 from visplot.fonts import DEFAULT_PANEL_FONT
 from visplot.plot_panel import PanelFacts, PlotPanel
 from visplot.plot_spec import PlotSpec
+from visplot.plot_theme import DEFAULT_PLOT_THEME, color_axes, plot_theme
 from visplot.plot_title import build_plot_title
 from visplot.quantities import QUANTITIES, QuantityContext, category_label, quantity_label
 from visplot.stream import FLAGGED_LAYER, GridReducer
@@ -129,13 +132,15 @@ class XYFigure:
     without them the panel shows what was drawn and the record)."""
 
     def __init__(self, plot: PlotSpec, ctx: QuantityContext, sources=None, telescope=None, source_path=None,
-                 figsize=(8, 7), facts: PanelFacts | None = None, panel_font: str = DEFAULT_PANEL_FONT):
+                 figsize=(8, 7), facts: PanelFacts | None = None, panel_font: str = DEFAULT_PANEL_FONT,
+                 theme: str = DEFAULT_PLOT_THEME):
         self.plot = plot
         self.ctx = ctx
+        self.theme = plot_theme(theme)
         # A bare Figure (no pyplot): saved with savefig, or embedded in a Qt window.
-        self.fig = Figure(figsize=figsize)
+        self.fig = Figure(figsize=figsize, facecolor=self.theme.figure_face)
         self.ax = self.fig.add_subplot()
-        self.panel = PlotPanel(self.fig, plot, ctx, facts, sources, font=panel_font)
+        self.panel = PlotPanel(self.fig, plot, ctx, facts, sources, font=panel_font, theme=theme)
         self.status = self.panel.status  # what was drawn (get_text / set_text)
         self._seen_codes: tuple = ()
         self.ax.set_xlabel(quantity_label(plot.x, ctx, plot.x_unit))
@@ -145,10 +150,11 @@ class XYFigure:
                 mpl_axis.set_major_locator(ClockLocator())
                 mpl_axis.set_major_formatter(ClockFormatter())
         self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path))
-        self.ax.grid(True, alpha=0.3)
+        color_axes(self.ax, self.theme)
+        self.ax.grid(True, alpha=0.3, color=self.theme.grid)
         for axis, value in plot.reference_lines:
             line = self.ax.axhline if axis == "y" else self.ax.axvline
-            line(value, color="0.5", lw=0.8, ls="--", zorder=1)
+            line(value, color=self.theme.reference, lw=0.8, ls="--", zorder=1)
         self.image = None
         self._scales_set = False
         self.equal_override: bool | None = None  # set from a window's aspect toggle
