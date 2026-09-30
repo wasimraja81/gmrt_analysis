@@ -72,6 +72,7 @@ def build_gmrt_row_index(
     max_chunk_bytes: int | None = None,
     verbose: bool = False,
     logger=None,
+    on_chunk=None,
 ) -> tuple[RowIndex, GmrtAntennaResolution]:
     """Build the row index and resolve GMRT antenna state together.
 
@@ -92,10 +93,11 @@ def build_gmrt_row_index(
     result anyway when you already know about a mismatch and need to carry
     on -- it's recorded in the returned `GmrtAntennaResolution` either way.
 
-    `verbose` and `logger` pass straight through to `build_row_index` and,
-    beneath it, `read_all_param_columns` -- give a stage's own
-    `RunManifest`-scoped logger here so scan progress lands in that run's
-    actual log file, not just stdout.
+    `verbose`, `logger` and `on_chunk` pass straight through to
+    `build_row_index` and, beneath it, `read_all_param_columns` -- give a
+    stage's own `RunManifest`-scoped logger here so scan progress lands in
+    that run's log file as well as stdout; `on_chunk` reports progress and
+    can stop the scan (ScanStopped).
     """
     structural_dud_names = list(GMRT_STRUCTURAL_DUD_NAMES if structural_dud_names is None else structural_dud_names)
 
@@ -104,7 +106,8 @@ def build_gmrt_row_index(
     antennas = read_antenna_table(fits_path)
     check_antenna_count_is_plausible(antennas)
 
-    index = build_row_index(fits_path, max_chunk_bytes=max_chunk_bytes, verbose=verbose, logger=logger)
+    index = build_row_index(fits_path, max_chunk_bytes=max_chunk_bytes, verbose=verbose, logger=logger,
+                            on_chunk=on_chunk)
 
     structural = resolve_active_antennas(antennas, structural_dud_names)
 

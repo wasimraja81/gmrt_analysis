@@ -39,10 +39,16 @@ def check_file_timestamps(fits_path: Path, index, logger) -> None:
     (logger.info if check.agrees else logger.warning)("%s", check.summary())
 
 
-def run_build_index_stage(config: dict) -> Path:
+def run_build_index_stage(config: dict, on_chunk=None) -> Path:
     """Build the row index for config['fits_path'] and persist it adjacent to
     the raw file it indexes (see `default_row_index_path`). Returns the path
     the index was saved to.
+
+    `on_chunk(rows_done, rows_total)` follows the full-file scan and can stop
+    it (returning False raises ScanStopped: nothing is saved, and the stage's
+    record says it failed); `build_index.max_chunk_bytes` sets the scan's
+    block size (default: a share of the host's RAM), small for frequent
+    progress (the visplot GUI's Build index).
 
     Idempotent by default: if an index already exists at that path, the
     expensive full-file scan is skipped -- a fresh manifest is still written,
@@ -59,12 +65,14 @@ def run_build_index_stage(config: dict) -> Path:
     build_index_config = config.get("build_index", {})
     strict = build_index_config.get("strict", True)
     force_rebuild = build_index_config.get("force_rebuild", False)
+    max_chunk_bytes = build_index_config.get("max_chunk_bytes")
     idx_path = default_row_index_path(fits_path)
 
     with RunManifest(
         stage="build_index",
         work_dir=work_dir,
-        parameters={"fits_path": str(fits_path), "strict": strict, "force_rebuild": force_rebuild},
+        parameters={"fits_path": str(fits_path), "strict": strict, "force_rebuild": force_rebuild,
+                    "max_chunk_bytes": max_chunk_bytes},
         inputs=[fits_path],
     ) as manifest:
         if idx_path.exists() and not force_rebuild:
@@ -79,7 +87,8 @@ def run_build_index_stage(config: dict) -> Path:
 
         manifest.logger.info("building row index for %s", fits_path)
         index, resolution = build_gmrt_row_index(
-            fits_path, strict=strict, verbose=True, logger=manifest.logger
+            fits_path, strict=strict, max_chunk_bytes=max_chunk_bytes, verbose=True, logger=manifest.logger,
+            on_chunk=on_chunk,
         )
         manifest.logger.info(
             "index built: %d rows, %d active antennas, %d dead-this-observation: %s",

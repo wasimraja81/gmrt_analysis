@@ -225,3 +225,29 @@ def test_load_pipeline_config_parses_yaml():
 
     assert config["fits_path"] == "/some/path.FITS"
     assert config["stages"]["build_index"] is True
+
+
+def test_the_build_index_stage_reports_progress_and_a_stop_saves_nothing():
+    import json
+
+    import pytest
+
+    from data_io.uvfits_group_params import ScanStopped
+
+    scratch = make_scratch_dir("cli_pipeline_build_index_progress")
+    fits_path = scratch / "synthetic.fits"
+    _make_synthetic_gwb_file(fits_path)  # 3 rows
+    work_dir = scratch / "work"
+    config = {"fits_path": str(fits_path), "work_dir": str(work_dir), "build_index": {"max_chunk_bytes": 1}}
+    seen = []
+    run_build_index_stage(config, on_chunk=lambda done, total: seen.append((done, total)))
+    assert seen == [(1, 3), (2, 3), (3, 3)]  # a block of one row at a time
+
+    default_row_index_path(fits_path).unlink()
+    with pytest.raises(ScanStopped, match="stopped after 1 of 3 rows"):
+        run_build_index_stage(config, on_chunk=lambda done, total: False)
+    assert not default_row_index_path(fits_path).exists()
+    records = [json.loads(p.read_text()) for p in (work_dir / "provenance" / "build_index").glob("*.json")]
+    stopped = [r for r in records if r["outcome"]["status"] == "failed"]
+    assert len(records) == 2 and stopped[0]["outcome"]["error_type"] == "ScanStopped"
+    assert stopped[0]["parameters"]["max_chunk_bytes"] == 1

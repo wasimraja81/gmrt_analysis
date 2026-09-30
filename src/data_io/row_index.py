@@ -135,6 +135,7 @@ def build_row_index(
     max_chunk_bytes: int | None = None,
     verbose: bool = False,
     logger=None,
+    on_chunk=None,
 ) -> RowIndex:
     """Read every row's group parameters once and derive a fast, in-memory index.
 
@@ -144,16 +145,17 @@ def build_row_index(
     else this function needs (source names, channel frequencies,
     polarization labels) comes from cheap, whole-file metadata instead.
 
-    `max_chunk_bytes`, `verbose`, and `logger` pass straight through to
-    `read_all_param_columns`, which does the actual full-file pass and
-    bounds peak memory to about one chunk's size (see its own docstring).
+    `max_chunk_bytes`, `verbose`, `logger` and `on_chunk` (progress, and a
+    way to stop) pass straight through to `read_all_param_columns`, which
+    does the full-file pass and bounds peak memory to about one
+    chunk's size (see its own docstring).
     """
     started = time.monotonic()
     fits_path = Path(fits_path)
 
     layout = read_group_params_layout(fits_path)
     all_params = read_all_param_columns(
-        fits_path, layout, max_chunk_bytes=max_chunk_bytes, verbose=verbose, logger=logger
+        fits_path, layout, max_chunk_bytes=max_chunk_bytes, verbose=verbose, logger=logger, on_chunk=on_chunk
     )
 
     source_id = all_params[:, resolve_param_column(layout, "SOURCE")].astype(np.int32)

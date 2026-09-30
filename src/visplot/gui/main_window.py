@@ -27,10 +27,14 @@ from __future__ import annotations
 import threading
 import time
 import traceback
+from pathlib import Path
 from typing import Callable
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from cli.pipeline_stages import run_build_index_stage
+from data_io.row_index import default_row_index_path
+from data_io.uvfits_group_params import ScanStopped
 from visplot.file_summary import summarize
 from visplot.gui.form import RequestForm
 from visplot.gui.save_dialog import SaveDialog
@@ -46,6 +50,10 @@ COUNT_DELAY_MS = 400
 # History keeps this many plots. Every message stays in the session's log.
 MAX_MESSAGES = 5000
 MAX_HISTORY = 1000
+# Building an index reads the file's row parameters in blocks this large: small, so the progress
+# bar moves often and Stop takes effect promptly (the pipeline's default, a share of the host's
+# RAM, can make a whole file one block).
+BUILD_CHUNK_BYTES = 256 * 2**20
 
 
 class _Task:
@@ -58,13 +66,14 @@ class _Task:
         self.error: str | None = None
         self.done = False
         self.status = ""  # progress text `fn` may set, shown in the status bar
-        self.stop = False  # set to ask `fn` to stop, for one that checks it (a save)
+        self.fraction: float | None = None  # how much of it is done, for one that says (an index build)
+        self.stop = False  # set to ask `fn` to stop, for one that checks it (a save, an index build)
         self.thread = threading.Thread(target=self._body, daemon=True)
 
     def _body(self):
         try:
             self.result = self.fn()
-        except (RequestError, Stopped) as err:
+        except (RequestError, Stopped, ScanStopped) as err:
             self.error = str(err)
         except Exception:
             self.error = traceback.format_exc()
@@ -86,6 +95,8 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self._reports_lock = threading.Lock()
         self._count_generation = 0
         self._saving: _Task | None = None  # the save running, if any (one at a time)
+        self._building: _Task | None = None  # the index build running, if any
+        self._index_note = ""  # what building the open file's missing index takes
         self.session = SessionRecord(provenance_dir or build_arg_parser().get_default("provenance_dir"))
 
         self.form = RequestForm()
@@ -93,6 +104,8 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.form.path_edit.returnPressed.connect(lambda: self.open_path(self.form.path_edit.text().strip()))
         self.form.cache_button.clicked.connect(self._choose_cache_dir)
         self.form.provenance_button.clicked.connect(self._choose_provenance_dir)
+        self.form.build_button.clicked.connect(self.build_index)
+        self.form.stop_build_button.clicked.connect(self.stop_build)
         self.form.show_session(self.session.session_id, self.session.log_path)
         self.form.changed.connect(self._form_changed)
 
@@ -256,13 +269,28 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self.form.provenance_edit.setText(path)
 
     def open_path(self, path: str) -> None:
-        """Read the file's index, headers and tables in the background."""
+        """Read the file's index, headers and tables in the background; a
+        file without its row index offers Build index instead."""
         if not path:
             return
         self.form.path_edit.setText(path)
+        self.form.show_missing_index(None)
+        index_path = default_row_index_path(path)
+        if Path(path).is_file() and not index_path.exists():
+            self.opened = None
+            gigabytes = Path(path).stat().st_size / 1e9
+            self._index_note = (f"No row index yet. Building one reads the file's row parameters once "
+                                f"({gigabytes:,.1f} GB to pass over) and saves {index_path.name} beside it.")
+            self.form.show_missing_index(self._index_note)
+            self.statusBar().showMessage("the file has no row index yet: Build index makes it")
+            self.report("info", f"{path} has no row index ({index_path}); Build index makes it")
+            self._form_changed()
+            return
         self.statusBar().showMessage(f"opening {path} …")
+        self.form.show_progress(f"opening {Path(path).name} …")
 
         def done(result):
+            self.form.show_progress(None)
             self.opened, summary = result
             self.form.set_file(self.opened, summary)
             self.file_label.setText(path)
@@ -271,12 +299,72 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self._form_changed()
 
         def failed(message):
+            self.form.show_progress(None)
             self.opened = None
             self.statusBar().showMessage("could not open the file")
             self.report("warning", message)
             self._form_changed()
 
         self._start(lambda: (lambda opened: (opened, summarize(opened)))(open_file(path)), done, failed)
+
+    def build_index(self) -> None:
+        """Build the File field's file's row index with the pipeline's own
+        build_index stage (its record under the Records folder), on a
+        background thread with progress under the File field and Stop; then
+        open the file."""
+        path = self.form.path_edit.text().strip()
+        if not path or self._building is not None:
+            return
+        records = Path(self.form.fields["provenance_dir"].get()).expanduser().resolve()
+        config = {"fits_path": path, "work_dir": str(records), "build_index": {"max_chunk_bytes": BUILD_CHUNK_BYTES}}
+        started = time.monotonic()
+
+        def clock(seconds: float) -> str:
+            minutes, seconds = divmod(int(seconds), 60)
+            return f"{minutes // 60}:{minutes % 60:02d}:{seconds:02d}" if minutes >= 60 else f"{minutes}:{seconds:02d}"
+
+        def on_chunk(rows_done: int, rows_total: int) -> bool:
+            elapsed = time.monotonic() - started
+            left = f", about {clock(elapsed * (rows_total - rows_done) / rows_done)} left" if rows_done else ""
+            task.fraction = rows_done / rows_total if rows_total else 1.0
+            task.status = (f"building the row index: {rows_done:,} of {rows_total:,} rows "
+                           f"({100 * task.fraction:.0f}%), {clock(elapsed)} elapsed{left}")
+            return not task.stop
+
+        def work():
+            self.report("info", f"building the row index of {path} (the pipeline's build_index stage; its record "
+                                f"and log go to {records})")
+            return run_build_index_stage(config, on_chunk=on_chunk)
+
+        def finished():
+            self._building = None
+            self.form.show_progress(None)
+            self.form.build_button.setEnabled(True)
+
+        def done(index_path):
+            finished()
+            self.report("info", f"row index saved: {index_path}")
+            self.open_path(path)
+
+        def failed(message):
+            finished()
+            self.form.show_missing_index(self._index_note)  # the file still has none
+            self.report("warning", f"the row index was not built: {message}")
+            self.statusBar().showMessage("the row index was not built")
+
+        task = _Task(work, done, failed)
+        self._building = task
+        self.form.build_button.setEnabled(False)
+        self.form.show_missing_index(None)  # the bar says what is happening
+        self.form.show_progress("building the row index: starting …", 0.0, stoppable=True)
+        self.statusBar().showMessage(f"building the row index of {path} …")
+        self._launch(task)
+
+    def stop_build(self) -> None:
+        """Ask the index build to stop at its next block (nothing is saved)."""
+        if self._building is not None:
+            self._building.stop = True
+            self.form.show_progress("stopping the index build …", self._building.fraction, stoppable=False)
 
     # ---- the form -------------------------------------------------------------------
 
@@ -510,6 +598,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
     def _poll(self) -> None:
         self._show_reports()
         running = [t.status for t in self._tasks if t.status and not t.done]
+        building = self._building
+        if building is not None and not building.done and not building.stop and building.status:
+            self.form.show_progress(building.status, building.fraction, stoppable=True)
         if running and running[-1] != self.statusBar().currentMessage():
             self.statusBar().showMessage(running[-1])
         for task in [t for t in self._tasks if t.done]:
@@ -552,6 +643,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt's name)
         self._clear_plots()
+        if self._building is not None:  # stopped at its next block, so the stage's record says how it ended
+            self._building.stop = True
+            self._building.thread.join(timeout=30)
         if self._saving is not None:  # stopped at its next chunk, so its record says how it ended
             self._saving.stop = True
             self._saving.thread.join(timeout=30)

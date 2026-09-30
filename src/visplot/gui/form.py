@@ -20,7 +20,8 @@ from PySide6 import QtCore, QtWidgets
 
 from instruments.observatory_time_zones import observatory_time_zone
 from visplot.fonts import PANEL_FONTS
-from visplot.gui.widgets import CheckedLineEdit, CollapsibleSection, form_layout, grouped_combo, hint, row, select_data
+from visplot.gui.widgets import (CheckedLineEdit, CollapsibleSection, NoteBox, form_layout, grouped_combo, hint, row,
+                                 select_data)
 from visplot.plot_spec import PRESETS
 from visplot.quantities import QUANTITIES, QuantityContext, units_of
 from visplot.request import PlotRequest, build_arg_parser
@@ -281,6 +282,25 @@ class RequestForm(QtWidgets.QWidget):
         self.open_button = QtWidgets.QPushButton("Open…")
         self._add(text_field("fits_path", self.path_edit))
         form.addRow("File", row(self.path_edit, self.open_button, stretches=(1, 0)))
+        # Opening or building the file's index: a thin bar, its words, and Stop (a build only).
+        self.progress = QtWidgets.QProgressBar(objectName="fileProgress", textVisible=False)
+        self.progress.setFixedHeight(6)
+        self.stop_build_button = QtWidgets.QToolButton(text="Stop")
+        self.stop_build_button.setToolTip("Stop building the index; nothing is saved, and its record says so")
+        self.progress_text = hint("")
+        self.progress_row = row(self.progress, self.stop_build_button, stretches=(1, 0))
+        form.addRow("", self.progress_row)
+        form.addRow("", self.progress_text)
+        # A file without its row index: what building one takes (a box of fixed height, scrolled
+        # when longer, so nothing is clipped beside the button), and the button.
+        self.index_note = NoteBox(lines=3)
+        self.build_button = QtWidgets.QPushButton("Build index")
+        self.build_button.setToolTip("Read the file's row parameters once and save the row index beside it, "
+                                     "as the pipeline's build_index stage does")
+        self.index_row = row(self.index_note, self.build_button, stretches=(1, 0))
+        form.addRow("", self.index_row)
+        self.show_progress(None)
+        self.show_missing_index(None)
         self.summary = QtWidgets.QLabel("No file open.")
         self.summary.setObjectName("hint")
         self.summary.setWordWrap(True)
@@ -492,6 +512,29 @@ class RequestForm(QtWidgets.QWidget):
         for axis, other in (("x", "y"), ("y", "x")):
             for key in ("unit", "scale", "range", "range_mode"):
                 self.fields[f"{axis}_{key}"].set(values[f"{other}_{key}"])
+
+    # ---- opening and indexing the file ---------------------------------------
+
+    def show_progress(self, text: str | None, fraction: float | None = None, stoppable: bool = False) -> None:
+        """The bar under the File field: hidden for `text` None; busy for
+        `fraction` None, else that fraction done; Stop shown when `stoppable`."""
+        self.progress_row.setVisible(text is not None)
+        self.progress_text.setVisible(text is not None)
+        if text is None:
+            return
+        self.progress_text.setText(text)
+        if fraction is None:
+            self.progress.setRange(0, 0)
+        else:
+            self.progress.setRange(0, 1000)
+            self.progress.setValue(round(1000 * min(max(fraction, 0.0), 1.0)))
+        self.stop_build_button.setVisible(stoppable)
+        self.stop_build_button.setEnabled(stoppable)
+
+    def show_missing_index(self, text: str | None) -> None:
+        """The note and Build index button of a file without its index (hidden for None)."""
+        self.index_row.setVisible(text is not None)
+        self.index_note.set_text(text or "")
 
     # ---- file-dependent checks and lists -------------------------------------
 

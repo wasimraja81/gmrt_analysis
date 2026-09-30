@@ -92,6 +92,11 @@ def resolve_param_column(layout: GroupParamsLayout, name: str) -> int:
     return matches[0]
 
 
+class ScanStopped(Exception):
+    """A full-file pass stopped before the end because its `on_chunk`
+    callback asked it to (e.g. the GUI's Stop)."""
+
+
 def read_all_param_columns(
     fits_path: Path | str,
     layout: GroupParamsLayout,
@@ -99,6 +104,7 @@ def read_all_param_columns(
     ram_fraction: float = DEFAULT_RAM_FRACTION_TO_USE,
     verbose: bool = False,
     logger=None,
+    on_chunk=None,
 ) -> np.ndarray:
     """Read every parameter column for every row, as a ``(gcount, pcount)``
     float64 array -- touching only the parameter bytes, never the visibility
@@ -130,6 +136,11 @@ def read_all_param_columns(
     `RunManifest`-scoped logger, so progress lands in that run's actual log
     file, not just stdout. Without a `logger`, falls back to `print()`, for
     standalone use with no run/manifest involved (a notebook, a quick script).
+
+    `on_chunk(rows_done, rows_total)`, if given, is called after each block
+    (e.g. a progress bar); returning False stops the pass with ScanStopped.
+    A caller wanting frequent progress also passes a small `max_chunk_bytes`:
+    at 20% of a large host's RAM, a whole file can be one block.
     """
     floats_per_group = layout.pcount + layout.data_floats_per_group
     row_bytes = floats_per_group * 4  # dtype ">f4" is 4 bytes per float
@@ -161,6 +172,8 @@ def read_all_param_columns(
                 logger.info(message)
             else:
                 print(message, flush=True)
+        if on_chunk is not None and on_chunk(stop, layout.gcount) is False:
+            raise ScanStopped(f"stopped after {stop:,} of {layout.gcount:,} rows")
     return result
 
 

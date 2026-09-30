@@ -127,6 +127,34 @@ def select_data(combo: QtWidgets.QComboBox, data) -> None:
         combo.setCurrentIndex(index)
 
 
+class NoteBox(QtWidgets.QPlainTextEdit):
+    """A few lines of read-only text in a box of fixed height (`lines`),
+    wrapped, scrolled when longer, and selectable -- for a note that would
+    otherwise be clipped beside a button."""
+
+    def __init__(self, lines: int = 3, parent=None):
+        super().__init__(parent)
+        self.setObjectName("note")
+        self.setReadOnly(True)
+        self.setLineWrapMode(QtWidgets.QPlainTextEdit.WidgetWidth)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setTabChangesFocus(True)
+        font = self.font()
+        font.setPointSizeF(max(8.0, font.pointSizeF() - 1))
+        self.setFont(font)
+        line = QtGui.QFontMetrics(font).lineSpacing()
+        margin = self.document().documentMargin()
+        self.setFixedHeight(int(lines * line + 2 * margin + 2 * self.frameWidth() + 4))
+
+    def set_text(self, text: str) -> None:
+        self.setPlainText(text)
+        self.verticalScrollBar().setValue(0)
+
+    def text(self) -> str:
+        return self.toPlainText()
+
+
 class CommandLine(QtWidgets.QPlainTextEdit):
     """A command on one line, shown from its start, read-only: the scroll bar
     slides along it, the text can be selected, and hovering shows it whole."""

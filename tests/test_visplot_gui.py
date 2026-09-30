@@ -337,3 +337,64 @@ def test_messages_keep_the_newest_up_to_the_limit(monkeypatch):
     texts = [window.messages.item(i).text() for i in range(window.messages.count())]
     assert len(texts) == 5 and texts[-1].endswith("message 11")
     window.close()
+
+
+def test_a_file_without_its_index_offers_build_index_which_builds_it_and_opens_the_file():
+    from data_io.row_index import default_row_index_path
+    from test_cli_pipeline_stages import _make_synthetic_gwb_file
+
+    app = _app()
+    scratch = make_scratch_dir("gui_build_index")
+    path = scratch / "obs.fits"
+    _make_synthetic_gwb_file(path)
+    window = VisplotWindow(str(path))
+    window.show()
+    _settle(app, window, lambda: True)
+    assert window.opened is None and window.form.index_row.isVisible() and window.form.build_button.isEnabled()
+    assert "No row index yet" in window.form.index_note.text()
+
+    window.form.provenance_edit.setText(str(scratch / "runs"))  # the stage's record goes to the Records folder
+    window.build_index()
+    _settle(app, window, lambda: window.opened is not None)
+    assert default_row_index_path(path).exists()
+    assert not window.form.index_row.isVisible() and not window.form.progress_row.isVisible()
+    (record,) = [json.loads(p.read_text()) for p in (scratch / "runs" / "provenance" / "build_index").glob("*.json")]
+    assert record["outcome"]["status"] == "success" and record["parameters"]["fits_path"] == str(path)
+    window.close()
+
+
+def test_stopping_an_index_build_saves_nothing_and_says_so(monkeypatch):
+    import visplot.gui.main_window as main_window
+    from data_io.uvfits_group_params import ScanStopped
+    from test_cli_pipeline_stages import _make_synthetic_gwb_file
+
+    def slow_stage(config, on_chunk):  # the stage's scan, block by block, until asked to stop
+        for rows in range(1, 100_000):
+            if on_chunk(rows, 100_000) is False:
+                raise ScanStopped(f"stopped after {rows:,} of 100,000 rows")
+            time.sleep(0.005)
+
+    monkeypatch.setattr(main_window, "run_build_index_stage", slow_stage)
+    app = _app()
+    scratch = make_scratch_dir("gui_build_index_stop")
+    path = scratch / "obs.fits"
+    _make_synthetic_gwb_file(path)
+    window = VisplotWindow(str(path))
+    window.show()
+    _settle(app, window, lambda: True)
+    window.build_index()
+    end = time.monotonic() + 30
+    while "rows (" not in window.form.progress_text.text() and time.monotonic() < end:
+        app.processEvents()
+        time.sleep(0.02)
+    assert window.form.progress_row.isVisible() and window.form.stop_build_button.isVisible()
+    window.stop_build()
+
+    def said_so():
+        texts = [window.messages.item(i).text() for i in range(window.messages.count())]
+        return any("the row index was not built: stopped after" in t for t in texts)
+
+    _settle(app, window, lambda: window._building is None and said_so())
+    assert window.opened is None and window.form.build_button.isEnabled() and window.form.index_row.isVisible()
+    assert not window.form.progress_row.isVisible()
+    window.close()

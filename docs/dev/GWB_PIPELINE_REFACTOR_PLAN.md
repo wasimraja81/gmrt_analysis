@@ -2,7 +2,7 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36, T37, T39 and T41 2026-09-29, 446 tests passing; T26, T32 in progress;
+2026-09-29, T36, T37, T39 and T41 2026-09-29, 449 tests passing; T26, T32 in progress;
 T33, T38, T40, point D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w)
 open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -770,9 +770,25 @@ Buildable now, ahead of Phase C.
   and opening now takes 0.7 s (a test checks the summary's counts). The progress bar
   (under the File field; row counts where a step has them, e.g. building an index)
   comes with the Build index button.
-  Next: a Build index button (the pipeline's build_index stage, for a file without its
-  row index; user's request, 2026-09-28) with the progress bar, then point D and T26's
-  controls.
+  Build index (user's request, 2026-09-28; built 2026-09-30), with the progress bar the
+  user asked for by the File field: opening a file without its row index shows what
+  building one takes (the file's size to pass over) and a Build index button, which runs
+  the pipeline's own build_index stage on a background thread (its record and log under
+  the Records folder), then opens the file. The full-file scan
+  (`read_all_param_columns`) gained `on_chunk(rows_done, rows_total)`, passed through
+  `build_row_index`, `build_gmrt_row_index` and `run_build_index_stage`: the GUI's thin
+  bar shows rows, percent, time elapsed and left, and Stop ends the scan at its next
+  block (ScanStopped: nothing saved, the stage's record failed). The stage also takes
+  `build_index.max_chunk_bytes` (recorded in its parameters): the GUI reads 256 MB
+  blocks, since the default, 20% of this host's 67 GB, is 13.5 GB -- the 8.1 GB GSB file
+  would be one block, the bar never moving and Stop taking effect only at the end.
+  Opening a file shows the same bar, as a busy indicator. The note beside Build index
+  was clipped in the user's window (a wrapped label beside a button in one form row);
+  it is a read-only box of three lines, scrolled when longer, as the user suggested.
+  Tests: the stage's progress
+  per block and a stop saving nothing; the GUI building a missing index and opening the
+  file; Stop ending a build with nothing built and saying so.
+  Next: point D and T26's controls.
 
 - **T33 — Themes — NOT STARTED (added 2026-09-28).** Light and dark themes for Qt and
   matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in

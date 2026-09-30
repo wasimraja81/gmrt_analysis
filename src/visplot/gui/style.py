@@ -52,6 +52,9 @@ def style_sheet(theme: str) -> str:
     QPushButton#primary:disabled {{ background: {c['mid']}; color: {c['disabled']}; }}
     QLineEdit[invalid="true"] {{ border: 1px solid {c['error']}; }}
     QPlainTextEdit#command {{ background: {c['alt']}; border: 1px solid {c['mid']}; }}
+    QPlainTextEdit#note {{ background: {c['alt']}; border: 1px solid {c['mid']}; color: {c['hint']}; }}
+    QProgressBar#fileProgress {{ border: none; border-radius: 3px; background: {c['mid']}; }}
+    QProgressBar#fileProgress::chunk {{ border-radius: 3px; background: {c['accent']}; }}
     QLabel#welcomeTitle {{ font-size: 22px; font-weight: 600; }}
     QLabel#welcomeText {{ color: {c['hint']}; font-size: 13px; }}
     QScrollArea#sidebar {{ border: none; }}
