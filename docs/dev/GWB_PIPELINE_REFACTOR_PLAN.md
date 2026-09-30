@@ -2,9 +2,10 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, 467 tests
-passing; T26, T32 in progress; T38, T40, T42, T45, T46, point D, T20, T21 open (order in
-Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is imaged.
+2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38
+2026-10-01, 469 tests passing; T26, T32 in progress; T40, T42, T45, T46, point D, T20,
+T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is
+imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -947,11 +948,22 @@ Buildable now, ahead of Phase C.
     pixels elsewhere: the user wants portability and reproducibility, and a font chooser
     (T41). The panel's design is to be thought afresh (T40).
 
-- **T38 — Flag rule option: the lenient rule — OPEN (user, 2026-09-29).** T37's rule
-  flags a point combining several Stokes if any of them is flagged (the user's default).
-  An option for the other rule -- such a point shown unless flagged in every selected
-  Stokes (coverage wherever any product has data) -- e.g. `--combine-flags any|all`,
-  stated in the panel's Flags line.
+- **T38 — Flag rule option: the lenient rule — DONE (user, 2026-09-29; built
+  2026-10-01).** T37's rule flags a point combining several Stokes if any of them is
+  flagged (the user's default). An option for the other rule -- such a point shown unless
+  flagged in every selected Stokes (coverage wherever any product has data) -- e.g.
+  `--combine-flags any|all`, stated in the panel's Flags line.
+  Built: `--combine-flags any|all` (default any; the GUI's "Flag rule" in Display), a
+  `PlotSpec` field that `stream.combine_flags` applies; a point of one Stokes is that
+  visibility's own flag under either rule. The panel's Flags line reads "a point is
+  flagged if all of RR, LL are" for `all`. Ranges need no change: the range pass keeps a
+  value wherever any of its samples is unflagged, so a range, cached or found by a pass,
+  holds under both rules. Neither raw file carries flags where checked: u-v points, RR and LL, were
+  drawn for every row and channel of GSB's 3C286 (5,806,080) and of GWB's every 200th
+  integration over all sources (41,029,632), under both rules; the rule shows on flagged
+  data, e.g. the user's split files. Tests: the rule on constructed flags (a point
+  flagged in one Stokes, in both, a per-Stokes plot unchanged, an unknown rule refused);
+  the Flags line; the request's round trip.
 
 - **T39 — --every-nth skips whole baselines — DONE (found and built 2026-09-29).** The
   user asked why the panel of a 28-antenna plot said "189 baselines": the test renders used

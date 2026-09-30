@@ -17,6 +17,9 @@ class PlotSpec:
     colorize_by: str | None = None
     apply_flags: bool = True  # exclude flagged samples (weight <= 0); needs the weights read from disk
     show_flagged: bool = False  # draw flagged samples, as their own layer on top
+    # A point combining its visibility's selected Stokes (e.g. u-v) is flagged if "any" of them is, or
+    # only if "all" are (`stream.combine_flags`).
+    combine_flags: str = "any"
     mirror: bool = False  # also plot (-x, -y)
     x_range: tuple[float, float] | None = None  # None: from the data; in x_unit
     y_range: tuple[float, float] | None = None

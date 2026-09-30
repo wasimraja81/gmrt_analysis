@@ -36,19 +36,23 @@ MIN_ROWS_PER_THREAD = 512
 FLAGGED_LAYER = np.iinfo(np.int16).max  # flagged samples draw above every category
 
 
-def combine_flags(good: np.ndarray, pair_shape: tuple, axis_types) -> np.ndarray:
+def combine_flags(good: np.ndarray, pair_shape: tuple, axis_types, rule: str = "any") -> np.ndarray:
     """The flags of the points a plot draws, from each sample's `good`
     (weight > 0, shaped like the data: (rows, *axes)) and `pair_shape`, the
     shape its quantities vary along (1 on an axis they do not vary along).
-    The user's rule (2026-09-29): a point whose quantities do not vary along
-    Stokes (e.g. u-v) combines the selected Stokes of its visibility, and is
-    flagged if any of them is flagged -- one Stokes selected, it is exactly
-    that product's flag. Every other axis keeps the data's own flags: a
+    A point whose quantities do not vary along Stokes (e.g. u-v) combines
+    the selected Stokes of its visibility: by the user's rule (2026-09-29,
+    `rule` "any", the default) it is flagged if any of them is flagged; by
+    `rule` "all" (T38), only if every one is, so it shows wherever one
+    Stokes product has data. One Stokes selected, either is exactly that
+    product's flag. Every other axis keeps the data's own flags: a
     visibility is its own time, baseline and channel, so a per-row quantity
     (e.g. u in m) is one point per channel's visibility."""
+    if rule not in ("any", "all"):
+        raise ValueError(f"the flag rule is 'any' or 'all', got {rule!r}")
     for k, axis_type in enumerate(axis_types, start=1):
         if axis_type == "STOKES" and pair_shape[k] == 1 and good.shape[k] > 1:
-            good = good.all(axis=k, keepdims=True)
+            good = good.all(axis=k, keepdims=True) if rule == "any" else good.any(axis=k, keepdims=True)
     return good
 
 
@@ -112,7 +116,7 @@ class ChunkValues:
         if not plot.apply_flags or self.block.weight is None:
             return None
         pair_shape = np.broadcast_shapes(*(a.shape for a in arrays))
-        return combine_flags(self.block.weight > 0, pair_shape, self.block.axis_types)
+        return combine_flags(self.block.weight > 0, pair_shape, self.block.axis_types, plot.combine_flags)
 
     def _compute_samples(self, plot: PlotSpec):
         arrays = [self.axis(plot, "x"), self.axis(plot, "y")]

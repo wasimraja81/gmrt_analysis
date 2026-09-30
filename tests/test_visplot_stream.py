@@ -289,6 +289,26 @@ def test_a_point_combining_stokes_is_flagged_if_any_stokes_is():
     assert x.size == 4 and flagged.sum() == 3  # one sample per point, its Stokes combined
 
 
+def test_by_the_rule_all_a_point_combining_stokes_is_flagged_only_if_every_stokes_is():
+    from dataclasses import replace
+
+    from visplot.stream import combine_flags
+
+    block = _flag_block()
+    weight = block.weight.copy()
+    weight[1, 0, 0] = -1.0  # row 1, channel 0: RR flagged too, so both Stokes are
+    values = ChunkValues(replace(block, weight=weight), CTX)
+    uv = PlotSpec(y="v", x="u", combine_flags="all")
+    x, _, _, flagged = values.samples(replace(uv, show_flagged=True))
+    assert x.size == 4 and flagged.sum() == 1  # only row 1, channel 0 has every Stokes flagged
+    assert values.samples(uv)[0].size == 3
+    assert values.samples(PlotSpec(y="v", x="u"))[0].size == 1  # the rule any: row 0, channel 1 alone
+    per_stokes = PlotSpec(y="amp", x="u", combine_flags="all")  # varies with Stokes: each visibility's own flag
+    assert values.samples(per_stokes)[0].size == values.samples(PlotSpec(y="amp", x="u"))[0].size == 4
+    with pytest.raises(ValueError, match="'any' or 'all'"):
+        combine_flags(weight > 0, (2, 1, 2), ["STOKES", "FREQ"], "most")
+
+
 def test_one_stokes_selected_its_own_flags_decide():
     from dataclasses import replace
 

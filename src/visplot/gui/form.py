@@ -444,6 +444,12 @@ class RequestForm(QtWidgets.QWidget):
         size.valueChanged.connect(lambda *_: self.changed.emit())
         form.addRow("Marker size", box)
         form.addRow("", self._add(flag_field("show_flagged", QtWidgets.QCheckBox("show flagged samples (light-coral crosses)"))))
+        combine = QtWidgets.QComboBox()
+        combine.addItem("flagged if any Stokes is", "any")
+        combine.addItem("flagged only if all Stokes are", "all")
+        combine.setToolTip("A point combining its visibility's selected Stokes (e.g. u-v): --combine-flags; a "
+                           "point of one Stokes is that visibility's own flag either way")
+        form.addRow("Flag rule", self._add(combo_field("combine_flags", combine)))
         form.addRow("", self._add(flag_field("mirror", QtWidgets.QCheckBox("mirror (-x, -y), e.g. uv coverage"))))
         panel_font = QtWidgets.QComboBox()
         for name in _parser_choices("panel_font"):

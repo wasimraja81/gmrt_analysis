@@ -221,6 +221,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="also draw flagged samples (weight <= 0), as light-coral crosses on top (default: flagged samples are "
         "left out)",
     )
+    style.add_argument(
+        "--combine-flags", choices=["any", "all"], default="any",
+        help="how a point combining its visibility's selected Stokes (e.g. u-v) takes their flags: any "
+        "(default), flagged if any of them is; all, flagged only if all of them are, so a point shows wherever "
+        "one Stokes product has data. A point of one Stokes is that visibility's own flag either way",
+    )
     style.add_argument("--mirror", action="store_true", help="also plot (-x, -y), e.g. for UV coverage")
     style.add_argument(
         "--panel-font", choices=sorted(PANEL_FONTS), default=DEFAULT_PANEL_FONT,

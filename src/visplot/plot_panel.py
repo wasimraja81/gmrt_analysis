@@ -252,6 +252,8 @@ class PlotPanel:
             return ""
         if varies_along(plot, "STOKES", self.ctx):
             return ""
+        if plot.combine_flags == "all":
+            return f"a point is flagged if all of {', '.join(facts.stokes)} are"
         return f"a point is flagged if any of {', '.join(facts.stokes)} is"
 
     def _key_items(self, seen) -> list:

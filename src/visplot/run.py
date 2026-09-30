@@ -152,7 +152,8 @@ def check_request(request: PlotRequest) -> CheckedRequest:
             if scale == "log" and fixed is not None and fixed[0] <= 0:
                 raise ValueError(f"--{axis}-scale log shows positive values only; --{axis}-range starts at {fixed[0]:g}")
         style = PlotSpec(
-            y="", x="", colorize_by=request.colorize_by, show_flagged=request.show_flagged, mirror=request.mirror,
+            y="", x="", colorize_by=request.colorize_by, show_flagged=request.show_flagged,
+            combine_flags=request.combine_flags, mirror=request.mirror,
             x_range=x_range, y_range=y_range, point_size=request.point_size, color=request.color,
             x_scale=request.x_scale, y_scale=request.y_scale, x_range_mode=request.x_range_mode,
             y_range_mode=request.y_range_mode, range_percentiles=range_percentiles,

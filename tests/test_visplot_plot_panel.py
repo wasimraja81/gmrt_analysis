@@ -156,3 +156,12 @@ def test_the_panel_says_what_a_row_stride_kept():
     _, figure = _run("panel_integration_stride", every_nth_integration=2)
     assert figure.panel.facts.stride_pairs is None and figure.panel.facts.n_baselines == 3
     assert figure.panel.facts.filters == "every 2nd integration"
+
+
+def test_the_flags_line_states_the_flag_rule():
+    _, any_figure = _run("panel_flag_rule_any", plots="v-vs-u")
+    assert any_figure.panel.flag_rule() == "a point is flagged if any of RR, LL is"
+    _, all_figure = _run("panel_flag_rule_all", plots="v-vs-u", combine_flags="all")
+    assert all_figure.panel.flag_rule() == "a point is flagged if all of RR, LL are"
+    _, per_stokes = _run("panel_flag_rule_amp", combine_flags="all")  # amp varies with Stokes: no line
+    assert per_stokes.panel.flag_rule() == ""
