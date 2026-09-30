@@ -4,7 +4,8 @@ and the GUI (`visplot/gui/`) share, so both run exactly the same code.
 - `check_request`: what can be checked without the file (plot names,
   units, ranges, option combinations).
 - `open_file`: the file's row index, headers and tables, read once (the GUI
-  keeps them while the file is open).
+  keeps them while the file is open); the telescope's structural DUD entries
+  of the AN table left out of its antennas.
 - `prepare`: the units that depend on the file, the time system, the row
   selection, the quantity context, the streaming source and the figures.
 - `run_locate`, `save_outputs`: the batch work, for the command line or a
@@ -34,6 +35,7 @@ from data_io.row_selection import select_rows
 from data_io.source_table import read_source_table
 from data_io.timestamp_check import check_timestamps
 from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observatory_time_zone
+from instruments.structural_duds import without_structural_duds
 from visplot.antenna_layout import antenna_layout
 from visplot.fonts import font_file
 from visplot.locate_csv import LocateCsvWriter
@@ -188,12 +190,13 @@ class OpenedFile:
 
     fits_path: str
     index: object  # RowIndex
-    antennas: list
+    antennas: list  # the AN table's antennas, its structural DUD entries left out
     array_location: object  # EarthLocation
     source_table: dict
     telescope: str | None
     bunit: str | None
     time_reference: object  # TimeReference
+    dud_antennas: list = field(default_factory=list)  # the structural DUD entries left out
 
     @property
     def reference_date_jd(self) -> float | None:
@@ -212,16 +215,20 @@ class OpenedFile:
 
 
 def open_file(fits_path) -> OpenedFile:
-    """Read what every request on this file needs. Raises MissingIndexError
-    when the row index has not been built."""
+    """Read what every request on this file needs, the AN table's structural
+    DUD entries left out of its antennas (GMRT's C07 and S05, in the GSB
+    file's table). Raises MissingIndexError when the row index has not been
+    built."""
     idx_path = default_row_index_path(fits_path)
     if not idx_path.exists():
         raise MissingIndexError(f"no row index at {idx_path} -- build it first (the pipeline's build_index stage)")
+    telescope = _header_keyword(fits_path, "TELESCOP")
+    antennas = without_structural_duds(read_antenna_table(fits_path), telescope)
     return OpenedFile(
-        fits_path=str(fits_path), index=load_row_index(idx_path), antennas=read_antenna_table(fits_path),
+        fits_path=str(fits_path), index=load_row_index(idx_path), antennas=antennas.active_antennas,
         array_location=read_array_earth_location(fits_path), source_table=read_source_table(fits_path),
-        telescope=_header_keyword(fits_path, "TELESCOP"), bunit=_header_keyword(fits_path, "BUNIT"),
-        time_reference=read_time_reference(fits_path),
+        telescope=telescope, bunit=_header_keyword(fits_path, "BUNIT"),
+        time_reference=read_time_reference(fits_path), dud_antennas=antennas.dud_antennas,
     )
 
 
@@ -261,7 +268,8 @@ class PreparedRun:
             for name in self.plot_names:
                 if name == "antenna-layout":
                     figures.append((name, antenna_layout(f.antennas, f.array_location, telescope=f.telescope,
-                                                         source_path=f.fits_path, theme=theme)))
+                                                         source_path=f.fits_path, theme=theme,
+                                                         left_out=[a.name for a in f.dud_antennas])))
                 elif name == "source-listing":
                     figures.append((name, source_listing(f.source_table, theme=theme)))
                 else:

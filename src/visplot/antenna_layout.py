@@ -318,6 +318,7 @@ def _place_labels_without_overlap(
 def antenna_layout(
     antennas: list[Antenna], array_location: EarthLocation,
     telescope: str | None = None, source_path: str | Path | None = None, theme: str = DEFAULT_PLOT_THEME,
+    left_out: list[str] | tuple[str, ...] = (),
 ) -> Figure:
     """Antenna positions in local East-North metres, relative to
     `array_location`, labeled by name. Adds a zoomed inset over the compact
@@ -328,7 +329,9 @@ def antenna_layout(
     UVFITS file this was read from) are both optional and purely for the
     title -- this function still does no file I/O of its own; a caller
     reads these once from the file it already opened and passes them in.
-    `theme` is the --plot-theme (`visplot.plot_theme`)."""
+    `theme` is the --plot-theme (`visplot.plot_theme`). `left_out` names the
+    AN table's structural DUD entries the caller left out of `antennas`
+    (`instruments.structural_duds`); a footnote names them."""
     colors = plot_theme(theme)
     marker = readable("tab:blue", colors)
     x_m = np.array([a.x_m for a in antennas])
@@ -357,6 +360,9 @@ def antenna_layout(
     ax.set_title(title)
     color_axes(ax, colors)
     ax.grid(True, alpha=0.3, color=colors.grid)
+    if left_out:
+        fig.text(0.02, 0.015, f"Left out: {', '.join(left_out)}, structural DUD entries of the AN table",
+                 fontsize=8, color=colors.panel_label, ha="left", va="bottom")
 
     axins = None
     core_mask = _detect_compact_core_mask(east_m, north_m)

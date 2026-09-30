@@ -2,8 +2,8 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36, T37, T39 and T41 2026-09-29, T33 2026-09-30, 459 tests passing; T26,
-T32 in progress; T38, T40, T42, T43, point D, T20, T21 open (order in Phase B); T35 (Moon
+2026-09-29, T36, T37, T39 and T41 2026-09-29, T33 and T43 2026-09-30, 462 tests passing;
+T26, T32 in progress; T38, T40, T42, point D, T20, T21 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -1023,7 +1023,8 @@ Buildable now, ahead of Phase C.
   `legacy_gsb_40_014/bandpass_and_flag_table_spec.md`); one apply path serves plotting
   and the calibrated split (stage 6 of the user's outline, 2026-09-25).
 
-- **T43 — visplot leaves the structural DUD entries in — OPEN (found 2026-09-30).** The
+- **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
+  2026-09-30).** The
   GSB file's antenna layout drew 32 antennas and put its inset on three points 1 m apart,
   W06:30, C07:31 and S05:32: C07 and S05 are GMRT's structural DUD entries
   (`GMRT_STRUCTURAL_DUD_NAMES`), placeholders appended after the 30 stations. The user:
@@ -1033,6 +1034,17 @@ Buildable now, ahead of Phase C.
   counts antennas from the rows and is right. Fix: `open_file` leaves out the
   telescope's structural DUD entries (GMRT's from `instruments.gmrt`), kept as
   `dud_antennas`; the layout draws the 30 and names the entries left out.
+  Built: `instruments/structural_duds.py` maps TELESCOP to its structural DUD names (as
+  `instruments/observatory_time_zones.py` maps it to a time zone) and splits a table
+  with `resolve_active_antennas`; `open_file` keeps `antennas` without them and
+  `dud_antennas`; the layout's footnote reads "Left out: C07:31, S05:32, structural DUD
+  entries of the AN table". Neither file's rows reference stations 31 or 32 (checked
+  against both row indexes), so no selection changes. The GSB layout now draws 30
+  antennas with its inset on the central square; the GWB layout (no DUD entries in its
+  table) is pixel for pixel as before. `--antennas C07` on the GSB file is refused as no
+  antenna of the file. Tests: the lookup by TELESCOP; a GMRT table losing its DUD
+  entries, another telescope's keeping every entry; the GSB file opened with 30
+  antennas, C07 refused, the layout drawing 30 with its footnote.
 
 - **T20 fits here too:** its file summary (channel width, integration time, sources,
   dates) belongs in the GUI's data panel. The user (2026-09-30): the data panel already
