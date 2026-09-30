@@ -128,6 +128,12 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         given = [name for name, value in samplers.items() if value is not None]
         if len(given) > 1:
             raise ValueError(f"give one of --every-nth, --every-nth-integration, --random-subset-n; got {', '.join(given)}")
+        if request.baselines_with and not request.antennas:
+            raise ValueError("--baselines-with needs --antennas: the baselines between one of --antennas and one of "
+                             "--baselines-with")
+        if request.baselines_with and request.correlation_type == "auto":
+            raise ValueError("--baselines-with narrows cross-correlations; with --correlation-type auto, --antennas "
+                             "alone chooses whose autocorrelations")
         for name in given:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
@@ -317,6 +323,8 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
 
     selected = select(request, opened, recorded_minus_utc_s)
     selection, axis_selection, stokes_labels = selected.selection, selected.axis_selection, selected.stokes_labels
+    if xy_plots and not selection.n_rows:
+        raise RequestError(empty_selection_message(request, index, selected.kwargs))
     report("info", f"selected {selection.n_rows:,} rows; sources present: {selection.sources}")
     if selection.stride_pairs is not None and selection.stride_pairs[0] < selection.stride_pairs[1]:
         kept, available = selection.stride_pairs
@@ -372,6 +380,7 @@ class Selected:
     axis_selection: dict | None  # FREQ / STOKES indices; None: every channel and Stokes
     stokes_labels: list[str]  # of the selected Stokes
     geometry_filters: bool  # hour angle, Az/El or parallactic angle filters given
+    kwargs: dict  # the `select_rows` arguments
 
 
 def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float) -> Selected:
@@ -386,6 +395,7 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
             sources=[s.strip() for s in request.sources.split(",")] if request.sources else None,
             correlation_type=request.correlation_type,
             antennas=resolve_antennas_arg(request.antennas, opened.antennas),
+            baselines_with=resolve_antennas_arg(request.baselines_with, opened.antennas),
             exclude_antennas=resolve_antennas_arg(request.exclude_antennas, opened.antennas),
             jd_range=resolve_time_range_arg(request.time_range, float(index.jd.min()), recorded_minus_utc_s),
             uvdist_range_m=resolve_uvdist_range_arg(request.uvdist_range),
@@ -423,7 +433,46 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
     stokes_labels = list(index.stokes_labels or [])
     if stokes_indices is not None:
         stokes_labels = [stokes_labels[i] for i in stokes_indices]
-    return Selected(selection, axis_selection or None, stokes_labels, geometry_filters)
+    return Selected(selection, axis_selection or None, stokes_labels, geometry_filters, select_kwargs)
+
+
+# The row filters in the command line's order: each option and the `select_rows` arguments it gives.
+_ROW_FILTERS = (
+    ("sources", ("sources",)), ("correlation_type", ("correlation_type",)),
+    ("antennas", ("antennas", "baselines_with")), ("exclude_antennas", ("exclude_antennas",)),
+    ("time_range", ("jd_range",)), ("uvdist_range", ("uvdist_range_m",)), ("u_range_klambda", ("u_range_klambda",)),
+    ("v_range_klambda", ("v_range_klambda",)), ("w_range_klambda", ("w_range_klambda",)),
+    ("uvdist_range_klambda", ("uvdist_range_klambda",)), ("ha_range", ("ha_range_hours",)),
+    ("az_range", ("az_range_deg",)), ("el_range", ("el_range_deg",)), ("pa_range", ("parallactic_angle_range_deg",)),
+)
+# What the filters are evaluated with, and never select rows by themselves.
+_FILTER_CONTEXT = ("freq_range_hz", "source_table", "array_location", "recorded_minus_utc_s")
+
+
+def empty_selection_message(request: PlotRequest, index, kwargs: dict) -> str:
+    """Why `kwargs` (a request's `select_rows` arguments) select no rows: the
+    request's row filters applied one at a time, in the command line's
+    order, from every row of the file; the first after which none are left
+    is named, with the number of rows it had (a correlation type the file
+    has no rows of, as that)."""
+    applied = {"correlation_type": "both", **{k: kwargs[k] for k in _FILTER_CONTEXT if k in kwargs}}
+    n_before = index.gcount
+    for dest, keys in _ROW_FILTERS:
+        if all(kwargs.get(k) is None for k in keys):
+            continue
+        applied.update({k: kwargs[k] for k in keys})
+        n = select_rows(index, **applied).n_rows
+        if n:
+            n_before = n
+            continue
+        option = f"--{dest.replace('_', '-')} {getattr(request, dest)}"
+        if dest == "antennas" and request.baselines_with:
+            option += f" --baselines-with {request.baselines_with}"
+        if dest == "correlation_type" and not select_rows(index, correlation_type=request.correlation_type).n_rows:
+            kind = "autocorrelation" if request.correlation_type == "auto" else "cross-correlation"
+            return f"no rows selected: this file has no {kind} rows ({option})"
+        return f"no rows selected: {option} leaves none of the {n_before:,} rows selected before it"
+    return "no rows selected"
 
 
 @dataclass(frozen=True)
@@ -445,6 +494,8 @@ def count_selection(request: PlotRequest, opened: OpenedFile) -> SelectionCount:
     except ValueError as err:
         raise RequestError(str(err)) from err
     selected = select(request, opened, recorded_minus_utc_s)
+    if not selected.selection.n_rows and check_request(request).plots_by_name:  # streamed plots need rows
+        raise RequestError(empty_selection_message(request, opened.index, selected.kwargs))
     source = XYSource(request.fits_path, opened.index, selected.selection.row_indices, selected.axis_selection,
                       ctx=None, chunk_bytes=0)
     return SelectionCount(source.n_rows, source.samples_per_row, source.n_rows * source.row_bytes / 1e9)

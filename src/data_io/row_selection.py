@@ -111,6 +111,7 @@ def select_rows(
     integration_range: tuple[int, int] | None = None,
     jd_range: tuple[float, float] | None = None,
     antennas: list[int] | None = None,
+    baselines_with: list[int] | None = None,
     exclude_antennas: list[int] | None = None,
     baselines: list[tuple[int, int]] | None = None,
     exclude_baselines: list[tuple[int, int]] | None = None,
@@ -141,6 +142,19 @@ def select_rows(
     `correlation_type` defaults to "cross" (excluding autocorrelations),
     matching the pipeline-wide default; pass "auto" or "both" explicitly
     to include them.
+
+    Antennas by station number, as AIPS's ANTENNAS and BASELINE adverbs
+    and CASA's antenna selection read them: `antennas` alone keeps every row
+    with one of them (AIPS's "(I in ANTE) .OR. (J in ANTE)"; CASA's
+    antenna='1,2'), so one antenna keeps its baselines to every other;
+    `baselines_with` (it needs `antennas`) narrows the cross-correlations
+    to those between one of `antennas` and one of its own (AIPS's
+    "((I in ANTE) .AND. (J in BASE)) .OR. ((I in BASE) .AND. (J in ANTE))";
+    CASA's '1,2&3,4'), the same list in both keeping the baselines among
+    them. An autocorrelation has one antenna: it is kept when that antenna
+    is in `antennas` (and `correlation_type` keeps autocorrelations), so
+    `baselines_with` is refused with "auto". `exclude_antennas` drops every
+    row with one of them.
 
     `u_range_klambda`/`v_range_klambda`/`w_range_klambda`/`uvdist_range_klambda`
     filter by each row's exact achievable range in kilo-wavelengths across
@@ -213,8 +227,18 @@ def select_rows(
         lo, hi = jd_range
         mask &= (index.jd >= lo) & (index.jd <= hi)
 
+    if baselines_with is not None and antennas is None:
+        raise ValueError("baselines_with needs antennas: the baselines between one of antennas and one of its own")
+    if baselines_with is not None and correlation_type == "auto":
+        raise ValueError("baselines_with narrows cross-correlations; an autocorrelation's one antenna is chosen "
+                         "by antennas alone")
     if antennas is not None:
-        mask &= np.isin(index.ant1, antennas) & np.isin(index.ant2, antennas)
+        in_a1, in_a2 = np.isin(index.ant1, antennas), np.isin(index.ant2, antennas)
+        if baselines_with is None:
+            mask &= in_a1 | in_a2
+        else:
+            in_b1, in_b2 = np.isin(index.ant1, baselines_with), np.isin(index.ant2, baselines_with)
+            mask &= np.where(index.ant1 == index.ant2, in_a1, (in_a1 & in_b2) | (in_b1 & in_a2))
 
     if exclude_antennas is not None:
         mask &= ~(np.isin(index.ant1, exclude_antennas) | np.isin(index.ant2, exclude_antennas))

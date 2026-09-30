@@ -440,3 +440,22 @@ def test_a_table_plot_is_drawn_in_the_plot_theme():
     ((name, fig),) = window.tabs.currentWidget().run.figures()
     assert name == "antenna-layout" and fig.get_facecolor() == to_rgba(PLOT_THEMES["dark"].figure_face)
     window.close()
+
+
+def test_baselines_with_is_frozen_for_autocorrelations_and_an_empty_selection_disables_plot():
+    app, window, _ = _window("gui_antenna_options")
+    form = window.form
+    form.antennas.setText("C00")
+    form.baselines_with.setText("C02")
+    _settle(app, window, lambda: window.plot_button.isEnabled())
+    assert form.request().baselines_with == "C02"
+    form.fields["correlation_type"].set("auto")
+    assert not form.baselines_with.isEnabled() and form.request().baselines_with is None  # frozen: left out
+    form.fields["correlation_type"].set("cross")
+    assert form.baselines_with.isEnabled() and form.request().baselines_with == "C02"
+
+    form.baselines_with.setText("C00")  # C00 with itself: no cross-correlation
+    _settle(app, window, lambda: window.counts.text().startswith("selection: "))
+    assert "no rows selected: --antennas C00 --baselines-with C00" in window.counts.text()
+    assert not window.plot_button.isEnabled() and "no rows selected" in window.plot_button.toolTip()
+    window.close()

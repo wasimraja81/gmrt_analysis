@@ -9,13 +9,14 @@ from visplot.request import PATH_OPTIONS, PlotRequest, build_arg_parser, request
 def _every_kind_of_value():
     return PlotRequest(
         "tmp/obs.fits", "amp-vs-uvdist,ha-range", sources="3C286,3C48", correlation_type="both",
-        antennas="1:5,W01", exclude_antennas="C00", time_range="2021-07-25T17:00:00/2021-07-25T18:00:00",
+        antennas="1:5,W01", baselines_with="C01", exclude_antennas="C00",
+        time_range="2021-07-25T17:00:00/2021-07-25T18:00:00",
         uvdist_range="0:5km", u_range_klambda="-5:5", ha_range="-2:2", every_nth=3, channels="400:450MHz",
         stokes="RR,LL", point_size=0.25, color="k", colorize_by="stokes", show_flagged=True, mirror=True,
         x_unit="Mlambda", y_unit="UNCALIB", time_zone="Asia/Kolkata", x_range="0:40", y_range_mode="percentile",
         range_percentiles="1:99", y_scale="asinh", aspect="free", scale_linear_width=0.1, output_dir="tmp/out",
         output_prefix="run1", no_highres_pdf=True, dpi=300, figure_size="10.5,7.25", cache_dir="tmp/cache", threads=3,
-        panel_font="dejavu-sans",
+        panel_font="dejavu-sans", plot_theme="dark",
     )
 
 

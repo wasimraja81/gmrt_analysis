@@ -422,8 +422,11 @@ class VisplotWindow(QtWidgets.QMainWindow):
                                     f"samples\n{count.gigabytes:.1f} GB of visibilities to read for a data plot")
 
         def failed(message):
-            if generation == self._count_generation:
+            if generation == self._count_generation:  # e.g. no rows selected, and why: nothing to plot or save
                 self.counts.setText(f"selection: {message}")
+                for control in (self.plot_button, self.save_action):
+                    control.setEnabled(False)
+                    control.setToolTip(message)
 
         self.counts.setText("counting …")
         self._start(lambda: count_selection(request, opened), done, failed)

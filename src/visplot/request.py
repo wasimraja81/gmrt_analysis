@@ -147,10 +147,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     sel.add_argument(
         "--antennas",
-        help="keep baselines involving these antennas: ids, full names, or GMRT code "
-        "prefixes, e.g. '1:5,10,W01:25,C00' (default: all)",
+        help="keep every baseline with one of these antennas (one antenna: its baselines to all others), and "
+        "their autocorrelations where --correlation-type keeps them; as AIPS's ANTENNAS and CASA's antenna='A,B': "
+        "ids, full names, or GMRT code prefixes, e.g. '1:5,10,W01:25,C00' (default: all)",
     )
-    sel.add_argument("--exclude-antennas", help="drop baselines involving these antennas (same syntax as --antennas)")
+    sel.add_argument(
+        "--baselines-with",
+        help="with --antennas, keep only the cross-correlation baselines between one of --antennas and one of "
+        "these (the same list in both: the baselines among them), as AIPS's BASELINE and CASA's antenna='A&B' "
+        "(same syntax as --antennas); refused with --correlation-type auto, where --antennas alone chooses whose "
+        "autocorrelations",
+    )
+    sel.add_argument(
+        "--exclude-antennas", help="drop every baseline with at least one of these antennas (same syntax as --antennas)",
+    )
     sel.add_argument(
         "--time-range",
         help="'lo:hi' in hours from the first integration in the file ('h' suffix optional), "

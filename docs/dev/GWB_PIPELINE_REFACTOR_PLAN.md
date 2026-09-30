@@ -2,9 +2,9 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36, T37, T39 and T41 2026-09-29, T33 and T43 2026-09-30, 462 tests passing;
-T26, T32 in progress; T38, T40, T42, point D, T20, T21 open (order in Phase B); T35 (Moon
-scans' u, v, w) open, parked until the Moon is imaged.
+2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, 467 tests
+passing; T26, T32 in progress; T38, T40, T42, T45, T46, point D, T20, T21 open (order in
+Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -1023,6 +1023,27 @@ Buildable now, ahead of Phase C.
   `legacy_gsb_40_014/bandpass_and_flag_table_spec.md`); one apply path serves plotting
   and the calibrated split (stage 6 of the user's outline, 2026-09-25).
 
+- **T45 — Averaging, scalar and vector, of the selected visibilities — OPEN (user,
+  2026-09-30).** "I find it useful to check visibilities of point sources - vector
+  averaging across baseline and time directly shows the spectra of the source! Very
+  handy as diagnostic." Averaging over time (an interval, or all), baselines and channels
+  (a bin width), per Stokes: vector (amplitude and phase of the weighted mean complex
+  visibility) or scalar (the weighted mean amplitude), flagged visibilities left out; as
+  AIPS's POSSM and plotms's averaging. In the streaming design: a reducer accumulating
+  weighted sums per output bin (memory set by the number of bins), the averages then
+  plotted as any Y vs X. Across baselines, a vector average of uncalibrated visibilities
+  decorrelates (each baseline carries its two antennas' instrumental phases); with T42's
+  calibration applied it gives the source's spectrum. The user asked whether to club it
+  with T42: a ticket of its own, since averaging serves raw data now (in time per
+  baseline, scalar across baselines), and the two are stages of one path -- select,
+  apply calibration (T42), average (T45), plot. To be designed with the user.
+
+- **T46 — Gain tables plotted — OPEN (user, 2026-09-30).** "we want our tool to also be
+  able to plot gain tables - so we shall discuss the layout for gain tables." The layout
+  to be discussed with the user. The archived pipeline's bandpass `.npz`
+  (`legacy_gsb_40_014/bandpass_and_flag_table_spec.md`) can be read now; the new
+  solver's tables come with Phase C, as T42's do.
+
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
   GSB file's antenna layout drew 32 antennas and put its inset on three points 1 m apart,
@@ -1045,6 +1066,42 @@ Buildable now, ahead of Phase C.
   antenna of the file. Tests: the lookup by TELESCOP; a GMRT table losing its DUD
   entries, another telescope's keeping every entry; the GSB file opened with 30
   antennas, C07 refused, the layout drawing 30 with its footnote.
+
+- **T44 — Antenna selection: the convention, and an empty selection said — DONE (user,
+  2026-09-30; built the same day).** The user: one antenna selected, amp vs uv distance,
+  cross or auto: "I get nothing ... I would want some message to be printed"; and with
+  C1, C2, C3 and
+  cross, "cross only between the 3? Or cross of those 3 with all others?" The code
+  (`select_rows`) keeps a row when both its antennas are in `--antennas`: only the
+  baselines among those listed, so one antenna selects nothing with cross; while
+  `--antennas`' help says "keep baselines involving these antennas". Neither file has
+  autocorrelation rows (GSB 0 of 1,312,794; GWB, T39), so auto selects nothing. An empty
+  selection reports "selected 0 rows" as information and draws an empty plot. The
+  conventions, checked 2026-09-30: CASA's `antenna='1,2,3'` selects all baselines
+  including those antennas, `'1,2,3&'` only those among them; AIPS's BASELINE help
+  defines ANTENNAS with BASELINE=0 as "(I in ANTE) .OR. (J in ANTE)" (its example 2's
+  wording, "baselines between antennas 1 through 6", reads the other way; example 3,
+  the negated list, fits the rule). `--exclude-antennas` already drops a baseline with
+  either antenna listed.
+  The user's decisions: `--antennas` follows the convention (every baseline with one of
+  them); for a narrower selection, the user's design, AIPS's ANTENNAS x BASELINE and
+  CASA's 'A&B': `--baselines-with` keeps only the cross-correlation baselines between
+  one of `--antennas` and one of its own -- the same list in both gives the baselines
+  among them; it needs `--antennas`. An autocorrelation has one antenna, chosen by
+  `--antennas`; `--correlation-type` stays the one switch for autocorrelations, and with
+  `auto`, `--baselines-with` is refused (the user: "if we select corr="auto", the
+  baselines-with should be frozen"; the GUI's field is disabled and its text left out of
+  the request). All nC2 baselines remain the default (no antenna options). A plot
+  whose selection is empty stops before reading, naming the filter that emptied it: the
+  filters applied one at a time in the command line's order, e.g. "no rows selected:
+  --antennas C00 --baselines-with C00 leaves none of the 22,680 rows selected before it",
+  or "this file has no autocorrelation rows (--correlation-type auto)"; table plots,
+  which read no rows, still plot. The GUI shows it under the count and disables Plot and
+  Save with it. On the GSB file, 3C286: `--antennas C00`, 1,620 rows (27 baselines x 60
+  integrations); with `--baselines-with C01,C02`, 120; `--antennas C00,C01,C02`, 4,680
+  (78 baselines); with the same list as `--baselines-with`, 180 (3). Tests: the rules in
+  `select_rows`; the counts, the messages and the refusals on the synthetic file; the
+  GUI's frozen field and disabled Plot.
 
 - **T20 fits here too:** its file summary (channel width, integration time, sources,
   dates) belongs in the GUI's data panel. The user (2026-09-30): the data panel already

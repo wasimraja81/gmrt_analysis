@@ -89,10 +89,26 @@ def test_select_rows_by_jd_range():
     np.testing.assert_array_equal(sel.row_indices, [3, 4, 5, 6])
 
 
-def test_select_rows_by_antennas_include_list():
+def test_select_rows_by_antennas_keeps_every_row_with_one_of_them():
     index = _make_index()
     sel = select_rows(index, correlation_type="both", antennas=[1, 2])
-    np.testing.assert_array_equal(sel.row_indices, [0, 2, 3, 6, 8])
+    np.testing.assert_array_equal(sel.row_indices, [0, 1, 2, 3, 5, 6, 7, 8])  # all but 3-3
+    one = select_rows(index, antennas=[1])  # cross: antenna 1's baselines to every other
+    np.testing.assert_array_equal(one.row_indices, [0, 1, 3, 8])
+
+
+def test_select_rows_baselines_with_narrows_the_cross_correlations_and_autos_follow_antennas():
+    index = _make_index()  # rows: 1-2, 1-3, 2-2, 1-2, 3-3, 2-3, 1-1, 2-3, 1-2, 3-3
+    np.testing.assert_array_equal(select_rows(index, antennas=[1], baselines_with=[3]).row_indices, [1])
+    among = select_rows(index, antennas=[1, 2], baselines_with=[1, 2])  # the same list: the baselines among them
+    np.testing.assert_array_equal(among.row_indices, [0, 3, 8])
+    both = select_rows(index, correlation_type="both", antennas=[1], baselines_with=[2])
+    np.testing.assert_array_equal(both.row_indices, [0, 3, 6, 8])  # 1-2 three times, and antenna 1's auto
+    np.testing.assert_array_equal(select_rows(index, correlation_type="auto", antennas=[3]).row_indices, [4, 9])
+    with pytest.raises(ValueError, match="needs antennas"):
+        select_rows(index, baselines_with=[2])
+    with pytest.raises(ValueError, match="narrows cross-correlations"):
+        select_rows(index, correlation_type="auto", antennas=[1], baselines_with=[1])
 
 
 def test_select_rows_by_exclude_antennas():

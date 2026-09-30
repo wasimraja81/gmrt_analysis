@@ -53,7 +53,8 @@ _LABELS = ("Stokes", "Sources", "Channels", "Baselines", "Time", "Selection", "D
 _ORDINAL = {1: "st", 2: "nd", 3: "rd"}
 
 # Row filters of a request, as the panel names them.
-_FILTERS = (("antennas", "antennas {}"), ("exclude_antennas", "excluding {}"), ("time_range", "time {}"),
+_FILTERS = (("antennas", "antennas {}"), ("baselines_with", "baselines with {}"), ("exclude_antennas", "excluding {}"),
+            ("time_range", "time {}"),
             ("uvdist_range", "uv distance {}"), ("u_range_klambda", "u {} kλ"), ("v_range_klambda", "v {} kλ"),
             ("w_range_klambda", "w {} kλ"), ("uvdist_range_klambda", "uv distance {} kλ"),
             ("ha_range", "hour angle {}"), ("az_range", "azimuth {}"), ("el_range", "elevation {}"),

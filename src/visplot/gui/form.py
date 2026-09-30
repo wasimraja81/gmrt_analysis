@@ -375,6 +375,14 @@ class RequestForm(QtWidgets.QWidget):
         form.addRow("Channels", self._add(text_field("channels", self.channels)))
         self.antennas = CheckedLineEdit("all; e.g. 1:5,W01:25,C00", self._check_antennas)
         form.addRow("Antennas", self._add(text_field("antennas", self.antennas)))
+        # Frozen with autocorrelations, whose one antenna Antennas chooses: its text then stays out of the request.
+        self.baselines_with = CheckedLineEdit("all; with Antennas, e.g. C01,C02", self._check_antennas)
+        baselines_field = text_field("baselines_with", self.baselines_with)
+        get_text = baselines_field.get
+        baselines_field.get = lambda: get_text() if self.baselines_with.isEnabled() else None
+        form.addRow("Baselines with", self._add(baselines_field))
+        correlation.currentIndexChanged.connect(
+            lambda _: self.baselines_with.setEnabled(correlation.currentData() != "auto"))
         self.exclude = CheckedLineEdit("none", self._check_antennas)
         form.addRow("Exclude", self._add(text_field("exclude_antennas", self.exclude)))
         self.time_range = CheckedLineEdit("all; e.g. 0:0.5 (h from start)", self._check_time_range)
@@ -565,7 +573,7 @@ class RequestForm(QtWidgets.QWidget):
                                      else f"none known for TELESCOP {opened.telescope!r}: give one for local time")
         self.x.fill_units()
         self.y.fill_units()
-        for edit in (self.channels, self.antennas, self.exclude, self.time_range):
+        for edit in (self.channels, self.antennas, self.baselines_with, self.exclude, self.time_range):
             edit.set_check(edit._check)
 
     def _check_channels(self, text: str) -> str | None:
