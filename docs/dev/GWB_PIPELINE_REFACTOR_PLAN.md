@@ -2,8 +2,8 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38, T48
-and T49 2026-10-01, 474 tests passing; T26, T32 in progress; T40, T42, T45-T47, point
+2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
+T47-T49 2026-10-01, 480 tests passing; T26, T32 in progress; T40, T42, T45, T46, point
 D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1056,14 +1056,39 @@ Buildable now, ahead of Phase C.
   (`legacy_gsb_40_014/bandpass_and_flag_table_spec.md`) can be read now; the new
   solver's tables come with Phase C, as T42's do.
 
-- **T47 — Elevation below the horizon or the elevation limit, marked — OPEN (user,
-  2026-10-01).** "Do we need negative elevations? Below elevation limit is a red flag
-  already. So we may not need anything below 0, but if the calculation show el < 0 (or
-  elLimit when present), we should show some warning (red Cross?) for those points ? The
-  markers can remain at el=0 line." The `az-el-range` preset draws -90 to 90 degrees
-  with a dashed horizon at 0; a value outside a plot's range is counted in the panel's
-  "outside the axis ranges" and left out. No elevation limit is known to the code yet.
-  To be designed with the user.
+- **T47 — Elevation below the horizon or the elevation limit, marked — DONE (user,
+  2026-10-01; built the same day).** "Do we need negative elevations? Below elevation
+  limit is a red flag already. So we may not need anything below 0, but if the
+  calculation show el < 0 (or elLimit when present), we should show some warning (red
+  Cross?) for those points ? The markers can remain at el=0 line." The `az-el-range`
+  preset drew -90 to 90 degrees with a dashed horizon at 0; no elevation limit was known
+  to the code.
+  The user's decisions: GMRT's hardware limits, 15 degrees low and 110 high; one floor
+  (the limit, the horizon only for a telescope with none known); "using el values as
+  they appear ..., but have provision to warn if they exceed 110, or go below 15!
+  Simple"; ▼ in the point's own color, red staying with flags. The elevations are
+  computed (source position, array position, time), so they lie within -90 to 90 and
+  only the low limit can mark one; neither file has antenna pointing (PRIMARY, AN, FQ, SU;
+  u, v, w, baseline, date, source, frequency setup).
+  Built: `instruments/elevation_limits.py` (TELESCOP to (low, high); GMRT 15, 110; else
+  0, 90); `run.with_elevation_limits` gives any plot with elevation on an axis a
+  `PlotSpec.limits` in that axis's unit, drawn as dashed lines. `GridReducer` keeps the
+  unflagged points beyond them at their values in two more grids, placed on the grid's
+  edge where they lie beyond it, counted by category with their extreme value;
+  `XYFigure` draws them as ▼ (below) or ▲ (above) in their own color, under flagged
+  crosses; the panel's Limits line reads e.g. "below 25°: 8,694 points (MOON0605 1,890,
+  DA240 1,890, 3C468.1 1,512, and 4 more sources), lowest 17.9°", in the warning color,
+  else "none below 15° or above 110°"; a save prints it as a warning, and the window
+  reports it once per plot. Every elevation axis shows the sky, 0 to 90 degrees, unless
+  a range is given (the user: "why not make el axis show from 0 upwards? And mark that
+  dashed line if the el limit is known"; then the top at the zenith), the dashed lines
+  drawn where the telescope's limits are known; a fixed range holds from the start (the
+  empty axes had stretched to the 110-degree line before the first drawing, which the
+  user saw as a 0-100 view). On the GSB file every
+  source stays above 15 degrees (lowest about 18, 3C48 and MOON0635); a test limit of 25
+  degrees drew and warned of seven sources. Tests: the table; the grids, edge placement
+  and counts; the panel's text and color and the triangles; the limits in an axis's
+  unit, on x or y.
 
 - **T48 — Time tick labels: tilted, and a choice of formats — DONE (user, 2026-10-01;
   built the same day).** "On the time axis - can we tilt the time string - that adds to

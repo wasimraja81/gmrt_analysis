@@ -354,7 +354,13 @@ class GridReducer:
     plot's samples fall in, and which layer drew there last in paint order:
     category code + 1 (ascending codes paint later), flagged samples on top.
     One int16 per pixel, whatever the number of categories; adding the same
-    samples twice leaves it unchanged."""
+    samples twice leaves it unchanged.
+
+    A plot with `limits` (T47) keeps its unflagged samples beyond them in
+    two more grids of the same kind, `below` and `above` (drawn as ▼ and ▲),
+    placed on the grid's edge where they lie beyond it, and counts them by
+    category with their lowest (below) or highest (above) value:
+    `beyond[kind][code] = [count, extreme]`."""
 
     def __init__(self, plot: PlotSpec, x_extent, y_extent, height: int, width: int):
         self.plot = plot
@@ -368,17 +374,30 @@ class GridReducer:
         self._tx = tuple(float(t) for t in self.x_scale.forward(np.array(self.x_extent)))
         self._ty = tuple(float(t) for t in self.y_scale.forward(np.array(self.y_extent)))
         self.layers = np.zeros(height * width, dtype=np.int16)
+        self.below = np.zeros(height * width, dtype=np.int16) if plot.limits else None
+        self.above = np.zeros(height * width, dtype=np.int16) if plot.limits else None
+        self.beyond: dict[str, dict[int, list]] = {"below": {}, "above": {}}
         self.seen_codes: set[int] = set()
         self.n_samples = 0
         self.n_outside = 0  # samples outside the extent, or not showable on the axis scale
         self._lock = threading.Lock()  # apply() and snapshot() may run on different threads
 
     def compute(self, values: ChunkValues):
-        """This chunk's samples as (pixel, code, flagged) inside the grid, or
-        None if none fall inside. Safe to call from worker threads."""
+        """This chunk's samples as (pixel, code, flagged, n_outside, kind,
+        beyond) inside the grid (`kind`: 0, or 1 below / 2 above the plot's
+        limits, None without limits; `beyond`: their counts and extreme
+        values by category, as `self.beyond` holds them), or None if none
+        fall inside. Safe to call from worker threads."""
         x, y, code, flagged = values.samples(self.plot)
         if x.size == 0:
             return None
+        kind = None
+        if self.plot.limits:
+            axis, low, high = self.plot.limits
+            v = y if axis == "y" else x
+            kind = np.where(v < low, 1, np.where(v > high, 2, 0)).astype(np.int8)
+            if flagged is not None:
+                kind[flagged] = 0  # a flagged sample is drawn as flagged
         (x0, x1), (y0, y1) = self._tx, self._ty
         # Pixel coordinates in place: one temporary per axis (after the
         # scale's transform, for a non-linear axis).
@@ -387,6 +406,10 @@ class GridReducer:
             ty = y - y0 if self.y_scale.is_linear else self.y_scale.forward(y) - y0
             tx *= self.width / (x1 - x0)
             ty *= self.height / (y1 - y0)
+            if kind is not None and kind.any():  # beyond a limit and the grid's edge: on the edge
+                t, size = (ty, self.height) if self.plot.limits[0] == "y" else (tx, self.width)
+                t[kind == 1] = np.maximum(t[kind == 1], 0.0)
+                t[kind == 2] = np.minimum(t[kind == 2], float(size))
             inside = tx >= 0
             inside &= tx <= self.width
             inside &= ty >= 0
@@ -399,15 +422,28 @@ class GridReducer:
             np.minimum(ix, self.width - 1, out=ix)
             pixel += ix
         del tx, ty, ix
+        values_beyond = None
+        if kind is not None:
+            values_beyond = y if self.plot.limits[0] == "y" else x
         if not inside.all():
             pixel = pixel[inside]
             code = code[inside] if code is not None else None
             flagged = flagged[inside] if flagged is not None else None
+            kind = kind[inside] if kind is not None else None
+            values_beyond = values_beyond[inside] if values_beyond is not None else None
         if pixel.size == 0:
-            return None if not n_outside else (pixel, code, flagged, n_outside)
+            return None if not n_outside else (pixel, code, flagged, n_outside, None, None)
         if code is not None and code.max() + 1 >= FLAGGED_LAYER:
             raise ValueError(f"category code {code.max()} too large for the layer grid")
-        return pixel, code, flagged, n_outside
+        beyond = None
+        if kind is not None and kind.any():
+            codes = code if code is not None else np.zeros(kind.size, dtype=np.int64)
+            beyond = {}
+            for k, name, extreme in ((1, "below", np.min), (2, "above", np.max)):
+                for c in np.unique(codes[kind == k]):
+                    chosen = (kind == k) & (codes == c)
+                    beyond.setdefault(name, {})[int(c)] = [int(chosen.sum()), float(extreme(values_beyond[chosen]))]
+        return pixel, code, flagged, n_outside, kind, beyond
 
     def apply(self, result) -> None:
         """Write one block's samples into the grid (one thread only)."""
@@ -417,10 +453,29 @@ class GridReducer:
             self._apply(result)
 
     def _apply(self, result) -> None:
-        pixel, code, flagged, n_outside = result
+        pixel, code, flagged, n_outside, kind, beyond = result
         self.n_outside += n_outside
         if pixel.size == 0:
             return
+        if kind is not None and kind.any():
+            for k, grid in ((1, self.below), (2, self.above)):
+                chosen = kind == k
+                for c in (np.unique(code[chosen]) if code is not None else [0]):
+                    sel = pixel[chosen] if code is None else pixel[chosen & (code == c)]
+                    grid[sel] = np.maximum(grid[sel], c + 1)
+            for name, counts in beyond.items():
+                for c, (n, extreme) in counts.items():
+                    seen = self.beyond[name].setdefault(c, [0, extreme])
+                    seen[0] += n
+                    seen[1] = min(seen[1], extreme) if name == "below" else max(seen[1], extreme)
+            self.seen_codes.update(int(c) for c in (np.unique(code[kind > 0]) if code is not None else [0]))
+            self.n_samples += int((kind > 0).sum())
+            keep = kind == 0
+            pixel = pixel[keep]
+            code = code[keep] if code is not None else None
+            flagged = flagged[keep] if flagged is not None else None
+            if pixel.size == 0:
+                return
         if code is None and flagged is None and not self.plot.show_flagged:
             self.layers[pixel] = 1  # one layer, nothing above it: direct writes
             self.seen_codes.add(0)
@@ -448,12 +503,16 @@ class GridReducer:
         with self._lock:
             copy = _copy.copy(self)
             copy.layers = self.layers.copy()
+            copy.below = self.below.copy() if self.below is not None else None
+            copy.above = self.above.copy() if self.above is not None else None
+            copy.beyond = {name: {c: list(v) for c, v in counts.items()} for name, counts in self.beyond.items()}
             copy.seen_codes = set(self.seen_codes)
         return copy
 
-    def layers_2d(self) -> np.ndarray:
-        """The layer grid as (height, width), row 0 at the bottom (y0)."""
-        return self.layers.reshape(self.height, self.width)
+    def layers_2d(self, grid: np.ndarray | None = None) -> np.ndarray:
+        """The layer grid (or `grid`: `below`, `above`) as (height, width),
+        row 0 at the bottom (y0)."""
+        return (self.layers if grid is None else grid).reshape(self.height, self.width)
 
 
 LOCATE_FIELDS = ("row", "ant1", "ant2", "jd", "source_id", "channel", "freq_hz", "stokes",

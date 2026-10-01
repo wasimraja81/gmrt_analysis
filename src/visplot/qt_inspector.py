@@ -276,6 +276,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
                     panel.drawn = True
                     self.to_draw.discard(plot)
                     self._render(panel, final=True)
+                    if first and self.report is not None and panel.figure.limits_warning:  # once: the whole view
+                        self.report("warning", f"{plot.name}: {panel.figure.limits_warning}")
 
         self._queue(_Job("draw", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows))
 

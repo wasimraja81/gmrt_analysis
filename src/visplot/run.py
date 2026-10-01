@@ -19,7 +19,7 @@ everything worth telling the user goes to a `report(level, text)` callback
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
 from typing import Callable
@@ -34,6 +34,7 @@ from data_io.row_index import default_row_index_path, load_row_index
 from data_io.row_selection import select_rows
 from data_io.source_table import read_source_table
 from data_io.timestamp_check import check_timestamps
+from instruments.elevation_limits import elevation_limits_deg, known_elevation_limits_deg
 from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observatory_time_zone
 from instruments.structural_duds import without_structural_duds
 from visplot.antenna_layout import antenna_layout
@@ -41,8 +42,8 @@ from visplot.fonts import font_file
 from visplot.locate_csv import LocateCsvWriter
 from visplot.plot_panel import panel_facts
 from visplot.plot_spec import PlotSpec, expand_plot_name
-from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_table, local_time_zone, utc_jd, \
-    utc_offset_text
+from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_table, convert, local_time_zone, \
+    utc_jd, utc_offset_text
 from visplot.range_cache import RangeCache
 from visplot.request import PlotRequest
 from visplot.request_args import (
@@ -188,6 +189,23 @@ def check_request(request: PlotRequest) -> CheckedRequest:
     return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size)
 
 
+def with_elevation_limits(plot: PlotSpec, telescope: str | None) -> PlotSpec:
+    """`plot` with the telescope's elevation limits (T47; the horizon and the
+    zenith for a telescope with none known) on its elevation axis, in that
+    axis's unit, drawn as dashed lines where the telescope's are known; the
+    axis shows the sky, 0 to 90 degrees, unless a range is given (the user,
+    2026-10-01). A plot without elevation unchanged."""
+    for axis in ("y", "x"):
+        if (plot.y if axis == "y" else plot.x) == "el":
+            unit = plot.unit(axis).name
+            low, high = (convert(v, "el", "deg", unit) for v in elevation_limits_deg(telescope))
+            lines = ((axis, low), (axis, high)) if known_elevation_limits_deg(telescope) else ()
+            sky = {} if getattr(plot, f"{axis}_range") is not None else {
+                f"{axis}_range": (0.0, convert(90.0, "el", "deg", unit))}
+            return replace(plot, limits=(axis, low, high), reference_lines=plot.reference_lines + lines, **sky)
+    return plot
+
+
 def _header_keyword(fits_path, keyword: str) -> str | None:
     with fits.open(fits_path) as hdul:
         value = str(hdul[0].header.get(keyword, "")).strip()
@@ -318,7 +336,7 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
                     _check_time_zone(time_zone, opened.telescope, header_ctx.time_reference_jd)
         except ValueError as err:
             raise RequestError(f"plot {name!r}: {err}") from err
-        plots_by_name[name] = [p.with_units(header_ctx) for p in plots]
+        plots_by_name[name] = [with_elevation_limits(p.with_units(header_ctx), opened.telescope) for p in plots]
     xy_plots = [p for plots in plots_by_name.values() for p in plots]
     if _reads_utc(xy_plots, header_ctx, request):
         report("info", f"time system: {opened.time_reference.describe()}")
@@ -639,6 +657,8 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
         for name, item in run.figures():
             if isinstance(item, XYFigure):
                 item.show(grids[item.plot], display_dpi=lowres_dpi, downsample=factor)
+                if item.limits_warning:
+                    report("warning", f"{name}: {item.limits_warning}")
             png_path = output_dir / f"{request.output_prefix}_{name}.png"
             _mpl_figure(item).savefig(png_path, dpi=lowres_dpi)
             pdf.savefig(_mpl_figure(item), dpi=lowres_dpi)

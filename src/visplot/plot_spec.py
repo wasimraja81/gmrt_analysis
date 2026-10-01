@@ -27,6 +27,9 @@ class PlotSpec:
     color: str = "tab:blue"
     name: str = ""  # used in output filenames
     reference_lines: tuple[tuple[str, float], ...] = ()  # ("x" or "y", value): dashed lines, e.g. transit
+    # ("x" or "y", low, high) in that axis's unit: points beyond drawn as ▼ (below) or ▲ (above) in their own
+    # color and counted in the panel (T47: the telescope's elevation limits)
+    limits: tuple[str, float, float] | None = None
     x_scale: str = "linear"  # linear, log, symlog, asinh
     y_scale: str = "linear"
     x_range_mode: str = "minmax"  # minmax, or percentile (range_percentiles) -- when no range is given
@@ -118,8 +121,8 @@ PRESETS: dict[str, list[PlotSpec]] = {
     "ha-range": [PlotSpec(y="ha", x="time", colorize_by="source", apply_flags=False, y_range=(-12.0, 12.0),
                           reference_lines=(("y", 0.0),), y_unit="h")],  # transit
     "az-el-range": [
-        PlotSpec(y="el", x="time", colorize_by="source", apply_flags=False, y_range=(-90.0, 90.0),
-                 reference_lines=(("y", 0.0),), y_unit="deg"),  # horizon
+        # from the horizon (T47); the telescope's limits are drawn and warned of (`visplot.run.prepare`)
+        PlotSpec(y="el", x="time", colorize_by="source", apply_flags=False, y_range=(0.0, 90.0), y_unit="deg"),
         PlotSpec(y="az", x="time", colorize_by="source", apply_flags=False, y_range=(0.0, 360.0), y_unit="deg"),
     ],
     "parallactic-angle-range": [

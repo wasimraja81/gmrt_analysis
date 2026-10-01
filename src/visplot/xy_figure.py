@@ -41,6 +41,8 @@ DENSE_MARKER_THRESHOLD = 100_000
 # Flagged samples are crosses the size of the markers (the user: "the same/similar size as the
 # plot markers"), and at least this many pixels from centre to tip: 3 x 3 px, the smallest "x".
 FLAGGED_CROSS_MIN_PX = 1
+# Points beyond a plot's limits (T47: elevation) are triangles at least this many pixels tall.
+LIMIT_MARKER_MIN_PX = 5
 # Occupied pixels stamped per batch when drawing markers, bounding the
 # coordinate arrays however dense the grid.
 _STAMP_BATCH = 1_000_000
@@ -93,6 +95,16 @@ def marker_offsets(radius_px: float, square: bool) -> list[tuple[int, int]]:
         for dx in range(-r, r + 1)
         if square or dy * dy + dx * dx <= radius_px * radius_px
     ] or [(0, 0)]
+
+
+def triangle_offsets(radius_px: float, pointing_down: bool) -> list[tuple[int, int]]:
+    """Pixel offsets of a filled triangle with its apex on the centre pixel,
+    standing above it (▼, pointing down at the value) or hanging below it
+    (▲), as tall as a marker of `radius_px` is wide and at least
+    LIMIT_MARKER_MIN_PX (rows count up from the bottom, as the grid's do)."""
+    height = max(LIMIT_MARKER_MIN_PX, int(round(2 * radius_px)))
+    return [((k if pointing_down else -k), dx)
+            for k in range(height + 1) for dx in range(-round(k * 0.58), round(k * 0.58) + 1)]
 
 
 def cross_offsets(radius_px: float) -> list[tuple[int, int]]:
@@ -182,6 +194,12 @@ class XYFigure:
         for axis, value in plot.reference_lines:
             line = self.ax.axhline if axis == "y" else self.ax.axvline
             line(value, color=self.theme.reference, lw=0.8, ls="--", zorder=1)
+        # A fixed range holds from the start: the empty axes do not stretch to a reference line outside it
+        # (an elevation limit of 110 degrees) before the first drawing.
+        if plot.x_range is not None and plot.axis_scale("x").is_linear:
+            self.ax.set_xlim(plot.x_range)
+        if plot.y_range is not None and plot.axis_scale("y").is_linear:
+            self.ax.set_ylim(plot.y_range)
         self.image = None
         self._scales_set = False
         self.equal_override: bool | None = None  # set from a window's aspect toggle
@@ -248,6 +266,14 @@ class XYFigure:
         radius = marker_radius_px(size, display_dpi)
         layers = draw_markers(downsample_layers(grid.layers_2d(), downsample),
                               marker_offsets(radius, auto_square_marker(n)), cross_offsets(radius))
+        for beyond, pointing_down in ((grid.below, True), (grid.above, False)):
+            if beyond is not None and beyond.any():  # over the points, under flagged crosses
+                marks = draw_markers(downsample_layers(grid.layers_2d(beyond), downsample),
+                                     triangle_offsets(radius, pointing_down))
+                over = (marks > 0) & (layers != FLAGGED_LAYER)
+                layers = np.where(over, marks, layers)
+        if self.plot.limits:
+            self.panel.set_beyond(grid.beyond)
         seen = tuple(sorted(grid.seen_codes)) if self.plot.colorize_by else ()
         if not set(seen) <= set(self.panel.category_codes()) and seen != self._seen_codes:
             self._seen_codes = seen  # a category the selection did not list: key it too
@@ -318,6 +344,12 @@ class XYFigure:
         """A caveat shown on the plot itself (under the panel), e.g. a
         warning about how a quantity was computed."""
         self.panel.set_note(text)
+
+    @property
+    def limits_warning(self) -> str | None:
+        """What the last drawing found beyond the plot's limits (the panel's
+        Limits line), or None."""
+        return self.panel.limits_warning
 
     @property
     def record_id(self) -> str:

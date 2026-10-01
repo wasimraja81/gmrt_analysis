@@ -63,7 +63,7 @@ def test_a_preset_takes_the_units_with_its_range_and_lines_converted():
     assert ha.y_range == pytest.approx((-180.0, 180.0))
     assert ha.reference_lines == (("y", 0.0),)
     el, az = expand_plot_name("az-el-range", PlotSpec(y="", x="", y_unit="rad"))
-    assert el.y_range == pytest.approx((-math.pi / 2, math.pi / 2))
+    assert el.y_range == pytest.approx((0.0, math.pi / 2))  # from the horizon (T47)
     assert az.y_range == pytest.approx((0.0, 2 * math.pi))
     assert (el.name, az.name) == ("az-el-range_el", "az-el-range_az")
 

@@ -3,7 +3,8 @@ plot area, as an AIPS TV display does -- the color key (the categories
 --colorize-by names, and flagged samples), the Stokes a visibility plot
 holds, the channels, baselines, time span and row filters of the selection,
 what was drawn, how flags combine where a point stands for several samples,
-and the provenance record of the run that made the figure.
+the points beyond an elevation axis's limits (T47), and the provenance
+record of the run that made the figure.
 
 `PanelFacts` is what a run selected (`panel_facts`, from `visplot.run`);
 `PlotPanel` draws it, one line per anchored box, in the request's
@@ -49,7 +50,8 @@ FOOTER_IN = 0.2  # the footer line at the bottom: the caveat note and the record
 RULE_GAP_IN = 0.12  # between the rule over the panel and its first line
 _LEFT, _MIDDLE, _RIGHT = 0.03, 0.53, 0.97  # figure fractions: the left column, the right column, the edge
 _SWATCH_PT = 9.0
-_LABELS = ("Stokes", "Sources", "Channels", "Baselines", "Time", "Selection", "Drawn", "Flags")
+_LABELS = ("Stokes", "Sources", "Channels", "Baselines", "Time", "Selection", "Drawn", "Flags", "Limits")
+_LIMIT_NAMES_SHOWN = 3  # categories named on the Limits line; the rest counted
 _ORDINAL = {1: "st", 2: "nd", 3: "rd"}
 
 # Row filters of a request, as the panel names them.
@@ -201,6 +203,10 @@ class PlotPanel:
         footer_props = dict(fontproperties=font_properties(font, FOOTER_PT), color=self.theme.panel_label)
         self.status = TextArea("", textprops=self.value_props)
         self.flagged = TextArea("flagged", textprops=self.value_props)  # "flagged: none" when none are drawn
+        self.limits = TextArea("", textprops=self.value_props)  # points beyond the plot's limits (T47)
+        self.limits_warning: str | None = None
+        if plot.limits:
+            self.set_beyond({"below": {}, "above": {}})
         self.record = TextArea("", textprops=footer_props)
         self.transform = blended_transform_factory(fig.transFigure, fig.dpi_scale_trans)  # x: fraction, y: inches
         self.note = fig.text(_LEFT, 0.06, "", transform=self.transform, ha="left", va="bottom",
@@ -307,6 +313,8 @@ class PlotPanel:
             rule = self.flag_rule()
             if rule:
                 bottom.append(("Flags", [rule]))
+        if plot.limits:
+            bottom.append(("Limits", [self.limits]))
         right.append(("Drawn", [self.status]))
         return key, left, right, bottom
 
@@ -390,6 +398,38 @@ class PlotPanel:
 
     def set_note(self, text: str) -> None:
         self.note.set_text(text)
+
+    def set_beyond(self, beyond: dict) -> None:
+        """The Limits line from a grid's `beyond` (points below and above the
+        plot's limits by category, with their extreme value), in the warning
+        color when there are any; `limits_warning` is its text then, else
+        None."""
+        axis, low, high = self.plot.limits
+        label = self.plot.unit(axis, self.ctx).label
+
+        def value(v: float, digits: int = 1) -> str:
+            return f"{v:.{digits}f}°" if label == "deg" else f"{v:.{digits + 2}f} {label}"
+
+        parts = []
+        for name, limit, word, extreme in (("below", low, "lowest", min), ("above", high, "highest", max)):
+            counts = beyond.get(name) or {}
+            if not counts:
+                continue
+            ranked = sorted(counts.items(), key=lambda item: -item[1][0])
+            total = sum(n for n, _ in counts.values())
+            what = f"{total:,} point{'' if total == 1 else 's'}"
+            if self.plot.colorize_by:
+                named = [f"{category_label(self.plot.colorize_by, c, self.ctx)} {n:,}"
+                         for c, (n, _) in ranked[:_LIMIT_NAMES_SHOWN]]
+                rest = len(ranked) - _LIMIT_NAMES_SHOWN
+                kinds = {"source": "sources", "stokes": "Stokes"}.get(self.plot.colorize_by, "more")
+                what += f" ({', '.join(named)}" + (f", and {rest} more {kinds}" if rest > 0 else "") + ")"
+            parts.append(f"{name} {value(limit, 0)}: {what}, {word} {value(extreme(e for _, e in counts.values()))}")
+        self.limits_warning = "; ".join(parts) or None
+        text = self.limits_warning or f"none below {value(low, 0)} or above {value(high, 0)}"
+        self.limits.set_text(text)
+        for t in self.limits.get_children():
+            t.set_color(self.theme.warning if self.limits_warning else self.theme.panel_value)
 
     def set_flagged_drawn(self, drawn: bool) -> None:
         self.flagged.set_text("flagged" if drawn else "flagged: none")
