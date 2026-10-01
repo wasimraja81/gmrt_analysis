@@ -278,6 +278,9 @@ class PlotPanel:
             key = self._wrap(label, items, (_RIGHT - _LEFT) * width_in * 72.0)
         left, right, bottom = [], [], []
         if facts is not None:
+            names = [name for _, name in facts.sources]
+            if plot.colorize_by != "source" and names:  # the key lists them when colored by source
+                left.append(("Sources", [names[0] if len(names) == 1 else f"{len(names)} sources: {', '.join(names)}"]))
             if plot.needs_data and plot.colorize_by != "stokes":
                 left.append(("Stokes", [", ".join(facts.stokes)]))
             if facts.freq_mhz is not None:

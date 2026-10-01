@@ -16,11 +16,12 @@ def build_plot_title(
     telescope: str | None = None,
     source_path: str | Path | None = None,
 ) -> str:
-    """`base_title`, plus which source(s) it shows (if any), plus a second
-    line naming the telescope and/or source file (if given)."""
+    """`base_title`, plus the source it shows (one source) or "multiple
+    sources" (the panel under the plot names them; the user, 2026-10-01),
+    plus a second line naming the telescope and/or source file (if given)."""
     title = base_title
     if sources:
-        title += f": {', '.join(sources)}"
+        title += f": {sources[0]}" if len(sources) == 1 else ": multiple sources"
 
     provenance = []
     if telescope:

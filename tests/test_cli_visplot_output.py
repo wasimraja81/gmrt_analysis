@@ -332,7 +332,8 @@ def test_recorded_time_is_the_default_with_the_files_time_system_and_reference_d
                  "--no-highres-pdf"]) == 0
     (figure,) = recorded.figures
     assert figure.ax.get_xlabel() == "Time (recorded, IAT; day 0 = 2021-07-24)"
-    assert [t.get_text() for t in figure.ax.get_xticklabels()][0].startswith("01:")  # the day after RDATE
+    first_tick = figure.ax.get_xticklabels()[0].get_text()
+    assert first_tick.startswith("1/")  # day 1, after RDATE, in AIPS's d/hh:mm:ss
     plt.close("all")
 
 

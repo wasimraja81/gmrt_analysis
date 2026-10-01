@@ -2,10 +2,10 @@
 
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
-2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38
-2026-10-01, 469 tests passing; T26, T32 in progress; T40, T42, T45, T46, point D, T20,
-T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the Moon is
-imaged.
+2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38, T48
+and T49 2026-10-01, 474 tests passing; T26, T32 in progress; T40, T42, T45-T47, point
+D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
+Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -1055,6 +1055,47 @@ Buildable now, ahead of Phase C.
   to be discussed with the user. The archived pipeline's bandpass `.npz`
   (`legacy_gsb_40_014/bandpass_and_flag_table_spec.md`) can be read now; the new
   solver's tables come with Phase C, as T42's do.
+
+- **T47 — Elevation below the horizon or the elevation limit, marked — OPEN (user,
+  2026-10-01).** "Do we need negative elevations? Below elevation limit is a red flag
+  already. So we may not need anything below 0, but if the calculation show el < 0 (or
+  elLimit when present), we should show some warning (red Cross?) for those points ? The
+  markers can remain at el=0 line." The `az-el-range` preset draws -90 to 90 degrees
+  with a dashed horizon at 0; a value outside a plot's range is counted in the panel's
+  "outside the axis ranges" and left out. No elevation limit is known to the code yet.
+  To be designed with the user.
+
+- **T48 — Time tick labels: tilted, and a choice of formats — DONE (user, 2026-10-01;
+  built the same day).** "On the time axis - can we tilt the time string - that adds to
+  the aesthetics as well as uses space optimally"; "Time string format specifier: Can we
+  have some standard defaults as user-choosable option for the time format?" The clock
+  axis (`visplot/clock_axis.py`) labelled every tick dd:hh:mm:ss, the day counted from
+  the file's reference date, and the axis label names day 0.
+  The user's decisions: the formats dd/hh:mm:ss, dd:hh:mm:ss, hh:mm:ss and iso; the
+  default AIPS's dd/hh:mm:ss ("DD:HH:MM:SS caught me since I am not used to seeing the
+  DD in a time. The "/" tells the brain that ... that is the DAY part"). Built:
+  `--time-format` (the GUI's "Time format" in Display), for every clock axis and the
+  cursor readout; hh:mm:ss gives the first tick and the first of each later day their
+  day (1/16:44:00, 17:00:00, ..., 2/00:00:00); iso writes day 0's date plus the day,
+  refused for LST (sidereal days have no calendar date). The GUI's data panel uses the
+  default. Clock tick labels on the x axis are tilted 30 degrees (matplotlib's
+  `labelrotation_mode="xtick"`, kept by ticks a zoom makes), up to 10 of them; the
+  axes leave room for the widest label the format writes, two digits of seconds
+  included. The user asked why day 0 is the day before the data: both files declare it
+  (DATE-OBS and the AN table's RDATE 2021-07-24; the first row is 2021-07-25 16:43,
+  recorded IAT), and AIPS counts days from RDATE, so AIPS writes this file's first time
+  1/16:43:30 too; kept, so times match AIPS's listings and the TIMERANG day numbers of
+  UVFLG flag files (T26). Tests: every format, the day marks of hh:mm:ss, iso refused
+  for LST, the tilt, and the axes' room for iso's labels.
+
+- **T49 — Plot title: the source, or "multiple sources" — DONE (user, 2026-10-01;
+  built the same day).** "Since we are labeling the sources in the bottom panel, do we
+  need them all in the plot title? If a single source is plotted for, we can add the
+  Source name. But if more than a source is plotted for, we can simply say (multiple
+  sources)." The panel named the sources only in its key, when colored by source; it now
+  has a Sources line otherwise ("13 sources: 3C286, 3C345, ..." cut to its column).
+  Tests: the title for one source and several; the Sources line, and none beside a key
+  of sources.
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The

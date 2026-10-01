@@ -18,6 +18,7 @@ import shlex
 from pathlib import Path
 
 from visplot.axis_scale import SCALE_NAMES
+from visplot.clock_axis import DEFAULT_TIME_FORMAT, TIME_FORMATS
 from visplot.fonts import DEFAULT_PANEL_FONT, PANEL_FONTS
 from visplot.plot_theme import DEFAULT_PLOT_THEME, MIN_CONTRAST, PLOT_THEMES
 from visplot.request_args import CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DPI_LIMITS, quantity_help
@@ -245,6 +246,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
             help=f"unit of every plot's {axis} axis, from its quantity's list under 'plot names' "
             "(default: the quantity's default)",
         )
+    style.add_argument(
+        "--time-format", choices=list(TIME_FORMATS), default=DEFAULT_TIME_FORMAT,
+        help="how clock times are written on the axes, days counted from the file's reference date (day 0): "
+        "dd/hh:mm:ss (default; AIPS's day/time form, e.g. 1/16:44:00), dd:hh:mm:ss (01:16:44:00), hh:mm:ss (the "
+        "time of day; the first tick and the first of each later day carry their day) or iso (calendar date "
+        "and time, 2021-07-25 16:44:00; LST, a sidereal time, has no calendar date and is refused)",
+    )
     style.add_argument(
         "--time-zone", metavar="ZONE",
         help="time zone for local time (--x-unit/--y-unit local), an IANA name such as Asia/Kolkata "

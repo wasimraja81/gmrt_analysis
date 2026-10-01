@@ -150,9 +150,29 @@ def test_axes_are_labelled_in_their_units_and_clock_time_as_a_time_of_day():
     assert fig.ax.get_ylabel() == "Phase (rad)"
     fig.set_view((22.0, 26.0), (-3.2, 3.2))
     fig.fig.canvas.draw()
-    assert [t.get_text() for t in fig.ax.get_xticklabels()] == [
-        "00:22:00:00", "00:23:00:00", "01:00:00:00", "01:01:00:00", "01:02:00:00"]
+    labels = fig.ax.get_xticklabels()
+    assert [t.get_text() for t in labels] == [  # AIPS's day/time form, tilted, up to 10 ticks
+        "0/22:00:00", "0/22:30:00", "0/23:00:00", "0/23:30:00", "1/00:00:00", "1/00:30:00", "1/01:00:00",
+        "1/01:30:00", "1/02:00:00"]
+    assert all(t.get_rotation() == 30.0 for t in labels)
     plt.close(fig.fig)
+
+
+def test_the_time_format_writes_the_clock_axis_and_room_is_left_for_tilted_labels():
+    ctx = QuantityContext(time_reference_jd=2459421.2, bunit="UNCALIB", reference_date_jd=2459419.5)  # 2021-07-24
+    iso = XYFigure(PlotSpec(y="amp", x="time"), ctx, time_format="iso")
+    iso.set_view((40.0, 44.0), (0.0, 1.0))
+    iso.fig.canvas.draw()
+    assert iso.ax.get_xticklabels()[0].get_text() == "2021-07-25 16:00:00"
+    tod = XYFigure(PlotSpec(y="amp", x="time"), ctx, time_format="hh:mm:ss")
+    tod.set_view((40.0, 44.0), (0.0, 1.0))
+    tod.fig.canvas.draw()
+    assert [t.get_text() for t in tod.ax.get_xticklabels()][:2] == ["1/16:00:00", "16:30:00"]
+    # the axes rise by the tilted labels' extra height: more for iso's longer labels
+    level = XYFigure(PlotSpec(y="amp", x="freq"), ctx)
+    assert level.ax.get_position().y0 < tod.ax.get_position().y0 < iso.ax.get_position().y0
+    for figure in (iso, tod, level):
+        plt.close(figure.fig)
 
 
 def test_equal_aspect_gives_a_square_box_with_the_same_span_on_both_axes():

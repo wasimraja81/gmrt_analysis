@@ -165,3 +165,14 @@ def test_the_flags_line_states_the_flag_rule():
     assert all_figure.panel.flag_rule() == "a point is flagged if all of RR, LL are"
     _, per_stokes = _run("panel_flag_rule_amp", combine_flags="all")  # amp varies with Stokes: no line
     assert per_stokes.panel.flag_rule() == ""
+
+
+def test_the_panel_names_the_sources_unless_the_key_does():
+    _, figure = _run("panel_sources")  # the synthetic file's two sources
+    assert figure.ax.get_title().startswith("Amplitude vs Frequency: multiple sources")
+    assert ("Sources", ["2 sources: 3C286, 3C48"]) in figure.panel._lines((), 8.0)[1]
+    _, one = _run("panel_one_source", sources="3C286")
+    assert one.ax.get_title().startswith("Amplitude vs Frequency: 3C286")
+    assert ("Sources", ["3C286"]) in one.panel._lines((), 8.0)[1]
+    _, keyed = _run("panel_sources_keyed", colorize_by="source")  # the key lists them: no second line
+    assert all(label != "Sources" for label, _ in keyed.panel._lines((), 8.0)[1])

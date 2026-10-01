@@ -173,6 +173,9 @@ def check_request(request: PlotRequest) -> CheckedRequest:
                     quantity = p.x if axis == "x" else p.y
                     if QUANTITIES[quantity].categorical and not p.axis_scale(axis).is_linear:
                         raise ValueError(f"--{axis}-scale applies to numeric axes; {quantity!r} is a category")
+                    if request.time_format == "iso" and quantity == "time" and p.unit(axis).base == "lst":
+                        raise ValueError("--time-format iso writes calendar dates; LST, a sidereal time, has none: "
+                                         "choose dd/hh:mm:ss, dd:hh:mm:ss or hh:mm:ss")
                 if p.aspect == "equal" and not (p.axis_scale("x").is_linear and p.axis_scale("y").is_linear):
                     raise ValueError("--aspect equal needs linear axes (--x-scale and --y-scale linear)")
         except ValueError as err:
@@ -351,7 +354,7 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
                         stride_pairs=selection.stride_pairs)
     xy_figures = {p: XYFigure(p, ctx, sources_present, opened.telescope, request.fits_path,
                               figsize=checked.figure_size, facts=facts, panel_font=request.panel_font,
-                              theme=request.plot_theme)
+                              theme=request.plot_theme, time_format=request.time_format)
                   for p in xy_plots}
     cache = RangeCache(request.cache_dir) if request.cache_dir else None
     if cache is not None:

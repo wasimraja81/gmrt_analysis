@@ -456,6 +456,15 @@ class RequestForm(QtWidgets.QWidget):
             panel_font.addItem(PANEL_FONTS[name][0], name)
         select_data(panel_font, build_arg_parser().get_default("panel_font"))
         form.addRow("Panel font", self._add(combo_field("panel_font", panel_font)))
+        time_format = QtWidgets.QComboBox()
+        for text, name in (("1/16:44:00  (AIPS, dd/hh:mm:ss)", "dd/hh:mm:ss"),
+                           ("01:16:44:00  (dd:hh:mm:ss)", "dd:hh:mm:ss"),
+                           ("16:44:00  (time of day)", "hh:mm:ss"), ("2021-07-25 16:44:00  (ISO)", "iso")):
+            time_format.addItem(text, name)
+        select_data(time_format, build_arg_parser().get_default("time_format"))
+        time_format.setToolTip("How clock times are written on the axes (--time-format); days count from the "
+                               "file's reference date")
+        form.addRow("Time format", self._add(combo_field("time_format", time_format)))
         plot_theme = QtWidgets.QComboBox()
         for name in _parser_choices("plot_theme"):
             plot_theme.addItem(name, name)

@@ -9,8 +9,8 @@ def test_build_plot_title_appends_a_single_source():
     assert build_plot_title("Hour angle range", ["3C286"]) == "Hour angle range: 3C286"
 
 
-def test_build_plot_title_appends_multiple_sources_in_given_order():
-    assert build_plot_title("Hour angle range", ["3C48", "3C286"]) == "Hour angle range: 3C48, 3C286"
+def test_build_plot_title_says_multiple_sources_for_more_than_one():
+    assert build_plot_title("Hour angle range", ["3C48", "3C286"]) == "Hour angle range: multiple sources"
 
 
 def test_build_plot_title_ignores_an_empty_sources_list():

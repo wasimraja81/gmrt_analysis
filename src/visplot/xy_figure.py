@@ -11,18 +11,23 @@ and saved.
 
 from __future__ import annotations
 
+import datetime
 import math
 
 import numpy as np
+from astropy.time import Time
+from matplotlib import rcParams
 from matplotlib.figure import Figure
+from matplotlib.font_manager import FontProperties
+from matplotlib.textpath import TextPath
 
-from visplot.clock_axis import ClockFormatter, ClockLocator
+from visplot.clock_axis import DEFAULT_TIME_FORMAT, ClockFormatter, ClockLocator, clock_text
 from visplot.fonts import DEFAULT_PANEL_FONT
 from visplot.plot_panel import PanelFacts, PlotPanel
 from visplot.plot_spec import PlotSpec
 from visplot.plot_theme import DEFAULT_PLOT_THEME, color_axes, plot_theme
 from visplot.plot_title import build_plot_title
-from visplot.quantities import QUANTITIES, QuantityContext, category_label, quantity_label
+from visplot.quantities import QUANTITIES, QuantityContext, category_label, day_origin_jd, quantity_label
 from visplot.stream import FLAGGED_LAYER, GridReducer
 
 # Marker area (points^2) by number of samples drawn: (max_samples, size),
@@ -45,6 +50,21 @@ _STAMP_BATCH = 1_000_000
 AXES_LEFT, AXES_RIGHT = 0.125, 0.9
 TITLE_IN = 0.72
 XLABEL_IN = 0.55
+# Clock times on the x axis: tick labels tilted (the user, 2026-10-01), so up to this many fit.
+CLOCK_TILT_DEG = 30.0
+CLOCK_MAX_TICKS_TILTED = 10
+
+
+def tilted_label_extra_in(time_format: str, day0: datetime.date) -> float:
+    """How much taller, in inches, the widest clock tick label `time_format`
+    writes (two digits of seconds, as a zoom may need) stands tilted by
+    CLOCK_TILT_DEG than level: the room the axes leave for it."""
+    font = FontProperties(size=rcParams["xtick.labelsize"])
+    sample = clock_text(9 * 24 + 23.9999, 2, time_format, day0)
+    width = TextPath((0, 0), sample, prop=font).get_extents().width
+    size = font.get_size_in_points()
+    angle = math.radians(CLOCK_TILT_DEG)
+    return max(0.0, width * math.sin(angle) + size * math.cos(angle) - size) / 72.0
 
 
 def auto_point_size(n_samples: int) -> float:
@@ -133,7 +153,7 @@ class XYFigure:
 
     def __init__(self, plot: PlotSpec, ctx: QuantityContext, sources=None, telescope=None, source_path=None,
                  figsize=(8, 7), facts: PanelFacts | None = None, panel_font: str = DEFAULT_PANEL_FONT,
-                 theme: str = DEFAULT_PLOT_THEME):
+                 theme: str = DEFAULT_PLOT_THEME, time_format: str = DEFAULT_TIME_FORMAT):
         self.plot = plot
         self.ctx = ctx
         self.theme = plot_theme(theme)
@@ -145,10 +165,17 @@ class XYFigure:
         self._seen_codes: tuple = ()
         self.ax.set_xlabel(quantity_label(plot.x, ctx, plot.x_unit))
         self.ax.set_ylabel(quantity_label(plot.y, ctx, plot.y_unit))
-        for axis, mpl_axis in (("x", self.ax.xaxis), ("y", self.ax.yaxis)):
-            if plot.unit(axis, ctx).clock:
-                mpl_axis.set_major_locator(ClockLocator())
-                mpl_axis.set_major_formatter(ClockFormatter())
+        self._xtick_extra_in = 0.0  # room for tilted clock tick labels on the x axis
+        clock_axes = [axis for axis in ("x", "y") if plot.unit(axis, ctx).clock]
+        day0 = (datetime.date.fromisoformat(Time(day_origin_jd(ctx), format="jd", scale="utc").iso[:10])
+                if clock_axes else None)
+        for axis in clock_axes:
+            mpl_axis = self.ax.xaxis if axis == "x" else self.ax.yaxis
+            mpl_axis.set_major_locator(ClockLocator(CLOCK_MAX_TICKS_TILTED if axis == "x" else 7))
+            mpl_axis.set_major_formatter(ClockFormatter(time_format, day0))
+            if axis == "x":
+                self.ax.tick_params(axis="x", labelrotation=CLOCK_TILT_DEG, labelrotation_mode="xtick")
+                self._xtick_extra_in = tilted_label_extra_in(time_format, day0)
         self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path))
         color_axes(self.ax, self.theme)
         self.ax.grid(True, alpha=0.3, color=self.theme.grid)
@@ -168,7 +195,7 @@ class XYFigure:
         calls this when it resizes the figure."""
         width_in, height_in = self.fig.get_size_inches()
         self.panel.build(width_in, self._seen_codes)
-        bottom = min((self.panel.height_in + XLABEL_IN) / height_in, 0.6)
+        bottom = min((self.panel.height_in + XLABEL_IN + self._xtick_extra_in) / height_in, 0.6)
         top = max(1.0 - TITLE_IN / height_in, bottom + 0.1)
         self.ax.set_position([AXES_LEFT, bottom, AXES_RIGHT - AXES_LEFT, top - bottom])
         self.ax.apply_aspect()
