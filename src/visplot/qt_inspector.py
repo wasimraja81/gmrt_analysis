@@ -270,7 +270,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
             source = self._in_view({p: (g.x_extent, g.y_extent) for p, g in grids.items()}, job, read_data)
             for plot in plots:
                 self.panels[plot].rows_read = source.n_rows
-            return source.stream(list(grids.values()), read_data=read_data, on_chunk=on_chunk)
+            # spread over the time range, so each refresh shows the whole view filling in
+            return source.stream(list(grids.values()), read_data=read_data, on_chunk=on_chunk, spread=True)
 
         def done(job):
             if not job.completed:

@@ -298,3 +298,30 @@ def test_iter_visibility_chunks_metadata_only_reads_no_data():
     np.testing.assert_array_equal(meta.jd, with_data.jd)
     np.testing.assert_array_equal(meta.source_id, index.source_id)
     assert meta.axis_types == with_data.axis_types
+
+
+def test_spread_order_spreads_every_prefix_over_the_range():
+    from data_io.visibility_data import spread_order
+
+    assert spread_order(8).tolist() == [0, 4, 2, 6, 1, 5, 3, 7]
+    assert spread_order(5).tolist() == [0, 4, 2, 1, 3]
+    assert sorted(spread_order(13).tolist()) == list(range(13)) and spread_order(1).tolist() == [0]
+
+
+def test_spread_chunks_read_every_row_once_ascending_and_cover_the_time_range_first(monkeypatch):
+    import data_io.visibility_data as visibility_data
+    from test_cli_visplot_output import _make_synthetic_file
+
+    path = _make_synthetic_file(make_scratch_dir("visibility_spread") / "obs.fits")  # an integration every 3 rows
+    index = build_row_index(path)
+    row_bytes = _row_bytes(index)
+    monkeypatch.setattr(visibility_data, "SPREAD_UNIT_BYTES", 3 * row_bytes)  # one integration per unit
+    rows = np.arange(40)
+    in_order = list(iter_visibility_chunks(path, index, rows, max_chunk_bytes=6 * row_bytes))
+    spread = list(iter_visibility_chunks(path, index, rows, max_chunk_bytes=6 * row_bytes, spread=True))
+    read = np.concatenate([c.row_indices for c in spread])
+    assert sorted(read.tolist()) == list(range(40))  # every row once
+    assert all(np.all(np.diff(c.row_indices) > 0) for c in spread)  # ascending within a chunk
+    assert in_order[0].row_indices.max() == 5 and spread[0].row_indices.max() >= 21  # the first chunk spans the range
+    by_row = {int(r): d for c in in_order for r, d in zip(c.row_indices, c.data)}
+    assert all(np.array_equal(d, by_row[int(r)]) for c in spread for r, d in zip(c.row_indices, c.data))

@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49 2026-10-01, 483 tests passing; T26, T32 in progress; T40, T42, T45, T46, point
+T47-T49 2026-10-01, 486 tests passing; T26, T32 in progress; T40, T42, T45, T46, point
 D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -574,6 +574,16 @@ Buildable now, ahead of Phase C.
   0-2 kλ zoom: 30,628,181 samples either way). The metadata pass took 0.1 s on GWB's
   69,174 rows; the zoomed draw reads 18,189 rows, 1.79 GB instead of 6.80. The Drawn line
   says it: "... from 18,189 rows of 69,174 (the others lie outside the view)".
+  2. Progressive order — DONE (2026-10-01). The window's draws read in spread order
+  (`iter_visibility_chunks(spread=True)`): units of consecutive integrations holding at
+  least 32 MiB of the selection's rows (one GWB integration, about 14 GSB ones) taken in
+  bit-reversed order (`spread_order`: 0, n/2, n/4, 3n/4, ...), each chunk's rows
+  ascending; every row read once, the grid unchanged (test). Range passes, saves, exports
+  and Locate keep file order (the CSV is in row order). Disk cost, measured on GWB rows
+  not read before: 165 MB/s in file order against 162 spread on one contiguous run of 18
+  integrations (0.67 GB each), 156 against 161 on a sparse selection. In the window,
+  GWB 3C468.1 RR amp vs time (450,954 rows): after 8 s, 3% read, samples cover the whole
+  6.5 hours; in file order they would cover its first minutes.
 
 - **T28 — Locate: save every located sample — DONE (2026-09-28).** User's question: the
   table and the CSV stopped at the first 10,000 samples. `LocateReducer` now works in

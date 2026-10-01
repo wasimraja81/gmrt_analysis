@@ -78,10 +78,14 @@ class XYSource:
                 n *= len(selection[ctype]) if ctype in selection else length
         return n
 
-    def stream(self, reducers: list, read_data: bool, on_chunk: Callable[[int], bool] | None = None) -> bool:
+    def stream(self, reducers: list, read_data: bool, on_chunk: Callable[[int], bool] | None = None,
+               spread: bool = False) -> bool:
+        """Feed the selection to `reducers`; `spread` reads it in an order that
+        covers its time range early (a window drawing as it reads), else in
+        file order."""
         chunks = iter_visibility_chunks(
             self.fits_path, self.index, self.row_indices, self.axis_selection,
-            max_chunk_bytes=self.chunk_bytes, read_data=read_data,
+            max_chunk_bytes=self.chunk_bytes, read_data=read_data, spread=spread,
         )
         return run_stream(chunks, self.ctx, reducers, on_chunk, threads=self.threads)
 

@@ -28,6 +28,11 @@ from data_io.raw_data_access import open_raw_memmap
 from data_io.row_index import RowIndex, find_axis
 from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes
 
+# `iter_visibility_chunks(spread=True)` reorders units of consecutive integrations holding at least this many
+# bytes of the selection's rows: one seek per unit, a few percent of its read at a spinning disk's ~10 ms seek and
+# ~180 MB/s (a GWB integration, 378 rows, is about 37 MB; a GSB one about 2.3 MB).
+SPREAD_UNIT_BYTES = 32 * 1024**2
+
 
 @dataclass(frozen=True)
 class VisibilityBlock:
@@ -192,9 +197,11 @@ def iter_visibility_chunks(
     max_chunk_bytes: int | None = None,
     ram_fraction: float = DEFAULT_RAM_FRACTION_TO_USE,
     read_data: bool = True,
+    spread: bool = False,
 ) -> Iterator[VisibilityBlock]:
     """Yield the visibility data for the given rows as `VisibilityBlock`s,
-    in ascending row order, one chunk at a time.
+    one chunk at a time: in ascending row order, or with `spread` in an order
+    covering the time range early (each chunk's rows ascending).
 
     `axis_selection` maps a CTYPE name (e.g. "FREQ", "STOKES", "IF") to the
     pixel indices wanted along that axis; an axis not named is selected in
@@ -214,14 +221,24 @@ def iter_visibility_chunks(
 
     `read_data=False` yields the same chunks with `data` and `weight` set to
     None and nothing read from disk -- for work that needs only per-row
-    metadata (time, u/v/w, source) and the axis selection."""
+    metadata (time, u/v/w, source) and the axis selection.
+
+    `spread=True` yields the chunks in an order that covers the selection's
+    time range early (for a window drawing as it reads): the selection is cut
+    into units of consecutive integrations of at least SPREAD_UNIT_BYTES each
+    (one sequential read), taken in bit-reversed order (`spread_order`); a
+    chunk gathers units in that order and holds its rows ascending. Every row
+    is still read once; only the chunks' order, and which rows share one,
+    change."""
     row_indices = np.unique(np.asarray(row_indices, dtype=np.int64))
     plan = _read_plan(index, axis_selection)
     if max_chunk_bytes is None:
         max_chunk_bytes = int(host_total_memory_bytes() * ram_fraction)
     rows_per_chunk = max(1, max_chunk_bytes // plan.row_bytes)
+    chunks = (_spread_chunk_pieces(index, row_indices, rows_per_chunk, plan.row_bytes) if spread
+              else _chunk_pieces(row_indices, rows_per_chunk))
 
-    for pieces in _chunk_pieces(row_indices, rows_per_chunk):
+    for pieces in chunks:
         rows = np.concatenate([np.arange(a, b) for a, b in pieces])
         if not read_data:
             yield _block(index, plan, rows, None, None)
@@ -251,6 +268,55 @@ def _chunk_pieces(row_indices: np.ndarray, rows_per_chunk: int) -> list[list[tup
                 current, n_current = [], 0
     if current:
         chunks.append(current)
+    return chunks
+
+
+def spread_order(n: int) -> np.ndarray:
+    """0 .. n-1 in bit-reversed order (0, n/2, n/4, 3n/4, ...), so that every
+    prefix of it is spread evenly over the range."""
+    if n <= 1:
+        return np.arange(n)
+    bits = int(np.ceil(np.log2(n)))
+    i = np.arange(1 << bits)
+    reversed_i = np.zeros_like(i)
+    for b in range(bits):
+        reversed_i |= ((i >> b) & 1) << (bits - 1 - b)
+    return reversed_i[reversed_i < n]
+
+
+def _spread_chunk_pieces(index: RowIndex, row_indices: np.ndarray, rows_per_chunk: int,
+                         row_bytes: int) -> list[list[tuple[int, int]]]:
+    """The chunks of `iter_visibility_chunks(spread=True)`: units of
+    consecutive integrations, each holding at least SPREAD_UNIT_BYTES of the
+    selection's rows, taken in `spread_order`, gathered into chunks of at
+    most `rows_per_chunk` rows (a unit split across chunks where it does not
+    fit), each chunk's rows ascending as (start, stop) pieces."""
+    if row_indices.size == 0:
+        return []
+    integration = np.searchsorted(index.integration_boundaries, row_indices, side="right") - 1
+    starts = np.flatnonzero(np.r_[True, integration[1:] != integration[:-1]])  # each integration's first row
+    sizes = np.diff(np.r_[starts, row_indices.size])
+    rows_per_unit = max(1, SPREAD_UNIT_BYTES // row_bytes)
+    unit_starts, held = [], rows_per_unit
+    for start, size in zip(starts, sizes):
+        if held >= rows_per_unit:
+            unit_starts.append(start)
+            held = 0
+        held += size
+    bounds = np.r_[unit_starts, row_indices.size]
+    chunks, current = [], []
+    room = rows_per_chunk
+    for unit in spread_order(len(unit_starts)):
+        rows = row_indices[bounds[unit]:bounds[unit + 1]]
+        while rows.size:
+            take, rows = rows[:room], rows[room:]
+            current.append(take)
+            room -= take.size
+            if room == 0:
+                chunks.append(_contiguous_runs(np.sort(np.concatenate(current))))
+                current, room = [], rows_per_chunk
+    if current:
+        chunks.append(_contiguous_runs(np.sort(np.concatenate(current))))
     return chunks
 
 
