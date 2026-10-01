@@ -237,3 +237,18 @@ def test_a_resized_window_redraws_the_view_at_its_new_pixel_size():
     assert (panel.grid.height, panel.grid.width) == window._pixel_shape(panel) != before
     assert panel.drawn and panel.grid.n_samples == 40 * 4 * 2 - 1  # the same samples, re-binned
     window.close()
+
+
+def test_a_completed_zoom_leaves_no_preview_behind():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_zoom_preview", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    panel.figure.ax.set_xlim(400.5, 402.5)
+    time.sleep(0.4)
+    app.processEvents()
+    time.sleep(0.4)
+    _wait(app, window)
+    assert panel.grid.x_extent == (400.5, 402.5)
+    assert panel.figure.preview is None and list(panel.figure.ax.images) == [panel.figure.image]
+    window.close()

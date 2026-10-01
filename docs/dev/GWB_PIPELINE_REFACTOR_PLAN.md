@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49 2026-10-01, 487 tests passing; T26, T32 in progress; T40, T42, T45, T46, point
+T47-T49 2026-10-01, 489 tests passing; T26, T32 in progress; T40, T42, T45, T46, point
 D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -591,6 +591,17 @@ Buildable now, ahead of Phase C.
   3C286 RR amp vs uv distance a resize took the grid from 329 x 806 to 579 x 1116 pixels
   in 6.4 s (rows in the page cache), the window idle afterwards. Test: a resized window
   draws the same samples on a grid of its new size.
+  3. Zoom preview — DONE (2026-10-01; to be looked at by the user, who may change it).
+  On linear axes the window's image already enlarged at once with a zoom, but the
+  redraw's first refresh replaced it with the new, sparse grid. Now a redraw on a new
+  grid (a zoom, pan or resize) keeps the last complete image under the new one
+  (`XYFigure.begin_redraw`, `end_redraw`) until the pass completes; zoomed again first,
+  the partial image goes and the complete one stays; an export leaves the preview out of
+  its file. On a non-linear axis the image is pinned to the axes area and stays hidden
+  until redrawn, as before. On GWB 3C286 RR amp vs uv distance, the 0-2 kλ zoom showed
+  the full view's image enlarged at its first refresh, coarse at that magnification
+  (about 13 times in uv distance), and the sharp image when complete. Tests: the
+  preview's life through a redraw and a second zoom; none left after a zoom completes.
 
 - **T28 — Locate: save every located sample — DONE (2026-09-28).** User's question: the
   table and the CSV stopped at the first 10,000 samples. `LocateReducer` now works in

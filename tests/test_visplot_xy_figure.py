@@ -189,3 +189,26 @@ def test_equal_aspect_gives_a_square_box_with_the_same_span_on_both_axes():
     fig.fig.canvas.draw()
     assert fig.ax.get_window_extent().width > fig.ax.get_window_extent().height
     plt.close(fig.fig)
+
+
+def test_a_redraw_keeps_the_last_complete_image_under_the_new_one_until_it_completes():
+    plot = PlotSpec(y="amp", x="freq_mhz", point_size=0.25)
+    figure = XYFigure(plot, CTX)
+    full = GridReducer(plot, (0.0, 10.0), (0.0, 10.0), height=8, width=8)
+    full.layers[:] = 1
+    full.n_samples = 64
+    figure.show(full, display_dpi=100)
+    complete = figure.image
+    figure.begin_redraw()  # a zoom: the complete image becomes the preview
+    assert figure.preview is complete and figure.image is None
+    sparse = GridReducer(plot, (2.0, 4.0), (2.0, 4.0), height=8, width=8)
+    sparse.layers[9] = 1
+    sparse.n_samples = 1
+    figure.show(sparse, display_dpi=100)
+    assert len(figure.ax.images) == 2 and figure.preview.get_zorder() < figure.image.get_zorder()
+    figure.begin_redraw()  # zoomed again before the redraw completed: the partial image goes, the preview stays
+    assert figure.preview is complete and list(figure.ax.images) == [complete]
+    figure.show(sparse, display_dpi=100)
+    figure.end_redraw()
+    assert figure.preview is None and list(figure.ax.images) == [figure.image]
+    plt.close(figure.fig)

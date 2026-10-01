@@ -269,6 +269,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
             panel = self.panels[plot]
             if (panel.grid is None or (panel.grid.x_extent, panel.grid.y_extent) != tuple(panel.extent)
                     or self._resized(panel)):
+                panel.figure.begin_redraw()  # the last complete image stays under the new one meanwhile
                 panel.grid = self._window_grid(panel, panel.extent)
             panel.drawn = False
             self.to_draw.add(plot)
@@ -298,6 +299,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
                 if panel.grid is grid:  # not replaced by a zoom meanwhile
                     panel.drawn = True
                     self.to_draw.discard(plot)
+                    panel.figure.end_redraw()
                     self._render(panel, final=True)
                     if first and self.report is not None and panel.figure.limits_warning:  # once: the whole view
                         self.report("warning", f"{plot.name}: {panel.figure.limits_warning}")
@@ -601,11 +603,16 @@ class InspectorWindow(QtWidgets.QMainWindow):
             panel.figure.set_status(grid_summary(grid, rows_read[0], self.source.n_rows))
             if record is not None:
                 panel.figure.set_record(record.run_id)  # the file names the export's own record
+            preview = panel.figure.preview  # a redraw's preview stays out of the file
+            if preview is not None:
+                preview.set_visible(False)
             try:
                 panel.figure.fig.savefig(path, dpi=dpi)
                 error = None
             except (OSError, ValueError) as err:
                 error = f"could not save {path}: {err}"
+            if preview is not None:
+                preview.set_visible(True)
             panel.figure.set_status(status)
             panel.figure.set_record(shown_record)
             if panel.grid is not None:  # back to the window's own image

@@ -201,6 +201,7 @@ class XYFigure:
         if plot.y_range is not None and plot.axis_scale("y").is_linear:
             self.ax.set_ylim(plot.y_range)
         self.image = None
+        self.preview = None  # the last complete image, kept under a redraw until it completes (`begin_redraw`)
         self._scales_set = False
         self.equal_override: bool | None = None  # set from a window's aspect toggle
         self.view_request: tuple | None = None  # the extents last asked of set_view, before any widening
@@ -321,6 +322,29 @@ class XYFigure:
             self.ax.set_xscale(**self.plot.axis_scale("x").mpl_kwargs())
         if not self.plot.axis_scale("y").is_linear:
             self.ax.set_yscale(**self.plot.axis_scale("y").mpl_kwargs())
+
+    def begin_redraw(self) -> None:
+        """A window draws the view again on a new grid (a zoom, a pan, a
+        resize; T19 point D): on linear axes the last complete image stays
+        under the new one as a preview, enlarged with the view, until
+        `end_redraw`, so the view never empties while the new grid fills in.
+        A partial image of a redraw stopped meanwhile is dropped, the preview
+        kept. On a non-linear axis the image is pinned to the axes area and
+        cannot follow the view (`hide_if_view_moved`): unchanged."""
+        if self.image is None or not self.linear:
+            return
+        if self.preview is None:
+            self.preview = self.image
+            self.preview.set_zorder(-1)
+        else:
+            self.image.remove()
+        self.image = None
+
+    def end_redraw(self) -> None:
+        """The redraw is complete: the preview goes."""
+        if self.preview is not None:
+            self.preview.remove()
+            self.preview = None
 
     def hide_if_view_moved(self, grid: GridReducer) -> None:
         """On a non-linear axis the image is pinned to the axes area, so after
