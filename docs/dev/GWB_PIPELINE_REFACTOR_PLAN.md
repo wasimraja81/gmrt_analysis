@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 496 tests passing; T26, T32 in progress; T40, T42,
+T47-T49, point D and T21 2026-10-01, 498 tests passing; T26, T32 in progress; T40, T42,
 T45, T46, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -522,6 +522,17 @@ Buildable now, ahead of Phase C.
   is a mode exclusive with zoom and pan, with status-bar guidance, and the CSV button is
   enabled once there is a result; a test now drives the toolbar button and a simulated
   mouse drag with zoom left on.
+  Found by the user (2026-10-01): turning Locate on showed the Located samples panel
+  docked under the plot, which shrank the plot ("That was jarring") and, with point D's
+  re-bin on resize, drew it again at the smaller size. The user's choice: the panel
+  opens as a window of its own beside the plot; its title bar docks it (drag, or
+  double-click), and a docked panel stays docked. Built for the command line's window
+  and the GUI's plot tabs alike: the panel floats from the start; turning Locate on
+  opens nothing; the first box drawn opens it, showing the read's progress, then the
+  result; its first opening places it right of the top-level window or, without the
+  room, against the screen's right edge (`beside`). Tests: a locate leaves the plot's
+  pixel size and grid as they were (docked, as before, the plot went from 611 to 305
+  pixels high); the panel floats; a panel the user docked opens docked; the placement.
   Next: pages, then flagging, then the layout items.
   Flagging here means writing flags: drag a box and record entries for those samples in a
   flag file of its own, the raw file untouched (the T26 proposal of 2026-09-28, point 2).

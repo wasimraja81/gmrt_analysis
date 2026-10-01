@@ -170,7 +170,7 @@ def test_locate_through_the_toolbar_and_a_mouse_drag_after_zooming():
     assert window.locate is not None and window.locate.n_found == 4
     assert window.locate_table.rowCount() == 4
     assert window.save_locate_button.isEnabled()
-    assert window.statusBar().currentMessage() == "located 4 samples; listed in the table below"
+    assert window.statusBar().currentMessage() == "located 4 samples; listed in the Located samples panel"
 
     panel.toolbar.pan()  # turning pan on turns Locate off
     app.processEvents()
@@ -178,6 +178,43 @@ def test_locate_through_the_toolbar_and_a_mouse_drag_after_zooming():
     app.processEvents()
     assert not panel.locate_action.isChecked()
     window.close()
+
+
+def test_the_located_samples_panel_opens_in_its_own_window_and_the_plot_keeps_its_size():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_locate_panel", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    size = (panel.canvas.width(), panel.canvas.height())
+    grid = panel.grid
+
+    panel.locate_action.setChecked(True)
+    app.processEvents()
+    assert not window.locate_dock.isVisible()  # Locate on, no box yet: nothing opens
+    _drag(panel.canvas, panel.figure.ax, (400.5, 4.5), (401.5, 6.5))
+    _wait(app, window)
+    assert window.locate_dock.isVisible() and window.locate_dock.isFloating()
+    assert (panel.canvas.width(), panel.canvas.height()) == size
+    assert panel.grid is grid  # not drawn again at a new size
+
+    window.locate_dock.setFloating(False)  # the user docks it, then closes it
+    window.locate_dock.hide()
+    window._locate(panel, SimpleNamespace(xdata=400.5, ydata=4.5), SimpleNamespace(xdata=401.5, ydata=6.5))
+    _wait(app, window)
+    assert window.locate_dock.isVisible() and not window.locate_dock.isFloating()  # docked, as the user left it
+    window.close()
+
+
+def test_the_panel_opens_right_of_the_window_or_against_the_screens_edge():
+    from PySide6.QtCore import QRect, QSize
+
+    from visplot.qt_inspector import beside
+
+    screen, size = QRect(0, 0, 1920, 1080), QSize(640, 400)
+    assert beside(QRect(100, 50, 900, 700), screen, size) == QRect(1000, 50, 640, 400)
+    assert beside(QRect(0, 0, 1920, 1080), screen, size) == QRect(1280, 0, 640, 400)  # a full-screen window
+    assert beside(QRect(100, 900, 900, 700), screen, size) == QRect(1000, 680, 640, 400)  # kept on the screen
+    assert beside(QRect(0, 0, 900, 700), QRect(0, 0, 500, 300), size) == QRect(0, 0, 500, 300)
 
 
 def test_equal_aspect_toggle_redraws_with_equal_scaling():

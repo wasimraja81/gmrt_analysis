@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from visplot.records import PlotRecord, WindowProvenance
 
 LOCATE_LIMIT = 10_000
+LOCATE_PANEL_SIZE = QtCore.QSize(640, 400)  # the Located samples panel, when it first opens
 POLL_MS = 150
 REFRESH_S = 0.5
 SETTLE_S = 0.3
@@ -208,8 +209,23 @@ class InspectorWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.save_locate_button)
         dock.setWidget(body)
         self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, dock)
-        dock.hide()  # shown when Locate is first used, so the plot has the room until then
+        # A window of its own, so the plot never gives up room to it; its title
+        # bar docks it (drag or double-click), and then it stays docked.
+        dock.setFloating(True)
+        dock.hide()  # shown when a box is first drawn
         self.locate_dock = dock
+        self.locate_placed = False
+
+    def _show_locate_panel(self) -> None:
+        """Show the Located samples panel: the first time beside the window,
+        afterwards wherever the user moved or docked it."""
+        dock = self.locate_dock
+        if not self.locate_placed and dock.isFloating():
+            top = self.window()
+            dock.setGeometry(beside(top.frameGeometry(), top.screen().availableGeometry(), LOCATE_PANEL_SIZE))
+        self.locate_placed = True
+        dock.show()
+        dock.raise_()
 
     # ---- jobs -----------------------------------------------------------------
 
@@ -404,7 +420,6 @@ class InspectorWindow(QtWidgets.QMainWindow):
         (Zoom and pan lock the canvas, and the box selector ignores every
         event while they hold the lock.)"""
         if on:
-            self.locate_dock.show()
             if panel.toolbar.mode.name == "ZOOM":
                 panel.toolbar.zoom()
             elif panel.toolbar.mode.name == "PAN":
@@ -428,8 +443,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self.locate_summary.setText(
             f"reading the selection to find the samples in x {min(box_x):.4g} to {max(box_x):.4g}, "
             f"y {min(box_y):.4g} to {max(box_y):.4g}…")
-        self.locate_dock.show()
-        self.locate_dock.raise_()
+        self._show_locate_panel()
 
         def run(on_chunk):
             source = self._in_view({panel.plot: (box_x, box_y)}, job, read_data)
@@ -441,7 +455,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
                 self._show_locate(locate)
                 self.save_locate_button.setEnabled(locate.n_found > 0)
                 self.statusBar().showMessage(
-                    f"located {locate.n_found:,} samples; listed in the table below")
+                    f"located {locate.n_found:,} samples; listed in the Located samples panel")
             else:
                 self.locate_summary.setText("locate stopped before the end of the selection")
 
@@ -450,7 +464,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self._queue(job, front=True)
 
     def _show_locate(self, locate: LocateReducer) -> None:
-        self.locate_dock.show()
+        self._show_locate_panel()
         names = self.source.ctx.antenna_names or {}
         shown = len(locate.records)
         top = sorted(locate.by_baseline.items(), key=lambda kv: -kv[1])[:10]
@@ -474,7 +488,6 @@ class InspectorWindow(QtWidgets.QMainWindow):
                 item.setData(QtCore.Qt.DisplayRole, value)
                 table.setItem(i, j, item)
         table.setSortingEnabled(True)
-        self.locate_dock.show()
 
     def _save_locate_csv(self) -> None:
         if self.locate is None:
@@ -678,6 +691,18 @@ def locate_rows(records: list[dict], ctx) -> list[list]:
             sources.get(r["source_id"], str(r["source_id"])),
         ])
     return rows
+
+
+def beside(window: QtCore.QRect, screen: QtCore.QRect, size: QtCore.QSize) -> QtCore.QRect:
+    """Where a panel of `size` opens: right of `window`, its top level with
+    the window's, if the screen has the room; else against the screen's
+    right edge, over the window. Kept on the screen either way."""
+    width, height = min(size.width(), screen.width()), min(size.height(), screen.height())
+    x = window.x() + window.width()
+    if x + width > screen.x() + screen.width():
+        x = screen.x() + screen.width() - width
+    y = min(max(window.y(), screen.y()), screen.y() + screen.height() - height)
+    return QtCore.QRect(x, y, width, height)
 
 
 def run_inspector(source: XYSource, figures: list[tuple[str, object]], labels, cache=None, cached=None,
