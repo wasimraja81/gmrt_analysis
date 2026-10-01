@@ -54,6 +54,7 @@ LOCATE_LIMIT = 10_000
 POLL_MS = 150
 REFRESH_S = 0.5
 SETTLE_S = 0.3
+RESIZE_TOLERANCE_PX = 2  # a grid this close to the axes' pixel size is kept (rounding)
 EXPORT_FILTERS = "PNG (*.png);;PDF (*.pdf);;SVG (*.svg);;EPS (*.eps);;TIFF (*.tif);;JPEG (*.jpg)"
 
 
@@ -106,6 +107,8 @@ class _Panel:
     mouse_down: bool = False
     last_limits: tuple | None = None
     changed_at: float = 0.0
+    last_shape: tuple | None = None  # the axes' size in pixels when last looked at, and since when
+    resized_at: float = 0.0
     selector: RectangleSelector | None = None
     locate_action: QtGui.QAction | None = None
     toolbar: NavigationToolbar2QT | None = None
@@ -240,18 +243,32 @@ class InspectorWindow(QtWidgets.QMainWindow):
         label = self.labels[0] if pending else "reading ranges from the cache"
         self._queue(_Job("ranges", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows))
 
+    @staticmethod
+    def _pixel_shape(panel: _Panel) -> tuple[int, int]:
+        """The axes' (height, width) in the window's pixels: a window grid's shape."""
+        bbox = panel.figure.ax.get_window_extent()
+        return max(1, int(bbox.height)), max(1, int(bbox.width))
+
+    @classmethod
+    def _resized(cls, panel: _Panel) -> bool:
+        """Whether the axes' pixel size differs from the grid's (by more than
+        rounding): the window was resized since the grid was made."""
+        height, width = cls._pixel_shape(panel)
+        return max(abs(height - panel.grid.height), abs(width - panel.grid.width)) > RESIZE_TOLERANCE_PX
+
     def _window_grid(self, panel: _Panel, extent) -> GridReducer:
         panel.canvas.draw()
-        bbox = panel.figure.ax.get_window_extent()
-        return GridReducer(panel.plot, extent[0], extent[1], max(1, int(bbox.height)), max(1, int(bbox.width)))
+        return GridReducer(panel.plot, extent[0], extent[1], *self._pixel_shape(panel))
 
     def request_draw(self, plots: list[PlotSpec]) -> None:
         """Mark plots for drawing over their current extent (a new grid where
-        the extent changed). A running draw is stopped so the next one covers
-        every plot waiting; unfinished plots stay waiting."""
+        the extent or the window's size changed). A running draw is stopped so
+        the next one covers every plot waiting; unfinished plots stay
+        waiting."""
         for plot in plots:
             panel = self.panels[plot]
-            if panel.grid is None or (panel.grid.x_extent, panel.grid.y_extent) != tuple(panel.extent):
+            if (panel.grid is None or (panel.grid.x_extent, panel.grid.y_extent) != tuple(panel.extent)
+                    or self._resized(panel)):
                 panel.grid = self._window_grid(panel, panel.extent)
             panel.drawn = False
             self.to_draw.add(plot)
@@ -338,8 +355,10 @@ class InspectorWindow(QtWidgets.QMainWindow):
         panel.canvas.draw_idle()
 
     def _check_views(self, now: float) -> None:
-        """After a zoom or pan settles, re-draw that plot over the new limits.
-        Zoom or pan turned on while Locate is on turns Locate off."""
+        """After a zoom or pan settles, re-draw that plot over the new limits;
+        after a resize settles, re-draw it at the window's new pixel size
+        (T19 point D: re-bin, where the image was stretched). Zoom or pan
+        turned on while Locate is on turns Locate off."""
         for plot, panel in self.panels.items():
             if panel.selector is not None and panel.toolbar.mode.name != "NONE":
                 panel.locate_action.setChecked(False)
@@ -357,6 +376,13 @@ class InspectorWindow(QtWidgets.QMainWindow):
                 # aspect, widened again so both axes keep one scale and one span
                 panel.extent = panel.figure.set_view(*limits)
                 self.request_draw([plot])
+                continue
+            shape = self._pixel_shape(panel)
+            if shape != panel.last_shape:
+                panel.last_shape, panel.resized_at = shape, now
+                continue
+            if now - panel.resized_at >= SETTLE_S and self._resized(panel):
+                self.request_draw([plot])  # a new grid at the window's size
 
     def _toggle_aspect(self, panel: _Panel, equal: bool) -> None:
         """Equal scale on: widen the requested view so a unit is the same

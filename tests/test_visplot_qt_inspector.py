@@ -220,3 +220,20 @@ def test_equal_aspect_off_returns_to_the_datas_range_and_on_widens_again():
     _wait(app, window)
     assert view() == pytest.approx(widened)
     window.close()
+
+
+def test_a_resized_window_redraws_the_view_at_its_new_pixel_size():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_resize", plot)
+    _wait(app, window)
+    panel = window.panels[plot]
+    before = (panel.grid.height, panel.grid.width)
+    window.resize(1300, 1000)
+    end = time.monotonic() + 30
+    while time.monotonic() < end and (panel.grid.height, panel.grid.width) == before:
+        app.processEvents()
+        time.sleep(0.02)
+    _wait(app, window)
+    assert (panel.grid.height, panel.grid.width) == window._pixel_shape(panel) != before
+    assert panel.drawn and panel.grid.n_samples == 40 * 4 * 2 - 1  # the same samples, re-binned
+    window.close()
