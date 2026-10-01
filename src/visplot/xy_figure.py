@@ -23,7 +23,7 @@ from matplotlib.textpath import TextPath
 
 from visplot.clock_axis import DEFAULT_TIME_FORMAT, ClockFormatter, ClockLocator, clock_text
 from visplot.fonts import DEFAULT_PANEL_FONT
-from visplot.plot_panel import PanelFacts, PlotPanel
+from visplot.plot_panel import DENSITY_MIN_ALPHA, DensityScale, PanelFacts, PlotPanel
 from visplot.plot_spec import PlotSpec
 from visplot.plot_theme import DEFAULT_PLOT_THEME, color_axes, plot_theme
 from visplot.plot_title import build_plot_title
@@ -150,6 +150,64 @@ def downsample_layers(layers: np.ndarray, factor: int) -> np.ndarray:
     return layers.reshape(h // factor, factor, w // factor, factor).max(axis=(1, 3))
 
 
+def downsample_counts(counts: np.ndarray, factor: int) -> np.ndarray:
+    """A count grid `factor` times coarser, each pixel the sum of its block --
+    exactly what counting directly at the coarser resolution would give."""
+    if factor == 1:
+        return counts
+    h, w = counts.shape
+    return counts.reshape(h // factor, factor, w // factor, factor).sum(axis=(1, 3))
+
+
+def density_opacity(count: np.ndarray, scale: str = "log", top_percentile: float = 95.0
+                    ) -> tuple[np.ndarray, DensityScale]:
+    """Opacity of each pixel holding `count` samples (0 for none), from
+    DENSITY_MIN_ALPHA at the fewest up to 1, and the scale it followed:
+    "log", rising with log(count) to the `top_percentile` percentile of the
+    occupied pixels' counts (rounded up), full beyond it; "histogram", by
+    the pixel's rank among the occupied pixels (histogram equalization)."""
+    count = np.asarray(count, dtype=np.float64)
+    occupied = count[count > 0]
+    if not occupied.size:
+        return np.zeros(count.shape), DensityScale(scale, 0)
+    most = int(occupied.max())
+    if scale == "histogram":
+        ranked = np.sort(occupied)
+        below = np.searchsorted(ranked, count, side="right") / ranked.size  # share of pixels holding no more
+        lowest = np.searchsorted(ranked, ranked[0], side="right") / ranked.size
+        rise = (below - lowest) / (1.0 - lowest) if lowest < 1.0 else np.ones(count.shape)
+        described = DensityScale("histogram", most, median=int(np.median(occupied)),
+                                 p90=int(np.ceil(np.percentile(occupied, 90))))
+    else:
+        top = int(np.ceil(np.percentile(occupied, top_percentile)))
+        rise = np.minimum(np.log(np.maximum(count, 1)) / np.log(top), 1.0) if top > 1 else np.ones(count.shape)
+        described = DensityScale("log", most, top=top, percentile=top_percentile)
+    return np.where(count > 0, DENSITY_MIN_ALPHA + (1.0 - DENSITY_MIN_ALPHA) * rise, 0.0), described
+
+
+def density_rgba(shape, counts: dict[int, np.ndarray], colors: dict[int, tuple], flagged: np.ndarray | None = None,
+                 flagged_color: tuple | None = None, scale: str = "log", top_percentile: float = 95.0
+                 ) -> tuple[np.ndarray, DensityScale]:
+    """RGBA (uint8) of a density plot and the scale its opacity followed:
+    each pixel's hue the mix of its categories' colors weighted by their
+    counts (Datashader's way, the user's choice), its opacity by
+    `density_opacity`; flagged samples over them in their color, on a scale
+    of their own counts."""
+    total = np.zeros(shape, dtype=np.float64)
+    rgb = np.zeros(shape + (3,), dtype=np.float64)
+    for code, count in counts.items():
+        total += count
+        rgb += count[..., None] * np.asarray(colors[code][:3])
+    rgb /= np.maximum(total, 1.0)[..., None]
+    alpha, described = density_opacity(total, scale, top_percentile)
+    if flagged is not None and flagged.any():
+        f_alpha, _ = density_opacity(flagged, scale, top_percentile)
+        rgb = f_alpha[..., None] * np.asarray(flagged_color[:3]) + (1 - f_alpha[..., None]) * rgb
+        alpha = f_alpha + (1 - f_alpha) * alpha
+    rgba = np.concatenate([rgb, alpha[..., None]], axis=-1)
+    return np.round(rgba * 255).astype(np.uint8), described
+
+
 def layers_to_rgba(layers: np.ndarray, colors: dict[int, tuple]) -> np.ndarray:
     lut = np.zeros((int(FLAGGED_LAYER) + 1, 4), dtype=np.uint8)
     for value, rgba in colors.items():
@@ -262,26 +320,16 @@ class XYFigure:
 
     def show(self, grid: GridReducer, display_dpi: float, downsample: int = 1) -> None:
         """Draw `grid` (binned at `downsample` x `display_dpi`) at `display_dpi`."""
-        n = grid.n_samples
-        size = self.plot.point_size if self.plot.point_size is not None else auto_point_size(n)
-        radius = marker_radius_px(size, display_dpi)
-        layers = draw_markers(downsample_layers(grid.layers_2d(), downsample),
-                              marker_offsets(radius, auto_square_marker(n)), cross_offsets(radius))
-        for beyond, pointing_down in ((grid.below, True), (grid.above, False)):
-            if beyond is not None and beyond.any():  # over the points, under flagged crosses
-                marks = draw_markers(downsample_layers(grid.layers_2d(beyond), downsample),
-                                     triangle_offsets(radius, pointing_down))
-                over = (marks > 0) & (layers != FLAGGED_LAYER)
-                layers = np.where(over, marks, layers)
         if self.plot.limits:
             self.panel.set_beyond(grid.beyond)
         seen = tuple(sorted(grid.seen_codes)) if self.plot.colorize_by else ()
         if not set(seen) <= set(self.panel.category_codes()) and seen != self._seen_codes:
             self._seen_codes = seen  # a category the selection did not list: key it too
             self.relayout()
-        rgba = layers_to_rgba(layers, self.panel.colors(self._seen_codes))
-        if self.plot.show_flagged:
-            self.panel.set_flagged_drawn(bool((layers == FLAGGED_LAYER).any()))
+        if grid.density:
+            rgba = self._density_image(grid, downsample)
+        else:
+            rgba = self._points_image(grid, display_dpi, downsample)
         if self.image is None:
             self._set_scales()
             if not self.linear:
@@ -309,6 +357,38 @@ class XYFigure:
                 self.ax.set_ylim(grid.y_extent)
         self.image.set_visible(True)
         self._category_ticks()
+
+    def _points_image(self, grid: GridReducer, display_dpi: float, downsample: int) -> np.ndarray:
+        """RGBA of a points plot: a marker on every occupied pixel, ▼ / ▲
+        beyond its limits, flagged crosses on top."""
+        n = grid.n_samples
+        size = self.plot.point_size if self.plot.point_size is not None else auto_point_size(n)
+        radius = marker_radius_px(size, display_dpi)
+        layers = draw_markers(downsample_layers(grid.layers_2d(), downsample),
+                              marker_offsets(radius, auto_square_marker(n)), cross_offsets(radius))
+        for beyond, pointing_down in ((grid.below, True), (grid.above, False)):
+            if beyond is not None and beyond.any():  # over the points, under flagged crosses
+                marks = draw_markers(downsample_layers(grid.layers_2d(beyond), downsample),
+                                     triangle_offsets(radius, pointing_down))
+                over = (marks > 0) & (layers != FLAGGED_LAYER)
+                layers = np.where(over, marks, layers)
+        if self.plot.show_flagged:
+            self.panel.set_flagged_drawn(bool((layers == FLAGGED_LAYER).any()))
+        return layers_to_rgba(layers, self.panel.colors(self._seen_codes))
+
+    def _density_image(self, grid: GridReducer, downsample: int) -> np.ndarray:
+        """RGBA of a density plot (T21), the panel told its largest count."""
+        colors = self.panel.colors(self._seen_codes)
+        counts = {code: downsample_counts(grid.layers_2d(c), downsample) for code, c in grid.counts.items()}
+        flagged = (downsample_counts(grid.layers_2d(grid.flagged_counts), downsample)
+                   if grid.flagged_counts is not None else None)
+        shape = (grid.height // downsample, grid.width // downsample)
+        rgba, described = density_rgba(shape, counts, {code: colors[code + 1] for code in counts}, flagged,
+                                       colors[FLAGGED_LAYER], self.plot.density_scale, self.plot.density_top)
+        self.panel.set_density_scale(described)
+        if self.plot.show_flagged:
+            self.panel.set_flagged_drawn(flagged is not None and bool(flagged.any()))
+        return rgba
 
     @property
     def linear(self) -> bool:

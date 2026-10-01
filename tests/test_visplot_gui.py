@@ -459,3 +459,15 @@ def test_baselines_with_is_frozen_for_autocorrelations_and_an_empty_selection_di
     assert "no rows selected: --antennas C00 --baselines-with C00" in window.counts.text()
     assert not window.plot_button.isEnabled() and "no rows selected" in window.plot_button.toolTip()
     window.close()
+
+
+def test_the_style_field_draws_a_density_plot_in_the_window():
+    app, window, _ = _window("gui_density")
+    window.form.fields["style"].set("density")
+    tab = _plot_amp_vs_freq(app, window)
+    assert "--style density" in tab.request.command_line()
+    (plot,) = tab.run.xy_plots
+    panel = tab.panel.panels[plot]
+    assert panel.grid.density and sum(int(c.sum()) for c in panel.grid.counts.values()) == panel.grid.n_samples == 319
+    assert panel.figure.panel.density_peak.get_text() not in ("", "…")  # the scale's top, once drawn
+    window.close()

@@ -130,6 +130,8 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         given = [name for name, value in samplers.items() if value is not None]
         if len(given) > 1:
             raise ValueError(f"give one of --every-nth, --every-nth-integration, --random-subset-n; got {', '.join(given)}")
+        if not 50.0 <= request.density_top <= 100.0:
+            raise ValueError(f"--density-top is a percentile from 50 to 100, got {request.density_top:g}")
         if request.baselines_with and not request.antennas:
             raise ValueError("--baselines-with needs --antennas: the baselines between one of --antennas and one of "
                              "--baselines-with")
@@ -156,7 +158,8 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         style = PlotSpec(
             y="", x="", colorize_by=request.colorize_by, show_flagged=request.show_flagged,
             combine_flags=request.combine_flags, mirror=request.mirror,
-            x_range=x_range, y_range=y_range, point_size=request.point_size, color=request.color,
+            x_range=x_range, y_range=y_range, point_size=request.point_size, color=request.color, style=request.style,
+            density_scale=request.density_scale, density_top=request.density_top,
             x_scale=request.x_scale, y_scale=request.y_scale, x_range_mode=request.x_range_mode,
             y_range_mode=request.y_range_mode, range_percentiles=range_percentiles,
             scale_linear_width=request.scale_linear_width, aspect=request.aspect,
@@ -636,7 +639,8 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     for p in xy_plots:
         extents[p] = xy_figures[p].set_view(*extents[p])  # the limits after the aspect applies
         h, w = xy_figures[p].grid_shape(lowres_dpi)
-        shapes[p] = (h * factor, w * factor)
+        # density counts at the PNG's pixels (a count per pixel means the pixel seen; T21), points at highres
+        shapes[p] = (h, w) if p.style == "density" else (h * factor, w * factor)
     grids = {}
     drawn = source
     if xy_plots:
@@ -661,7 +665,8 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     with PdfPages(lowres_path) as pdf:
         for name, item in run.figures():
             if isinstance(item, XYFigure):
-                item.show(grids[item.plot], display_dpi=lowres_dpi, downsample=factor)
+                item.show(grids[item.plot], display_dpi=lowres_dpi,
+                          downsample=1 if item.plot.style == "density" else factor)
                 if item.limits_warning:
                     report("warning", f"{name}: {item.limits_warning}")
             png_path = output_dir / f"{request.output_prefix}_{name}.png"

@@ -50,8 +50,11 @@ FOOTER_IN = 0.2  # the footer line at the bottom: the caveat note and the record
 RULE_GAP_IN = 0.12  # between the rule over the panel and its first line
 _LEFT, _MIDDLE, _RIGHT = 0.03, 0.53, 0.97  # figure fractions: the left column, the right column, the edge
 _SWATCH_PT = 9.0
-_LABELS = ("Stokes", "Sources", "Channels", "Baselines", "Time", "Selection", "Drawn", "Flags", "Limits")
+_LABELS = ("Stokes", "Sources", "Channels", "Baselines", "Time", "Selection", "Drawn", "Flags", "Limits", "Density")
 _LIMIT_NAMES_SHOWN = 3  # categories named on the Limits line; the rest counted
+# A density plot's opacity for the pixels holding the fewest samples, so they show; it rises to 1 (T21).
+DENSITY_MIN_ALPHA = 0.25
+_GRADIENT_STEPS, _GRADIENT_PT = 8, 48.0  # the Density line's scale strip
 _ORDINAL = {1: "st", 2: "nd", 3: "rd"}
 
 # Row filters of a request, as the panel names them.
@@ -159,6 +162,40 @@ def _swatch(color) -> DrawingArea:
     return box
 
 
+@dataclass(frozen=True)
+class DensityScale:
+    """What a density plot's opacity followed (`xy_figure.density_opacity`),
+    for its Density line: the log scale's top (the `percentile` of the
+    occupied pixels' counts) or the histogram's median and 90th percentile;
+    the largest count per pixel either way."""
+
+    kind: str  # "log" or "histogram"
+    most: int
+    top: int = 0
+    percentile: float = 100.0
+    median: int = 0
+    p90: int = 0
+
+    def text(self) -> tuple[str, str]:
+        """(the number at the scale's top, the words after it)."""
+        if self.kind == "histogram":
+            return f"{self.most:,}", (f"samples per pixel, histogram-equalized: half the pixels hold ≤ "
+                                      f"{self.median:,}, 90% ≤ {self.p90:,}")
+        note = f"; the {self.percentile:g}th percentile, {self.most:,} at most" if self.most > self.top else ""
+        return f"{self.top:,}", f"samples per pixel, log scale{note}"
+
+
+def _gradient(color) -> DrawingArea:
+    """A density plot's scale: `color` from the fewest samples' opacity to
+    full, in equal steps of the scale (`DensityScale`)."""
+    box = DrawingArea(_GRADIENT_PT, _SWATCH_PT)
+    step = _GRADIENT_PT / _GRADIENT_STEPS
+    for i in range(_GRADIENT_STEPS):
+        alpha = DENSITY_MIN_ALPHA + (1.0 - DENSITY_MIN_ALPHA) * i / (_GRADIENT_STEPS - 1)
+        box.add_artist(Rectangle((i * step, 0), step, _SWATCH_PT, facecolor=color, alpha=alpha, edgecolor="none"))
+    return box
+
+
 def _cross(color) -> DrawingArea:
     box = DrawingArea(_SWATCH_PT, _SWATCH_PT)
     for ys in ((0, _SWATCH_PT), (_SWATCH_PT, 0)):
@@ -204,6 +241,8 @@ class PlotPanel:
         self.status = TextArea("", textprops=self.value_props)
         self.flagged = TextArea("flagged", textprops=self.value_props)  # "flagged: none" when none are drawn
         self.limits = TextArea("", textprops=self.value_props)  # points beyond the plot's limits (T47)
+        self.density_peak = TextArea("…", textprops=self.value_props)  # a density plot's scale top (T21)
+        self.density_note = TextArea("samples per pixel", textprops=self.value_props)  # what the scale is
         self.limits_warning: str | None = None
         if plot.limits:
             self.set_beyond({"below": {}, "above": {}})
@@ -269,8 +308,9 @@ class PlotPanel:
                 items += [_swatch(rgba), f"{label}   "]
         elif self.plot.show_flagged:
             items += [_swatch(readable(self.plot.color, self.theme)), "unflagged   "]
-        if self.plot.show_flagged:
-            items += [_cross(readable(FLAGGED_COLOR, self.theme)), self.flagged]
+        if self.plot.show_flagged:  # crosses, or in density mode a light-coral shade
+            mark = _swatch if self.plot.style == "density" else _cross
+            items += [mark(readable(FLAGGED_COLOR, self.theme)), self.flagged]
         return items
 
     def _lines(self, seen, width_in: float) -> tuple[list, list, list, list]:
@@ -282,6 +322,9 @@ class PlotPanel:
         if items:
             label = {"stokes": "Stokes", "source": "Sources"}.get(plot.colorize_by, "")
             key = self._wrap(label, items, (_RIGHT - _LEFT) * width_in * 72.0)
+        if plot.style == "density":  # its scale (`DensityScale`)
+            shade = self.theme.panel_value if plot.colorize_by else readable(plot.color, self.theme)
+            key.append(("Density", ["1", _gradient(shade), self.density_peak, self.density_note]))
         left, right, bottom = [], [], []
         if facts is not None:
             names = [name for _, name in facts.sources]
@@ -430,6 +473,12 @@ class PlotPanel:
         self.limits.set_text(text)
         for t in self.limits.get_children():
             t.set_color(self.theme.warning if self.limits_warning else self.theme.panel_value)
+
+    def set_density_scale(self, scale: DensityScale) -> None:
+        """A density plot's scale, as its Density line states it."""
+        top, words = scale.text()
+        self.density_peak.set_text(top)
+        self.density_note.set_text(words)
 
     def set_flagged_drawn(self, drawn: bool) -> None:
         self.flagged.set_text("flagged" if drawn else "flagged: none")

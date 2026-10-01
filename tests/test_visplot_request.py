@@ -16,7 +16,8 @@ def _every_kind_of_value():
         x_unit="Mlambda", y_unit="UNCALIB", time_zone="Asia/Kolkata", x_range="0:40", y_range_mode="percentile",
         range_percentiles="1:99", y_scale="asinh", aspect="free", scale_linear_width=0.1, output_dir="tmp/out",
         output_prefix="run1", no_highres_pdf=True, dpi=300, figure_size="10.5,7.25", cache_dir="tmp/cache", threads=3,
-        panel_font="dejavu-sans", plot_theme="dark", combine_flags="all", time_format="hh:mm:ss",
+        panel_font="dejavu-sans", plot_theme="dark", combine_flags="all", time_format="hh:mm:ss", style="density",
+        density_scale="histogram", density_top=99.0,
     )
 
 

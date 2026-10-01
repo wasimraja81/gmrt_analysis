@@ -3,8 +3,8 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49 2026-10-01, 489 tests passing; T26, T32 in progress; T40, T42, T45, T46, point
-D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
+T47-T49, point D and T21 2026-10-01, 496 tests passing; T26, T32 in progress; T40, T42,
+T45, T46, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -320,7 +320,7 @@ Buildable now, ahead of Phase C.
     location, if useful) off an `ObservationSummary`, replacing `antenna_layout`'s current
     ad hoc `telescope`/`source_path` parameters — and used by every other plot's title too.
 
-- **T21 — visPlot density mode — NOT STARTED (added 2026-09-27).** A plot style for dense
+- **T21 — visPlot density mode — DONE (added 2026-09-27, built 2026-10-01).** A plot style for dense
   generic Y-vs-X plots that colors each pixel by the number of samples landing in it —
   the approach of Datashader and `mpl-scatter-density`, and close to AIPS UVPLT's own
   "array method" (which fills an in-memory pixel array and displays it as an image).
@@ -335,6 +335,27 @@ Buildable now, ahead of Phase C.
   categorical shading does this: a pixel's hue mixes its categories' colours by their
   counts, its intensity follows the total count. Where categories overlap (RR and LL of
   an unpolarised source, almost everywhere) the pixel shows the mixed hue.
+  The user's choices (2026-10-01): the count scale in the panel; mixed hues where
+  categories share a pixel; the scale's kind and top as options ("Users can choose what
+  they want based on their data density"). Built: `--style points|density` (default
+  points; the GUI's "Style" in Display) for generic plots; `GridReducer` counts samples
+  per pixel (uint32) by category, flagged ones apart when shown; `XYFigure` colors each
+  pixel with its categories' colors mixed by their counts, flagged ones over the rest in
+  light coral on a scale of their own. Opacity from 0.25 for the fewest to 1:
+  `--density-scale log` (default) rises with log(count) to `--density-top` (default the
+  95th percentile of the occupied pixels' counts; 100, the most crowded pixel), full
+  beyond it; `histogram` follows each pixel's rank among the occupied pixels. The panel's
+  Density line states it: "1 [gradient] 316 samples per pixel, log scale; the 95th
+  percentile, 2,423,881 at most", or "... histogram-equalized: half the pixels hold <= 6,
+  90% <= 65". A save counts at the PNG's pixels (points are drawn at 600 dpi and
+  reduced): a count per pixel means the pixel seen, and memory stays at the PNG's size;
+  the high-resolution PDF shows the same counts. On GWB 3C286 amp vs uv distance, RR and
+  LL: of 30,316 occupied pixels half held at most 6 samples, 90% at most 65, 95% at most
+  315, while 808 pixels on the zero-amplitude floor held 99.2% of the samples (up to
+  2,423,881 in one); a top at the maximum, or at the 99th percentile (484,997, on the
+  floor), left most pixels pale, hence the 95th as the default and both options. Tests:
+  the counts by category and flags; hues mixed by count; each scale's opacity and words;
+  the panel's scale; a density save from the command line's code; the GUI's Style field.
 
 - **T22 — visPlot streaming plots — DONE (added and built 2026-09-27).**
   *Problem.* A generic Y-vs-X plot held the whole selection in memory at once: the
@@ -546,8 +567,8 @@ Buildable now, ahead of Phase C.
   reading, and on a fallback prints the warning and puts it on every geometry plot.
   First use now takes 0.48 s (was 10 s).
 
-- **T19 review point D — interactive responsiveness — NOT STARTED (on hold since
-  2026-09-28).** Four items from the T22 review, distinct from the locate/zoom fix:
+- **T19 review point D — interactive responsiveness — DONE (on hold since 2026-09-28,
+  built 2026-10-01).** Four items from the T22 review, distinct from the locate/zoom fix:
   progressive chunk order (read chunks in a spread-out order, so an early window shows a
   sparse sample of the whole selection; in time order it shows only the first part);
   instant zoom preview

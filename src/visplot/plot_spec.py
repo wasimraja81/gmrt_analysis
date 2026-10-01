@@ -25,6 +25,12 @@ class PlotSpec:
     y_range: tuple[float, float] | None = None
     point_size: float | None = None  # marker area, points^2; None: from the number of samples
     color: str = "tab:blue"
+    # "points": a marker where any sample lands; "density" (T21): each pixel colored by how many land there,
+    # its opacity on a "log" scale up to the `density_top` percentile of the occupied pixels' counts, or by
+    # "histogram" equalization (the pixel's rank among them)
+    style: str = "points"
+    density_scale: str = "log"
+    density_top: float = 95.0
     name: str = ""  # used in output filenames
     reference_lines: tuple[tuple[str, float], ...] = ()  # ("x" or "y", value): dashed lines, e.g. transit
     # ("x" or "y", low, high) in that axis's unit: points beyond drawn as ▼ (below) or ▲ (above) in their own

@@ -360,7 +360,12 @@ class GridReducer:
     two more grids of the same kind, `below` and `above` (drawn as ▼ and ▲),
     placed on the grid's edge where they lie beyond it, and counts them by
     category with their lowest (below) or highest (above) value:
-    `beyond[kind][code] = [count, extreme]`."""
+    `beyond[kind][code] = [count, extreme]`.
+
+    A density plot (`plot.style` "density", T21) counts instead: `counts`
+    maps a category code (0 without categories) to the samples per pixel,
+    `flagged_counts` the flagged ones shown; points beyond the limits are
+    counted with the rest (and still in `beyond`)."""
 
     def __init__(self, plot: PlotSpec, x_extent, y_extent, height: int, width: int):
         self.plot = plot
@@ -377,6 +382,9 @@ class GridReducer:
         self.below = np.zeros(height * width, dtype=np.int16) if plot.limits else None
         self.above = np.zeros(height * width, dtype=np.int16) if plot.limits else None
         self.beyond: dict[str, dict[int, list]] = {"below": {}, "above": {}}
+        self.density = plot.style == "density"
+        self.counts: dict[int, np.ndarray] = {}  # density: category code -> samples per pixel (uint32)
+        self.flagged_counts: np.ndarray | None = None
         self.seen_codes: set[int] = set()
         self.n_samples = 0
         self.n_outside = 0  # samples outside the extent, or not showable on the axis scale
@@ -457,17 +465,20 @@ class GridReducer:
         self.n_outside += n_outside
         if pixel.size == 0:
             return
+        for name, counts in (beyond or {}).items():
+            for c, (n, extreme) in counts.items():
+                seen = self.beyond[name].setdefault(c, [0, extreme])
+                seen[0] += n
+                seen[1] = min(seen[1], extreme) if name == "below" else max(seen[1], extreme)
+        if self.density:
+            self._count(pixel, code, flagged)
+            return
         if kind is not None and kind.any():
             for k, grid in ((1, self.below), (2, self.above)):
                 chosen = kind == k
                 for c in (np.unique(code[chosen]) if code is not None else [0]):
                     sel = pixel[chosen] if code is None else pixel[chosen & (code == c)]
                     grid[sel] = np.maximum(grid[sel], c + 1)
-            for name, counts in beyond.items():
-                for c, (n, extreme) in counts.items():
-                    seen = self.beyond[name].setdefault(c, [0, extreme])
-                    seen[0] += n
-                    seen[1] = min(seen[1], extreme) if name == "below" else max(seen[1], extreme)
             self.seen_codes.update(int(c) for c in (np.unique(code[kind > 0]) if code is not None else [0]))
             self.n_samples += int((kind > 0).sum())
             keep = kind == 0
@@ -494,6 +505,24 @@ class GridReducer:
             self.seen_codes.update(int(c) for c in present)
         self.n_samples += int(pixel.size)
 
+    def _count(self, pixel, code, flagged) -> None:
+        """A density plot's samples added to its counts per pixel."""
+        size = self.height * self.width
+        good = None if flagged is None else ~flagged
+        good_pixel = pixel if good is None else pixel[good]
+        good_code = None if code is None else (code if good is None else code[good])
+        for c in ([0] if good_code is None else np.unique(good_code)):
+            sel = good_pixel if good_code is None else good_pixel[good_code == c]
+            if sel.size:
+                counts = self.counts.setdefault(int(c), np.zeros(size, dtype=np.uint32))
+                counts += np.bincount(sel, minlength=size).astype(np.uint32)
+                self.seen_codes.add(int(c))
+        if flagged is not None and flagged.any():
+            if self.flagged_counts is None:
+                self.flagged_counts = np.zeros(size, dtype=np.uint32)
+            self.flagged_counts += np.bincount(pixel[flagged], minlength=size).astype(np.uint32)
+        self.n_samples += int(pixel.size)
+
     def update(self, values: ChunkValues) -> None:
         self.apply(self.compute(values))
 
@@ -506,6 +535,8 @@ class GridReducer:
             copy.below = self.below.copy() if self.below is not None else None
             copy.above = self.above.copy() if self.above is not None else None
             copy.beyond = {name: {c: list(v) for c, v in counts.items()} for name, counts in self.beyond.items()}
+            copy.counts = {c: v.copy() for c, v in self.counts.items()}
+            copy.flagged_counts = self.flagged_counts.copy() if self.flagged_counts is not None else None
             copy.seen_codes = set(self.seen_codes)
         return copy
 

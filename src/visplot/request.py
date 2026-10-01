@@ -214,6 +214,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     style.add_argument("--color", default="tab:blue", help="marker color, any matplotlib color (default: tab:blue)")
     style.add_argument(
+        "--style", choices=["points", "density"], default="points",
+        help="points (default): a marker where any sample lands; density: each pixel colored by how many samples "
+        "land in it, a category's hues mixed by their counts where categories share a pixel (the panel gives the "
+        "scale; see --density-scale)",
+    )
+    style.add_argument(
+        "--density-scale", choices=["log", "histogram"], default="log",
+        help="with --style density, a pixel's opacity: log (default), rising with log(count) to the scale's top "
+        "(--density-top), full beyond it; histogram, by the pixel's rank among the occupied pixels "
+        "(histogram-equalized), whatever the counts' spread",
+    )
+    style.add_argument(
+        "--density-top", type=float, default=95.0, metavar="PERCENT",
+        help="with --density-scale log, the scale's top as this percentile (50 to 100) of the occupied pixels' "
+        "counts; 100 is the most crowded pixel (default: 95)",
+    )
+    style.add_argument(
         "--colorize-by", choices=sorted(CATEGORY_NAMES),
         help="color samples by a category (overrides --color)",
     )

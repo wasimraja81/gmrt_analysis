@@ -425,6 +425,36 @@ class RequestForm(QtWidgets.QWidget):
         self.fields["color"] = Field("color", color, lambda: color.currentText().strip() or "tab:blue",
                                      lambda v: color.setCurrentText(str(v)), color.currentTextChanged)
         form.addRow("Color", color)
+        style = QtWidgets.QComboBox()
+        style.addItem("points", "points")
+        style.addItem("density (samples per pixel)", "density")
+        style.setToolTip("--style: points marks where any sample lands; density colors each pixel by how many land "
+                         "there, hues mixed where categories share a pixel")
+        form.addRow("Style", self._add(combo_field("style", style)))
+        density_scale = QtWidgets.QComboBox()
+        density_scale.addItem("log", "log")
+        density_scale.addItem("histogram-equalized", "histogram")
+        density_scale.setToolTip("--density-scale: log rises with log(count) to the scale's top; histogram-equalized "
+                                 "follows each pixel's rank among the occupied pixels")
+        form.addRow("Density scale", self._add(combo_field("density_scale", density_scale)))
+        density_top = QtWidgets.QDoubleSpinBox()
+        density_top.setRange(50.0, 100.0)
+        density_top.setDecimals(1)
+        density_top.setSuffix(" th percentile")
+        density_top.setValue(build_arg_parser().get_default("density_top"))
+        density_top.setToolTip("--density-top: the log scale's top among the occupied pixels' counts (100: the "
+                               "most crowded pixel)")
+        self.fields["density_top"] = Field("density_top", density_top, density_top.value, density_top.setValue,
+                                           density_top.valueChanged)
+        form.addRow("Scale top", density_top)
+
+        def density_controls(*_):  # density plots only; the top, for the log scale only
+            density = style.currentData() == "density"
+            density_scale.setEnabled(density)
+            density_top.setEnabled(density and density_scale.currentData() == "log")
+        style.currentIndexChanged.connect(density_controls)
+        density_scale.currentIndexChanged.connect(density_controls)
+        density_controls()
         self.auto_size = QtWidgets.QCheckBox("auto")
         self.auto_size.setChecked(True)
         size = QtWidgets.QDoubleSpinBox()
