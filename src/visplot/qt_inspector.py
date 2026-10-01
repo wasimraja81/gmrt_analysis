@@ -44,7 +44,8 @@ from visplot.quantities import utc_jd
 from visplot.request_args import DPI_LIMITS
 from visplot.stream import GridReducer, LocateReducer
 from visplot.xy_figure import XYFigure, grid_summary
-from visplot.xy_session import PassProgress, XYSource, range_pass_axes, range_pass_reads_data, resolve_extents
+from visplot.xy_session import (PassProgress, XYSource, range_pass_axes, range_pass_reads_data, resolve_extents,
+                                source_in_views)
 
 if TYPE_CHECKING:
     from visplot.records import PlotRecord, WindowProvenance
@@ -110,6 +111,7 @@ class _Panel:
     toolbar: NavigationToolbar2QT | None = None
     aspect_box: QtWidgets.QCheckBox | None = None
     extent: tuple | None = None
+    rows_read: int | None = None  # by the current grid's draw: the rows that can reach its view
 
 
 class InspectorWindow(QtWidgets.QMainWindow):
@@ -265,7 +267,10 @@ class InspectorWindow(QtWidgets.QMainWindow):
         label = self.labels[1] if first else "re-drawing the view"
 
         def run(on_chunk):
-            return self.source.stream(list(grids.values()), read_data=read_data, on_chunk=on_chunk)
+            source = self._in_view({p: (g.x_extent, g.y_extent) for p, g in grids.items()}, job, read_data)
+            for plot in plots:
+                self.panels[plot].rows_read = source.n_rows
+            return source.stream(list(grids.values()), read_data=read_data, on_chunk=on_chunk)
 
         def done(job):
             if not job.completed:
@@ -279,7 +284,17 @@ class InspectorWindow(QtWidgets.QMainWindow):
                     if first and self.report is not None and panel.figure.limits_warning:  # once: the whole view
                         self.report("warning", f"{plot.name}: {panel.figure.limits_warning}")
 
-        self._queue(_Job("draw", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows))
+        job = _Job("draw", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows)
+        self._queue(job)
+
+    def _in_view(self, views: dict, job: _Job, read_data: bool) -> XYSource:
+        """For a pass reading visibility data: the selection narrowed to the
+        rows that can hold a point inside the views ({plot: (x limits, y
+        limits)}), found from row metadata alone (`rows_in_views`), the job's
+        progress counting those rows; for one reading none, the selection."""
+        source = source_in_views(self.source, views, read_data)
+        job.progress.total_rows = source.n_rows
+        return source
 
     def _poll(self) -> None:
         now = time.monotonic()
@@ -315,7 +330,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         snapshot = panel.grid.snapshot()
         panel.figure.show(snapshot, display_dpi=panel.figure.fig.dpi)
         if final:
-            panel.figure.set_status(grid_summary(snapshot, self.source.n_rows))
+            panel.figure.set_status(grid_summary(snapshot, panel.rows_read or self.source.n_rows, self.source.n_rows))
         else:
             job = self.jobs[0] if self.jobs else None
             panel.figure.set_status(job.progress.text(job.rows_done) if job else "")
@@ -388,7 +403,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self.locate_dock.raise_()
 
         def run(on_chunk):
-            return self.source.stream([locate], read_data=read_data, on_chunk=on_chunk)
+            source = self._in_view({panel.plot: (box_x, box_y)}, job, read_data)
+            return source.stream([locate], read_data=read_data, on_chunk=on_chunk)
 
         def done(job):
             if job.completed:
@@ -400,8 +416,9 @@ class InspectorWindow(QtWidgets.QMainWindow):
             else:
                 self.locate_summary.setText("locate stopped before the end of the selection")
 
-        self._queue(_Job("locate", "locating samples", run, done,
-                         self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
+        job = _Job("locate", "locating samples", run, done, self.source.row_bytes if read_data else 0,
+                   self.source.n_rows)
+        self._queue(job, front=True)
 
     def _show_locate(self, locate: LocateReducer) -> None:
         self.locate_dock.show()
@@ -467,7 +484,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
         read_data = located.plot.needs_data
 
         def run(on_chunk):
-            return self.source.stream([again], read_data=read_data, on_chunk=on_chunk)
+            source = self._in_view({located.plot: (located.x_box, located.y_box)}, job, read_data)
+            return source.stream([again], read_data=read_data, on_chunk=on_chunk)
 
         def done(job):
             written = writer.close(again, completed=job.completed and job.error is None)
@@ -477,8 +495,9 @@ class InspectorWindow(QtWidgets.QMainWindow):
                 f"saved {again.n_found:,} located samples to {written}" if written
                 else "saving the located samples stopped before the end; no file written")
 
-        self._queue(_Job("locate-csv", f"writing all {located.n_found:,} located samples", run, done,
-                         self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
+        job = _Job("locate-csv", f"writing all {located.n_found:,} located samples", run, done,
+                   self.source.row_bytes if read_data else 0, self.source.n_rows)
+        self._queue(job, front=True)
 
     # ---- provenance of saved files -----------------------------------------------
 
@@ -539,8 +558,12 @@ class InspectorWindow(QtWidgets.QMainWindow):
         grid = GridReducer(plot, limits[0], limits[1], height, width)
         read_data = plot.needs_data
 
+        rows_read = []
+
         def run(on_chunk):
-            return self.source.stream([grid], read_data=read_data, on_chunk=on_chunk)
+            source = self._in_view({plot: limits}, job, read_data)
+            rows_read.append(source.n_rows)
+            return source.stream([grid], read_data=read_data, on_chunk=on_chunk)
 
         def done(job):
             if not job.completed:
@@ -548,7 +571,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
                 return
             panel.figure.show(grid, display_dpi=dpi)
             status, shown_record = panel.figure.status.get_text(), panel.figure.record_id
-            panel.figure.set_status(grid_summary(grid, self.source.n_rows))
+            panel.figure.set_status(grid_summary(grid, rows_read[0], self.source.n_rows))
             if record is not None:
                 panel.figure.set_record(record.run_id)  # the file names the export's own record
             try:
@@ -565,8 +588,9 @@ class InspectorWindow(QtWidgets.QMainWindow):
             if error is None:
                 self.statusBar().showMessage(f"exported {path} at {dpi} dpi")
 
-        self._queue(_Job("export", f"exporting at {dpi} dpi", run, done,
-                         self.source.row_bytes if read_data else 0, self.source.n_rows), front=True)
+        job = _Job("export", f"exporting at {dpi} dpi", run, done, self.source.row_bytes if read_data else 0,
+                   self.source.n_rows)
+        self._queue(job, front=True)
 
     # ---- closing ----------------------------------------------------------------
 

@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49 2026-10-01, 480 tests passing; T26, T32 in progress; T40, T42, T45, T46, point
+T47-T49 2026-10-01, 483 tests passing; T26, T32 in progress; T40, T42, T45, T46, point
 D, T20, T21 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -554,6 +554,26 @@ Buildable now, ahead of Phase C.
   (show the existing image enlarged at once, sharpened when the re-read finishes); zoom
   pruning (skip rows or channels outside the new limits for time, u/v/w, uv distance and
   frequency); re-bin on window resize. To be built with the GUI (T32), where they matter.
+  Measured first (2026-10-01; GWB 3C286, RR, amp vs uv distance: 69,174 rows, 6.80 GB,
+  141.7M samples): with the rows in the page cache a range pass took 3.8 s and a draw
+  4.5 s; from disk, at T23's 181 MB/s, about 38 s each; every zoom re-read all 6.80 GB.
+  A zoom to 0-2 kλ can reach 18,189 rows (26%), to one minute 8,694 (12.6%). The user
+  chose all four, in the order: zoom pruning, progressive order, re-bin on resize, zoom
+  preview.
+  1. Zoom pruning — DONE (2026-10-01). Every pass reading visibility data reads only the
+  rows that can reach its view (`xy_session.rows_in_views`, `stream.ViewRowsReducer`):
+  window draws (a zoom or pan), exports, Locate and its CSV, and the command line's
+  saves (with --x-range/--y-range) and --locate; the window and the command line prune
+  alike, so an export and its command's repeat stay pixel for pixel the same. The rows
+  come from one pass over row metadata, no visibility read, on the band's two edge
+  channels alone: every row-metadata quantity is either independent of frequency or
+  proportional to it, so a row's values reach their extremes at the band's edges (a
+  test checks the rows equal those every channel gives); a row is kept when on each
+  metadata axis its values reach the view, or for a mirrored plot their negation on
+  both. A grid drawn from those rows equals the one from every row (tests; on GWB the
+  0-2 kλ zoom: 30,628,181 samples either way). The metadata pass took 0.1 s on GWB's
+  69,174 rows; the zoomed draw reads 18,189 rows, 1.79 GB instead of 6.80. The Drawn line
+  says it: "... from 18,189 rows of 69,174 (the others lie outside the view)".
 
 - **T28 — Locate: save every located sample — DONE (2026-09-28).** User's question: the
   table and the CSV stopped at the first 10,000 samples. `LocateReducer` now works in

@@ -515,6 +515,51 @@ class GridReducer:
         return (self.layers if grid is None else grid).reshape(self.height, self.width)
 
 
+class ViewRowsReducer:
+    """Which rows of a selection (`row_indices`, ascending) can hold a point
+    of `plot` inside (x_extent, y_extent): the rows a pass reading
+    visibility data over that view needs -- a draw, an export, a Locate box
+    (T19 point D). Only the axes whose
+    quantity needs no visibility data are evaluated, so a pass of it reads
+    none; a row is kept when, on each of them, its values over the channels
+    and Stokes reach the extent (for a mirrored plot, or their negation on
+    both axes). A row left out holds no point inside; a row kept may hold
+    none."""
+
+    def __init__(self, plot: PlotSpec, x_extent, y_extent, row_indices: np.ndarray):
+        self.plot = plot
+        self.extents = {"x": sorted(float(v) for v in x_extent), "y": sorted(float(v) for v in y_extent)}
+        self.row_indices = np.asarray(row_indices)
+        self.keep = np.zeros(len(self.row_indices), dtype=bool)
+
+    def compute(self, values: ChunkValues) -> np.ndarray:
+        """Positions, in `row_indices`, of this chunk's rows to keep."""
+        n = len(values.block.row_indices)
+        plain = np.ones(n, dtype=bool)
+        mirrored = np.ones(n, dtype=bool)
+        for axis in ("x", "y"):
+            if QUANTITIES[self.plot.x if axis == "x" else self.plot.y].needs_data:
+                continue
+            v = np.asarray(values.axis(self.plot, axis), dtype=np.float64)
+            flat = v.reshape(v.shape[0], -1) if v.ndim > 1 else v.reshape(-1, 1)
+            finite = np.isfinite(flat)
+            lo = np.where(finite, flat, np.inf).min(axis=1)
+            hi = np.where(finite, flat, -np.inf).max(axis=1)
+            if lo.size == 1 and n != 1:  # the same values for every row
+                lo, hi = np.full(n, lo[0]), np.full(n, hi[0])
+            a, b = self.extents[axis]
+            plain &= (hi >= a) & (lo <= b)
+            mirrored &= (-lo >= a) & (-hi <= b)
+        keep = plain | mirrored if self.plot.mirror else plain
+        return np.searchsorted(self.row_indices, values.block.row_indices)[keep]
+
+    def apply(self, result) -> None:
+        self.keep[result] = True
+
+    def update(self, values: ChunkValues) -> None:
+        self.apply(self.compute(values))
+
+
 LOCATE_FIELDS = ("row", "ant1", "ant2", "jd", "source_id", "channel", "freq_hz", "stokes",
                  "x", "y", "weight", "flagged", "mirrored")
 

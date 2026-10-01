@@ -360,11 +360,14 @@ class XYFigure:
         self.panel.record.set_text(run_id or "")
 
 
-def grid_summary(grid: GridReducer, n_rows: int) -> str:
-    """What a finished plot shows: samples drawn, rows read, and samples
-    left out because they fall outside the axis ranges (or, on a log axis,
-    are not positive)."""
+def grid_summary(grid: GridReducer, n_rows: int, of_rows: int | None = None) -> str:
+    """What a finished plot shows: samples drawn, rows read (of the
+    selection's `of_rows`, when the pass read only the rows that can reach
+    the view), and samples left out because they fall outside the axis
+    ranges (or, on a log axis, are not positive)."""
     text = f"{grid.n_samples:,} samples from {n_rows:,} rows"
+    if of_rows is not None and of_rows != n_rows:
+        text += f" of {of_rows:,} (the others lie outside the view)"
     if grid.n_outside:
         text += f"; {grid.n_outside:,} outside the axis ranges, left out"
     return text

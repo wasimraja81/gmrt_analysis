@@ -77,6 +77,7 @@ from visplot.xy_session import (
     range_pass_axes,
     range_pass_reads_data,
     resolve_extents,
+    source_in_views,
     stream_chunk_bytes,
 )
 
@@ -600,8 +601,9 @@ def run_locate(run: PreparedRun, report: Report = _silent, progress: ProgressFac
     writer = LocateCsvWriter(run.request.locate_csv, locate, run.source.ctx, fits_path=run.request.fits_path,
                              command=run.request.command_line(), record=record)
     locate.sink = writer
-    on_chunk = progress(pass_progress(run.source, "locating samples", plot.needs_data))
-    completed = run.source.stream([locate], read_data=plot.needs_data, on_chunk=on_chunk)
+    source = source_in_views(run.source, {plot: box}, plot.needs_data)  # the rows that can reach the box
+    on_chunk = progress(pass_progress(source, "locating samples", plot.needs_data))
+    completed = source.stream([locate], read_data=plot.needs_data, on_chunk=on_chunk)
     written = writer.close(locate, completed)
     n = len(locate.by_baseline)
     report("info", f"located {locate.n_found:,} samples on {n:,} baseline{'s' if n != 1 else ''}; wrote {written}")
@@ -636,9 +638,12 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
         h, w = xy_figures[p].grid_shape(lowres_dpi)
         shapes[p] = (h * factor, w * factor)
     grids = {}
+    drawn = source
     if xy_plots:
-        on_chunk = progress(pass_progress(source, run.labels[1], any(p.needs_data for p in xy_plots)))
-        grids, completed = plot_grids(source, xy_plots, extents, shapes, on_chunk=on_chunk)
+        read_data = any(p.needs_data for p in xy_plots)
+        drawn = source_in_views(source, {p: extents[p] for p in xy_plots}, read_data)  # rows that can reach a view
+        on_chunk = progress(pass_progress(drawn, run.labels[1], read_data))
+        grids, completed = plot_grids(drawn, xy_plots, extents, shapes, on_chunk=on_chunk)
         if not completed:
             raise Stopped("stopped while drawing; nothing saved")
 
@@ -650,7 +655,7 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     output_dir = Path(request.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     for item in xy_figures.values():
-        item.set_status(grid_summary(grids[item.plot], source.n_rows))
+        item.set_status(grid_summary(grids[item.plot], drawn.n_rows, source.n_rows))
     written = []
     lowres_path = output_dir / f"{request.output_prefix}_lowres.pdf"
     with PdfPages(lowres_path) as pdf:

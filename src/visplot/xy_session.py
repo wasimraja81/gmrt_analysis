@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -20,7 +20,7 @@ from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_
 from data_io.visibility_data import iter_visibility_chunks
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import QUANTITIES, QuantityContext, quantity_label
-from visplot.stream import GridReducer, RangeReducer, run_stream
+from visplot.stream import GridReducer, RangeReducer, ViewRowsReducer, run_stream
 
 # Peak working memory of the streaming plot path per byte of full rows in a
 # chunk: the chunk being processed (selected samples as complex64 and float32
@@ -84,6 +84,48 @@ class XYSource:
             max_chunk_bytes=self.chunk_bytes, read_data=read_data,
         )
         return run_stream(chunks, self.ctx, reducers, on_chunk, threads=self.threads)
+
+    def subset(self, row_indices: np.ndarray) -> XYSource:
+        """The same selection narrowed to `row_indices` (a subset of its rows)."""
+        return replace(self, row_indices=np.asarray(row_indices))
+
+
+def rows_in_views(source: XYSource, views: dict[PlotSpec, tuple]) -> np.ndarray:
+    """The rows of `source` that can hold a point of a plot inside its view
+    ({plot: (x_extent, y_extent)}): one pass over row metadata, no visibility
+    data read (`stream.ViewRowsReducer`). Every pass that reads visibility
+    data reads only these (T19 point D); the rest lie outside.
+
+    The pass evaluates the selection's two band-edge channels alone: every
+    quantity it evaluates (row metadata) is either independent of frequency
+    (time, u, v, w and uv distance in metres, hour angle, azimuth,
+    elevation, parallactic angle, source) or proportional to it (u, v, w and
+    uv distance in wavelengths, and frequency itself), so a row's values over
+    the band reach their extremes at its edges."""
+    if not views:
+        return source.row_indices
+    edges = source
+    freqs = source.index.chan_freqs_hz
+    if freqs is not None and "FREQ" in (source.index.data_axis_types or []):
+        selected = (source.axis_selection or {}).get("FREQ")
+        channels = np.arange(len(freqs)) if selected is None else np.asarray(selected)
+        band = np.asarray(freqs)[channels]
+        edge_channels = np.unique(channels[[int(np.argmin(band)), int(np.argmax(band))]])
+        edges = replace(source, axis_selection={**(source.axis_selection or {}), "FREQ": edge_channels})
+    reducers = [ViewRowsReducer(plot, x_extent, y_extent, source.row_indices)
+                for plot, (x_extent, y_extent) in views.items()]
+    edges.stream(reducers, read_data=False)
+    keep = np.zeros(source.n_rows, dtype=bool)
+    for reducer in reducers:
+        keep |= reducer.keep
+    return source.row_indices[keep]
+
+
+def source_in_views(source: XYSource, views: dict[PlotSpec, tuple], read_data: bool) -> XYSource:
+    """What a pass over `views` streams: for a pass reading visibility data,
+    the selection narrowed to `rows_in_views`; for one reading none, the
+    selection (its metadata costs little)."""
+    return source.subset(rows_in_views(source, views)) if read_data else source
 
 
 def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None,
