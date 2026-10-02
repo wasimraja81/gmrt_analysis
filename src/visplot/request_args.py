@@ -101,12 +101,20 @@ def quantity_help(indent: int = 4, width: int = 79) -> str:
 def parse_plot_names(spec: str) -> list[str]:
     """`--plots` into an ordered list of plot names, e.g.
     "antenna-layout,amp-vs-time" -- each one checked by
-    `validate_plot_name`, so a bad name fails before any data is read."""
+    `validate_plot_name`, so a bad name fails before any data is read. A
+    name may stack two streamed plots with "+" (T26: "amp-vs-time+phase-vs-time",
+    the second under the first, sharing x)."""
     names = [p.strip() for p in spec.split(",") if p.strip()]
     if not names:
         raise ValueError("--plots requires at least one plot name")
     for name in names:
-        validate_plot_name(name)
+        parts = name.split("+")
+        if len(parts) > 2:
+            raise ValueError(f"plot {name!r}: a stack holds two plots, joined by one '+'")
+        for part in parts:
+            if len(parts) > 1 and part in TABLE_PLOTS:
+                raise ValueError(f"plot {name!r}: {part} is drawn from the file's tables; only streamed plots stack")
+            validate_plot_name(part)
     return names
 
 

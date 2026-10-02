@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 527 tests passing; T26, T32 in progress; T40, T42,
+T47-T49, point D and T21 2026-10-01, 531 tests passing; T26, T32 in progress; T40, T42,
 T45, T46, T50-T52, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked
 until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -680,6 +680,31 @@ Buildable now, ahead of Phase C.
   again leaves it unchanged. The same selection: 2 requests, none after. Tests: two
   square plots sharing axes, sizes differing by 1e-12, keep one view (the test fails
   with the exact comparison restored); a window page of square plots stays drawn.
+  Step 4 built 2026-10-03, its choices the user's the same day: stacks hold two plots,
+  the lower plot's y axis set by `--y2-unit`, `--y2-range`, `--y2-range-mode` and
+  `--y2-scale` (offered against one value per plot in comma lists, and against
+  defaults only: "Separate --y2-* options"); with pages, a pair's cells go 2 x 6 to a
+  page ("Fewer rows", as VPLOT's NPLOTS counts pairs); in the GUI, "Also plot below".
+  `--plots Y-vs-X+Y2-vs-X` stacks two streamed plots in one figure, the second under the
+  first, sharing x (the same quantity, unit and scale, else refused; three or more
+  refused; table plots do not stack); a two-plot preset is a stack, so az-el-range is
+  one figure again, elevation over azimuth, the azimuth taking `--y2-*` (where `--y-unit`
+  had applied to both); `--y2-*` without a stack is refused. A figure per --plots entry
+  (`run.stream_figures`), a stack's x range the union of its plots' (`stack_extents`,
+  `fixed_ranges`); `PageLayout.stack`: each cell a stack, a stack's x shared, on a page
+  of common ranges all x shared and the plots in the same place of each stack sharing y;
+  x tick labels on a stack's bottom plot only; each stacked plot's own y label on the
+  first column (a page of single plots keeps one y label); the title "Amplitude and Phase
+  vs Time"; the panel describes the stack's first plot with limits (elevation's Limits
+  line), else its first; rows of stacks set further apart (0.2 in) than a stack's plots
+  (0.06 in). A run's pages take the grid of its largest stack (`default_page_grid`), so
+  every entry's pages hold the same iterations. The window gives a stack's plots a panel
+  each on one canvas and toolbar, as a page's; Export saves the figure. Saved names:
+  `PREFIX_amp-vs-time+phase-vs-time.png`, `PREFIX_az-el-range.png` (was `_el`, `_az`).
+  Measured on the GWB file, C00's 27 baselines (3C286, RR), amplitude over phase vs time:
+  3 pages of 2 x 6 stacks. Tests: stacks parsed and refused; a stack in one figure on
+  one x extent, zoomed and exported in the window; pages of stacks; the GUI's round trip
+  of a stack and of az-el-range's azimuth below, and its plot of a stack.
   Step 1 built 2026-10-02 (`visplot/pages.py`; `stream.PageReducer`, `ChunkValues.page`,
   `visibility_data.narrow_block`; `run.draw_pages`, `_save_pages`): `--pages-by`,
   `--x-page-range`, `--y-page-range`. A page holds the selection's rows, or its Stokes
@@ -1502,7 +1527,7 @@ Buildable now, ahead of Phase C.
   pages; then T20 (a listObs tab) and T26's flag editing, each designed with the user;
   T40 later; T42 with Phase C; then the data analysis. Taking stock (2026-10-03): T33,
   T38, point D, T21 and T26 pages steps 1-3 and 5 done; next T26 pages step 4 (`+`
-  stacks, az-el-range as one figure), then T20 and T26's flag editing; T50-T52
+  stacks, az-el-range as one figure; done the same day), then T20 and T26's flag editing; T50-T52
   added; the high-resolution PDF stays on by default (the user, the same day).
 
 ### Phase C — Primary Calibration (3C48)

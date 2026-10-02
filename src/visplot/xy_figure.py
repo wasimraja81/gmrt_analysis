@@ -81,6 +81,8 @@ PAGE_GAP_IN, PAGE_YTICKS_GAP_IN, PAGE_XTICKS_GAP_IN = 0.1, 0.5, 0.28
 PAGE_TITLE_TOP_IN = 0.12
 PAGE_TICK_PT = 7
 PAGE_CLOCK_TICK_IN = 0.6
+STACK_GAP_IN = 0.06  # between the plots of a stack, which share x (no tick labels between them)
+STACK_ROW_GAP_IN = 0.2  # more between rows of stacks, so each stack reads as one
 
 
 def tilted_label_extra_in(time_format: str, day0: datetime.date) -> float:
@@ -255,15 +257,27 @@ def layers_to_rgba(layers: np.ndarray, colors: dict[int, tuple]) -> np.ndarray:
 
 @dataclass(frozen=True)
 class PageLayout:
-    """A page of several plots (T26): `plots`, one per iteration, in reading
-    order, `grid` (rows, columns) of them; `shared` (x, y): an axis whose
-    range is one for every plot, its tick labels on the outer row or column
-    only; `part`: what the page shows, for its title and panel."""
+    """A figure of several plots (T26): a page of `grid` (rows, columns)
+    cells, one per iteration, in reading order, each cell a `stack` of plots
+    (two, as Y-vs-X+Y2-vs-X: top to bottom, sharing x; `plots` cell by cell),
+    or one stack alone (a 1 x 1 grid). `shared` (x, y): an axis whose range
+    is one for every cell, its tick labels on the outer row or column only
+    (y: the plots in the same place of each stack); `part`: what the page
+    shows, for its title and panel."""
 
     plots: tuple[PlotSpec, ...]
     grid: tuple[int, int]
     shared: tuple[bool, bool] = (False, False)
     part: str = ""
+    stack: int = 1
+
+
+def stack_title(plots) -> str:
+    """The title of plots on one x axis, e.g. "Amplitude and Phase vs Time"."""
+    if len(plots) == 1:
+        return plots[0].title
+    names = [QUANTITIES[p.y].display_name for p in plots]
+    return f"{', '.join(names[:-1])} and {names[-1]} vs {QUANTITIES[plots[0].x].display_name}"
 
 
 class PlotAxes:
@@ -462,45 +476,64 @@ class XYFigure:
             self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path,
                                                part=plot.iteration.text if named else None))
         else:
-            title = build_plot_title(plot.title, sources, telescope, source_path, part=page.part)
+            title = build_plot_title(stack_title(page.plots[:page.stack]), sources, telescope, source_path,
+                                     part=page.part)
             self.title = self.fig.suptitle(title, va="top", color=self.theme.text)
             self.xlabel = self.fig.text(0.5, 0.0, quantity_label(plot.x, ctx, plot.x_unit), ha="center",
                                         va="bottom", color=self.theme.text, fontsize=rcParams["axes.labelsize"])
-            self.ylabel = self.fig.text(0.0, 0.5, quantity_label(plot.y, ctx, plot.y_unit), ha="left",
-                                        va="center", rotation=90, color=self.theme.text,
-                                        fontsize=rcParams["axes.labelsize"])
+            # one y label for the page; a stack's plots differ in y, so each is labelled (`_page_cell`)
+            self.ylabel = None if page.stack > 1 else self.fig.text(
+                0.0, 0.5, quantity_label(plot.y, ctx, plot.y_unit), ha="left", va="center", rotation=90,
+                color=self.theme.text, fontsize=rcParams["axes.labelsize"])
         self.relayout()
 
     def _page_cell(self, plot: PlotSpec, i: int, time_format: str) -> PlotAxes:
-        """The `i`th plot of a page: its axes, a shared axis shared with the
-        first plot's (a zoom in one zooms all), tick labels only where the
-        page's axes are not shared or on the outer row or column, and its
-        iteration's name in its corner."""
+        """The `i`th plot of a page or stack: its axes; a shared axis shared
+        with the first plot's (a zoom in one zooms all), a stack's x with its
+        top plot's, a shared y with the plot in the same place of the first
+        stack; tick labels only where the axes are not shared or on the outer
+        row or column, x tick labels on a stack's bottom plot only; a
+        stacked plot's own y label on the first column; and its iteration's
+        name in the corner of the stack's top plot."""
         rows, cols = self.page.grid
-        n = len(self.page.plots)
+        stack = self.page.stack
+        n_cells = math.ceil(len(self.page.plots) / stack)
+        index, place = divmod(i, stack)  # the cell, and the plot's place in its stack
+        several = rows * cols > 1  # a page of cells: small tick labels
         ctx = plot.iteration.context(self.ctx) if plot.iteration is not None else self.ctx
         width_in = (self.fig.get_size_inches()[0] - PAGE_LEFT_IN - PAGE_RIGHT_IN) / cols  # a plot's, about
         clock_ticks = max(2, min(CLOCK_MAX_TICKS_TILTED, int(width_in / PAGE_CLOCK_TICK_IN)))
         cell = PlotAxes(self.fig.add_axes((0.0, 0.0, 1.0, 1.0)), plot, ctx, self.theme, time_format,
                         label_axes=False, clock_ticks=clock_ticks)
         ax = cell.ax
-        ax.tick_params(labelsize=PAGE_TICK_PT)
+        if several:
+            ax.tick_params(labelsize=PAGE_TICK_PT)
         shared_x, shared_y = self.page.shared
         if i and shared_x:
             ax.sharex(self.cells[0].ax)
-        if i and shared_y:
-            ax.sharey(self.cells[0].ax)
-        lowest_in_column = i + cols >= n  # no plot below it on this page
-        if shared_x and not lowest_in_column:
+        elif place:
+            ax.sharex(self.cells[index * stack].ax)  # a stack shares its x
+        if index and shared_y:
+            ax.sharey(self.cells[place].ax)
+        lowest_in_column = index + cols >= n_cells  # no cell below it on this page
+        if place < stack - 1 or (shared_x and not lowest_in_column):
             ax.tick_params(axis="x", labelbottom=False)
-        if shared_y and i % cols:
+        if shared_y and index % cols:
             ax.tick_params(axis="y", labelleft=False)
-        if plot.iteration is not None:
+        if stack > 1 and index % cols == 0:
+            ax.set_ylabel(quantity_label(plot.y, ctx, plot.y_unit), color=self.theme.text,
+                          fontsize=PAGE_TICK_PT if several else rcParams["axes.labelsize"])
+        if plot.iteration is not None and place == 0:
             ax.text(0.03, 0.96, plot.iteration.label, transform=ax.transAxes, ha="left", va="top",
                     fontsize=PAGE_TICK_PT, color=self.theme.text, zorder=5,
                     bbox=dict(boxstyle="round,pad=0.2", facecolor=self.theme.box_face,
                               edgecolor=self.theme.box_edge, alpha=0.85))
         return cell
+
+    @property
+    def plots(self) -> list[PlotSpec]:
+        """Every plot the figure draws: one, a stack's, or a page's."""
+        return [cell.plot for cell in self.cells]
 
     # ---- one plot's figure -----------------------------------------------------------
 
@@ -588,28 +621,32 @@ class XYFigure:
             cell.ax.apply_aspect()
             return
         rows, cols = self.page.grid
+        stack = self.page.stack
         shared_x, shared_y = self.page.shared
         extra = max(cell.xtick_extra_in for cell in self.cells)
         bottom_in = self.panel.height_in + XLABEL_IN + extra
         top_in = max(height_in - TITLE_IN, bottom_in + 0.5)
         left_in, right_in = PAGE_LEFT_IN, max(width_in - PAGE_RIGHT_IN, PAGE_LEFT_IN + 0.5)
         gap_x = PAGE_GAP_IN if shared_y else PAGE_YTICKS_GAP_IN
-        gap_y = PAGE_GAP_IN if shared_x else PAGE_XTICKS_GAP_IN + extra
+        gap_y = (PAGE_GAP_IN if shared_x else PAGE_XTICKS_GAP_IN + extra) + (STACK_ROW_GAP_IN if stack > 1 else 0.0)
         cell_w = max((right_in - left_in - gap_x * (cols - 1)) / cols, 0.1)
         cell_h = max((top_in - bottom_in - gap_y * (rows - 1)) / rows, 0.1)
+        plot_h = max((cell_h - STACK_GAP_IN * (stack - 1)) / stack, 0.05)  # a stacked plot's
         for i, cell in enumerate(self.cells):
-            row, col = divmod(i, cols)
+            index, place = divmod(i, stack)
+            row, col = divmod(index, cols)
             x0 = left_in + col * (cell_w + gap_x)
-            y0 = top_in - (row + 1) * cell_h - row * gap_y
-            cell.ax.set_position([x0 / width_in, y0 / height_in, cell_w / width_in, cell_h / height_in])
+            y0 = top_in - row * (cell_h + gap_y) - (place + 1) * plot_h - place * STACK_GAP_IN
+            cell.ax.set_position([x0 / width_in, y0 / height_in, cell_w / width_in, plot_h / height_in])
             cell.ax.apply_aspect()
         self.title.set_y(1.0 - PAGE_TITLE_TOP_IN / height_in)
         # the axis labels by the rows holding plots (a page's last may leave rows empty)
-        used_rows = math.ceil(len(self.cells) / cols)
+        used_rows = math.ceil(len(self.cells) / stack / cols)
         lowest_in = top_in - used_rows * cell_h - (used_rows - 1) * gap_y
         self.xlabel.set_position(((left_in + right_in) / 2 / width_in,
                                   (lowest_in - XLABEL_IN - extra + 0.1) / height_in))
-        self.ylabel.set_position((0.12 / width_in, (lowest_in + top_in) / 2 / height_in))
+        if self.ylabel is not None:
+            self.ylabel.set_position((0.12 / width_in, (lowest_in + top_in) / 2 / height_in))
 
     def set_views(self, extents: dict[PlotSpec, tuple]) -> dict[PlotSpec, tuple[tuple, tuple]]:
         """`set_view` for every plot of a page: {plot: (x_extent, y_extent)}
@@ -627,8 +664,8 @@ class XYFigure:
         limits, the categories seen, flagged samples drawn); a page's density
         plots share one scale, from all their occupied pixels."""
         cells = [cell for cell in self.cells if cell.plot in grids]
-        if self.plot.limits:
-            self.panel.set_beyond(_merged_beyond([grids[cell.plot] for cell in cells]))
+        if any(cell.plot.limits for cell in cells):
+            self.panel.set_beyond(_merged_beyond([grids[cell.plot] for cell in cells if cell.plot.limits]))
         seen = (tuple(sorted(set().union(*(grids[cell.plot].seen_codes for cell in cells))))
                 if self.plot.colorize_by else ())
         if not set(seen) <= set(self.panel.category_codes()) and seen != self._seen_codes:

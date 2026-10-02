@@ -528,3 +528,25 @@ def test_save_with_one_plot_per_writes_every_page_into_one_pdf():
         "visplot_amp-vs-freq_C00_01-C01_02.png", "visplot_amp-vs-freq_C00_01-C02_03.png",
         "visplot_amp-vs-freq_C01_02-C02_03.png"]
     window.close()
+
+
+def test_a_stack_round_trips_through_the_form_and_plots_in_one_figure():
+    app, window, path = _window("gui_stack")
+    form = window.form
+    assert form.request().y2_unit is None and not form.y2.unit.isEnabled()  # nothing below: left out
+    request = PlotRequest(str(path), "amp-vs-freq+phase-vs-freq", x_unit="MHz", y_unit="UNCALIB", y2_unit="rad",
+                          y2_range="-3:3")
+    form.load(request)
+    assert form.request() == request
+    form.load(PlotRequest(str(path), "az-el-range", y2_unit="rad"))  # a two-plot preset: azimuth below
+    assert form.y2.quantity_name() == "az" and form.y2.unit.isEnabled()
+    assert form.request().y2_unit == "rad" and form.request().plots == "az-el-range"
+    form.load(request)
+    _settle(app, window, lambda: window.plot_button.isEnabled())
+    window._plot()
+    _settle(app, window, lambda: hasattr(window.tabs.currentWidget(), "panel")
+            and window.tabs.currentWidget().panel.idle() and not window.tabs.currentWidget().panel.to_draw)
+    panels = list(window.tabs.currentWidget().panel.panels.values())
+    assert [p.plot.y for p in panels] == ["amp", "phase"] and panels[0].figure is panels[1].figure
+    assert panels[1].plot.y_unit == "rad" and all(p.drawn for p in panels)
+    window.close()

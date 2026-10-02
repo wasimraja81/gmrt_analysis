@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from instruments.observatory_time_zones import observatory_time_zone
 from visplot.fonts import PANEL_FONTS
@@ -203,9 +203,10 @@ class ChecklistField:
 
 
 class AxisControls:
-    """One axis: quantity, unit, scale, and its range (from the data, or fixed)."""
+    """One axis: quantity, unit, scale, and its range (from the data, or fixed).
+    `optional`: its quantity may be "none" (a stack's lower plot, T26)."""
 
-    def __init__(self, axis: str, form: "RequestForm"):
+    def __init__(self, axis: str, form: "RequestForm", optional: bool = False):
         self.axis = axis
         self.form = form
         groups, listed = [], set()
@@ -217,6 +218,11 @@ class AxisControls:
         if other:
             groups.append(("Other", [(f"{QUANTITIES[n].display_name}  ({n})", n) for n in other]))
         self.quantity = grouped_combo(groups)
+        if optional:
+            none = QtGui.QStandardItem("none")
+            none.setData(None, QtCore.Qt.UserRole)
+            self.quantity.model().insertRow(0, none)
+            self.quantity.setCurrentIndex(0)
         self.unit = QtWidgets.QComboBox()
         self.scale = QtWidgets.QComboBox()
         for name in _parser_choices(f"{axis}_scale"):
@@ -299,6 +305,7 @@ class RequestForm(QtWidgets.QWidget):
                     f.widget.set_help(tip)
         self.x.fill_units()
         self.y.fill_units()
+        self.y2.fill_units()
 
     # ---- building -----------------------------------------------------------
 
@@ -356,19 +363,34 @@ class RequestForm(QtWidgets.QWidget):
         self.swap = QtWidgets.QToolButton(text="⇅")
         self.swap.setToolTip("Swap x and y (quantities, units, scales, ranges)")
         self.swap.clicked.connect(self._swap_axes)
-        for axis, controls in (("y", self.y), ("x", self.x)):
-            label = QtWidgets.QLabel(f"<b>{axis.upper()} axis</b>")
+        # A stack's lower plot (T26): Y2 against the same X, under the plot; its fields frozen, and
+        # left out of the request, without one.
+        self.y2 = AxisControls("y2", self, optional=True)
+        self.y2.quantity.setToolTip("Also plot this quantity, below the first, against the same X (a stack: "
+                                    "the second plot's y axis takes these fields)")
+        defaults = {"y2_unit": None, "y2_range": None, "y2_scale": "linear", "y2_range_mode": "minmax"}
+        for axis, controls in (("y", self.y), ("y2", self.y2), ("x", self.x)):
+            heading = {"y": "Y axis", "y2": "Also plot below (same X)", "x": "X axis"}[axis]
+            label = QtWidgets.QLabel(f"<b>{heading}</b>")
             form.addRow(row(label, self.swap, stretches=(1, 0)) if axis == "y" else label)
             form.addRow("Quantity", controls.quantity)
-            form.addRow("Unit", self._add(combo_field(f"{axis}_unit", controls.unit)))
-            form.addRow("Scale", self._add(combo_field(f"{axis}_scale", controls.scale)))
-            form.addRow("Range", row(self._add(combo_field(f"{axis}_range_mode", controls.range_mode)),
-                                     self._add(text_field(f"{axis}_range", controls.fixed_range))))
+            fields = [combo_field(f"{axis}_unit", controls.unit), combo_field(f"{axis}_scale", controls.scale),
+                      combo_field(f"{axis}_range_mode", controls.range_mode),
+                      text_field(f"{axis}_range", controls.fixed_range)]
+            if axis == "y2":
+                for f in fields:
+                    shown = f.get
+                    f.get = lambda shown=shown, dest=f.dest: shown() if self._has_lower() else defaults[dest]
+            unit, scale, mode, fixed = (self._add(f) for f in fields)
+            form.addRow("Unit", unit)
+            form.addRow("Scale", scale)
+            form.addRow("Range", row(mode, fixed))
         select_data(self.y.quantity, "amp")
         select_data(self.x.quantity, "time")
         self.fields["plots"] = Field("plots", self.kind, self._plots, self._set_plots, self.kind.currentIndexChanged)
-        for controls in (self.x, self.y):
+        for controls in (self.x, self.y, self.y2):
             controls.quantity.currentIndexChanged.connect(lambda *_: self.changed.emit())
+        self.y2.quantity.currentIndexChanged.connect(lambda *_: self._kind_changed())
         self.kind.currentIndexChanged.connect(self._kind_changed)
 
         self.percentiles = CheckedLineEdit("", _check_with(resolve_percentiles_arg))
@@ -636,28 +658,45 @@ class RequestForm(QtWidgets.QWidget):
         kind = self.kind.currentData()
         if kind != GENERIC:
             return kind
-        return f"{self.y.quantity_name()}-vs-{self.x.quantity_name()}"
+        x = self.x.quantity_name()
+        lower = self.y2.quantity_name()
+        return f"{self.y.quantity_name()}-vs-{x}" + (f"+{lower}-vs-{x}" if lower else "")
 
     def _set_plots(self, value: str) -> None:
         if value in PRESETS or value in TABLE_PLOTS:
             select_data(self.kind, value)
             return
-        y, x = value.split("-vs-", 1)
+        first, _, second = value.partition("+")
+        y, x = first.split("-vs-", 1)
         select_data(self.kind, GENERIC)
         select_data(self.y.quantity, y)
         select_data(self.x.quantity, x)
+        select_data(self.y2.quantity, second.split("-vs-", 1)[0] if second else None)
+
+    def _has_lower(self) -> bool:
+        """Whether the plot has a lower plot (a stack, T26): one chosen, or a
+        two-plot preset's second (az-el-range's azimuth)."""
+        preset = PRESETS.get(self.kind.currentData())
+        if preset is not None:
+            return len(preset) == 2
+        return self.kind.currentData() == GENERIC and self.y2.quantity_name() is not None
 
     def _kind_changed(self) -> None:
         generic = self.kind.currentData() == GENERIC
         table = self.kind.currentData() in TABLE_PLOTS
-        for controls in (self.x, self.y):
-            controls.quantity.setEnabled(generic)
-            for w in (controls.unit, controls.scale, controls.range_mode, controls.fixed_range):
-                w.setEnabled(not table and (w is not controls.unit or controls.unit.count() > 1))
         preset = PRESETS.get(self.kind.currentData())
+        for controls in (self.x, self.y, self.y2):
+            controls.quantity.setEnabled(generic)
+            on = not table and (controls is not self.y2 or self._has_lower())
+            for w in (controls.unit, controls.scale, controls.range_mode, controls.fixed_range):
+                w.setEnabled(on and (w is not controls.unit or controls.unit.count() > 1))
         if preset:  # show the preset's own quantities, for their units
             select_data(self.y.quantity, preset[0].y)
             select_data(self.x.quantity, preset[0].x)
+            self.y2.quantity.blockSignals(True)
+            select_data(self.y2.quantity, preset[1].y if len(preset) == 2 else None)
+            self.y2.quantity.blockSignals(False)
+            self.y2.fill_units()
         self.changed.emit()
 
     def _swap_axes(self) -> None:
@@ -715,6 +754,7 @@ class RequestForm(QtWidgets.QWidget):
                                      else f"none known for TELESCOP {opened.telescope!r}: give one for local time")
         self.x.fill_units()
         self.y.fill_units()
+        self.y2.fill_units()
         for edit in (self.channels, self.antennas, self.baselines_with, self.exclude, self.time_range):
             edit.set_check(edit._check)
 

@@ -71,3 +71,24 @@ def test_a_preset_takes_the_units_with_its_range_and_lines_converted():
 def test_a_preset_rejects_a_unit_its_quantity_does_not_have():
     with pytest.raises(ValueError, match="does not apply to 'ha'"):
         expand_plot_name("ha-range", PlotSpec(y="", x="", y_unit="klambda"))
+
+
+def test_a_stack_is_two_plots_on_one_x_axis_the_lower_with_its_own_y_axis():
+    from visplot.request import PlotRequest
+    from visplot.run import RequestError, check_request
+
+    checked = check_request(PlotRequest("obs.fits", "amp-vs-time+phase-vs-time", y2_unit="rad", y2_range="-3:3"))
+    (stack,) = checked.plots_by_name.values()
+    assert [(p.y, p.x) for p in stack] == [("amp", "time"), ("phase", "time")]
+    assert (stack[1].y_unit, stack[1].y_range) == ("rad", (-3.0, 3.0)) and stack[0].y_range is None
+    (el, az) = check_request(PlotRequest("obs.fits", "az-el-range", y2_unit="rad")).plots_by_name["az-el-range"]
+    assert (el.y, el.y_unit, az.y, az.y_unit) == ("el", "deg", "az", "rad")  # the preset's lower plot takes --y2-*
+    for plots, options, message in (
+        ("amp-vs-time+phase-vs-time+real-vs-time", {}, "a stack holds two plots"),
+        ("amp-vs-time+phase-vs-freq", {}, "stacked plots share their x axis"),
+        ("antenna-layout+amp-vs-time", {}, "only streamed plots stack"),
+        ("az-el-range+ha-range", {}, "a stack holds two plots"),
+        ("amp-vs-time", {"y2_unit": "rad"}, "--y2-unit set the lower plot of a stack"),
+    ):
+        with pytest.raises(RequestError, match=message):
+            check_request(PlotRequest("obs.fits", plots, **options))

@@ -102,7 +102,7 @@ def test_saved_run_writes_every_output():
 
     assert code == 0
     assert sorted(p.name for p in out.iterdir()) == sorted([
-        "t_antenna-layout.png", "t_amp-vs-freq_mhz.png", "t_az-el-range_el.png", "t_az-el-range_az.png",
+        "t_antenna-layout.png", "t_amp-vs-freq_mhz.png", "t_az-el-range.png",  # elevation over azimuth: one figure
         "t_lowres.pdf", "t_highres.pdf",
     ])
     plt.close("all")
@@ -115,13 +115,13 @@ def test_saved_generic_plot_marks_every_unflagged_sample(monkeypatch):
 
     import visplot.run as cli
 
-    real_show = cli.XYFigure.show
+    real_show = cli.XYFigure.show_page
 
-    def spy(self, grid, display_dpi, downsample=1):
-        shown[self.plot.name] = grid
-        return real_show(self, grid, display_dpi, downsample)
+    def spy(self, grids, display_dpi, downsample=1):
+        shown.update({plot.name: grid for plot, grid in grids.items()})
+        return real_show(self, grids, display_dpi, downsample)
 
-    monkeypatch.setattr(cli.XYFigure, "show", spy)
+    monkeypatch.setattr(cli.XYFigure, "show_page", spy)
     main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--output-dir", str(scratch / "out"),
           "--no-highres-pdf"])
 

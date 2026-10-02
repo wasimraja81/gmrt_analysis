@@ -47,9 +47,9 @@ from visplot.locate_csv import LocateCsvWriter, write_kept
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import QUANTITIES, utc_jd
 from visplot.request_args import DPI_LIMITS
-from visplot.run import PageOfPlots, PlotPages, rows_of_iterations
+from visplot.run import PageOfPlots, PlotPages, rows_of_iterations, stack_extents
 from visplot.stream import GridReducer, LocateReducer
-from visplot.xy_figure import PlotAxes, XYFigure, grid_summary, grids_summary, same_view
+from visplot.xy_figure import PlotAxes, XYFigure, grids_summary, same_view
 from visplot.xy_session import (PassProgress, XYSource, range_pass_axes, resolve_axis_ranges, resolve_extents,
                                 source_in_views)
 
@@ -177,6 +177,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self.locate: LocateReducer | None = None
 
         self.paged: list[_Tab] = []  # tabs of pages (T26)
+        self.figure_names: dict[int, str] = {}  # a tab's figure (by id): its --plots entry, for saves
         self.laying_out: set[int] = set()  # tabs whose page shown waits for Qt to lay its canvas out
         for name, item in figures:
             if isinstance(item, XYFigure):
@@ -238,16 +239,21 @@ class InspectorWindow(QtWidgets.QMainWindow):
         canvas.mpl_connect("resize_event", lambda e, f=figure: f.relayout())
 
     def _add_panel(self, name: str, figure: XYFigure) -> None:
+        """A tab of one figure: one plot, or a stack of two sharing x (T26),
+        each plot a panel of the window, the toolbar acting on them all."""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         canvas = FigureCanvasQTAgg(figure.fig)
-        panel = _Panel(figure.plot, figure, canvas, cell=figure.cells[0])
-        panel.toolbar, panel.locate_action, panel.aspect_box = self._plot_toolbar(
-            widget, canvas, lambda p=panel: [p], figure.plot.equal_aspect)
-        layout.addWidget(panel.toolbar)
+        panels = [_Panel(cell.plot, figure, canvas, cell=cell) for cell in figure.cells]
+        toolbar, locate_action, aspect_box = self._plot_toolbar(
+            widget, canvas, lambda ps=panels: list(ps), figure.cells[0].plot.equal_aspect)
+        for panel in panels:
+            panel.toolbar, panel.locate_action, panel.aspect_box = toolbar, locate_action, aspect_box
+            self.panels[panel.plot] = panel
+        layout.addWidget(toolbar)
         layout.addWidget(canvas)
-        self._track_mouse(canvas, lambda p=panel: [p], figure)
-        self.panels[figure.plot] = panel
+        self._track_mouse(canvas, lambda ps=panels: list(ps), figure)
+        self.figure_names[id(figure)] = name
         self.tabs.addTab(widget, name)
 
     def _add_paged_tab(self, name: str, pages_of: PlotPages) -> None:
@@ -380,8 +386,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
         return tab.figure.set_views(extents)
 
     def _set_view(self, panel: _Panel, x_extent, y_extent) -> tuple:
-        """`XYFigure.set_view` for the panel's plot (on a page, its axes)."""
-        if panel.tab is None or panel.figure.page is None:
+        """`XYFigure.set_view` for the panel's plot (in a page or a stack, its axes)."""
+        if panel.figure.page is None:
             return panel.figure.set_view(x_extent, y_extent)
         return panel.cell.set_view(x_extent, y_extent)
 
@@ -460,9 +466,11 @@ class InspectorWindow(QtWidgets.QMainWindow):
         def done(job):
             if not job.completed:
                 return
-            for plot in plots:
-                panel = self.panels[plot]
-                panel.extent = panel.figure.set_view(*self.extents[plot])
+            figures = {id(self.panels[plot].figure): self.panels[plot].figure for plot in plots}
+            extents = stack_extents(self.extents, [figure.plots for figure in figures.values()])
+            for figure in figures.values():  # a stack's plots on one x extent
+                for plot, limits in figure.set_views({p: extents[p] for p in figure.plots}).items():
+                    self.panels[plot].extent = limits
             self.request_draw(plots)
             for tab in self.paged:
                 tab.pages = tab.pages_of.pages(found["ranged"])
@@ -602,8 +610,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
             panel.figure.set_status(grids_summary(list(snapshots.values()), panel.tab.rows_read or panel.tab.rows,
                                                   panel.tab.rows))
         elif final:
-            panel.figure.set_status(grid_summary(snapshots[panel.plot], panel.rows_read or self.source.n_rows,
-                                                 self.source.n_rows))
+            panel.figure.set_status(grids_summary(list(snapshots.values()), panel.rows_read or self.source.n_rows,
+                                                  self.source.n_rows))
         else:
             job = self.jobs[0] if self.jobs else None
             panel.figure.set_status(job.progress.text(job.rows_done) if job else "")
@@ -838,7 +846,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
         if not panels:
             return
         panel = panels[0]
-        name = panel.tab.page.name if panel.tab is not None else panel.plot.name
+        name = (panel.tab.page.name if panel.tab is not None
+                else self.figure_names.get(id(panel.figure), panel.plot.name))
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export plot", f"{name}.png", EXPORT_FILTERS)
         if not path:
             return
@@ -850,12 +859,12 @@ class InspectorWindow(QtWidgets.QMainWindow):
         """Re-read the plot's current view at `dpi` and save it to `path`; a
         plot of a page: the whole page, each plot over its view."""
         panel = self.panels[plot]
-        panels = [p for p in self._figure_panels(panel.figure)] if panel.tab is not None else [panel]
+        panels = self._figure_panels(panel.figure)  # one plot, a stack's, or a page's
         figure = panel.figure
         views = {p.plot: (tuple(p.cell.ax.get_xlim()), tuple(p.cell.ax.get_ylim())) for p in panels}
         # the Equal aspect box's override takes effect on linear axes only
         equal = panel.cell.equal_override if panel.cell.linear else None
-        name = panel.tab.page.name if panel.tab is not None else plot.name
+        name = panel.tab.page.name if panel.tab is not None else self.figure_names.get(id(figure), plot.name)
         started, record = self._start_record("export", plot, path, view=views[plot], dpi=dpi,
                                              figure_size_in=tuple(figure.fig.get_size_inches()), equal=equal,
                                              name=name)

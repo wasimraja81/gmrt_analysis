@@ -37,7 +37,7 @@ plot names (--plots, comma-separated):
     source-listing             the file's source table
   observing geometry per selected row, colored by source:
     ha-range                   hour angle vs time
-    az-el-range                elevation vs time and azimuth vs time
+    az-el-range                elevation over azimuth, vs time (a stack)
     parallactic-angle-range    parallactic angle vs time
   generic plots are written Y-vs-X, where Y and X are any two of these
   quantities, each shown in its default unit or the one --x-unit/--y-unit
@@ -45,6 +45,12 @@ plot names (--plots, comma-separated):
 {quantities}
   e.g. amp-vs-uvdist, phase-vs-time, v-vs-u. Every generic plot names two
   quantities; a single name such as uvdist is rejected.
+  Two streamed plots joined by "+" stack in one figure, the second under the
+  first, sharing their x axis (the same quantity and unit), as AIPS VPLOT
+  pairs amplitude and phase: e.g. amp-vs-time+phase-vs-time. The upper
+  plot's y axis takes --y-unit, --y-range, --y-range-mode and --y-scale, the
+  lower plot's --y2-unit, --y2-range, --y2-range-mode and --y2-scale.
+  az-el-range is such a stack: elevation over azimuth.
 
 units: --x-unit and --y-unit apply to every plot's x or y axis, presets
 included (their fixed ranges converted). Clock time (recorded, UTC, local,
@@ -276,6 +282,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
             help=f"unit of every plot's {axis} axis, from its quantity's list under 'plot names' "
             "(default: the quantity's default)",
         )
+    style.add_argument(
+        "--y2-unit", metavar="UNIT",
+        help="in a stack (Y-vs-X+Y2-vs-X, or a two-plot preset such as az-el-range), the lower plot's y-axis "
+        "unit (default: its quantity's default); --y-unit is the upper plot's",
+    )
+    style.add_argument("--y2-range", help="'lo:hi' y-axis range of a stack's lower plot (default: from the data)")
+    style.add_argument(
+        "--y2-range-mode", choices=["minmax", "percentile"], default="minmax",
+        help="when --y2-range is not given: the lower plot's y range from the data's minimum to maximum "
+        "(default), or the --range-percentiles range",
+    )
+    style.add_argument(
+        "--y2-scale", choices=list(SCALE_NAMES), default="linear",
+        help="y-axis scale of a stack's lower plot (default: linear); log shows positive values only",
+    )
     style.add_argument(
         "--time-format", choices=list(TIME_FORMATS), default=DEFAULT_TIME_FORMAT,
         help="how clock times are written on the axes, days counted from the file's reference date (day 0): "

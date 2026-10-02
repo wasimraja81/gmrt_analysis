@@ -139,22 +139,44 @@ PRESETS: dict[str, list[PlotSpec]] = {
 }
 
 
-def expand_plot_name(name: str, style: PlotSpec) -> list[PlotSpec]:
+def expand_plot_name(name: str, style: PlotSpec, lower: PlotSpec | None = None) -> list[PlotSpec]:
     """A preset name, or a generic "Y-vs-X" name, as the plots it stands for.
     `style` supplies everything a generic plot takes from the command line
     (colorize, flags, mirror, ranges, units, marker size, color); presets
     keep their own quantities, coloring, flag handling and fixed ranges, and
     take the style's units (their fixed ranges and reference lines
-    converted). Raises ValueError for a unit that does not apply."""
+    converted); a two-plot preset's second plot, `lower`'s (--y2-unit; T26:
+    the lower plot of its stack). Raises ValueError for a unit that does not
+    apply."""
     if name in PRESETS:
         presets = PRESETS[name]
         return [
             _preset_in_units(replace(p, point_size=style.point_size,
-                                     name=f"{name}_{p.y}" if len(presets) > 1 else name), style)
-            for p in presets
+                                     name=f"{name}_{p.y}" if len(presets) > 1 else name),
+                             style if i == 0 else (lower or style))
+            for i, p in enumerate(presets)
         ]
     y, x = name.split("-vs-", 1)
     return [replace(style, y=y, x=x, name=name)]
+
+
+def expand_stack(name: str, style: PlotSpec, lower: PlotSpec) -> list[PlotSpec]:
+    """A `--plots` entry as its plots: one, or a stack of two (T26: "Y-vs-X+
+    Y2-vs-X", or a two-plot preset) sharing their x axis, the upper plot in
+    `style` and the lower in `lower` (the --y2-* options). Raises ValueError
+    for more than two, or for plots on different x axes."""
+    parts = name.split("+")
+    plots = expand_plot_name(parts[0], style, lower)
+    for part in parts[1:]:
+        plots += expand_plot_name(part, lower)
+    if len(plots) > 2:
+        raise ValueError(f"a stack holds two plots; {' + '.join(p.name for p in plots)} make {len(plots)}")
+    if len(plots) == 2:
+        top, bottom = plots
+        if (top.x, _unit_name(top.x, top.x_unit), top.x_scale) != (bottom.x, _unit_name(bottom.x, bottom.x_unit),
+                                                                     bottom.x_scale):
+            raise ValueError(f"stacked plots share their x axis: {top.name} has {top.x}, {bottom.name} {bottom.x}")
+    return plots
 
 
 def _preset_in_units(plot: PlotSpec, style: PlotSpec) -> PlotSpec:

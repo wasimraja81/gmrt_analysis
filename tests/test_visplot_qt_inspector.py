@@ -396,3 +396,46 @@ def test_a_page_of_square_plots_settles_once_drawn():
     assert [p.grid for p in tab.panels] == grids  # no plot drawn again
     assert window.idle() and not window.to_draw
     window.close()
+
+
+def _stack_window(name, **options):
+    """A window of amplitude over phase against frequency (T26: a stack)."""
+    from visplot.request import PlotRequest
+    from visplot.run import open_file, prepare
+
+    path = _make_synthetic_file(make_scratch_dir(name) / "obs.fits")
+    run = prepare(PlotRequest(str(path), "amp-vs-freq+phase-vs-freq", **options), open_file(path))
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    window = InspectorWindow(run.source, run.figures(), labels=run.labels, cache=run.cache, cached=run.cached)
+    window.resize(1000, 900)
+    window.show()
+    return app, window
+
+
+def test_a_stack_draws_its_two_plots_on_one_x_axis_and_exports_both():
+    app, window = _stack_window("qt_stack")
+    _wait(app, window)
+    amp, phase = window.panels.values()
+    assert (amp.plot.y, phase.plot.y) == ("amp", "phase") and amp.figure is phase.figure
+    assert amp.drawn and phase.drawn and amp.grid.x_extent == phase.grid.x_extent
+    assert amp.figure.status.get_text() == "638 samples from 40 rows"  # both plots' samples, row 0's RR flagged
+    amp.cell.ax.set_xlim(400.5, 402.5)  # a zoom on one: the stack's x follows
+    _settle(app, window)
+    assert amp.grid.x_extent == phase.grid.x_extent == (400.5, 402.5)
+    path = make_scratch_dir("qt_stack_export") / "stack.png"
+    window.export(amp.plot, str(path), dpi=100)
+    _wait(app, window)
+    assert path.exists() and path.stat().st_size > 0
+    window.close()
+
+
+def test_pages_of_stacks_hold_one_stack_per_baseline():
+    app, window = _stack_window("qt_stack_pages", one_plot_per="baseline")
+    _wait(app, window)
+    (tab,) = window.paged
+    assert tab.figure.page.stack == 2 and tab.figure.page.grid == (1, 3)  # 3 baselines in 2 x 6: 1 x 3
+    assert [(p.plot.iteration.label, p.plot.y) for p in tab.panels] == [
+        ("C00:01-C01:02", "amp"), ("C00:01-C01:02", "phase"), ("C00:01-C02:03", "amp"), ("C00:01-C02:03", "phase"),
+        ("C01:02-C02:03", "amp"), ("C01:02-C02:03", "phase")]
+    assert all(p.drawn for p in tab.panels)
+    window.close()
