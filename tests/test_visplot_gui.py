@@ -19,7 +19,7 @@ from PySide6 import QtWidgets  # noqa: E402
 
 from conftest import make_scratch_dir  # noqa: E402
 from test_cli_visplot_output import _make_synthetic_file  # noqa: E402
-from visplot.gui.form import ACTION_OPTIONS, RequestForm  # noqa: E402
+from visplot.gui.form import ACTION_OPTIONS, PENDING_GUI_OPTIONS, RequestForm  # noqa: E402
 from visplot.gui.main_window import VisplotWindow  # noqa: E402
 from visplot.gui.widgets import select_data  # noqa: E402
 from visplot.records import action_request  # noqa: E402
@@ -57,7 +57,9 @@ def test_every_request_option_is_a_form_field_or_a_named_gui_action():
     form = RequestForm()
     options = set(request_option_names())
     assert set(form.fields).isdisjoint(ACTION_OPTIONS)
-    assert set(form.fields) | set(ACTION_OPTIONS) == options  # an option missing from the GUI fails here
+    assert set(PENDING_GUI_OPTIONS).isdisjoint(set(form.fields) | set(ACTION_OPTIONS))
+    # an option missing from the GUI, and not pending with its plan step, fails here
+    assert set(form.fields) | set(ACTION_OPTIONS) | set(PENDING_GUI_OPTIONS) == options
     form.deleteLater()
 
 

@@ -20,6 +20,7 @@ from pathlib import Path
 from visplot.axis_scale import SCALE_NAMES
 from visplot.clock_axis import DEFAULT_TIME_FORMAT, TIME_FORMATS
 from visplot.fonts import DEFAULT_PANEL_FONT, PANEL_FONTS
+from visplot.pages import PAGE_KINDS
 from visplot.plot_theme import DEFAULT_PLOT_THEME, MIN_CONTRAST, PLOT_THEMES
 from visplot.request_args import CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DPI_LIMITS, quantity_help
 from visplot.xy_session import DEFAULT_STREAM_THREADS
@@ -106,6 +107,11 @@ labels and titles as vector:
                       at least 600 dpi (600 for 150), for zooming in; the
                       PNGs are exact reductions of it
                       (skip it with --no-highres-pdf)
+With --pages-by, one PNG per page of each streamed plot,
+PREFIX_PLOT_PAGE.png (e.g. visplot_amp-vs-time_C00_01-C01_02.png), and the
+PDFs hold the table plots, then every page in turn, each page's plots
+together; pages are drawn in passes over the rows, as many pages per pass
+as fit the memory budget for their pixel grids.
 Each streamed plot's figure is --figure-size inches (default 8,7); the
 antenna layout and source listing keep their own sizes. Under each plot a
 panel states what it shows: the color key (Stokes or sources, as
@@ -301,6 +307,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--scale-linear-width", type=float, default=1.0, metavar="W",
         help="for symlog and asinh scales: the width around zero that stays linear (default: 1)",
     )
+
+    pages = parser.add_argument_group("pages (one plot per value; saved with --output-dir)")
+    pages.add_argument(
+        "--pages-by", choices=list(PAGE_KINDS),
+        help="one page per baseline, antenna, source or Stokes product the selection holds, as CASA plotms's "
+        "iteraxis and AIPS VPLOT's one baseline per plot: a page holds the selection's rows, or its Stokes "
+        "product, that pass one more filter (an antenna's page: its baselines to all others, so each baseline is "
+        "on two pages). Saved with --output-dir; the window's pages are not built yet",
+    )
+    for axis in ("x", "y"):
+        pages.add_argument(
+            f"--{axis}-page-range", choices=["own", "common"], default="own",
+            help=f"with --pages-by, each page's {axis}-axis range: own (default), from the page's own data, as "
+            "plotms and AIPS VPLOT scale each plot; common, one range over the whole selection, for comparing "
+            f"pages (--{axis}-range fixes it for every page either way)",
+        )
 
     out = parser.add_argument_group("output")
     out.add_argument(

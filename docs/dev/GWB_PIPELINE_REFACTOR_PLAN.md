@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 498 tests passing; T26, T32 in progress; T40, T42,
+T47-T49, point D and T21 2026-10-01, 515 tests passing; T26, T32 in progress; T40, T42,
 T45, T46, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -534,6 +534,77 @@ Buildable now, ahead of Phase C.
   pixel size and grid as they were (docked, as before, the plot went from 611 to 305
   pixels high); the panel floats; a panel the user docked opens docked; the placement.
   Next: pages, then flagging, then the layout items.
+  Pages and shared-axis layouts, designed 2026-10-02 (the user chose the defaults below).
+  Conventions checked the same day: CASA plotms pages with `iteraxis` (scan, field, spw,
+  baseline, antenna, time, corr), `gridrows` x `gridcols` plots per page,
+  `xselfscale`/`yselfscale` (True: one range for every page; default False, each its
+  own) and `xsharedaxis`/`ysharedaxis` (tick labels on the outer column or row, with the
+  common range); AIPS VPLOT draws one baseline per plot, NPLOTS per page, AMP and PHASE as
+  pairs with BPARM(2) < 0, each baseline's y scaled on its own with BPARM(3) = 0. Design:
+  - a page is the selection narrowed by one more filter (the request plus that filter,
+    where the request has none of its kind; step 1 below): `--pages-by baseline`
+    (`--antennas A --baselines-with B`), `antenna`
+    (`--antennas A`: its baselines to all others, each baseline on two pages), `source`
+    (`--sources S`), `stokes` (`--stokes RR`); pages for the values the selection holds,
+    in antenna and source number order; the panel's Selection line names the page's
+    filter. Left out for now: scan (neither file has an NX table), time and channel;
+  - `--page-grid ROWS,COLS` (default 1,1); `--x-page-range`/`--y-page-range` `own`
+    (default, as plotms and AIPS) or `common` (one range over the selection; on a grid,
+    tick labels on the outer row or column only); `--x-range`/`--y-range` fix an axis
+    for every page;
+  - `+` in `--plots` stacks plots in one cell sharing x (`amp-vs-time+phase-vs-time`,
+    VPLOT's pairs), same x quantity and unit required; with pages, each cell holds the
+    stack. az-el-range goes back to one figure, elevation over azimuth (two pages since
+    T22);
+  - window: a tab per `--plots` entry; a tab with pages gets a navigator (◀ ▶, the pages
+    by value, Page Up/Down) and draws the page shown, reading its rows only; on a common
+    axis a zoom carries to the next page, an own axis opens at that page's range (a range
+    pass of the page's own, when first shown); Locate in the panel boxed, Export the page;
+  - saved: a PNG per page, named by value for 1x1 pages (`visplot_amp-vs-time_C00-C01.png`)
+    and by number on a grid (`_page01`); each PDF holds every page; pages are drawn in
+    passes, each drawing the pages whose grids fit a memory budget, the count of passes
+    reported before reading.
+  Measured on the GWB file: 378 baselines from 28 antennas, 13 sources, 4 Stokes, 10,476
+  integrations; one plot's grid at 600 dpi (the high-resolution PDF) is 2842 x 3720
+  pixels, 21.1 MB, so a page per baseline needs 8.0 GB of grids for all 378; a baseline's
+  rows are 1 in 378, 37 MB apart, so its page reads 10,476 separate rows of 98 KB (1.03
+  GB). Build order: (1) pages in the save path, 1x1, both range modes, passes by memory;
+  (2) the window's navigator; (3) grids; (4) `+` stacks and az-el-range; (5) the GUI.
+  Revised the same day (user: "I would say we have by default 5x6 or 6x5 arrangement. So
+  that we do not generate a huge number of plots/pages. If a user needs real detailed
+  view, they may use 1x1 by choice"): `--page-grid` defaults to 5 rows x 6 columns, a
+  landscape page (a larger figure than a single plot's 8 x 7 in, e.g. 16 x 11 in, set
+  in step 3); with fewer pages than the grid holds, the page takes the smallest grid
+  within 5 x 6 that holds them (4 Stokes: 2 x 2; 13 sources: 3 x 5), a `--page-grid`
+  given being kept as given; on a grid the ranges default to common (tick labels on the
+  outer row and column), a 1 x 1 page keeping its own; each plot names its value in a
+  corner, as VPLOT labels its baselines. On the GWB file: 378 baselines on 13 pages, 28
+  antennas, 13 sources and 4 Stokes on one page each. Build order now (1), (3), (2), (5),
+  (4): the grid is the default, so it comes before the window and the GUI.
+  Step 1 built 2026-10-02 (`visplot/pages.py`; `stream.PageReducer`, `ChunkValues.page`,
+  `visibility_data.narrow_block`; `run.draw_pages`, `_save_pages`): `--pages-by`,
+  `--x-page-range`, `--y-page-range`. A page holds the selection's rows, or its Stokes
+  product, that pass the page's filter; where the request has no filter of that kind,
+  that is what the request plus the filter draws (tested: a source page against
+  `--sources`, pixel for pixel). Pages keep the selection's time origin, so elapsed time
+  starts at one zero on every page. A page plot is a `PlotSpec` with its `page`; a pass
+  feeds each page's reducers only the page's part of each chunk (its rows, or its Stokes
+  product, as a pass over the page alone reads it: tested for all four kinds, the range,
+  grid and row-pruning reducers), and range-cache keys use the page's own selection.
+  Saved: the title names the page ("Amplitude vs Time: baseline C00:01-C01:02, 3C286";
+  a source page is named by its source), the Selection line starts with "page: ...", the
+  batches reported before reading ("378 pages drawn in 1 batch of up to 378 (... of
+  pixel grids each, within 13.5 GB, 20% of this host's memory)"). Until the window's
+  navigator and the GUI's fields exist, `--pages-by` needs `--output-dir`, and the GUI's
+  form lists the three options as pending (`PENDING_GUI_OPTIONS`, with this step's
+  number; the GUI test accepts an option only as a field, an action or pending). Found
+  on the way: the panel wrote "1 baselines"; it now counts in the singular for one.
+  Measured on the GWB file, 3C286, RR, 400-450 MHz, amp vs time, a page per baseline
+  (378 pages, 69,174 rows, 6.8 GB): 7 min 41 s and 4.4 GB peak without the
+  high-resolution PDF; the drawing pass read 6.8 GB in 1 min 14 s. The rest is
+  matplotlib, per page (27 pages timed): figure 0.12 s, image 0.09 s, PNG 0.36 s, PDF page
+  0.20 s, as for an unpaged figure. The high-resolution PDF adds about 1.9 s a page (27
+  pages: 77.6 s with it, 25.6 s without; 2.0 GB peak).
   Flagging here means writing flags: drag a box and record entries for those samples in a
   flag file of its own, the raw file untouched (the T26 proposal of 2026-09-28, point 2).
   The user (2026-09-30): writing flags is to be discussed before it is built; reading

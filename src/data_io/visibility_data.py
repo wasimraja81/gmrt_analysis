@@ -340,3 +340,31 @@ def slice_block(block: VisibilityBlock, start: int, stop: int) -> VisibilityBloc
         chan_freqs_hz=block.chan_freqs_hz,
         stokes_labels=block.stokes_labels,
     )
+
+
+def narrow_block(block: VisibilityBlock, rows: np.ndarray | None = None, axis: str | None = None,
+                 positions=None) -> VisibilityBlock:
+    """A block narrowed to `rows` (a boolean mask or positions; None: all)
+    and, along data axis `axis` (e.g. "STOKES"), to `positions` within the
+    block's selection along it -- as copies."""
+    def take(a):
+        return a if rows is None or a is None else a[rows]
+
+    data, weight = take(block.data), take(block.weight)
+    axis_indices, chan_freqs_hz, stokes_labels = block.axis_indices, block.chan_freqs_hz, block.stokes_labels
+    if axis is not None:
+        positions = np.asarray(positions)
+        dim = block.axis_types.index(axis) + 1  # data's first dimension is the row
+        data = np.take(data, positions, axis=dim) if data is not None else None
+        weight = np.take(weight, positions, axis=dim) if weight is not None else None
+        axis_indices = {**axis_indices, axis: np.asarray(axis_indices[axis])[positions]}
+        if axis == "FREQ" and chan_freqs_hz is not None:
+            chan_freqs_hz = np.asarray(chan_freqs_hz)[positions]
+        if axis == "STOKES" and stokes_labels is not None:
+            stokes_labels = [stokes_labels[p] for p in positions]
+    return VisibilityBlock(
+        row_indices=take(block.row_indices), data=data, weight=weight, axis_types=block.axis_types,
+        axis_indices=axis_indices, ant1=take(block.ant1), ant2=take(block.ant2), source_id=take(block.source_id),
+        jd=take(block.jd), uu_sec=take(block.uu_sec), vv_sec=take(block.vv_sec), ww_sec=take(block.ww_sec),
+        chan_freqs_hz=chan_freqs_hz, stokes_labels=stokes_labels,
+    )

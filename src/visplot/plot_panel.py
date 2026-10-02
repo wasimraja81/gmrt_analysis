@@ -131,10 +131,15 @@ def selection_filters(request) -> str:
 
 
 def panel_facts(request, index, row_indices, channel_indices, stokes_labels, sources: dict,
-                ctx: QuantityContext, stride_pairs: tuple[int, int] | None = None) -> PanelFacts:
+                ctx: QuantityContext, stride_pairs: tuple[int, int] | None = None, page=None) -> PanelFacts:
     """The facts of a run's selection: its rows (`row_indices`), channels
     (`channel_indices`; None: all), Stokes and sources, and what a row
-    stride kept (`stride_pairs`, `RowSelection.stride_pairs`)."""
+    stride kept (`stride_pairs`, `RowSelection.stride_pairs`); for a page
+    (`visplot.pages.Page`), the page's, its filter first among the filters
+    (kept when the line is cut to its column)."""
+    filters = selection_filters(request)
+    if page is not None:
+        filters = ", ".join(part for part in (f"page: {page.text}", filters) if part)
     freqs_hz = np.asarray(index.chan_freqs_hz if index.chan_freqs_hz is not None else [])
     chosen = freqs_hz if channel_indices is None else freqs_hz[np.asarray(channel_indices)]
     rows = np.asarray(row_indices)
@@ -151,9 +156,14 @@ def panel_facts(request, index, row_indices, channel_indices, stokes_labels, sou
         # one integer per (ant1, ant2): np.unique over a 2-D array's rows is 30x slower
         n_baselines=len(np.unique(ant1[cross].astype(np.int64) * 65536 + ant2[cross])),
         n_autocorrelations=len(np.unique(ant1[~cross])),
-        n_antennas=len(np.union1d(ant1, ant2)), time_utc=time_utc, filters=selection_filters(request),
+        n_antennas=len(np.union1d(ant1, ant2)), time_utc=time_utc, filters=filters,
         stride_pairs=stride_pairs,
     )
+
+
+def _counted(n: int, noun: str) -> str:
+    """`n` `noun`s, e.g. "1 baseline", "2,016 baselines"."""
+    return f"{n:,} {noun}{'' if n == 1 else 's'}"
 
 
 def _swatch(color) -> DrawingArea:
@@ -337,10 +347,10 @@ class PlotPanel:
                 count = (f"all {facts.n_channels:,}" if facts.n_channels == facts.n_channels_in_file
                          else f"{facts.n_channels:,} of {facts.n_channels_in_file:,}")
                 left.append(("Channels", [f"{count}, {lo:.3f} to {hi:.3f} MHz"]))
-            parts = [f"{facts.n_baselines:,} baselines"] if facts.n_baselines else []
+            parts = [_counted(facts.n_baselines, "baseline")] if facts.n_baselines else []
             if facts.n_autocorrelations:
-                parts.append(f"{facts.n_autocorrelations:,} autocorrelations")
-            baselines = f"{' and '.join(parts) or 'none'}, {facts.n_antennas} antennas"
+                parts.append(_counted(facts.n_autocorrelations, "autocorrelation"))
+            baselines = f"{' and '.join(parts) or 'none'}, {_counted(facts.n_antennas, 'antenna')}"
             if facts.stride_pairs is not None and facts.stride_pairs[0] < facts.stride_pairs[1]:
                 # a row stride skipped some: said in the warning color
                 kept, available = facts.stride_pairs

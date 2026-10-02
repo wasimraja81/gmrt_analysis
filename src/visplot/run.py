@@ -22,7 +22,7 @@ import math
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 import numpy as np
 from astropy.io import fits
@@ -34,12 +34,14 @@ from data_io.row_index import default_row_index_path, load_row_index
 from data_io.row_selection import select_rows
 from data_io.source_table import read_source_table
 from data_io.timestamp_check import check_timestamps
+from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes
 from instruments.elevation_limits import elevation_limits_deg, known_elevation_limits_deg
 from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observatory_time_zone
 from instruments.structural_duds import without_structural_duds
 from visplot.antenna_layout import antenna_layout
 from visplot.fonts import font_file
 from visplot.locate_csv import LocateCsvWriter
+from visplot.pages import Page, list_pages, page_source
 from visplot.plot_panel import panel_facts
 from visplot.plot_spec import PlotSpec, expand_plot_name
 from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_table, convert, local_time_zone, \
@@ -65,7 +67,7 @@ from visplot.request_args import (
     validate_colorize_by,
 )
 from visplot.source_listing import source_listing
-from visplot.stream import LocateReducer
+from visplot.stream import GridReducer, LocateReducer
 from visplot.xy_figure import XYFigure, grid_summary
 from visplot.xy_session import (
     PassProgress,
@@ -76,6 +78,7 @@ from visplot.xy_session import (
     plot_grids,
     range_pass_axes,
     range_pass_reads_data,
+    resolve_axis_ranges,
     resolve_extents,
     source_in_views,
     stream_chunk_bytes,
@@ -138,6 +141,13 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         if request.baselines_with and request.correlation_type == "auto":
             raise ValueError("--baselines-with narrows cross-correlations; with --correlation-type auto, --antennas "
                              "alone chooses whose autocorrelations")
+        for axis in ("x", "y"):
+            if getattr(request, f"{axis}_page_range") != "own" and not request.pages_by:
+                raise ValueError(f"--{axis}-page-range sets each page's range; it needs --pages-by")
+        if request.pages_by and request.locate:
+            raise ValueError("--locate lists the samples of one plot; --pages-by makes a plot per page")
+        if request.pages_by and not request.output_dir:
+            raise ValueError("--pages-by saves its pages with --output-dir; the window's pages are not built yet")
         for name in given:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
@@ -280,6 +290,9 @@ class PreparedRun:
     cache: RangeCache | None
     cached: dict
     labels: tuple[str, str]
+    figure_size: tuple[float, float] = (8.0, 7.0)  # inches, of each streamed plot's figure
+    pages: list[Page] = field(default_factory=list)  # with --pages-by (T26)
+    record_id: str | None = None  # the run's provenance record (`set_record`)
     _figures: list | None = field(default=None, repr=False)
 
     @property
@@ -287,7 +300,9 @@ class PreparedRun:
         return [p for plots in self.plots_by_name.values() for p in plots]
 
     def set_record(self, run_id: str | None) -> None:
-        """Name the provenance record of this run on every plot's panel."""
+        """Name the provenance record of this run on every plot's panel (and
+        on the pages' panels, made later)."""
+        self.record_id = run_id
         for figure in self.xy_figures.values():
             figure.set_record(run_id)
 
@@ -308,6 +323,28 @@ class PreparedRun:
                     figures += [(p.name, self.xy_figures[p]) for p in self.plots_by_name[name]]
             self._figures = figures
         return self._figures
+
+    def page_plot(self, plot: PlotSpec, page: Page, fixed: dict[str, tuple] | None = None) -> PlotSpec:
+        """`plot` on `page`, named for its files, with the axis ranges in
+        `fixed` ({"x": range, "y": range}: a common range) set."""
+        ranges = {f"{axis}_range": value for axis, value in (fixed or {}).items()}
+        return replace(plot, page=page, name=f"{plot.name}_{page.file_label}", **ranges)
+
+    def page_figure(self, plot: PlotSpec) -> XYFigure:
+        """The figure of a page's plot (`plot.page`): its title and panel
+        describe the page's own selection."""
+        part = page_source(self.source, plot.page)
+        index = self.file.index
+        present = set(np.unique(np.asarray(index.source_id)[part.row_indices]).tolist())
+        sources = {sid: name for sid, name in self.selection.sources.items() if sid in present}
+        facts = panel_facts(self.request, index, part.row_indices, (part.axis_selection or {}).get("FREQ"),
+                            part.ctx.stokes_labels, sources, part.ctx, stride_pairs=self.selection.stride_pairs,
+                            page=plot.page)
+        figure = XYFigure(plot, part.ctx, list(sources.values()), self.file.telescope, self.request.fits_path,
+                          figsize=self.figure_size, facts=facts, panel_font=self.request.panel_font,
+                          theme=self.request.plot_theme, time_format=self.request.time_format)
+        figure.set_record(self.record_id)
+        return figure
 
 
 def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Report = _silent,
@@ -383,7 +420,14 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
         for stale in cache.remove_stale_partials():
             report("info", f"removed {stale} (left by an earlier run that stopped while writing)")
     cached = cached_ranges(source, xy_plots, cache)
-    if xy_plots and (checked.locate_box is None or request.output_dir):
+    pages = list_pages(request.pages_by, index, selection.row_indices, stokes_labels, ctx) \
+        if request.pages_by and xy_plots else []
+    if pages:  # the save reports its passes, batch by batch
+        for line in describe_passes(source, xy_plots, with_passes=False):
+            report("info", line)
+        shown = ", ".join(p.label for p in pages[:6]) + (", …" if len(pages) > 6 else "")
+        report("info", f"{len(pages):,} page{'s' if len(pages) != 1 else ''} by {request.pages_by}: {shown}")
+    elif xy_plots and (checked.locate_box is None or request.output_dir):
         for line in describe_passes(source, xy_plots, cached):
             report("info", line)
     elif checked.locate_box is not None:
@@ -395,7 +439,7 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     n_passes = 2 if [k for k in range_pass_axes(xy_plots) if k not in cached] else 1
     labels = (f"pass 1 of {n_passes}: finding data ranges", f"pass {n_passes} of {n_passes}: drawing")
     return PreparedRun(request, opened, checked.plot_names, plots_by_name, checked.locate_box, ctx, selection,
-                       source, xy_figures, cache, cached, labels)
+                       source, xy_figures, cache, cached, labels, figure_size=checked.figure_size, pages=pages)
 
 
 @dataclass
@@ -625,7 +669,9 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     then one PNG per plot at the request's --dpi (an exact reduction) and the
     low- and high-resolution PDFs, in the request's --output-dir. Returns the
     paths written. Raises Stopped, with nothing written, when a pass's
-    `progress` callback stops it."""
+    `progress` callback stops it. With --pages-by, `_save_pages`."""
+    if run.pages:
+        return _save_pages(run, report, progress)
     request, source, xy_plots, xy_figures = run.request, run.source, run.xy_plots, run.xy_figures
     extents = {}
     if xy_plots:
@@ -683,6 +729,155 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
                 if isinstance(item, XYFigure):
                     item.show(grids[item.plot], display_dpi=highres)
                 pdf.savefig(_mpl_figure(item), dpi=highres)
+        report("info", f"saved {highres_path}")
+        written.append(highres_path)
+    return written
+
+
+def _category_count(run: PreparedRun, plot: PlotSpec) -> int:
+    """How many categories `plot` colors (1 without --colorize-by)."""
+    if plot.colorize_by == "stokes":
+        return max(1, len(run.ctx.stokes_labels))
+    if plot.colorize_by == "source":
+        return max(1, len(run.selection.sources))
+    return 1
+
+
+def grid_bytes(plot: PlotSpec, shape: tuple[int, int], n_categories: int = 1) -> int:
+    """Memory of `plot`'s `GridReducer` at `shape`: an int16 per pixel (three
+    grids with elevation limits: the points, those below and those above),
+    or for a density plot a uint32 count per pixel per category (and one for
+    the flagged samples shown)."""
+    pixels = shape[0] * shape[1]
+    if plot.style == "density":
+        return pixels * 4 * (max(1, n_categories) + (1 if plot.show_flagged else 0))
+    return pixels * 2 * (3 if plot.limits else 1)
+
+
+def _size_text(n_bytes: float) -> str:
+    """e.g. "42 MB", "8.0 GB"."""
+    return f"{n_bytes / 1e9:.1f} GB" if n_bytes >= 1e9 else f"{n_bytes / 1e6:.0f} MB"
+
+
+def page_batches(pages: list[Page], page_bytes: int, budget_bytes: int) -> list[list[Page]]:
+    """`pages` in batches whose pixel grids (`page_bytes` per page) fit
+    `budget_bytes`, at least one page each, in order."""
+    per_batch = max(1, budget_bytes // max(1, page_bytes))
+    return [pages[i:i + per_batch] for i in range(0, len(pages), per_batch)]
+
+
+def draw_pages(run: PreparedRun, report: Report = _silent, progress: ProgressFactory = _no_progress,
+               lowres_dpi: int | None = None) -> Iterator[tuple[PlotSpec, XYFigure, GridReducer]]:
+    """Every page's plots drawn for saving (T26), in order, each page's plots
+    together: (plot, figure, grid), the figure's status set, its view the
+    page's ranges, the grid at the saved resolution (`save_outputs`).
+    Common ranges (--x-page-range, --y-page-range) come from one pass over
+    the whole selection. The pages are drawn in batches whose pixel grids
+    fit the memory budget (`page_batches`), each a range pass for the
+    pages' own ranges (when any) and a drawing pass, over the rows its pages
+    hold. Raises Stopped when a pass is stopped."""
+    request, source, pages = run.request, run.source, run.pages
+    lowres_dpi = lowres_dpi or request.dpi
+    factor = highres_dpi(lowres_dpi) // lowres_dpi
+
+    fixed = {p: {} for p in run.xy_plots}
+    common = [(p, axis) for p in run.xy_plots for axis in ("x", "y")
+              if getattr(request, f"{axis}_page_range") == "common" and (p.x_range if axis == "x" else p.y_range) is None]
+    if common:
+        read_data = any(QUANTITIES[p.x if axis == "x" else p.y].needs_data for p, axis in common)
+        on_chunk = progress(pass_progress(source, "finding the pages' common ranges", read_data))
+        ranged = resolve_axis_ranges(source, common, on_chunk=on_chunk, cache=run.cache)
+        if ranged is None:
+            raise Stopped("stopped while finding the pages' common ranges; nothing saved")
+        for (p, axis), extent in ranged.items():
+            fixed[p][axis] = extent
+
+    def save_shape(plot: PlotSpec, figure: XYFigure) -> tuple[int, int]:
+        # density counts at the PNG's pixels (a count per pixel means the pixel seen; T21), points at highres
+        h, w = figure.grid_shape(lowres_dpi)
+        return (h, w) if plot.style == "density" else (h * factor, w * factor)
+
+    page_bytes = sum(grid_bytes(p, save_shape(p, run.xy_figures[p]), _category_count(run, p)) for p in run.xy_plots)
+    budget = int(host_total_memory_bytes() * DEFAULT_RAM_FRACTION_TO_USE)
+    batches = page_batches(pages, page_bytes, budget)
+    report("info", f"{len(pages):,} pages drawn in {len(batches)} batch{'es' if len(batches) != 1 else ''} of up "
+                   f"to {len(batches[0]):,} ({_size_text(len(batches[0]) * page_bytes)} of pixel grids each, within "
+                   f"{_size_text(budget)}, {DEFAULT_RAM_FRACTION_TO_USE:.0%} of this host's memory)")
+
+    done = 0
+    for batch in batches:
+        label = f"pages {done + 1:,}-{done + len(batch):,} of {len(pages):,}" if len(batches) > 1 else "pages"
+        done += len(batch)
+        plots = [run.page_plot(p, page, fixed[p]) for page in batch for p in run.xy_plots]
+        figures = {plot: run.page_figure(plot) for plot in plots}
+        part = source.subset(np.unique(np.concatenate([page_source(source, page).row_indices for page in batch])))
+        on_chunk = progress(pass_progress(part, f"{label}: finding data ranges", range_pass_reads_data(plots)))
+        extents = resolve_extents(part, plots, on_chunk=on_chunk, cache=run.cache)
+        if extents is None:
+            raise Stopped(f"stopped while finding the data ranges of {label}")
+        shapes = {}
+        for plot in plots:
+            extents[plot] = figures[plot].set_view(*extents[plot])  # the limits after the aspect applies
+            shapes[plot] = save_shape(plot, figures[plot])
+        read_data = any(plot.needs_data for plot in plots)
+        drawn = source_in_views(part, {plot: extents[plot] for plot in plots}, read_data)
+        on_chunk = progress(pass_progress(drawn, f"{label}: drawing", read_data))
+        grids, completed = plot_grids(drawn, plots, extents, shapes, on_chunk=on_chunk)
+        if not completed:
+            raise Stopped(f"stopped while drawing {label}")
+        for plot in plots:
+            figure, grid = figures.pop(plot), grids.pop(plot)
+            figure.set_status(grid_summary(grid, page_source(drawn, plot.page).n_rows,
+                                           page_source(part, plot.page).n_rows))
+            yield plot, figure, grid
+
+
+def _save_pages(run: PreparedRun, report: Report, progress: ProgressFactory) -> list[Path]:
+    """`save_outputs` with --pages-by (T26): a PNG per page of each streamed
+    plot, and the PDFs with the table plots, then every page in turn
+    (`draw_pages`), each page's figure cleared once saved. Raises Stopped
+    when a pass is stopped; the pages saved before it are kept."""
+    from contextlib import ExitStack
+
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    request = run.request
+    lowres_dpi, highres = request.dpi, highres_dpi(request.dpi)
+    factor = highres // lowres_dpi
+    output_dir = Path(request.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    lowres_path = output_dir / f"{request.output_prefix}_lowres.pdf"
+    highres_path = None if request.no_highres_pdf else output_dir / f"{request.output_prefix}_highres.pdf"
+    written = []
+    with ExitStack() as stack:
+        lowres_pdf = stack.enter_context(PdfPages(lowres_path))
+        highres_pdf = stack.enter_context(PdfPages(highres_path)) if highres_path else None
+        for name, item in run.figures():
+            if isinstance(item, XYFigure):
+                continue  # drawn page by page below
+            png_path = output_dir / f"{request.output_prefix}_{name}.png"
+            item.savefig(png_path, dpi=lowres_dpi)
+            lowres_pdf.savefig(item, dpi=lowres_dpi)
+            if highres_pdf is not None:
+                highres_pdf.savefig(item, dpi=highres)
+            report("info", f"saved {png_path}")
+            written.append(png_path)
+        for plot, figure, grid in draw_pages(run, report, progress):
+            figure.show(grid, display_dpi=lowres_dpi, downsample=1 if plot.style == "density" else factor)
+            if figure.limits_warning:
+                report("warning", f"{plot.name}: {figure.limits_warning}")
+            png_path = output_dir / f"{request.output_prefix}_{plot.name}.png"
+            figure.fig.savefig(png_path, dpi=lowres_dpi)
+            lowres_pdf.savefig(figure.fig, dpi=lowres_dpi)
+            if highres_pdf is not None:
+                figure.show(grid, display_dpi=highres)
+                highres_pdf.savefig(figure.fig, dpi=highres)
+            figure.fig.clear()  # its images released before the next page's
+            report("info", f"saved {png_path}")
+            written.append(png_path)
+    report("info", f"saved {lowres_path}")
+    written.append(lowres_path)
+    if highres_path:
         report("info", f"saved {highres_path}")
         written.append(highres_path)
     return written

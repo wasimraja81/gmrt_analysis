@@ -18,6 +18,7 @@ import numpy as np
 from data_io.row_index import RowIndex
 from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes
 from data_io.visibility_data import iter_visibility_chunks
+from visplot.pages import page_source
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import QUANTITIES, QuantityContext, quantity_label
 from visplot.stream import GridReducer, RangeReducer, ViewRowsReducer, run_stream
@@ -146,9 +147,24 @@ def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None,
     results the pass computes are saved (only if it ran to the end). Ranges
     are found and cached in the unit's base, so one result serves every unit
     of that base (e.g. kλ and Mλ)."""
-    hits = cached_ranges(source, plots, cache)
+    ranged = resolve_axis_ranges(source, range_pass_axes(plots), on_chunk, cache)
+    if ranged is None:
+        return None
+    extents = {}
+    for plot in plots:
+        x = plot.x_range if plot.x_range is not None else ranged[(plot, "x")]
+        y = plot.y_range if plot.y_range is not None else ranged[(plot, "y")]
+        extents[plot] = (tuple(x), tuple(y))
+    return extents
+
+
+def resolve_axis_ranges(source: XYSource, pairs: list[tuple[PlotSpec, str]], on_chunk=None,
+                        cache=None) -> dict[tuple[PlotSpec, str], tuple] | None:
+    """The data's range of each (plot, axis) in `pairs`, from one pass over
+    the selection (`resolve_extents`; None when the pass stopped early)."""
+    hits = cached_ranges(source, [], cache, pairs)
     reducers = {}
-    for plot, axis in range_pass_axes(plots):
+    for plot, axis in pairs:
         reducer = RangeReducer(plot, axis, source.ctx, with_histogram=cache is not None)
         if (plot, axis) in hits:
             reducer.load(*hits[(plot, axis)])
@@ -166,16 +182,14 @@ def resolve_extents(source: XYSource, plots: list[PlotSpec], on_chunk=None,
                                reducer.histogram.counts,
                                {"quantity": reducer.quantity, "base": reducer.base, "rows": source.n_rows,
                                 "file": str(source.fits_path)})
-
-    extents = {}
-    for plot in plots:
-        x = plot.x_range if plot.x_range is not None else reducers[(plot, "x")].extent()
-        y = plot.y_range if plot.y_range is not None else reducers[(plot, "y")].extent()
-        extents[plot] = (tuple(x), tuple(y))
-    return extents
+    return {key: tuple(reducer.extent()) for key, reducer in reducers.items()}
 
 
 def _cache_key(cache, source: XYSource, plot: PlotSpec, axis: str) -> str:
+    """The cache key of `plot`'s axis range over `source`: a page's plot is
+    keyed by the page's own selection (`pages.page_source`)."""
+    if plot.page is not None:
+        source = page_source(source, plot.page)
     quantity = plot.x if axis == "x" else plot.y
     return cache.key(
         source.fits_path, source.row_indices, source.axis_selection,
@@ -185,12 +199,13 @@ def _cache_key(cache, source: XYSource, plot: PlotSpec, axis: str) -> str:
     )
 
 
-def cached_ranges(source: XYSource, plots: list[PlotSpec], cache) -> dict:
-    """(plot, axis) -> cached (lo, hi, histogram counts), for axes needing a range."""
+def cached_ranges(source: XYSource, plots: list[PlotSpec], cache, pairs=None) -> dict:
+    """(plot, axis) -> cached (lo, hi, histogram counts), for axes needing a
+    range (or for `pairs`, (plot, axis) pairs, when given)."""
     if cache is None:
         return {}
     hits = {}
-    for plot, axis in range_pass_axes(plots):
+    for plot, axis in (range_pass_axes(plots) if pairs is None else pairs):
         found = cache.load(source.fits_path, _cache_key(cache, source, plot, axis))
         if found is not None:
             hits[(plot, axis)] = found
@@ -219,9 +234,11 @@ def range_pass_reads_data(plots: list[PlotSpec], cached: dict | None = None) -> 
                for p, axis in range_pass_axes(plots) if (p, axis) not in (cached or {}))
 
 
-def describe_passes(source: XYSource, plots: list[PlotSpec], cached: dict | None = None) -> list[str]:
+def describe_passes(source: XYSource, plots: list[PlotSpec], cached: dict | None = None,
+                    with_passes: bool = True) -> list[str]:
     """What streaming these plots will do, before it starts:
-    how much is selected, and what each pass over the selection reads."""
+    how much is selected, and what each pass over the selection reads
+    (`with_passes` False: the selection and the plots only)."""
     if any(p.needs_data for p in plots):
         n_samples = source.n_rows * source.samples_per_row
         size = (f"{source.n_rows:,} rows x {source.samples_per_row:,} visibility samples per row "
@@ -229,6 +246,8 @@ def describe_passes(source: XYSource, plots: list[PlotSpec], cached: dict | None
     else:
         size = f"{source.n_rows:,} rows (one value per row; no visibility data needed)"
     lines = [size, "plots: " + "; ".join(p.title for p in plots)]
+    if not with_passes:
+        return lines
     data_gb = source.n_rows * source.row_bytes / 1e9
 
     def reads(read_data: bool) -> str:

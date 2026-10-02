@@ -9,6 +9,9 @@ cannot drift apart.
 - The options a form field does not hold are set by named GUI actions
   (`ACTION_OPTIONS`); a test checks that every request option is one or the
   other, so an option added to the command line without a GUI control fails.
+  Options built for the command line ahead of their GUI controls are listed
+  in `PENDING_GUI_OPTIONS` with the plan step that adds them; the GUI's
+  requests leave them at their defaults until then.
 """
 
 from __future__ import annotations
@@ -48,6 +51,13 @@ ACTION_OPTIONS = {
     "no_highres_pdf": "File > Save plots as files",
     "dpi": "Export on a plot (its dpi), or File > Save plots as files",
     "figure_size": "Export on a plot (the plot's size in the window), or File > Save plots as files",
+}
+
+# Options whose GUI controls are still to be built, and the plan step building them (T26 pages, 2026-10-02).
+PENDING_GUI_OPTIONS = {
+    "pages_by": "T26 pages, step 5 (the GUI's fields)",
+    "x_page_range": "T26 pages, step 5 (the GUI's fields)",
+    "y_page_range": "T26 pages, step 5 (the GUI's fields)",
 }
 
 # Quantity groups in the axis lists, in order; a quantity not listed here goes under "Other",

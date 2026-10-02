@@ -246,7 +246,7 @@ class XYFigure:
             if axis == "x":
                 self.ax.tick_params(axis="x", labelrotation=CLOCK_TILT_DEG, labelrotation_mode="xtick")
                 self._xtick_extra_in = tilted_label_extra_in(time_format, day0)
-        self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path))
+        self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path, page=plot.page))
         color_axes(self.ax, self.theme)
         self.ax.grid(True, alpha=0.3, color=self.theme.grid)
         for axis, value in plot.reference_lines:

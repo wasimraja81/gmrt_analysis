@@ -24,7 +24,8 @@ from typing import Callable, Iterable
 
 import numpy as np
 
-from data_io.visibility_data import VisibilityBlock, slice_block
+from data_io.visibility_data import VisibilityBlock, narrow_block, slice_block
+from visplot.pages import Page
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import QUANTITIES, QuantityContext, Unit, resolve_unit
 from visplot.value_histogram import ValueHistogram
@@ -66,6 +67,7 @@ class ChunkValues:
         self._bases: dict[tuple[str, str], np.ndarray] = {}
         self._scaled: dict[tuple[str, str], np.ndarray] = {}
         self._samples: dict[PlotSpec, tuple] = {}
+        self._pages: dict[Page, ChunkValues | None] = {}
 
     def base(self, name: str, base: str) -> np.ndarray:
         """Quantity `name` in its base `base` (a category: its codes)."""
@@ -108,6 +110,27 @@ class ChunkValues:
     def release(self, plot: PlotSpec) -> None:
         """Drop `plot`'s samples, once every reducer of that plot has seen them."""
         self._samples.pop(plot, None)
+        part = self._pages.get(plot.page) if plot.page is not None else None
+        if part is not None:
+            part.release(plot)
+
+    def page(self, page: Page) -> ChunkValues | None:
+        """This chunk's part on `page` (T26): its rows there, or its Stokes
+        product, with the page's quantity context, as a pass over the page
+        alone would read it; None when the page holds none of the chunk."""
+        if page not in self._pages:
+            block = self.block
+            mask = page.row_mask(block.ant1, block.ant2, block.source_id)
+            part = None
+            if mask is None:  # a Stokes page: every row, one Stokes product
+                labels = list(block.stokes_labels or ())
+                narrowed = block if labels == [page.value] else narrow_block(
+                    block, axis="STOKES", positions=[labels.index(page.value)])
+                part = ChunkValues(narrowed, page.context(self.ctx))
+            elif mask.any():
+                part = ChunkValues(block if mask.all() else narrow_block(block, rows=mask), page.context(self.ctx))
+            self._pages[page] = part
+        return self._pages[page]
 
     def good(self, plot: PlotSpec, *arrays) -> np.ndarray | None:
         """Which of `plot`'s points are unflagged (`combine_flags` over the
@@ -150,6 +173,32 @@ class ChunkValues:
         return x, y, code, flagged
 
 
+class PageReducer:
+    """A reducer of a page's plot (`plot.page`, T26) fed only that page's
+    part of each chunk (`ChunkValues.page`): one pass over a selection fills
+    the reducers of all its pages as a pass over each page alone would."""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.plot = inner.plot
+
+    def compute(self, values: ChunkValues):
+        part = values.page(self.plot.page)
+        return None if part is None else (self.inner.compute(part),)
+
+    def apply(self, result) -> None:
+        if result is not None:
+            self.inner.apply(result[0])
+
+    def update(self, values: ChunkValues) -> None:
+        self.apply(self.compute(values))
+
+
+def on_pages(reducers: list) -> list:
+    """`reducers`, each of a page's plot fed through a `PageReducer`."""
+    return [PageReducer(r) if getattr(getattr(r, "plot", None), "page", None) is not None else r for r in reducers]
+
+
 def run_stream(
     chunks: Iterable[VisibilityBlock],
     ctx: QuantityContext,
@@ -167,7 +216,9 @@ def run_stream(
     each chunk is split into row blocks whose quantities and pixel indices are
     computed by worker threads; every reducer's results are then applied by
     this thread, in row order, so the outcome is the same for any thread
-    count. A plot's samples are released as soon as its reducers have them."""
+    count. A plot's samples are released as soon as its reducers have them.
+    A page's plot (T26) is fed its page's part of each chunk (`on_pages`)."""
+    reducers = on_pages(reducers)
     source = _prefetched(chunks) if prefetch else iter(chunks)
     pool = ThreadPoolExecutor(max_workers=threads) if threads > 1 else None
     rows_done = 0
