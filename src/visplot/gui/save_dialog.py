@@ -12,7 +12,7 @@ from PySide6 import QtWidgets
 
 from visplot.gui.widgets import CommandLine, form_layout, hint, row
 from visplot.request import PlotRequest, build_arg_parser
-from visplot.request_args import DPI_LIMITS, MAX_FIGURE_INCHES, resolve_figure_size_arg
+from visplot.request_args import DEFAULT_FIGURE_SIZE, DPI_LIMITS, MAX_FIGURE_INCHES, resolve_figure_size_arg
 from visplot.run import RequestError, check_request, highres_dpi
 
 
@@ -37,7 +37,7 @@ class SaveDialog(QtWidgets.QDialog):
         self.dpi = QtWidgets.QSpinBox()
         self.dpi.setRange(*DPI_LIMITS)
         self.dpi.setValue(previous.get("dpi", parser.get_default("dpi")))
-        width, height = resolve_figure_size_arg(previous.get("figure_size", parser.get_default("figure_size")))
+        width, height = resolve_figure_size_arg(previous.get("figure_size") or DEFAULT_FIGURE_SIZE)
         self.width, self.height = QtWidgets.QDoubleSpinBox(), QtWidgets.QDoubleSpinBox()
         for box, value in ((self.width, width), (self.height, height)):
             box.setRange(0.5, MAX_FIGURE_INCHES)

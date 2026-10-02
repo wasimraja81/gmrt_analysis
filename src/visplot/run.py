@@ -41,7 +41,7 @@ from instruments.structural_duds import without_structural_duds
 from visplot.antenna_layout import antenna_layout
 from visplot.fonts import font_file
 from visplot.locate_csv import LocateCsvWriter
-from visplot.pages import Page, list_pages, page_source
+from visplot.iterations import Iteration, iteration_source, list_iterations, page_layout
 from visplot.plot_panel import panel_facts
 from visplot.plot_spec import PlotSpec, expand_plot_name
 from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_table, convert, local_time_zone, \
@@ -49,6 +49,9 @@ from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_
 from visplot.range_cache import RangeCache
 from visplot.request import PlotRequest
 from visplot.request_args import (
+    DEFAULT_FIGURE_SIZE,
+    DEFAULT_PAGE_FIGURE_SIZE,
+    DEFAULT_PAGE_GRID,
     TABLE_PLOTS,
     parse_plot_names,
     resolve_antennas_arg,
@@ -59,6 +62,7 @@ from visplot.request_args import (
     resolve_ha_range_arg,
     resolve_klambda_range_arg,
     resolve_locate_box_arg,
+    resolve_page_grid_arg,
     resolve_percentiles_arg,
     resolve_plain_range_arg,
     resolve_stokes_axis_selection,
@@ -68,7 +72,7 @@ from visplot.request_args import (
 )
 from visplot.source_listing import source_listing
 from visplot.stream import GridReducer, LocateReducer
-from visplot.xy_figure import XYFigure, grid_summary
+from visplot.xy_figure import PageLayout, XYFigure, grid_summary, grids_summary
 from visplot.xy_session import (
     PassProgress,
     XYSource,
@@ -117,6 +121,8 @@ class CheckedRequest:
     plots_by_name: dict[str, list[PlotSpec]]  # streamed plots per name (table plots have none)
     locate_box: tuple | None
     figure_size: tuple[float, float]  # inches, of each streamed plot's figure
+    page_figure_size: tuple[float, float] = (16.0, 11.0)  # inches, of a page of several plots (T26)
+    page_grid: tuple[int, int] | None = None  # --page-grid as given; None: the default (`page_layout`)
 
 
 def check_request(request: PlotRequest) -> CheckedRequest:
@@ -126,7 +132,8 @@ def check_request(request: PlotRequest) -> CheckedRequest:
     Raises RequestError."""
     try:
         resolve_dpi_arg(request.dpi)
-        figure_size = resolve_figure_size_arg(request.figure_size)
+        figure_size = resolve_figure_size_arg(request.figure_size or DEFAULT_FIGURE_SIZE)
+        page_figure_size = resolve_figure_size_arg(request.figure_size or DEFAULT_PAGE_FIGURE_SIZE)
         font_file(request.panel_font)  # installed in the venv (FontNotInstalled says how to install it)
         samplers = {"--every-nth": request.every_nth, "--every-nth-integration": request.every_nth_integration,
                     "--random-subset-n": request.random_subset_n}
@@ -141,13 +148,18 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         if request.baselines_with and request.correlation_type == "auto":
             raise ValueError("--baselines-with narrows cross-correlations; with --correlation-type auto, --antennas "
                              "alone chooses whose autocorrelations")
-        for axis in ("x", "y"):
-            if getattr(request, f"{axis}_page_range") != "own" and not request.pages_by:
-                raise ValueError(f"--{axis}-page-range sets each page's range; it needs --pages-by")
-        if request.pages_by and request.locate:
-            raise ValueError("--locate lists the samples of one plot; --pages-by makes a plot per page")
-        if request.pages_by and not request.output_dir:
-            raise ValueError("--pages-by saves its pages with --output-dir; the window's pages are not built yet")
+        page_grid = resolve_page_grid_arg(request.page_grid)
+        for option, value in (("--page-grid", request.page_grid), ("--x-range-from", request.x_range_from),
+                              ("--y-range-from", request.y_range_from)):
+            if value is not None and not request.one_plot_per:
+                raise ValueError(f"{option} lays out the plots of --one-plot-per; it needs --one-plot-per")
+        if request.one_plot_per == "stokes" and request.colorize_by == "stokes":
+            raise ValueError("with --one-plot-per stokes each plot holds one Stokes product, so coloring by Stokes "
+                             "gives every plot one color; color by source, or leave --colorize-by out")
+        if request.one_plot_per and request.locate:
+            raise ValueError("--locate lists the samples of one plot; --one-plot-per makes many")
+        if request.one_plot_per and not request.output_dir:
+            raise ValueError("--one-plot-per saves its pages with --output-dir; the window's pages are not built yet")
         for name in given:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
@@ -200,7 +212,7 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         n_streamed = sum(len(p) for p in plots_by_name.values())
         if n_streamed != 1:
             raise RequestError(f"--locate needs exactly one streamed plot; --plots gives {n_streamed}")
-    return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size)
+    return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size, page_figure_size, page_grid)
 
 
 def with_elevation_limits(plot: PlotSpec, telescope: str | None) -> PlotSpec:
@@ -291,7 +303,9 @@ class PreparedRun:
     cached: dict
     labels: tuple[str, str]
     figure_size: tuple[float, float] = (8.0, 7.0)  # inches, of each streamed plot's figure
-    pages: list[Page] = field(default_factory=list)  # with --pages-by (T26)
+    iterations: list[Iteration] = field(default_factory=list)  # with --one-plot-per (T26)
+    page_figure_size: tuple[float, float] = (16.0, 11.0)  # inches, of a page of several plots
+    page_grid: tuple[int, int] | None = None  # --page-grid as given
     record_id: str | None = None  # the run's provenance record (`set_record`)
     _figures: list | None = field(default=None, repr=False)
 
@@ -324,25 +338,34 @@ class PreparedRun:
             self._figures = figures
         return self._figures
 
-    def page_plot(self, plot: PlotSpec, page: Page, fixed: dict[str, tuple] | None = None) -> PlotSpec:
-        """`plot` on `page`, named for its files, with the axis ranges in
-        `fixed` ({"x": range, "y": range}: a common range) set."""
+    def iteration_plot(self, plot: PlotSpec, iteration: Iteration, fixed: dict[str, tuple] | None = None) -> PlotSpec:
+        """`plot` of `iteration`, named for its files, with the axis ranges in
+        `fixed` ({"x": range, "y": range}: a range from every plot) set."""
         ranges = {f"{axis}_range": value for axis, value in (fixed or {}).items()}
-        return replace(plot, page=page, name=f"{plot.name}_{page.file_label}", **ranges)
+        return replace(plot, iteration=iteration, name=f"{plot.name}_{iteration.file_label}", **ranges)
 
-    def page_figure(self, plot: PlotSpec) -> XYFigure:
-        """The figure of a page's plot (`plot.page`): its title and panel
-        describe the page's own selection."""
-        part = page_source(self.source, plot.page)
+    def page_figure(self, page: PageOfPlots) -> XYFigure:
+        """The figure of `page`: one iteration's plot (a 1 x 1 page), or a
+        grid of them; its title and panel describe the page's own part of
+        the selection (the union of its iterations')."""
         index = self.file.index
-        present = set(np.unique(np.asarray(index.source_id)[part.row_indices]).tolist())
+        parts = [iteration_source(self.source, plot.iteration) for plot in page.plots]
+        rows = np.unique(np.concatenate([part.row_indices for part in parts]))
+        stokes = [label for label in self.ctx.stokes_labels if any(label in part.ctx.stokes_labels for part in parts)]
+        ctx = replace(self.ctx, stokes_labels=tuple(stokes))
+        present = set(np.unique(np.asarray(index.source_id)[rows]).tolist())
         sources = {sid: name for sid, name in self.selection.sources.items() if sid in present}
-        facts = panel_facts(self.request, index, part.row_indices, (part.axis_selection or {}).get("FREQ"),
-                            part.ctx.stokes_labels, sources, part.ctx, stride_pairs=self.selection.stride_pairs,
-                            page=plot.page)
-        figure = XYFigure(plot, part.ctx, list(sources.values()), self.file.telescope, self.request.fits_path,
-                          figsize=self.figure_size, facts=facts, panel_font=self.request.panel_font,
-                          theme=self.request.plot_theme, time_format=self.request.time_format)
+        facts = panel_facts(self.request, index, rows, (self.source.axis_selection or {}).get("FREQ"), stokes, sources,
+                            ctx, stride_pairs=self.selection.stride_pairs, part=page.panel_text)
+        by_source = page.plots[0].iteration.by == "source"  # a source's plot or page: named by its sources
+        common = dict(telescope=self.file.telescope, source_path=self.request.fits_path, facts=facts,
+                      panel_font=self.request.panel_font, theme=self.request.plot_theme,
+                      time_format=self.request.time_format)
+        if page.layout is None:
+            figure = XYFigure(page.plots[0], parts[0].ctx, list(sources.values()), figsize=self.figure_size, **common)
+        else:
+            figure = XYFigure(page.plot, ctx, None if by_source else list(sources.values()),
+                              figsize=self.page_figure_size, page=page.layout, **common)
         figure.set_record(self.record_id)
         return figure
 
@@ -420,13 +443,17 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
         for stale in cache.remove_stale_partials():
             report("info", f"removed {stale} (left by an earlier run that stopped while writing)")
     cached = cached_ranges(source, xy_plots, cache)
-    pages = list_pages(request.pages_by, index, selection.row_indices, stokes_labels, ctx) \
-        if request.pages_by and xy_plots else []
-    if pages:  # the save reports its passes, batch by batch
+    iterations = list_iterations(request.one_plot_per, index, selection.row_indices, stokes_labels, ctx) \
+        if request.one_plot_per and xy_plots else []
+    if iterations:  # the save reports its passes, batch by batch
         for line in describe_passes(source, xy_plots, with_passes=False):
             report("info", line)
-        shown = ", ".join(p.label for p in pages[:6]) + (", …" if len(pages) > 6 else "")
-        report("info", f"{len(pages):,} page{'s' if len(pages) != 1 else ''} by {request.pages_by}: {shown}")
+        rows, cols = page_layout(len(iterations), checked.page_grid, DEFAULT_PAGE_GRID)
+        n_pages = math.ceil(len(iterations) / (rows * cols))
+        shown = ", ".join(it.label for it in iterations[:6]) + (", …" if len(iterations) > 6 else "")
+        report("info", f"{len(iterations):,} plot{'s' if len(iterations) != 1 else ''}, one per "
+                       f"{request.one_plot_per} ({shown}), on {n_pages:,} page{'s' if n_pages != 1 else ''} of "
+                       f"{rows} x {cols}")
     elif xy_plots and (checked.locate_box is None or request.output_dir):
         for line in describe_passes(source, xy_plots, cached):
             report("info", line)
@@ -439,7 +466,8 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     n_passes = 2 if [k for k in range_pass_axes(xy_plots) if k not in cached] else 1
     labels = (f"pass 1 of {n_passes}: finding data ranges", f"pass {n_passes} of {n_passes}: drawing")
     return PreparedRun(request, opened, checked.plot_names, plots_by_name, checked.locate_box, ctx, selection,
-                       source, xy_figures, cache, cached, labels, figure_size=checked.figure_size, pages=pages)
+                       source, xy_figures, cache, cached, labels, figure_size=checked.figure_size,
+                       iterations=iterations, page_figure_size=checked.page_figure_size, page_grid=checked.page_grid)
 
 
 @dataclass
@@ -669,8 +697,8 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     then one PNG per plot at the request's --dpi (an exact reduction) and the
     low- and high-resolution PDFs, in the request's --output-dir. Returns the
     paths written. Raises Stopped, with nothing written, when a pass's
-    `progress` callback stops it. With --pages-by, `_save_pages`."""
-    if run.pages:
+    `progress` callback stops it. With --one-plot-per, `_save_pages`."""
+    if run.iterations:
         return _save_pages(run, report, progress)
     request, source, xy_plots, xy_figures = run.request, run.source, run.xy_plots, run.xy_figures
     extents = {}
@@ -759,84 +787,169 @@ def _size_text(n_bytes: float) -> str:
     return f"{n_bytes / 1e9:.1f} GB" if n_bytes >= 1e9 else f"{n_bytes / 1e6:.0f} MB"
 
 
-def page_batches(pages: list[Page], page_bytes: int, budget_bytes: int) -> list[list[Page]]:
+def page_batches(pages: list, page_bytes: int, budget_bytes: int) -> list[list]:
     """`pages` in batches whose pixel grids (`page_bytes` per page) fit
     `budget_bytes`, at least one page each, in order."""
     per_batch = max(1, budget_bytes // max(1, page_bytes))
     return [pages[i:i + per_batch] for i in range(0, len(pages), per_batch)]
 
 
+@dataclass
+class PageOfPlots:
+    """One saved page of iterations' plots (T26): `plot`, the streamed plot
+    its iterations share; their `plots`; the grid's `layout` (None: one
+    iteration's plot, a 1 x 1 page); the page's `name` in filenames; and
+    what it shows, for its panel's Selection line (`panel_text`)."""
+
+    plot: PlotSpec
+    plots: list[PlotSpec]
+    layout: PageLayout | None
+    name: str
+    panel_text: str
+
+
+_PLURALS = {"baseline": "baselines", "antenna": "antennas", "source": "sources", "stokes": "Stokes"}
+
+
+def plan_pages(run: PreparedRun, grid: tuple[int, int], fixed: dict[PlotSpec, dict],
+               shared: dict[PlotSpec, tuple[bool, bool]]) -> list[list[PageOfPlots]]:
+    """The pages of a run with --one-plot-per, `grid` (rows, columns) of
+    iterations to a page, in groups of one page per streamed plot (the
+    plots of the same iterations, drawn and saved together); each
+    iteration's plot with the ranges in `fixed` set (`iteration_plot`), and
+    a grid's axes `shared` (x, y) per streamed plot."""
+    iterations = run.iterations
+    per_page = grid[0] * grid[1]
+    n_pages = math.ceil(len(iterations) / per_page)
+    digits = max(2, len(str(n_pages)))
+    plural = _PLURALS[iterations[0].by]
+    groups = []
+    for k in range(n_pages):
+        chunk = iterations[k * per_page:(k + 1) * per_page]
+        if per_page == 1:
+            title_part, panel_text = None, chunk[0].text
+        else:
+            first = k * per_page + 1
+            title_part = (f"{plural} {first:,}-{first + len(chunk) - 1:,} of {len(iterations):,}" if n_pages > 1
+                          else f"{len(iterations):,} {plural}")
+            panel_text = f"{title_part}: {chunk[0].label}" + (f" to {chunk[-1].label}" if len(chunk) > 1 else "")
+        group = []
+        for plot in run.xy_plots:
+            plots = [run.iteration_plot(plot, iteration, fixed[plot]) for iteration in chunk]
+            if per_page == 1:
+                group.append(PageOfPlots(plot, plots, None, plots[0].name, panel_text))
+            else:
+                layout = PageLayout(tuple(plots), grid, shared[plot], title_part)
+                group.append(PageOfPlots(plot, plots, layout, f"{plot.name}_page{k + 1:0{digits}d}", panel_text))
+        groups.append(group)
+    return groups
+
+
+def _rows_of(source: XYSource, iterations) -> np.ndarray:
+    """The rows of `source` the `iterations` hold, each once."""
+    return np.unique(np.concatenate([iteration_source(source, it).row_indices for it in iterations]))
+
+
 def draw_pages(run: PreparedRun, report: Report = _silent, progress: ProgressFactory = _no_progress,
-               lowres_dpi: int | None = None) -> Iterator[tuple[PlotSpec, XYFigure, GridReducer]]:
-    """Every page's plots drawn for saving (T26), in order, each page's plots
-    together: (plot, figure, grid), the figure's status set, its view the
-    page's ranges, the grid at the saved resolution (`save_outputs`).
-    Common ranges (--x-page-range, --y-page-range) come from one pass over
-    the whole selection. The pages are drawn in batches whose pixel grids
-    fit the memory budget (`page_batches`), each a range pass for the
-    pages' own ranges (when any) and a drawing pass, over the rows its pages
-    hold. Raises Stopped when a pass is stopped."""
-    request, source, pages = run.request, run.source, run.pages
+               lowres_dpi: int | None = None) -> Iterator[tuple[PageOfPlots, XYFigure, dict[PlotSpec, GridReducer]]]:
+    """Every page of a run with --one-plot-per drawn for saving (T26), in
+    order: (page, figure, {plot: grid}), the figure's status set, its views
+    the plots' ranges, the grids at the saved resolution (`save_outputs`).
+
+    The iterations go --page-grid to a page (`page_layout`: 5 x 6, or the
+    smallest grid within it that holds fewer). Each plot's range, without
+    --x-range/--y-range, comes from its own data or from every plot's
+    (--x-range-from, --y-range-from; default every plot's on a grid, its own
+    on 1 x 1 pages), the latter from one pass over the whole selection. The
+    pages are drawn in batches whose pixel grids fit the memory budget
+    (`page_batches`), each a range pass for the plots' own ranges (when
+    any) and a drawing pass, over the rows its iterations hold. Raises
+    Stopped when a pass is stopped."""
+    request, source, iterations = run.request, run.source, run.iterations
     lowres_dpi = lowres_dpi or request.dpi
     factor = highres_dpi(lowres_dpi) // lowres_dpi
+    grid = page_layout(len(iterations), run.page_grid, DEFAULT_PAGE_GRID)
+
+    def range_from(axis: str) -> str:
+        return getattr(request, f"{axis}_range_from") or ("all" if grid[0] * grid[1] > 1 else "each")
+
+    def given(plot: PlotSpec, axis: str):
+        return plot.x_range if axis == "x" else plot.y_range
 
     fixed = {p: {} for p in run.xy_plots}
-    common = [(p, axis) for p in run.xy_plots for axis in ("x", "y")
-              if getattr(request, f"{axis}_page_range") == "common" and (p.x_range if axis == "x" else p.y_range) is None]
-    if common:
-        read_data = any(QUANTITIES[p.x if axis == "x" else p.y].needs_data for p, axis in common)
-        on_chunk = progress(pass_progress(source, "finding the pages' common ranges", read_data))
-        ranged = resolve_axis_ranges(source, common, on_chunk=on_chunk, cache=run.cache)
+    from_all = [(p, axis) for p in run.xy_plots for axis in ("x", "y")
+                if range_from(axis) == "all" and given(p, axis) is None]
+    if from_all:
+        read_data = any(QUANTITIES[p.x if axis == "x" else p.y].needs_data for p, axis in from_all)
+        on_chunk = progress(pass_progress(source, "finding the range of every plot", read_data))
+        ranged = resolve_axis_ranges(source, from_all, on_chunk=on_chunk, cache=run.cache)
         if ranged is None:
-            raise Stopped("stopped while finding the pages' common ranges; nothing saved")
+            raise Stopped("stopped while finding the range of every plot; nothing saved")
         for (p, axis), extent in ranged.items():
             fixed[p][axis] = extent
+    shared = {p: tuple(range_from(axis) == "all" or given(p, axis) is not None for axis in ("x", "y"))
+              for p in run.xy_plots}
+    groups = plan_pages(run, grid, fixed, shared)
 
-    def save_shape(plot: PlotSpec, figure: XYFigure) -> tuple[int, int]:
+    def save_shapes(page: PageOfPlots, figure: XYFigure) -> dict[PlotSpec, tuple[int, int]]:
         # density counts at the PNG's pixels (a count per pixel means the pixel seen; T21), points at highres
-        h, w = figure.grid_shape(lowres_dpi)
-        return (h, w) if plot.style == "density" else (h * factor, w * factor)
+        shapes = ({page.plots[0]: figure.grid_shape(lowres_dpi)} if page.layout is None
+                  else figure.grid_shapes(lowres_dpi))
+        return {plot: (h, w) if plot.style == "density" else (h * factor, w * factor)
+                for plot, (h, w) in shapes.items()}
 
-    page_bytes = sum(grid_bytes(p, save_shape(p, run.xy_figures[p]), _category_count(run, p)) for p in run.xy_plots)
+    group_bytes = 0
+    for page in groups[0]:
+        figure = run.page_figure(page)
+        group_bytes += sum(grid_bytes(plot, shape, _category_count(run, plot))
+                           for plot, shape in save_shapes(page, figure).items())
+        figure.fig.clear()
     budget = int(host_total_memory_bytes() * DEFAULT_RAM_FRACTION_TO_USE)
-    batches = page_batches(pages, page_bytes, budget)
-    report("info", f"{len(pages):,} pages drawn in {len(batches)} batch{'es' if len(batches) != 1 else ''} of up "
-                   f"to {len(batches[0]):,} ({_size_text(len(batches[0]) * page_bytes)} of pixel grids each, within "
-                   f"{_size_text(budget)}, {DEFAULT_RAM_FRACTION_TO_USE:.0%} of this host's memory)")
+    batches = page_batches(groups, group_bytes, budget)
+    each = f" for each of {len(run.xy_plots)} plots" if len(run.xy_plots) > 1 else ""
+    report("info", f"{len(groups):,} page{'s' if len(groups) != 1 else ''} of {grid[0]} x {grid[1]}{each}, drawn "
+                   f"in {len(batches)} batch{'es' if len(batches) != 1 else ''} of up to {len(batches[0]):,} "
+                   f"({_size_text(len(batches[0]) * group_bytes)} of pixel grids each, within {_size_text(budget)}, "
+                   f"{DEFAULT_RAM_FRACTION_TO_USE:.0%} of this host's memory)")
 
     done = 0
     for batch in batches:
-        label = f"pages {done + 1:,}-{done + len(batch):,} of {len(pages):,}" if len(batches) > 1 else "pages"
+        label = f"pages {done + 1:,}-{done + len(batch):,} of {len(groups):,}" if len(batches) > 1 else "pages"
         done += len(batch)
-        plots = [run.page_plot(p, page, fixed[p]) for page in batch for p in run.xy_plots]
-        figures = {plot: run.page_figure(plot) for plot in plots}
-        part = source.subset(np.unique(np.concatenate([page_source(source, page).row_indices for page in batch])))
+        pages = [page for group in batch for page in group]
+        figures = [run.page_figure(page) for page in pages]
+        plots = [plot for page in pages for plot in page.plots]
+        part = source.subset(_rows_of(source, dict.fromkeys(plot.iteration for plot in plots)))
         on_chunk = progress(pass_progress(part, f"{label}: finding data ranges", range_pass_reads_data(plots)))
         extents = resolve_extents(part, plots, on_chunk=on_chunk, cache=run.cache)
         if extents is None:
             raise Stopped(f"stopped while finding the data ranges of {label}")
         shapes = {}
-        for plot in plots:
-            extents[plot] = figures[plot].set_view(*extents[plot])  # the limits after the aspect applies
-            shapes[plot] = save_shape(plot, figures[plot])
+        for page, figure in zip(pages, figures):  # the limits after the aspect applies
+            if page.layout is None:
+                extents[page.plots[0]] = figure.set_view(*extents[page.plots[0]])
+            else:
+                extents.update(figure.set_views({plot: extents[plot] for plot in page.plots}))
+            shapes.update(save_shapes(page, figure))
         read_data = any(plot.needs_data for plot in plots)
         drawn = source_in_views(part, {plot: extents[plot] for plot in plots}, read_data)
         on_chunk = progress(pass_progress(drawn, f"{label}: drawing", read_data))
         grids, completed = plot_grids(drawn, plots, extents, shapes, on_chunk=on_chunk)
         if not completed:
             raise Stopped(f"stopped while drawing {label}")
-        for plot in plots:
-            figure, grid = figures.pop(plot), grids.pop(plot)
-            figure.set_status(grid_summary(grid, page_source(drawn, plot.page).n_rows,
-                                           page_source(part, plot.page).n_rows))
-            yield plot, figure, grid
+        for page, figure in zip(pages, figures):
+            page_grids = {plot: grids.pop(plot) for plot in page.plots}
+            its = [plot.iteration for plot in page.plots]
+            figure.set_status(grids_summary(list(page_grids.values()), len(_rows_of(drawn, its)),
+                                            len(_rows_of(part, its))))
+            yield page, figure, page_grids
 
 
 def _save_pages(run: PreparedRun, report: Report, progress: ProgressFactory) -> list[Path]:
-    """`save_outputs` with --pages-by (T26): a PNG per page of each streamed
-    plot, and the PDFs with the table plots, then every page in turn
-    (`draw_pages`), each page's figure cleared once saved. Raises Stopped
-    when a pass is stopped; the pages saved before it are kept."""
+    """`save_outputs` with --one-plot-per (T26): a PNG per page of each
+    streamed plot, and the PDFs with the table plots, then every page in
+    turn (`draw_pages`), each page's figure cleared once saved. Raises
+    Stopped when a pass is stopped; the pages saved before it are kept."""
     from contextlib import ExitStack
 
     from matplotlib.backends.backend_pdf import PdfPages
@@ -862,15 +975,15 @@ def _save_pages(run: PreparedRun, report: Report, progress: ProgressFactory) -> 
                 highres_pdf.savefig(item, dpi=highres)
             report("info", f"saved {png_path}")
             written.append(png_path)
-        for plot, figure, grid in draw_pages(run, report, progress):
-            figure.show(grid, display_dpi=lowres_dpi, downsample=1 if plot.style == "density" else factor)
+        for page, figure, grids in draw_pages(run, report, progress):
+            figure.show_page(grids, display_dpi=lowres_dpi, downsample=1 if page.plot.style == "density" else factor)
             if figure.limits_warning:
-                report("warning", f"{plot.name}: {figure.limits_warning}")
-            png_path = output_dir / f"{request.output_prefix}_{plot.name}.png"
+                report("warning", f"{page.name}: {figure.limits_warning}")
+            png_path = output_dir / f"{request.output_prefix}_{page.name}.png"
             figure.fig.savefig(png_path, dpi=lowres_dpi)
             lowres_pdf.savefig(figure.fig, dpi=lowres_dpi)
             if highres_pdf is not None:
-                figure.show(grid, display_dpi=highres)
+                figure.show_page(grids, display_dpi=highres)
                 highres_pdf.savefig(figure.fig, dpi=highres)
             figure.fig.clear()  # its images released before the next page's
             report("info", f"saved {png_path}")

@@ -18,7 +18,7 @@ import numpy as np
 from data_io.row_index import RowIndex
 from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes
 from data_io.visibility_data import iter_visibility_chunks
-from visplot.pages import page_source
+from visplot.iterations import iteration_source
 from visplot.plot_spec import PlotSpec
 from visplot.quantities import QUANTITIES, QuantityContext, quantity_label
 from visplot.stream import GridReducer, RangeReducer, ViewRowsReducer, run_stream
@@ -186,10 +186,11 @@ def resolve_axis_ranges(source: XYSource, pairs: list[tuple[PlotSpec, str]], on_
 
 
 def _cache_key(cache, source: XYSource, plot: PlotSpec, axis: str) -> str:
-    """The cache key of `plot`'s axis range over `source`: a page's plot is
-    keyed by the page's own selection (`pages.page_source`)."""
-    if plot.page is not None:
-        source = page_source(source, plot.page)
+    """The cache key of `plot`'s axis range over `source`: an iteration's
+    plot is keyed by the iteration's own selection
+    (`iterations.iteration_source`)."""
+    if plot.iteration is not None:
+        source = iteration_source(source, plot.iteration)
     quantity = plot.x if axis == "x" else plot.y
     return cache.key(
         source.fits_path, source.row_indices, source.axis_selection,

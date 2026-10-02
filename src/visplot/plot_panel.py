@@ -131,15 +131,17 @@ def selection_filters(request) -> str:
 
 
 def panel_facts(request, index, row_indices, channel_indices, stokes_labels, sources: dict,
-                ctx: QuantityContext, stride_pairs: tuple[int, int] | None = None, page=None) -> PanelFacts:
+                ctx: QuantityContext, stride_pairs: tuple[int, int] | None = None,
+                part: str | None = None) -> PanelFacts:
     """The facts of a run's selection: its rows (`row_indices`), channels
     (`channel_indices`; None: all), Stokes and sources, and what a row
-    stride kept (`stride_pairs`, `RowSelection.stride_pairs`); for a page
-    (`visplot.pages.Page`), the page's, its filter first among the filters
-    (kept when the line is cut to its column)."""
+    stride kept (`stride_pairs`, `RowSelection.stride_pairs`); for a part of
+    the selection (`part`, e.g. "baseline C00:01-C01:02", T26), the part's,
+    named first among the filters (kept when the line is cut to its
+    column)."""
     filters = selection_filters(request)
-    if page is not None:
-        filters = ", ".join(part for part in (f"page: {page.text}", filters) if part)
+    if part:
+        filters = ", ".join(text for text in (part, filters) if text)
     freqs_hz = np.asarray(index.chan_freqs_hz if index.chan_freqs_hz is not None else [])
     chosen = freqs_hz if channel_indices is None else freqs_hz[np.asarray(channel_indices)]
     rows = np.asarray(row_indices)

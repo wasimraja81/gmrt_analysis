@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from visplot.axis_scale import AxisScale
-from visplot.pages import Page
+from visplot.iterations import Iteration
 from visplot.quantities import QUANTITIES, QuantityContext, Unit, canonical, convert, resolve_unit
 
 
@@ -46,7 +46,7 @@ class PlotSpec:
     aspect: str = "auto"  # auto (equal for same-kind axes, e.g. u vs v), equal, free
     x_unit: str | None = None  # None: the quantity's default unit
     y_unit: str | None = None
-    page: Page | None = None  # T26: the page of the selection this plot draws (`visplot.pages`); None: all of it
+    iteration: Iteration | None = None  # T26: the part of the selection this plot draws (`visplot.iterations`)
 
     def __post_init__(self):
         """Alias names become their quantity and unit (u_klambda: u in

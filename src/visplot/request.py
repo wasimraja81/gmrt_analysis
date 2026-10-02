@@ -20,9 +20,10 @@ from pathlib import Path
 from visplot.axis_scale import SCALE_NAMES
 from visplot.clock_axis import DEFAULT_TIME_FORMAT, TIME_FORMATS
 from visplot.fonts import DEFAULT_PANEL_FONT, PANEL_FONTS
-from visplot.pages import PAGE_KINDS
+from visplot.iterations import ITERATION_KINDS
 from visplot.plot_theme import DEFAULT_PLOT_THEME, MIN_CONTRAST, PLOT_THEMES
-from visplot.request_args import CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DPI_LIMITS, quantity_help
+from visplot.request_args import (CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DEFAULT_PAGE_FIGURE_SIZE, DPI_LIMITS,
+                                  quantity_help)
 from visplot.xy_session import DEFAULT_STREAM_THREADS
 
 PROG = "bin/visplot.sh"
@@ -107,12 +108,15 @@ labels and titles as vector:
                       at least 600 dpi (600 for 150), for zooming in; the
                       PNGs are exact reductions of it
                       (skip it with --no-highres-pdf)
-With --pages-by, one PNG per page of each streamed plot,
-PREFIX_PLOT_PAGE.png (e.g. visplot_amp-vs-time_C00_01-C01_02.png), and the
-PDFs hold the table plots, then every page in turn, each page's plots
-together; pages are drawn in passes over the rows, as many pages per pass
-as fit the memory budget for their pixel grids.
-Each streamed plot's figure is --figure-size inches (default 8,7); the
+With --one-plot-per, the plots go --page-grid to a page (default 5 x 6, or
+the smallest grid within it that holds fewer): one PNG per page,
+PREFIX_PLOT_pageNN.png (with --page-grid 1,1, named by the plot's value,
+e.g. visplot_amp-vs-time_C00_01-C01_02.png), and the PDFs hold the table
+plots, then every page in turn, the pages of each plot of the same values
+together. Pages are drawn in passes over the rows, as many per pass as fit
+the memory budget for their pixel grids.
+Each streamed plot's figure is --figure-size inches (default 8,7; a page
+of several plots, 16,11); the
 antenna layout and source listing keep their own sizes. Under each plot a
 panel states what it shows: the color key (Stokes or sources, as
 --colorize-by chooses; one color without it), the Stokes, channels,
@@ -308,20 +312,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="for symlog and asinh scales: the width around zero that stays linear (default: 1)",
     )
 
-    pages = parser.add_argument_group("pages (one plot per value; saved with --output-dir)")
+    pages = parser.add_argument_group("one plot per baseline, antenna, source or Stokes (saved with --output-dir)")
     pages.add_argument(
-        "--pages-by", choices=list(PAGE_KINDS),
-        help="one page per baseline, antenna, source or Stokes product the selection holds, as CASA plotms's "
-        "iteraxis and AIPS VPLOT's one baseline per plot: a page holds the selection's rows, or its Stokes "
-        "product, that pass one more filter (an antenna's page: its baselines to all others, so each baseline is "
-        "on two pages). Saved with --output-dir; the window's pages are not built yet",
+        "--one-plot-per", choices=list(ITERATION_KINDS),
+        help="one plot per baseline, antenna, source or Stokes product the selection holds (CASA plotms's "
+        "iteraxis; AIPS VPLOT draws one baseline per plot): each plot holds the selection's rows, or its Stokes "
+        "product, that pass one more filter (an antenna's plot: its baselines to all others, so each baseline is "
+        "in two plots), laid out --page-grid to a page. Saved with --output-dir; the window's pages are not built "
+        "yet",
+    )
+    pages.add_argument(
+        "--page-grid", metavar="ROWS,COLS",
+        help="with --one-plot-per, the plots on a page, rows by columns (plotms's gridrows, gridcols; AIPS "
+        "VPLOT's NPLOTS). Default 5,6, or the smallest grid within it that holds them when there are fewer; "
+        "1,1 for one plot per page",
     )
     for axis in ("x", "y"):
         pages.add_argument(
-            f"--{axis}-page-range", choices=["own", "common"], default="own",
-            help=f"with --pages-by, each page's {axis}-axis range: own (default), from the page's own data, as "
-            "plotms and AIPS VPLOT scale each plot; common, one range over the whole selection, for comparing "
-            f"pages (--{axis}-range fixes it for every page either way)",
+            f"--{axis}-range-from", choices=["each", "all"],
+            help=f"with --one-plot-per and no --{axis}-range, where each plot's {axis}-axis range comes from: "
+            "each, the plot's own data (as plotms and AIPS VPLOT scale each plot); all, every plot's data, one "
+            "range for every plot on every page, tick labels on the outer row and column only. Default: all on a "
+            f"grid, each with one plot per page. --{axis}-range fixes the axis for every plot either way",
         )
 
     out = parser.add_argument_group("output")
@@ -341,9 +353,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "least 600",
     )
     out.add_argument(
-        "--figure-size", default=DEFAULT_FIGURE_SIZE, metavar="W,H",
-        help=f"each streamed plot's saved figure, width and height in inches (default: {DEFAULT_FIGURE_SIZE}); "
-        "in the window, plots take the window's size",
+        "--figure-size", metavar="W,H",
+        help=f"the saved figure, width and height in inches: each streamed plot's (default: {DEFAULT_FIGURE_SIZE}), "
+        f"or with --one-plot-per a page's of several plots (default: {DEFAULT_PAGE_FIGURE_SIZE}); in the window, "
+        "plots take the window's size",
     )
     out.add_argument(
         "--provenance-dir", default=DEFAULT_PROVENANCE_DIR, metavar="DIR",

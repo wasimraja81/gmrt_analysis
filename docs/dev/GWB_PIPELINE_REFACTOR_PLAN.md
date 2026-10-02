@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 515 tests passing; T26, T32 in progress; T40, T42,
+T47-T49, point D and T21 2026-10-01, 518 tests passing; T26, T32 in progress; T40, T42,
 T45, T46, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -581,6 +581,30 @@ Buildable now, ahead of Phase C.
   corner, as VPLOT labels its baselines. On the GWB file: 378 baselines on 13 pages, 28
   antennas, 13 sources and 4 Stokes on one page each. Build order now (1), (3), (2), (5),
   (4): the grid is the default, so it comes before the window and the GUI.
+  Step 3 built 2026-10-02, with the names the user settled the same day ("what are the
+  options we are allowing for multi pages? Your reference to --iterate is not very clear
+  to me"; then, on the proposal below, "ok, happy now"): `--pages-by` became
+  `--one-plot-per`, `--x-page-range`/`--y-page-range` (own, common) became
+  `--x-range-from`/`--y-range-from` (each, all), and `--page-grid ROWS,COLS` was added.
+  In the code an iteration is one value's plot (`visplot/iterations.py`, `Iteration`,
+  as plotms names it) and a page is the sheet holding a grid of them, so the two never
+  share a name. `--x-range` fixes an axis for every plot; `--x-range-from` applies only
+  without it: each plot's own data, or every plot's (one pass over the selection, the
+  same range on every page). Defaults: every plot's on a grid, each plot's own with one
+  plot per page. `--figure-size` defaults to 8,7 for one plot, 16,11 for a page of
+  several. `xy_figure.PlotAxes` holds one plot's axes, view and image, split out of
+  `XYFigure`, which draws one plot as before (the window's and export's tests unchanged);
+  `XYFigure(page=PageLayout)` lays out a grid: one title ("Amplitude vs UV distance:
+  baselines 1-30 of 378, 3C286"), one x and one y label by the rows holding plots, one
+  panel for the page (its facts the union of its iterations'; Selection "baselines 1-30
+  of 378: C00:01-C01:02 to ..."), each plot named in its corner, tick labels on the outer
+  row or column of a shared axis, as many clock ticks as a plot's width holds; a page's
+  density plots share one scale. Filenames: `PREFIX_PLOT_pageNN.png`, or by value for
+  1 x 1 pages. `--colorize-by stokes` with `--one-plot-per stokes` is refused (each plot
+  holds one Stokes product). Measured on the GWB file, 3C286, RR, 400-450 MHz, amplitude
+  vs uv distance, one plot per baseline, without the high-resolution PDF: 378 plots on 13
+  pages of 5 x 6 in 2 min 26 s, 1.2 GB peak (one per page: 7 min 41 s, 4.4 GB); the
+  drawing pass took 55 s.
   Step 1 built 2026-10-02 (`visplot/pages.py`; `stream.PageReducer`, `ChunkValues.page`,
   `visibility_data.narrow_block`; `run.draw_pages`, `_save_pages`): `--pages-by`,
   `--x-page-range`, `--y-page-range`. A page holds the selection's rows, or its Stokes

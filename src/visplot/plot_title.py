@@ -15,15 +15,15 @@ def build_plot_title(
     sources: list[str] | None = None,
     telescope: str | None = None,
     source_path: str | Path | None = None,
-    page=None,
+    part: str | None = None,
 ) -> str:
-    """`base_title`, plus the page it shows (a `visplot.pages.Page`, T26;
-    a source's page is named by its source), the source it shows (one
-    source) or "multiple sources" (the panel under the plot names them; the
-    user, 2026-10-01), plus a second line naming the telescope and/or source
-    file (if given)."""
+    """`base_title`, plus the part of the selection it shows (`part`, e.g.
+    "baseline C00:01-C01:02" for one plot per baseline, T26), the source it
+    shows (one source) or "multiple sources" (the panel under the plot names
+    them; the user, 2026-10-01), plus a second line naming the telescope
+    and/or source file (if given)."""
     title = base_title
-    shows = [page.text] if page is not None and page.by != "source" else []
+    shows = [part] if part else []
     if sources:
         shows.append(sources[0] if len(sources) == 1 else "multiple sources")
     if shows:

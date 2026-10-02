@@ -55,9 +55,10 @@ ACTION_OPTIONS = {
 
 # Options whose GUI controls are still to be built, and the plan step building them (T26 pages, 2026-10-02).
 PENDING_GUI_OPTIONS = {
-    "pages_by": "T26 pages, step 5 (the GUI's fields)",
-    "x_page_range": "T26 pages, step 5 (the GUI's fields)",
-    "y_page_range": "T26 pages, step 5 (the GUI's fields)",
+    "one_plot_per": "T26 pages, step 5 (the GUI's fields)",
+    "page_grid": "T26 pages, step 5 (the GUI's fields)",
+    "x_range_from": "T26 pages, step 5 (the GUI's fields)",
+    "y_range_from": "T26 pages, step 5 (the GUI's fields)",
 }
 
 # Quantity groups in the axis lists, in order; a quantity not listed here goes under "Other",

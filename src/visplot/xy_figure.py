@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime
 import math
+from dataclasses import dataclass
 
 import numpy as np
 from astropy.time import Time
@@ -55,6 +56,15 @@ XLABEL_IN = 0.55
 # Clock times on the x axis: tick labels tilted (the user, 2026-10-01), so up to this many fit.
 CLOCK_TILT_DEG = 30.0
 CLOCK_MAX_TICKS_TILTED = 10
+# A page of several plots (T26), in inches: room left of the grid for the first column's tick labels and the
+# y label, right of it, and between plots (an axis shared by every plot: no tick labels between them; else each
+# plot's own); the title's top below the page's top edge; the plots' tick labels' size; and the width a tilted
+# clock tick label takes, so a plot holds as many clock ticks as fit its width (up to CLOCK_MAX_TICKS_TILTED).
+PAGE_LEFT_IN, PAGE_RIGHT_IN = 0.85, 0.3
+PAGE_GAP_IN, PAGE_YTICKS_GAP_IN, PAGE_XTICKS_GAP_IN = 0.1, 0.5, 0.28
+PAGE_TITLE_TOP_IN = 0.12
+PAGE_TICK_PT = 7
+PAGE_CLOCK_TICK_IN = 0.6
 
 
 def tilted_label_extra_in(time_format: str, day0: datetime.date) -> float:
@@ -159,15 +169,17 @@ def downsample_counts(counts: np.ndarray, factor: int) -> np.ndarray:
     return counts.reshape(h // factor, factor, w // factor, factor).sum(axis=(1, 3))
 
 
-def density_opacity(count: np.ndarray, scale: str = "log", top_percentile: float = 95.0
-                    ) -> tuple[np.ndarray, DensityScale]:
+def density_opacity(count: np.ndarray, scale: str = "log", top_percentile: float = 95.0,
+                    reference: np.ndarray | None = None) -> tuple[np.ndarray, DensityScale]:
     """Opacity of each pixel holding `count` samples (0 for none), from
     DENSITY_MIN_ALPHA at the fewest up to 1, and the scale it followed:
     "log", rising with log(count) to the `top_percentile` percentile of the
     occupied pixels' counts (rounded up), full beyond it; "histogram", by
-    the pixel's rank among the occupied pixels (histogram equalization)."""
+    the pixel's rank among the occupied pixels (histogram equalization).
+    `reference`: the occupied pixels' counts the scale comes from, when
+    other than `count`'s own (a page's plots on one scale, T26)."""
     count = np.asarray(count, dtype=np.float64)
-    occupied = count[count > 0]
+    occupied = count[count > 0] if reference is None else np.asarray(reference, dtype=np.float64)
     if not occupied.size:
         return np.zeros(count.shape), DensityScale(scale, 0)
     most = int(occupied.max())
@@ -186,26 +198,36 @@ def density_opacity(count: np.ndarray, scale: str = "log", top_percentile: float
 
 
 def density_rgba(shape, counts: dict[int, np.ndarray], colors: dict[int, tuple], flagged: np.ndarray | None = None,
-                 flagged_color: tuple | None = None, scale: str = "log", top_percentile: float = 95.0
+                 flagged_color: tuple | None = None, scale: str = "log", top_percentile: float = 95.0,
+                 reference: np.ndarray | None = None, flagged_reference: np.ndarray | None = None
                  ) -> tuple[np.ndarray, DensityScale]:
     """RGBA (uint8) of a density plot and the scale its opacity followed:
     each pixel's hue the mix of its categories' colors weighted by their
     counts (Datashader's way, the user's choice), its opacity by
     `density_opacity`; flagged samples over them in their color, on a scale
-    of their own counts."""
-    total = np.zeros(shape, dtype=np.float64)
+    of their own counts. `reference`, `flagged_reference`: the occupied
+    pixels' counts the two scales come from, when other than these
+    (`density_opacity`)."""
+    total = density_total(shape, counts)
     rgb = np.zeros(shape + (3,), dtype=np.float64)
     for code, count in counts.items():
-        total += count
         rgb += count[..., None] * np.asarray(colors[code][:3])
     rgb /= np.maximum(total, 1.0)[..., None]
-    alpha, described = density_opacity(total, scale, top_percentile)
+    alpha, described = density_opacity(total, scale, top_percentile, reference)
     if flagged is not None and flagged.any():
-        f_alpha, _ = density_opacity(flagged, scale, top_percentile)
+        f_alpha, _ = density_opacity(flagged, scale, top_percentile, flagged_reference)
         rgb = f_alpha[..., None] * np.asarray(flagged_color[:3]) + (1 - f_alpha[..., None]) * rgb
         alpha = f_alpha + (1 - f_alpha) * alpha
     rgba = np.concatenate([rgb, alpha[..., None]], axis=-1)
     return np.round(rgba * 255).astype(np.uint8), described
+
+
+def density_total(shape, counts: dict[int, np.ndarray]) -> np.ndarray:
+    """Samples per pixel over every category."""
+    total = np.zeros(shape, dtype=np.float64)
+    for count in counts.values():
+        total += count
+    return total
 
 
 def layers_to_rgba(layers: np.ndarray, colors: dict[int, tuple]) -> np.ndarray:
@@ -215,78 +237,62 @@ def layers_to_rgba(layers: np.ndarray, colors: dict[int, tuple]) -> np.ndarray:
     return lut[layers]
 
 
-class XYFigure:
-    """One plot's figure: vector axes, title and labels, with the samples
-    drawn from a `GridReducer` as an image, and the panel under it
-    (`facts`: what the run selected, from `visplot.plot_panel.panel_facts`;
-    without them the panel shows what was drawn and the record)."""
+@dataclass(frozen=True)
+class PageLayout:
+    """A page of several plots (T26): `plots`, one per iteration, in reading
+    order, `grid` (rows, columns) of them; `shared` (x, y): an axis whose
+    range is one for every plot, its tick labels on the outer row or column
+    only; `part`: what the page shows, for its title and panel."""
 
-    def __init__(self, plot: PlotSpec, ctx: QuantityContext, sources=None, telescope=None, source_path=None,
-                 figsize=(8, 7), facts: PanelFacts | None = None, panel_font: str = DEFAULT_PANEL_FONT,
-                 theme: str = DEFAULT_PLOT_THEME, time_format: str = DEFAULT_TIME_FORMAT):
-        self.plot = plot
-        self.ctx = ctx
-        self.theme = plot_theme(theme)
-        # A bare Figure (no pyplot): saved with savefig, or embedded in a Qt window.
-        self.fig = Figure(figsize=figsize, facecolor=self.theme.figure_face)
-        self.ax = self.fig.add_subplot()
-        self.panel = PlotPanel(self.fig, plot, ctx, facts, sources, font=panel_font, theme=theme)
-        self.status = self.panel.status  # what was drawn (get_text / set_text)
-        self._seen_codes: tuple = ()
-        self.ax.set_xlabel(quantity_label(plot.x, ctx, plot.x_unit))
-        self.ax.set_ylabel(quantity_label(plot.y, ctx, plot.y_unit))
-        self._xtick_extra_in = 0.0  # room for tilted clock tick labels on the x axis
+    plots: tuple[PlotSpec, ...]
+    grid: tuple[int, int]
+    shared: tuple[bool, bool] = (False, False)
+    part: str = ""
+
+
+class PlotAxes:
+    """One plot's axes (`ax`) in a figure: its labels (`label_axes`; a page
+    labels its axes once), scales, view, clock ticks, reference lines and the
+    image of its samples. The figure around it (`XYFigure`) places it and
+    holds the title and the panel."""
+
+    def __init__(self, ax, plot: PlotSpec, ctx: QuantityContext, theme, time_format: str = DEFAULT_TIME_FORMAT,
+                 label_axes: bool = True, clock_ticks: int = CLOCK_MAX_TICKS_TILTED):
+        self.ax, self.plot, self.ctx, self.theme = ax, plot, ctx, theme
+        if label_axes:
+            ax.set_xlabel(quantity_label(plot.x, ctx, plot.x_unit))
+            ax.set_ylabel(quantity_label(plot.y, ctx, plot.y_unit))
+        self.xtick_extra_in = 0.0  # room for tilted clock tick labels on the x axis
         clock_axes = [axis for axis in ("x", "y") if plot.unit(axis, ctx).clock]
         day0 = (datetime.date.fromisoformat(Time(day_origin_jd(ctx), format="jd", scale="utc").iso[:10])
                 if clock_axes else None)
         for axis in clock_axes:
-            mpl_axis = self.ax.xaxis if axis == "x" else self.ax.yaxis
-            mpl_axis.set_major_locator(ClockLocator(CLOCK_MAX_TICKS_TILTED if axis == "x" else 7))
+            mpl_axis = ax.xaxis if axis == "x" else ax.yaxis
+            mpl_axis.set_major_locator(ClockLocator(clock_ticks if axis == "x" else min(7, clock_ticks)))
             mpl_axis.set_major_formatter(ClockFormatter(time_format, day0))
             if axis == "x":
-                self.ax.tick_params(axis="x", labelrotation=CLOCK_TILT_DEG, labelrotation_mode="xtick")
-                self._xtick_extra_in = tilted_label_extra_in(time_format, day0)
-        self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path, page=plot.page))
-        color_axes(self.ax, self.theme)
-        self.ax.grid(True, alpha=0.3, color=self.theme.grid)
+                ax.tick_params(axis="x", labelrotation=CLOCK_TILT_DEG, labelrotation_mode="xtick")
+                self.xtick_extra_in = tilted_label_extra_in(time_format, day0)
+        color_axes(ax, theme)
+        ax.grid(True, alpha=0.3, color=theme.grid)
         for axis, value in plot.reference_lines:
-            line = self.ax.axhline if axis == "y" else self.ax.axvline
-            line(value, color=self.theme.reference, lw=0.8, ls="--", zorder=1)
+            line = ax.axhline if axis == "y" else ax.axvline
+            line(value, color=theme.reference, lw=0.8, ls="--", zorder=1)
         # A fixed range holds from the start: the empty axes do not stretch to a reference line outside it
         # (an elevation limit of 110 degrees) before the first drawing.
         if plot.x_range is not None and plot.axis_scale("x").is_linear:
-            self.ax.set_xlim(plot.x_range)
+            ax.set_xlim(plot.x_range)
         if plot.y_range is not None and plot.axis_scale("y").is_linear:
-            self.ax.set_ylim(plot.y_range)
+            ax.set_ylim(plot.y_range)
         self.image = None
         self.preview = None  # the last complete image, kept under a redraw until it completes (`begin_redraw`)
         self._scales_set = False
         self.equal_override: bool | None = None  # set from a window's aspect toggle
         self.view_request: tuple | None = None  # the extents last asked of set_view, before any widening
-        self.relayout()
-
-    def relayout(self) -> None:
-        """Place the panel and the axes for the figure's current size: the
-        panel at the bottom, the axes between it and the title (in inches,
-        so a window resizing the figure keeps the panel's size). A window
-        calls this when it resizes the figure."""
-        width_in, height_in = self.fig.get_size_inches()
-        self.panel.build(width_in, self._seen_codes)
-        bottom = min((self.panel.height_in + XLABEL_IN + self._xtick_extra_in) / height_in, 0.6)
-        top = max(1.0 - TITLE_IN / height_in, bottom + 0.1)
-        self.ax.set_position([AXES_LEFT, bottom, AXES_RIGHT - AXES_LEFT, top - bottom])
-        self.ax.apply_aspect()
 
     def set_view(self, x_extent, y_extent) -> tuple[tuple, tuple]:
-        """Set the axes' scales, limits and aspect for these extents, and return
-        the limits the axes end up with: with equal aspect the axes box is
-        square and the shorter range widens about its centre to the longer's
-        span, so a unit is the same length on both axes and both show the same
-        span (a mirrored u-v plot: both +-R); a grid binned over the returned
-        limits fills the axes. The extents asked for are kept
-        (`view_request`), so turning equal scale off again returns to them."""
+        """`XYFigure.set_view`, the figure laid out already."""
         self.view_request = (tuple(x_extent), tuple(y_extent))
-        self.relayout()  # the figure's size may have changed (a window)
         self._set_scales()
         equal = self.plot.equal_aspect if self.equal_override is None else self.equal_override
         # Equal scale is the square box and equal spans; matplotlib's own data aspect stays
@@ -304,7 +310,7 @@ class XYFigure:
         """Widen one axis's range about its centre, never narrow either, so a
         unit spans the same number of pixels on both axes."""
         pos = self.ax.get_position()
-        fig_w, fig_h = self.fig.get_size_inches()
+        fig_w, fig_h = self.ax.figure.get_size_inches()
         width, height = pos.width * fig_w, pos.height * fig_h
         (x0, x1), (y0, y1) = x_extent, y_extent
         per_inch = max((x1 - x0) / width, (y1 - y0) / height)
@@ -315,21 +321,11 @@ class XYFigure:
     def grid_shape(self, dpi: float) -> tuple[int, int]:
         """(height, width) in pixels of the axes area at `dpi`."""
         pos = self.ax.get_position()
-        fig_w, fig_h = self.fig.get_size_inches()
+        fig_w, fig_h = self.ax.figure.get_size_inches()
         return max(1, round(pos.height * fig_h * dpi)), max(1, round(pos.width * fig_w * dpi))
 
-    def show(self, grid: GridReducer, display_dpi: float, downsample: int = 1) -> None:
-        """Draw `grid` (binned at `downsample` x `display_dpi`) at `display_dpi`."""
-        if self.plot.limits:
-            self.panel.set_beyond(grid.beyond)
-        seen = tuple(sorted(grid.seen_codes)) if self.plot.colorize_by else ()
-        if not set(seen) <= set(self.panel.category_codes()) and seen != self._seen_codes:
-            self._seen_codes = seen  # a category the selection did not list: key it too
-            self.relayout()
-        if grid.density:
-            rgba = self._density_image(grid, downsample)
-        else:
-            rgba = self._points_image(grid, display_dpi, downsample)
+    def place(self, grid: GridReducer, rgba: np.ndarray) -> None:
+        """Show `rgba`, the image of `grid`, over the grid's extent."""
         if self.image is None:
             self._set_scales()
             if not self.linear:
@@ -358,38 +354,6 @@ class XYFigure:
         self.image.set_visible(True)
         self._category_ticks()
 
-    def _points_image(self, grid: GridReducer, display_dpi: float, downsample: int) -> np.ndarray:
-        """RGBA of a points plot: a marker on every occupied pixel, ▼ / ▲
-        beyond its limits, flagged crosses on top."""
-        n = grid.n_samples
-        size = self.plot.point_size if self.plot.point_size is not None else auto_point_size(n)
-        radius = marker_radius_px(size, display_dpi)
-        layers = draw_markers(downsample_layers(grid.layers_2d(), downsample),
-                              marker_offsets(radius, auto_square_marker(n)), cross_offsets(radius))
-        for beyond, pointing_down in ((grid.below, True), (grid.above, False)):
-            if beyond is not None and beyond.any():  # over the points, under flagged crosses
-                marks = draw_markers(downsample_layers(grid.layers_2d(beyond), downsample),
-                                     triangle_offsets(radius, pointing_down))
-                over = (marks > 0) & (layers != FLAGGED_LAYER)
-                layers = np.where(over, marks, layers)
-        if self.plot.show_flagged:
-            self.panel.set_flagged_drawn(bool((layers == FLAGGED_LAYER).any()))
-        return layers_to_rgba(layers, self.panel.colors(self._seen_codes))
-
-    def _density_image(self, grid: GridReducer, downsample: int) -> np.ndarray:
-        """RGBA of a density plot (T21), the panel told its largest count."""
-        colors = self.panel.colors(self._seen_codes)
-        counts = {code: downsample_counts(grid.layers_2d(c), downsample) for code, c in grid.counts.items()}
-        flagged = (downsample_counts(grid.layers_2d(grid.flagged_counts), downsample)
-                   if grid.flagged_counts is not None else None)
-        shape = (grid.height // downsample, grid.width // downsample)
-        rgba, described = density_rgba(shape, counts, {code: colors[code + 1] for code in counts}, flagged,
-                                       colors[FLAGGED_LAYER], self.plot.density_scale, self.plot.density_top)
-        self.panel.set_density_scale(described)
-        if self.plot.show_flagged:
-            self.panel.set_flagged_drawn(flagged is not None and bool(flagged.any()))
-        return rgba
-
     @property
     def linear(self) -> bool:
         return self.plot.axis_scale("x").is_linear and self.plot.axis_scale("y").is_linear
@@ -404,13 +368,7 @@ class XYFigure:
             self.ax.set_yscale(**self.plot.axis_scale("y").mpl_kwargs())
 
     def begin_redraw(self) -> None:
-        """A window draws the view again on a new grid (a zoom, a pan, a
-        resize; T19 point D): on linear axes the last complete image stays
-        under the new one as a preview, enlarged with the view, until
-        `end_redraw`, so the view never empties while the new grid fills in.
-        A partial image of a redraw stopped meanwhile is dropped, the preview
-        kept. On a non-linear axis the image is pinned to the axes area and
-        cannot follow the view (`hide_if_view_moved`): unchanged."""
+        """`XYFigure.begin_redraw`."""
         if self.image is None or not self.linear:
             return
         if self.preview is None:
@@ -440,6 +398,266 @@ class XYFigure:
                 codes = range(math.ceil(min(limits)), math.floor(max(limits)) + 1)
                 axis.set_ticks(list(codes), [category_label(name, c, self.ctx) for c in codes])
 
+
+class XYFigure:
+    """A figure of one plot, or a page of several (`page`, T26): vector
+    axes, title and labels, with the samples drawn from a `GridReducer` per
+    plot as an image, and the panel under them (`facts`: what the run, or
+    the page, selected, from `visplot.plot_panel.panel_facts`; without them
+    the panel shows what was drawn and the record). A page's plots share
+    `plot`'s quantities, units and colors, the key and the panel; each is
+    named in its corner.
+
+    One plot's figure answers for that plot (`ax`, `set_view`,
+    `grid_shape`, `show`, ...); a page's answers per plot (`set_views`,
+    `grid_shapes`, `show_page`)."""
+
+    def __init__(self, plot: PlotSpec, ctx: QuantityContext, sources=None, telescope=None, source_path=None,
+                 figsize=(8, 7), facts: PanelFacts | None = None, panel_font: str = DEFAULT_PANEL_FONT,
+                 theme: str = DEFAULT_PLOT_THEME, time_format: str = DEFAULT_TIME_FORMAT,
+                 page: PageLayout | None = None):
+        self.plot = plot
+        self.ctx = ctx
+        self.theme = plot_theme(theme)
+        self.page = page
+        # A bare Figure (no pyplot): saved with savefig, or embedded in a Qt window.
+        self.fig = Figure(figsize=figsize, facecolor=self.theme.figure_face)
+        if page is None:
+            self.cells = [PlotAxes(self.fig.add_subplot(), plot, ctx, self.theme, time_format)]
+        else:
+            self.cells = [self._page_cell(p, i, time_format) for i, p in enumerate(page.plots)]
+        self.panel = PlotPanel(self.fig, plot, ctx, facts, sources, font=panel_font, theme=theme)
+        self.status = self.panel.status  # what was drawn (get_text / set_text)
+        self._seen_codes: tuple = ()
+        if page is None:
+            named = plot.iteration is not None and plot.iteration.by != "source"  # a source's: by its source
+            self.ax.set_title(build_plot_title(plot.title, sources, telescope, source_path,
+                                               part=plot.iteration.text if named else None))
+        else:
+            title = build_plot_title(plot.title, sources, telescope, source_path, part=page.part)
+            self.title = self.fig.suptitle(title, va="top", color=self.theme.text)
+            self.xlabel = self.fig.text(0.5, 0.0, quantity_label(plot.x, ctx, plot.x_unit), ha="center",
+                                        va="bottom", color=self.theme.text, fontsize=rcParams["axes.labelsize"])
+            self.ylabel = self.fig.text(0.0, 0.5, quantity_label(plot.y, ctx, plot.y_unit), ha="left",
+                                        va="center", rotation=90, color=self.theme.text,
+                                        fontsize=rcParams["axes.labelsize"])
+        self.relayout()
+
+    def _page_cell(self, plot: PlotSpec, i: int, time_format: str) -> PlotAxes:
+        """The `i`th plot of a page: its axes, tick labels only where the
+        page's axes are not shared or on the outer row or column, and its
+        iteration's name in its corner."""
+        rows, cols = self.page.grid
+        n = len(self.page.plots)
+        ctx = plot.iteration.context(self.ctx) if plot.iteration is not None else self.ctx
+        width_in = (self.fig.get_size_inches()[0] - PAGE_LEFT_IN - PAGE_RIGHT_IN) / cols  # a plot's, about
+        clock_ticks = max(2, min(CLOCK_MAX_TICKS_TILTED, int(width_in / PAGE_CLOCK_TICK_IN)))
+        cell = PlotAxes(self.fig.add_axes((0.0, 0.0, 1.0, 1.0)), plot, ctx, self.theme, time_format,
+                        label_axes=False, clock_ticks=clock_ticks)
+        ax = cell.ax
+        ax.tick_params(labelsize=PAGE_TICK_PT)
+        shared_x, shared_y = self.page.shared
+        lowest_in_column = i + cols >= n  # no plot below it on this page
+        if shared_x and not lowest_in_column:
+            ax.tick_params(axis="x", labelbottom=False)
+        if shared_y and i % cols:
+            ax.tick_params(axis="y", labelleft=False)
+        if plot.iteration is not None:
+            ax.text(0.03, 0.96, plot.iteration.label, transform=ax.transAxes, ha="left", va="top",
+                    fontsize=PAGE_TICK_PT, color=self.theme.text, zorder=5,
+                    bbox=dict(boxstyle="round,pad=0.2", facecolor=self.theme.box_face,
+                              edgecolor=self.theme.box_edge, alpha=0.85))
+        return cell
+
+    # ---- one plot's figure -----------------------------------------------------------
+
+    @property
+    def ax(self):
+        """The plot's axes (a page's: its first plot's)."""
+        return self.cells[0].ax
+
+    @property
+    def image(self):
+        return self.cells[0].image
+
+    @property
+    def preview(self):
+        return self.cells[0].preview
+
+    @property
+    def equal_override(self) -> bool | None:
+        return self.cells[0].equal_override
+
+    @equal_override.setter
+    def equal_override(self, value: bool | None) -> None:
+        self.cells[0].equal_override = value
+
+    @property
+    def view_request(self) -> tuple | None:
+        return self.cells[0].view_request
+
+    @property
+    def linear(self) -> bool:
+        return self.cells[0].linear
+
+    def set_view(self, x_extent, y_extent) -> tuple[tuple, tuple]:
+        """Set the axes' scales, limits and aspect for these extents, and return
+        the limits the axes end up with: with equal aspect the axes box is
+        square and the shorter range widens about its centre to the longer's
+        span, so a unit is the same length on both axes and both show the same
+        span (a mirrored u-v plot: both +-R); a grid binned over the returned
+        limits fills the axes. The extents asked for are kept
+        (`view_request`), so turning equal scale off again returns to them."""
+        self.relayout()  # the figure's size may have changed (a window)
+        return self.cells[0].set_view(x_extent, y_extent)
+
+    def grid_shape(self, dpi: float) -> tuple[int, int]:
+        """(height, width) in pixels of the axes area at `dpi`."""
+        return self.cells[0].grid_shape(dpi)
+
+    def show(self, grid: GridReducer, display_dpi: float, downsample: int = 1) -> None:
+        """Draw `grid` (binned at `downsample` x `display_dpi`) at `display_dpi`."""
+        self.show_page({self.cells[0].plot: grid}, display_dpi, downsample)
+
+    def begin_redraw(self) -> None:
+        """A window draws the view again on a new grid (a zoom, a pan, a
+        resize; T19 point D): on linear axes the last complete image stays
+        under the new one as a preview, enlarged with the view, until
+        `end_redraw`, so the view never empties while the new grid fills in.
+        A partial image of a redraw stopped meanwhile is dropped, the preview
+        kept. On a non-linear axis the image is pinned to the axes area and
+        cannot follow the view (`hide_if_view_moved`): unchanged."""
+        self.cells[0].begin_redraw()
+
+    def end_redraw(self) -> None:
+        """The redraw is complete: the preview goes."""
+        self.cells[0].end_redraw()
+
+    def hide_if_view_moved(self, grid: GridReducer) -> None:
+        """On a non-linear axis the image is pinned to the axes area, so after
+        a zoom or pan it no longer lines up; hide it until the view is redrawn."""
+        self.cells[0].hide_if_view_moved(grid)
+
+    # ---- every plot of the figure ----------------------------------------------------
+
+    def relayout(self) -> None:
+        """Place the panel and the axes for the figure's current size: the
+        panel at the bottom, the axes (a page's grid of them) between it and
+        the title (in inches, so a window resizing the figure keeps the
+        panel's size). A window calls this when it resizes the figure."""
+        width_in, height_in = self.fig.get_size_inches()
+        self.panel.build(width_in, self._seen_codes)
+        if self.page is None:
+            cell = self.cells[0]
+            bottom = min((self.panel.height_in + XLABEL_IN + cell.xtick_extra_in) / height_in, 0.6)
+            top = max(1.0 - TITLE_IN / height_in, bottom + 0.1)
+            cell.ax.set_position([AXES_LEFT, bottom, AXES_RIGHT - AXES_LEFT, top - bottom])
+            cell.ax.apply_aspect()
+            return
+        rows, cols = self.page.grid
+        shared_x, shared_y = self.page.shared
+        extra = max(cell.xtick_extra_in for cell in self.cells)
+        bottom_in = self.panel.height_in + XLABEL_IN + extra
+        top_in = max(height_in - TITLE_IN, bottom_in + 0.5)
+        left_in, right_in = PAGE_LEFT_IN, max(width_in - PAGE_RIGHT_IN, PAGE_LEFT_IN + 0.5)
+        gap_x = PAGE_GAP_IN if shared_y else PAGE_YTICKS_GAP_IN
+        gap_y = PAGE_GAP_IN if shared_x else PAGE_XTICKS_GAP_IN + extra
+        cell_w = max((right_in - left_in - gap_x * (cols - 1)) / cols, 0.1)
+        cell_h = max((top_in - bottom_in - gap_y * (rows - 1)) / rows, 0.1)
+        for i, cell in enumerate(self.cells):
+            row, col = divmod(i, cols)
+            x0 = left_in + col * (cell_w + gap_x)
+            y0 = top_in - (row + 1) * cell_h - row * gap_y
+            cell.ax.set_position([x0 / width_in, y0 / height_in, cell_w / width_in, cell_h / height_in])
+            cell.ax.apply_aspect()
+        self.title.set_y(1.0 - PAGE_TITLE_TOP_IN / height_in)
+        # the axis labels by the rows holding plots (a page's last may leave rows empty)
+        used_rows = math.ceil(len(self.cells) / cols)
+        lowest_in = top_in - used_rows * cell_h - (used_rows - 1) * gap_y
+        self.xlabel.set_position(((left_in + right_in) / 2 / width_in,
+                                  (lowest_in - XLABEL_IN - extra + 0.1) / height_in))
+        self.ylabel.set_position((0.12 / width_in, (lowest_in + top_in) / 2 / height_in))
+
+    def set_views(self, extents: dict[PlotSpec, tuple]) -> dict[PlotSpec, tuple[tuple, tuple]]:
+        """`set_view` for every plot of a page: {plot: (x_extent, y_extent)}
+        to {plot: the limits its axes end up with}."""
+        self.relayout()
+        return {cell.plot: cell.set_view(*extents[cell.plot]) for cell in self.cells}
+
+    def grid_shapes(self, dpi: float) -> dict[PlotSpec, tuple[int, int]]:
+        """{plot: (height, width)} in pixels of each plot's axes area at `dpi`."""
+        return {cell.plot: cell.grid_shape(dpi) for cell in self.cells}
+
+    def show_page(self, grids: dict[PlotSpec, GridReducer], display_dpi: float, downsample: int = 1) -> None:
+        """Draw each plot's grid (binned at `downsample` x `display_dpi`) at
+        `display_dpi`: the panel states them together (what lies beyond the
+        limits, the categories seen, flagged samples drawn); a page's density
+        plots share one scale, from all their occupied pixels."""
+        cells = [cell for cell in self.cells if cell.plot in grids]
+        if self.plot.limits:
+            self.panel.set_beyond(_merged_beyond([grids[cell.plot] for cell in cells]))
+        seen = (tuple(sorted(set().union(*(grids[cell.plot].seen_codes for cell in cells))))
+                if self.plot.colorize_by else ())
+        if not set(seen) <= set(self.panel.category_codes()) and seen != self._seen_codes:
+            self._seen_codes = seen  # a category the selection did not list: key it too
+            self.relayout()
+        colors = self.panel.colors(self._seen_codes)
+        if self.plot.style == "density":
+            images = self._density_images(cells, grids, colors, downsample)
+        else:
+            images = {cell.plot: self._points_image(cell.plot, grids[cell.plot], colors, display_dpi, downsample)
+                      for cell in cells}
+        if self.plot.show_flagged:
+            self.panel.set_flagged_drawn(any(drawn for _, drawn in images.values()))
+        for cell in cells:
+            cell.place(grids[cell.plot], images[cell.plot][0])
+
+    def _points_image(self, plot: PlotSpec, grid: GridReducer, colors, display_dpi: float,
+                      downsample: int) -> tuple[np.ndarray, bool]:
+        """RGBA of a points plot: a marker on every occupied pixel, ▼ / ▲
+        beyond its limits, flagged crosses on top; and whether any flagged
+        sample is drawn."""
+        n = grid.n_samples
+        size = plot.point_size if plot.point_size is not None else auto_point_size(n)
+        radius = marker_radius_px(size, display_dpi)
+        layers = draw_markers(downsample_layers(grid.layers_2d(), downsample),
+                              marker_offsets(radius, auto_square_marker(n)), cross_offsets(radius))
+        for beyond, pointing_down in ((grid.below, True), (grid.above, False)):
+            if beyond is not None and beyond.any():  # over the points, under flagged crosses
+                marks = draw_markers(downsample_layers(grid.layers_2d(beyond), downsample),
+                                     triangle_offsets(radius, pointing_down))
+                over = (marks > 0) & (layers != FLAGGED_LAYER)
+                layers = np.where(over, marks, layers)
+        return layers_to_rgba(layers, colors), bool((layers == FLAGGED_LAYER).any())
+
+    def _density_images(self, cells, grids, colors, downsample: int) -> dict[PlotSpec, tuple[np.ndarray, bool]]:
+        """RGBA of each density plot (T21) and whether flagged samples are
+        drawn; the panel told the scale. A page's plots share one scale (from
+        all their occupied pixels), so their shades compare."""
+        parts = {}
+        for cell in cells:
+            grid = grids[cell.plot]
+            counts = {code: downsample_counts(grid.layers_2d(c), downsample) for code, c in grid.counts.items()}
+            flagged = (downsample_counts(grid.layers_2d(grid.flagged_counts), downsample)
+                       if grid.flagged_counts is not None else None)
+            parts[cell.plot] = ((grid.height // downsample, grid.width // downsample), counts, flagged)
+        reference = flagged_reference = None
+        if self.page is not None:
+            totals = [density_total(shape, counts) for shape, counts, _ in parts.values()]
+            reference = np.concatenate([t[t > 0] for t in totals] or [np.zeros(0)])
+            flagged_reference = np.concatenate([f[f > 0] for _, _, f in parts.values() if f is not None]
+                                               or [np.zeros(0)])
+        images, described = {}, None
+        for plot, (shape, counts, flagged) in parts.items():
+            rgba, scale = density_rgba(shape, counts, {code: colors[code + 1] for code in counts}, flagged,
+                                       colors[FLAGGED_LAYER], self.plot.density_scale, self.plot.density_top,
+                                       reference, flagged_reference)
+            described = described or scale
+            images[plot] = (rgba, flagged is not None and bool(flagged.any()))
+        if described is not None:
+            self.panel.set_density_scale(described)
+        return images
+
     def set_status(self, text: str) -> None:
         """What was drawn (or the drawing's progress), in the panel."""
         self.status.set_text(text)
@@ -464,14 +682,33 @@ class XYFigure:
         self.panel.record.set_text(run_id or "")
 
 
+def _merged_beyond(grids: list[GridReducer]) -> dict[str, dict[int, list]]:
+    """The points beyond the limits of several grids (`GridReducer.beyond`),
+    counted together by category: the lowest below, the highest above."""
+    merged: dict[str, dict[int, list]] = {"below": {}, "above": {}}
+    for grid in grids:
+        for name, counts in grid.beyond.items():
+            for code, (n, extreme) in counts.items():
+                seen = merged[name].setdefault(code, [0, extreme])
+                seen[0] += n
+                seen[1] = min(seen[1], extreme) if name == "below" else max(seen[1], extreme)
+    return merged
+
+
 def grid_summary(grid: GridReducer, n_rows: int, of_rows: int | None = None) -> str:
     """What a finished plot shows: samples drawn, rows read (of the
     selection's `of_rows`, when the pass read only the rows that can reach
     the view), and samples left out because they fall outside the axis
     ranges (or, on a log axis, are not positive)."""
-    text = f"{grid.n_samples:,} samples from {n_rows:,} rows"
+    return grids_summary([grid], n_rows, of_rows)
+
+
+def grids_summary(grids: list[GridReducer], n_rows: int, of_rows: int | None = None) -> str:
+    """`grid_summary` of the plots of a page together (T26)."""
+    n_samples, n_outside = sum(g.n_samples for g in grids), sum(g.n_outside for g in grids)
+    text = f"{n_samples:,} samples from {n_rows:,} rows"
     if of_rows is not None and of_rows != n_rows:
         text += f" of {of_rows:,} (the others lie outside the view)"
-    if grid.n_outside:
-        text += f"; {grid.n_outside:,} outside the axis ranges, left out"
+    if n_outside:
+        text += f"; {n_outside:,} outside the axis ranges, left out"
     return text

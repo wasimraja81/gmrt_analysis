@@ -29,7 +29,11 @@ CATEGORY_NAMES = {name for name, q in QUANTITIES.items() if q.categorical}
 DEFAULT_DPI = 150
 DPI_LIMITS = (50, 2400)
 DEFAULT_FIGURE_SIZE = "8,7"  # 8 x 6 in for the plot, and an inch for the panel under it
+DEFAULT_PAGE_FIGURE_SIZE = "16,11"  # a page of several plots (--one-plot-per): landscape (T26)
 MAX_FIGURE_INCHES = 100.0
+# --page-grid: the plots on a page, rows by columns (the user, 2026-10-02: 5 x 6 by default), and the most of either.
+DEFAULT_PAGE_GRID = (5, 6)
+MAX_PAGE_GRID = 12
 
 
 def resolve_dpi_arg(dpi: int) -> int:
@@ -52,6 +56,21 @@ def resolve_figure_size_arg(spec: str) -> tuple[float, float]:
         raise ValueError(f"--figure-size takes 'W,H' in inches, each above 0 and at most {MAX_FIGURE_INCHES:g}, "
                          f"got {spec!r}")
     return width, height
+
+
+def resolve_page_grid_arg(spec: str | None) -> tuple[int, int] | None:
+    """--page-grid 'ROWS,COLS': whole numbers from 1 to MAX_PAGE_GRID; None
+    when not given (the default grid, `visplot.iterations.page_layout`)."""
+    if spec is None:
+        return None
+    parts = spec.split(",")
+    try:
+        rows, cols = (int(p) for p in parts) if len(parts) == 2 else (0, 0)
+    except ValueError:
+        rows = cols = 0
+    if not (1 <= rows <= MAX_PAGE_GRID and 1 <= cols <= MAX_PAGE_GRID):
+        raise ValueError(f"--page-grid takes 'ROWS,COLS', whole numbers from 1 to {MAX_PAGE_GRID}, got {spec!r}")
+    return rows, cols
 
 
 def quantity_help(indent: int = 4, width: int = 79) -> str:
