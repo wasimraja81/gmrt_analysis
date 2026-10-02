@@ -68,8 +68,11 @@ does not depend on how much is selected. The first pass finds each axis's
 range (reading visibility data only for amp, real, imag or phase axes);
 --x-range/--y-range skip it for that axis.
 
-window (no --output-dir): one window, a tab per plot. Each plot fills in as
-chunks are read, with progress in the status bar; after a zoom or pan it
+window (no --output-dir): one window, a tab per plot (with --one-plot-per,
+its pages, one at a time: ◀ ▶, Page Up/Down, or the list of pages; a zoom on
+a page's shared axis zooms all its plots and carries to the next page).
+Each plot fills in as chunks are read, with progress in the status bar;
+after a zoom or pan it
 re-reads the selection and redraws the new region at the window's own
 resolution. On a plot's toolbar, Locate lists the samples in a dragged box
 (baseline, time, channel, Stokes, values; saved as CSV) and Export re-reads
@@ -312,14 +315,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="for symlog and asinh scales: the width around zero that stays linear (default: 1)",
     )
 
-    pages = parser.add_argument_group("one plot per baseline, antenna, source or Stokes (saved with --output-dir)")
+    pages = parser.add_argument_group("one plot per baseline, antenna, source or Stokes")
     pages.add_argument(
         "--one-plot-per", choices=list(ITERATION_KINDS),
         help="one plot per baseline, antenna, source or Stokes product the selection holds (CASA plotms's "
         "iteraxis; AIPS VPLOT draws one baseline per plot): each plot holds the selection's rows, or its Stokes "
         "product, that pass one more filter (an antenna's plot: its baselines to all others, so each baseline is "
-        "in two plots), laid out --page-grid to a page. Saved with --output-dir; the window's pages are not built "
-        "yet",
+        "in two plots), laid out --page-grid to a page; the window steps through the pages (◀ ▶, Page Up/Down)",
     )
     pages.add_argument(
         "--page-grid", metavar="ROWS,COLS",

@@ -12,7 +12,8 @@ from PySide6 import QtWidgets
 
 from visplot.gui.widgets import CommandLine, form_layout, hint, row
 from visplot.request import PlotRequest, build_arg_parser
-from visplot.request_args import DEFAULT_FIGURE_SIZE, DPI_LIMITS, MAX_FIGURE_INCHES, resolve_figure_size_arg
+from visplot.request_args import (DEFAULT_FIGURE_SIZE, DEFAULT_PAGE_FIGURE_SIZE, DPI_LIMITS, MAX_FIGURE_INCHES,
+                                  resolve_figure_size_arg)
 from visplot.run import RequestError, check_request, highres_dpi
 
 
@@ -37,7 +38,11 @@ class SaveDialog(QtWidgets.QDialog):
         self.dpi = QtWidgets.QSpinBox()
         self.dpi.setRange(*DPI_LIMITS)
         self.dpi.setValue(previous.get("dpi", parser.get_default("dpi")))
-        width, height = resolve_figure_size_arg(previous.get("figure_size") or DEFAULT_FIGURE_SIZE)
+        default = DEFAULT_PAGE_FIGURE_SIZE if _pages_of_several(make_request) else DEFAULT_FIGURE_SIZE
+        size = previous.get("figure_size")
+        if size in (DEFAULT_FIGURE_SIZE, DEFAULT_PAGE_FIGURE_SIZE):
+            size = None  # the last save's default: this request's default instead
+        width, height = resolve_figure_size_arg(size or default)
         self.width, self.height = QtWidgets.QDoubleSpinBox(), QtWidgets.QDoubleSpinBox()
         for box, value in ((self.width, width), (self.height, height)):
             box.setRange(0.5, MAX_FIGURE_INCHES)
@@ -63,8 +68,9 @@ class SaveDialog(QtWidgets.QDialog):
         form.addRow("Figure size", row(self.width, QtWidgets.QLabel("×"), self.height, QtWidgets.QWidget(),
                                        stretches=(0, 0, 0, 1)))
         form.addRow("", self.highres)
-        form.addRow(hint("One PNG per plot, and PREFIX_lowres.pdf with a page per plot. The figure size is each "
-                         "streamed plot's; the antenna layout and source listing keep their own."))
+        form.addRow(hint("One PNG per plot (with One plot per: per page), and PREFIX_lowres.pdf with each of them. "
+                         "The figure size is each streamed plot's (a page's of several plots); the antenna layout "
+                         "and source listing keep their own."))
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(body)
         layout.addWidget(QtWidgets.QLabel("Command:"))
@@ -119,3 +125,14 @@ class SaveDialog(QtWidgets.QDialog):
         self.problem.setText(problem or "")
         self.note.setText(note)
         self.buttons.button(QtWidgets.QDialogButtonBox.Save).setEnabled(problem is None)
+
+
+def _pages_of_several(make_request: Callable[..., PlotRequest]) -> bool:
+    """Whether the form's request lays its plots out several to a page
+    (--one-plot-per, its --page-grid other than 1,1), whose figure's default
+    size is a page's."""
+    try:
+        request = make_request()
+    except (ValueError, TypeError):
+        return False
+    return bool(request.one_plot_per) and request.page_grid != "1,1"

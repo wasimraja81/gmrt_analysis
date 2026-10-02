@@ -233,8 +233,7 @@ def test_page_options_are_checked():
     with pytest.raises(RequestError, match="each plot holds one Stokes product"):
         check_request(PlotRequest("obs.fits", "amp-vs-freq", one_plot_per="stokes", colorize_by="stokes",
                                   output_dir="out"))
-    with pytest.raises(RequestError, match="the window's pages are not built yet"):
-        check_request(PlotRequest("obs.fits", "amp-vs-freq", one_plot_per="baseline"))
+    check_request(PlotRequest("obs.fits", "amp-vs-freq", one_plot_per="baseline"))  # the window shows pages
     with pytest.raises(RequestError, match="--locate lists the samples of one plot"):
         check_request(PlotRequest("obs.fits", "amp-vs-freq", one_plot_per="baseline", locate="0:1,0:1",
                                   locate_csv="a.csv", output_dir="out"))

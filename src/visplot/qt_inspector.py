@@ -2,7 +2,12 @@
 
 One window, a tab per plot. Each streamed plot fills in as the selection is
 read, redraws its region after a zoom or pan settles, and has two tools
-beside matplotlib's own zoom/pan/save:
+beside matplotlib's own zoom/pan/save (below). With --one-plot-per (T26) a
+plot's tab shows its pages one at a time (◀ ▶, the pages by name, Page Up
+and Page Down), drawing the page shown from the rows its plots hold; a zoom
+on a page's shared axis zooms every plot of it and carries to the next
+page, and the tools act on the plot boxed (Locate) or the whole page
+(Export).
 
 - Locate: drag a box; the selection is read once and every sample inside is
   listed (baseline, UTC time, channel and frequency, Stokes, values,
@@ -40,11 +45,12 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from visplot.locate_csv import LocateCsvWriter, write_kept
 from visplot.plot_spec import PlotSpec
-from visplot.quantities import utc_jd
+from visplot.quantities import QUANTITIES, utc_jd
 from visplot.request_args import DPI_LIMITS
+from visplot.run import PageOfPlots, PlotPages, rows_of_iterations
 from visplot.stream import GridReducer, LocateReducer
-from visplot.xy_figure import XYFigure, grid_summary
-from visplot.xy_session import (PassProgress, XYSource, range_pass_axes, range_pass_reads_data, resolve_extents,
+from visplot.xy_figure import PlotAxes, XYFigure, grid_summary, grids_summary
+from visplot.xy_session import (PassProgress, XYSource, range_pass_axes, resolve_axis_ranges, resolve_extents,
                                 source_in_views)
 
 if TYPE_CHECKING:
@@ -98,11 +104,15 @@ class _Job:
 
 @dataclass
 class _Panel:
-    """One streamed plot's tab."""
+    """One streamed plot in the window: a tab's plot, or one plot of the
+    page a tab shows (T26), which shares the tab's figure, canvas and
+    toolbar with the page's other plots."""
 
     plot: PlotSpec
     figure: XYFigure
     canvas: FigureCanvasQTAgg
+    cell: PlotAxes | None = None  # the plot's axes in the figure
+    tab: _Tab | None = None  # the tab of pages showing it, if any
     grid: GridReducer | None = None
     drawn: bool = False  # the current grid has had a full pass
     mouse_down: bool = False
@@ -116,6 +126,32 @@ class _Panel:
     aspect_box: QtWidgets.QCheckBox | None = None
     extent: tuple | None = None
     rows_read: int | None = None  # by the current grid's draw: the rows that can reach its view
+
+
+@dataclass
+class _Tab:
+    """A tab of pages (T26): one streamed plot's pages (`PlotPages`), one
+    shown at a time, its plots the window's panels while shown."""
+
+    plot: PlotSpec
+    pages_of: PlotPages
+    layout: QtWidgets.QVBoxLayout
+    previous: QtWidgets.QToolButton
+    next: QtWidgets.QToolButton
+    chooser: QtWidgets.QComboBox
+    counter: QtWidgets.QLabel
+    body: QtWidgets.QWidget  # the page's toolbar and canvas (a placeholder until the ranges are known)
+    pages: list[PageOfPlots] = field(default_factory=list)  # once the ranges from every plot are known
+    index: int = 0
+    figure: XYFigure | None = None
+    panels: list[_Panel] = field(default_factory=list)
+    view: dict[str, tuple] = field(default_factory=dict)  # a shared axis's zoom, kept from page to page
+    rows: int = 0  # the selection's rows the page's plots hold
+    rows_read: int | None = None  # by the page's draw: the rows that can reach its views
+
+    @property
+    def page(self) -> PageOfPlots | None:
+        return self.pages[self.index] if self.pages else None
 
 
 class InspectorWindow(QtWidgets.QMainWindow):
@@ -140,9 +176,13 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self.to_draw: set[PlotSpec] = set()  # plots whose current grid still needs a full pass
         self.locate: LocateReducer | None = None
 
+        self.paged: list[_Tab] = []  # tabs of pages (T26)
+        self.laying_out: set[int] = set()  # tabs whose page shown waits for Qt to lay its canvas out
         for name, item in figures:
             if isinstance(item, XYFigure):
                 self._add_panel(name, item)
+            elif isinstance(item, PlotPages):
+                self._add_paged_tab(name, item)
             else:
                 self._add_static_tab(name, item)
         self._build_locate_dock()
@@ -151,7 +191,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._poll)
         self.timer.start(POLL_MS)
-        if self.panels:
+        if self.panels or self.paged:
             self._queue_ranges()
 
     # ---- tabs ---------------------------------------------------------------
@@ -164,32 +204,189 @@ class InspectorWindow(QtWidgets.QMainWindow):
         layout.addWidget(canvas)
         self.tabs.addTab(widget, name)
 
+    def _plot_toolbar(self, parent, canvas, panels: Callable[[], list[_Panel]], equal: bool):
+        """The toolbar of a figure of streamed plots: matplotlib's, with
+        Locate, Equal aspect and Export acting on `panels()` (one plot, or
+        the plots of the page shown). Returns (toolbar, locate action,
+        aspect box)."""
+        toolbar = NavigationToolbar2QT(canvas, parent)
+        locate_action = toolbar.addAction("Locate")
+        locate_action.setCheckable(True)
+        locate_action.setToolTip("Drag a box on a plot to list the samples inside it")
+        locate_action.toggled.connect(lambda on: self._toggle_locate(panels(), on))
+        # A check box, so its state shows: equal scale on or off.
+        aspect_box = QtWidgets.QCheckBox("Equal aspect")
+        aspect_box.setChecked(equal)
+        aspect_box.setToolTip("One unit the same length on both axes (widens one axis; off returns to the view)")
+        aspect_box.toggled.connect(lambda on: self._toggle_aspect(panels(), on))
+        toolbar.addWidget(aspect_box)
+        export_action = toolbar.addAction("Export…")
+        export_action.setToolTip("Re-read the current view at a chosen dpi and save it")
+        export_action.triggered.connect(lambda _=False: self._export(panels()))
+        return toolbar, locate_action, aspect_box
+
+    def _track_mouse(self, canvas, panels: Callable[[], list[_Panel]], figure: XYFigure) -> None:
+        """A button held on `canvas` holds its plots' redraws (a drag in
+        progress); a resize lays the figure out again (the panel keeps its
+        size)."""
+        def held(down: bool) -> None:
+            for panel in panels():
+                panel.mouse_down = down
+
+        canvas.mpl_connect("button_press_event", lambda e: held(True))
+        canvas.mpl_connect("button_release_event", lambda e: held(False))
+        canvas.mpl_connect("resize_event", lambda e, f=figure: f.relayout())
+
     def _add_panel(self, name: str, figure: XYFigure) -> None:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         canvas = FigureCanvasQTAgg(figure.fig)
-        toolbar = NavigationToolbar2QT(canvas, widget)
-        panel = _Panel(figure.plot, figure, canvas, toolbar=toolbar)
-        panel.locate_action = toolbar.addAction("Locate")
-        panel.locate_action.setCheckable(True)
-        panel.locate_action.setToolTip("Drag a box to list the samples inside it")
-        panel.locate_action.toggled.connect(lambda on, p=panel: self._toggle_locate(p, on))
-        # A check box, so its state shows: equal scale on or off.
-        panel.aspect_box = QtWidgets.QCheckBox("Equal aspect")
-        panel.aspect_box.setChecked(figure.plot.equal_aspect)
-        panel.aspect_box.setToolTip("One unit the same length on both axes (widens one axis; off returns to the view)")
-        panel.aspect_box.toggled.connect(lambda on, p=panel: self._toggle_aspect(p, on))
-        toolbar.addWidget(panel.aspect_box)
-        export_action = toolbar.addAction("Export…")
-        export_action.setToolTip("Re-read the current view at a chosen dpi and save it")
-        export_action.triggered.connect(lambda _=False, p=panel: self._export(p))
-        layout.addWidget(toolbar)
+        panel = _Panel(figure.plot, figure, canvas, cell=figure.cells[0])
+        panel.toolbar, panel.locate_action, panel.aspect_box = self._plot_toolbar(
+            widget, canvas, lambda p=panel: [p], figure.plot.equal_aspect)
+        layout.addWidget(panel.toolbar)
         layout.addWidget(canvas)
-        canvas.mpl_connect("button_press_event", lambda e, p=panel: setattr(p, "mouse_down", True))
-        canvas.mpl_connect("button_release_event", lambda e, p=panel: setattr(p, "mouse_down", False))
-        canvas.mpl_connect("resize_event", lambda e, f=figure: f.relayout())  # the panel keeps its size
+        self._track_mouse(canvas, lambda p=panel: [p], figure)
         self.panels[figure.plot] = panel
         self.tabs.addTab(widget, name)
+
+    def _add_paged_tab(self, name: str, pages_of: PlotPages) -> None:
+        """A tab of a streamed plot's pages (T26): ◀ ▶, the pages by name and
+        Page Up / Page Down above the page shown; its first page shown once
+        the ranges from every plot are known."""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        bar = QtWidgets.QHBoxLayout()
+        previous, following = QtWidgets.QToolButton(text="◀"), QtWidgets.QToolButton(text="▶")
+        previous.setToolTip("The previous page (Page Up)")
+        following.setToolTip("The next page (Page Down)")
+        chooser, counter = QtWidgets.QComboBox(), QtWidgets.QLabel("")
+        chooser.setToolTip("Go to a page")
+        chooser.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)  # its pages' names, once known
+        for control in (previous, following, chooser):
+            control.setEnabled(False)  # until the pages are known
+            bar.addWidget(control)
+        bar.addWidget(counter)
+        bar.addStretch(1)
+        layout.addLayout(bar)
+        body = QtWidgets.QLabel("finding the ranges of the plots…")
+        body.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(body, 1)
+        tab = _Tab(pages_of.plot, pages_of, layout, previous, following, chooser, counter, body)
+        previous.clicked.connect(lambda _=False, t=tab: self.show_page(t, t.index - 1))
+        following.clicked.connect(lambda _=False, t=tab: self.show_page(t, t.index + 1))
+        chooser.activated.connect(lambda i, t=tab: self.show_page(t, i))
+        for key, step in ((QtCore.Qt.Key_PageUp, -1), (QtCore.Qt.Key_PageDown, 1)):
+            shortcut = QtGui.QShortcut(QtGui.QKeySequence(key), widget)
+            shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda t=tab, d=step: self.show_page(t, t.index + d))
+        self.paged.append(tab)
+        self.tabs.addTab(widget, name)
+
+    def show_page(self, tab: _Tab, index: int) -> None:
+        """Show page `index` of `tab`: its figure in place of the last
+        page's, whose plots leave the window. A shared axis keeps the view a
+        zoom gave it (`_Tab.view`); a plot's own range is found for the page
+        by a pass over its rows."""
+        if not tab.pages:
+            return
+        index = max(0, min(index, len(tab.pages) - 1))
+        if tab.figure is not None and index == tab.index:
+            return
+        locating = bool(tab.panels and tab.panels[0].locate_action.isChecked())
+        for panel in tab.panels:
+            self.panels.pop(panel.plot, None)
+            self.to_draw.discard(panel.plot)
+            if panel.selector is not None:
+                panel.selector.set_active(False)
+        tab.index = index
+        page = tab.page
+        figure = tab.pages_of.run.page_figure(page)
+        body = QtWidgets.QWidget()
+        box = QtWidgets.QVBoxLayout(body)
+        box.setContentsMargins(0, 0, 0, 0)
+        canvas = FigureCanvasQTAgg(figure.fig)
+        toolbar, locate_action, aspect_box = self._plot_toolbar(
+            body, canvas, lambda t=tab: list(t.panels), figure.cells[0].plot.equal_aspect)
+        box.addWidget(toolbar)
+        box.addWidget(canvas, 1)
+        self._track_mouse(canvas, lambda t=tab: list(t.panels), figure)
+        tab.layout.replaceWidget(tab.body, body)
+        tab.body.deleteLater()
+        tab.body, tab.figure = body, figure
+        tab.panels = [_Panel(cell.plot, figure, canvas, cell=cell, tab=tab, toolbar=toolbar,
+                             locate_action=locate_action, aspect_box=aspect_box) for cell in figure.cells]
+        for panel in tab.panels:
+            self.panels[panel.plot] = panel
+        iterations = [plot.iteration for plot in page.plots]
+        tab.rows = len(rows_of_iterations(self.source, iterations))
+        tab.counter.setText(f"page {index + 1:,} of {len(tab.pages):,}")
+        tab.chooser.setCurrentIndex(index)
+        tab.previous.setEnabled(index > 0)
+        tab.next.setEnabled(index < len(tab.pages) - 1)
+        if locating:
+            locate_action.setChecked(True)
+        if not range_pass_axes(page.plots):  # every range known: from every plot, or given
+            # once Qt has laid the new canvas out, so the plots' grids take its pixels
+            extents = {plot: (plot.x_range, plot.y_range) for plot in page.plots}
+            self.laying_out.add(id(tab))
+
+            def views(t=tab, shown=page):
+                self.laying_out.discard(id(t))
+                if t.page is shown:
+                    self._set_page_views(t, extents)
+            QtCore.QTimer.singleShot(0, views)
+            return
+        part = self.source.subset(rows_of_iterations(self.source, iterations))
+        read_data = any(QUANTITIES[p.x if axis == "x" else p.y].needs_data for p, axis in range_pass_axes(page.plots))
+        found = {}
+
+        def run(on_chunk):
+            found["extents"] = resolve_extents(part, page.plots, on_chunk=on_chunk, cache=self.cache)
+            return found["extents"] is not None
+
+        def done(job):
+            if job.completed and tab.page is page:
+                self._set_page_views(tab, found["extents"])
+
+        self._queue(_Job("ranges", f"finding the ranges of page {index + 1}", run, done,
+                         self.source.row_bytes if read_data else 0, part.n_rows), front=True)
+
+    def _set_page_views(self, tab: _Tab, extents: dict) -> None:
+        """The page's plots shown over `extents` ({plot: (x, y)}: their
+        ranges), a shared axis over the view a zoom on an earlier page gave
+        it, and drawn. With such a zoom, the toolbar's Home and Back return
+        to the page's own ranges (the user, 2026-10-02: Home and Back did not
+        undo a zoom carried from another page)."""
+        shared = tab.figure.page.shared if tab.figure.page is not None else (False, False)
+        zoomed = {plot: (tab.view.get("x", x) if shared[0] else x, tab.view.get("y", y) if shared[1] else y)
+                  for plot, (x, y) in extents.items()}
+        limits = self._page_views(tab, extents)
+        if zoomed != extents:
+            toolbar = tab.panels[0].toolbar
+            toolbar.push_current()  # Home: the page's own ranges
+            limits = self._page_views(tab, zoomed)
+            toolbar.push_current()  # the zoom carried over, one step on from Home (Back returns)
+        for panel in tab.panels:
+            panel.extent = panel.last_limits = limits[panel.plot]
+        self.request_draw([panel.plot for panel in tab.panels])
+
+    @staticmethod
+    def _page_views(tab: _Tab, extents: dict) -> dict:
+        """Set the page's plots' views to `extents`; the limits they take."""
+        if tab.figure.page is None:
+            (plot,) = extents
+            return {plot: tab.figure.set_view(*extents[plot])}
+        return tab.figure.set_views(extents)
+
+    def _set_view(self, panel: _Panel, x_extent, y_extent) -> tuple:
+        """`XYFigure.set_view` for the panel's plot (on a page, its axes)."""
+        if panel.tab is None or panel.figure.page is None:
+            return panel.figure.set_view(x_extent, y_extent)
+        return panel.cell.set_view(x_extent, y_extent)
+
+    def _figure_panels(self, figure: XYFigure) -> list[_Panel]:
+        return [panel for panel in self.panels.values() if panel.figure is figure]
 
     def _build_locate_dock(self) -> None:
         dock = QtWidgets.QDockWidget("Located samples", self)
@@ -242,19 +439,36 @@ class InspectorWindow(QtWidgets.QMainWindow):
             self.jobs.append(job)
 
     def _queue_ranges(self) -> None:
+        """The first pass: the ranges the plots take from the data (a plot's
+        own, or for a tab of pages, those from every plot), then each tab's
+        pages planned and its first page shown."""
         plots = list(self.panels)
-        pending = [k for k in range_pass_axes(plots) if k not in self.cached]
-        read_data = range_pass_reads_data(plots, self.cached)
+        pairs = range_pass_axes(plots) + [pair for tab in self.paged for pair in tab.pages_of.from_all]
+        pending = [pair for pair in pairs if pair not in self.cached]
+        read_data = any(QUANTITIES[p.x if axis == "x" else p.y].needs_data for p, axis in pending)
+        found = {}
 
         def run(on_chunk):
-            self.extents = resolve_extents(self.source, plots, on_chunk=on_chunk, cache=self.cache)
-            return self.extents is not None
+            found["ranged"] = resolve_axis_ranges(self.source, pairs, on_chunk=on_chunk, cache=self.cache)
+            if found["ranged"] is None:
+                return False
+            ranged = found["ranged"]
+            self.extents = {p: (p.x_range if p.x_range is not None else ranged[(p, "x")],
+                                p.y_range if p.y_range is not None else ranged[(p, "y")]) for p in plots}
+            return True
 
         def done(job):
-            if job.completed:
-                for plot, panel in self.panels.items():
-                    panel.extent = panel.figure.set_view(*self.extents[plot])
-                self.request_draw(list(self.panels))
+            if not job.completed:
+                return
+            for plot in plots:
+                panel = self.panels[plot]
+                panel.extent = panel.figure.set_view(*self.extents[plot])
+            self.request_draw(plots)
+            for tab in self.paged:
+                tab.pages = tab.pages_of.pages(found["ranged"])
+                tab.chooser.addItems([page.panel_text for page in tab.pages])
+                tab.chooser.setEnabled(len(tab.pages) > 1)
+                self.show_page(tab, 0)
 
         label = self.labels[0] if pending else "reading ranges from the cache"
         self._queue(_Job("ranges", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows))
@@ -262,7 +476,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
     @staticmethod
     def _pixel_shape(panel: _Panel) -> tuple[int, int]:
         """The axes' (height, width) in the window's pixels: a window grid's shape."""
-        bbox = panel.figure.ax.get_window_extent()
+        bbox = panel.cell.ax.get_window_extent()
         return max(1, int(bbox.height)), max(1, int(bbox.width))
 
     @classmethod
@@ -273,7 +487,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
         return max(abs(height - panel.grid.height), abs(width - panel.grid.width)) > RESIZE_TOLERANCE_PX
 
     def _window_grid(self, panel: _Panel, extent) -> GridReducer:
-        panel.canvas.draw()
+        """A grid of the axes' pixels over `extent` (the canvas drawn already,
+        so the axes' size is current)."""
         return GridReducer(panel.plot, extent[0], extent[1], *self._pixel_shape(panel))
 
     def request_draw(self, plots: list[PlotSpec]) -> None:
@@ -281,11 +496,15 @@ class InspectorWindow(QtWidgets.QMainWindow):
         the extent or the window's size changed). A running draw is stopped so
         the next one covers every plot waiting; unfinished plots stay
         waiting."""
+        drawn_canvases = set()
         for plot in plots:
             panel = self.panels[plot]
+            if id(panel.canvas) not in drawn_canvases:  # once per figure, however many of its plots (a page's)
+                panel.canvas.draw()
+                drawn_canvases.add(id(panel.canvas))
             if (panel.grid is None or (panel.grid.x_extent, panel.grid.y_extent) != tuple(panel.extent)
                     or self._resized(panel)):
-                panel.figure.begin_redraw()  # the last complete image stays under the new one meanwhile
+                panel.cell.begin_redraw()  # the last complete image stays under the new one meanwhile
                 panel.grid = self._window_grid(panel, panel.extent)
             panel.drawn = False
             self.to_draw.add(plot)
@@ -297,28 +516,35 @@ class InspectorWindow(QtWidgets.QMainWindow):
         plots = list(self.to_draw)
         grids = {p: self.panels[p].grid for p in plots}
         read_data = any(p.needs_data for p in plots)
-        first = not any(self.panels[p].figure.image is not None for p in plots)
+        first = not any(self.panels[p].cell.image is not None for p in plots)
         label = self.labels[1] if first else "re-drawing the view"
+        tabs = {id(self.panels[p].tab): self.panels[p].tab for p in plots if self.panels[p].tab is not None}
 
         def run(on_chunk):
             source = self._in_view({p: (g.x_extent, g.y_extent) for p, g in grids.items()}, job, read_data)
             for plot in plots:
                 self.panels[plot].rows_read = source.n_rows
+            for tab in tabs.values():
+                tab.rows_read = len(rows_of_iterations(source, [p.plot.iteration for p in tab.panels]))
             # spread over the time range, so each refresh shows the whole view filling in
             return source.stream(list(grids.values()), read_data=read_data, on_chunk=on_chunk, spread=True)
 
         def done(job):
             if not job.completed:
                 return
+            finished = {}
             for plot, grid in grids.items():
-                panel = self.panels[plot]
-                if panel.grid is grid:  # not replaced by a zoom meanwhile
+                panel = self.panels.get(plot)
+                if panel is not None and panel.grid is grid:  # still shown, its grid the one this pass filled
                     panel.drawn = True
                     self.to_draw.discard(plot)
-                    panel.figure.end_redraw()
-                    self._render(panel, final=True)
-                    if first and self.report is not None and panel.figure.limits_warning:  # once: the whole view
-                        self.report("warning", f"{plot.name}: {panel.figure.limits_warning}")
+                    panel.cell.end_redraw()
+                    finished[id(panel.figure)] = panel
+            for panel in finished.values():  # each figure once, its plots together
+                self._render(panel, final=all(p.drawn for p in self._figure_panels(panel.figure)))
+                if first and self.report is not None and panel.figure.limits_warning:  # once: the whole view
+                    name = panel.tab.page.name if panel.tab is not None else panel.plot.name
+                    self.report("warning", f"{name}: {panel.figure.limits_warning}")
 
         job = _Job("draw", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows)
         self._queue(job)
@@ -355,83 +581,111 @@ class InspectorWindow(QtWidgets.QMainWindow):
             else:
                 self.statusBar().showMessage(job.progress.text(job.rows_done))
                 if job.kind == "draw" and now - self.last_refresh >= REFRESH_S:
+                    rendered = set()
                     for plot in self.to_draw:
-                        self._render(self.panels[plot])
+                        panel = self.panels.get(plot)
+                        if panel is not None and id(panel.figure) not in rendered:  # each figure once
+                            rendered.add(id(panel.figure))
+                            self._render(panel)
                     self.last_refresh = now
         elif self.statusBar().currentMessage().endswith("elapsed"):
             self.statusBar().showMessage("ready")
         self._check_views(now)
 
     def _render(self, panel: _Panel, final: bool = False) -> None:
-        snapshot = panel.grid.snapshot()
-        panel.figure.show(snapshot, display_dpi=panel.figure.fig.dpi)
-        if final:
-            panel.figure.set_status(grid_summary(snapshot, panel.rows_read or self.source.n_rows, self.source.n_rows))
+        """Show the panel's figure from its plots' grids (a page's together);
+        `final`: every plot of it drawn, so its status says what was."""
+        shown = [p for p in self._figure_panels(panel.figure) if p.grid is not None]
+        snapshots = {p.plot: p.grid.snapshot() for p in shown}
+        panel.figure.show_page(snapshots, display_dpi=panel.figure.fig.dpi)
+        if final and panel.tab is not None:
+            panel.figure.set_status(grids_summary(list(snapshots.values()), panel.tab.rows_read or panel.tab.rows,
+                                                  panel.tab.rows))
+        elif final:
+            panel.figure.set_status(grid_summary(snapshots[panel.plot], panel.rows_read or self.source.n_rows,
+                                                 self.source.n_rows))
         else:
             job = self.jobs[0] if self.jobs else None
             panel.figure.set_status(job.progress.text(job.rows_done) if job else "")
         panel.canvas.draw_idle()
 
     def _check_views(self, now: float) -> None:
-        """After a zoom or pan settles, re-draw that plot over the new limits;
-        after a resize settles, re-draw it at the window's new pixel size
-        (T19 point D: re-bin, where the image was stretched). Zoom or pan
-        turned on while Locate is on turns Locate off."""
-        for plot, panel in self.panels.items():
+        """After a zoom or pan settles, re-draw that plot over the new limits
+        (a page's shared axis: kept for its next pages); after a resize
+        settles, re-draw it at the window's new pixel size (T19 point D:
+        re-bin, where the image was stretched). Zoom or pan turned on while
+        Locate is on turns Locate off."""
+        redraw = []
+        for plot, panel in list(self.panels.items()):
             if panel.selector is not None and panel.toolbar.mode.name != "NONE":
                 panel.locate_action.setChecked(False)
-            if panel.grid is None or panel.figure.image is None:
+            if panel.grid is None or panel.cell.image is None:
                 continue
-            limits = (tuple(panel.figure.ax.get_xlim()), tuple(panel.figure.ax.get_ylim()))
+            limits = (tuple(panel.cell.ax.get_xlim()), tuple(panel.cell.ax.get_ylim()))
             if limits != panel.last_limits:
                 panel.last_limits, panel.changed_at = limits, now
-                panel.figure.hide_if_view_moved(panel.grid)
+                panel.cell.hide_if_view_moved(panel.grid)
                 continue
             if panel.mouse_down or now - panel.changed_at < SETTLE_S:
                 continue
             if limits != (panel.grid.x_extent, panel.grid.y_extent) and limits != tuple(panel.extent):
                 # the zoomed view, kept as the view the aspect toggle returns to; with equal
                 # aspect, widened again so both axes keep one scale and one span
-                panel.extent = panel.figure.set_view(*limits)
-                self.request_draw([plot])
+                panel.extent = self._set_view(panel, *limits)
+                if panel.tab is not None and panel.figure.page is not None:
+                    for axis, shared, extent in zip(("x", "y"), panel.figure.page.shared, panel.extent):
+                        if shared:
+                            panel.tab.view[axis] = tuple(extent)
+                redraw.append(plot)
                 continue
             shape = self._pixel_shape(panel)
             if shape != panel.last_shape:
                 panel.last_shape, panel.resized_at = shape, now
                 continue
             if now - panel.resized_at >= SETTLE_S and self._resized(panel):
-                self.request_draw([plot])  # a new grid at the window's size
+                redraw.append(plot)  # a new grid at the window's size
+        if redraw:  # together: a page's plots, zoomed or resized at once, in one request and one pass
+            self.request_draw(redraw)
 
-    def _toggle_aspect(self, panel: _Panel, equal: bool) -> None:
+    def _toggle_aspect(self, panels: list[_Panel], equal: bool) -> None:
         """Equal scale on: widen the requested view so a unit is the same
         length on both axes; off: back to the requested view (the data's
-        range, or the last zoom)."""
-        panel.figure.equal_override = equal
-        if panel.extent is None:
-            return  # applied when the ranges are known
-        panel.extent = panel.figure.set_view(*panel.figure.view_request)
-        panel.last_limits = (tuple(panel.extent[0]), tuple(panel.extent[1]))
-        self.request_draw([panel.plot])
+        range, or the last zoom). On a page, for each of its plots."""
+        for panel in panels:
+            panel.cell.equal_override = equal
+        known = [panel for panel in panels if panel.extent is not None]  # the rest: when the ranges are known
+        for panel in known:
+            panel.extent = self._set_view(panel, *panel.cell.view_request)
+            panel.last_limits = (tuple(panel.extent[0]), tuple(panel.extent[1]))
+        if known:
+            self.request_draw([panel.plot for panel in known])
 
     # ---- locate -------------------------------------------------------------
 
-    def _toggle_locate(self, panel: _Panel, on: bool) -> None:
+    def _toggle_locate(self, panels: list[_Panel], on: bool) -> None:
         """Locate is a mode like zoom and pan: turning it on turns them off.
         (Zoom and pan lock the canvas, and the box selector ignores every
-        event while they hold the lock.)"""
+        event while they hold the lock.) On a page, a box on any of its
+        plots locates that plot's samples."""
+        if not panels:
+            return
         if on:
-            if panel.toolbar.mode.name == "ZOOM":
-                panel.toolbar.zoom()
-            elif panel.toolbar.mode.name == "PAN":
-                panel.toolbar.pan()
-            panel.selector = RectangleSelector(
-                panel.figure.ax, lambda press, release, p=panel: self._locate(p, press, release),
-                useblit=True, button=[1], interactive=False, minspanx=2, minspany=2, spancoords="pixels",
-            )
+            toolbar = panels[0].toolbar
+            if toolbar.mode.name == "ZOOM":
+                toolbar.zoom()
+            elif toolbar.mode.name == "PAN":
+                toolbar.pan()
+            for panel in panels:
+                panel.selector = RectangleSelector(
+                    panel.cell.ax, lambda press, release, p=panel: self._locate(p, press, release),
+                    useblit=True, button=[1], interactive=False, minspanx=2, minspany=2, spancoords="pixels",
+                )
             self.statusBar().showMessage("Locate: drag a box on the plot to list the samples inside it")
-        elif panel.selector is not None:
-            panel.selector.set_active(False)
-            panel.selector = None
+            return
+        for panel in panels:
+            if panel.selector is not None:
+                panel.selector.set_active(False)
+                panel.selector = None
 
     def _locate(self, panel: _Panel, press, release) -> None:
         box_x = (press.xdata, release.xdata)
@@ -547,14 +801,15 @@ class InspectorWindow(QtWidgets.QMainWindow):
         if self.report is not None:
             self.report(level, text)
 
-    def _start_record(self, kind: str, plot: PlotSpec, path, **details) -> tuple[bool, PlotRecord | None]:
-        """(whether to go ahead with the save, its record). Without
-        provenance there is no record; a record that cannot be written stops
-        the save."""
+    def _start_record(self, kind: str, plot: PlotSpec, path, name: str | None = None,
+                      **details) -> tuple[bool, PlotRecord | None]:
+        """(whether to go ahead with the save, its record), the save named
+        `name` (default: the plot's). Without provenance there is no record;
+        a record that cannot be written stops the save."""
         if self.provenance is None:
             return True, None
         try:
-            return True, self.provenance.start(kind, plot.name, str(Path(path).resolve()), **details)
+            return True, self.provenance.start(kind, name or plot.name, str(Path(path).resolve()), **details)
         except Exception as err:
             text = f"{kind} not saved: its provenance record could not be written ({type(err).__name__}: {err})"
             self._report("warning", text)
@@ -578,8 +833,12 @@ class InspectorWindow(QtWidgets.QMainWindow):
 
     # ---- export ---------------------------------------------------------------
 
-    def _export(self, panel: _Panel) -> None:
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export plot", f"{panel.plot.name}.png", EXPORT_FILTERS)
+    def _export(self, panels: list[_Panel]) -> None:
+        if not panels:
+            return
+        panel = panels[0]
+        name = panel.tab.page.name if panel.tab is not None else panel.plot.name
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export plot", f"{name}.png", EXPORT_FILTERS)
         if not path:
             return
         dpi, ok = QtWidgets.QInputDialog.getInt(self, "Export resolution", "dots per inch:", 600, *DPI_LIMITS)
@@ -587,49 +846,56 @@ class InspectorWindow(QtWidgets.QMainWindow):
             self.export(panel.plot, path, dpi)
 
     def export(self, plot: PlotSpec, path: str, dpi: int) -> None:
-        """Re-read the plot's current view at `dpi` and save it to `path`."""
+        """Re-read the plot's current view at `dpi` and save it to `path`; a
+        plot of a page: the whole page, each plot over its view."""
         panel = self.panels[plot]
-        limits = (tuple(panel.figure.ax.get_xlim()), tuple(panel.figure.ax.get_ylim()))
+        panels = [p for p in self._figure_panels(panel.figure)] if panel.tab is not None else [panel]
+        figure = panel.figure
+        views = {p.plot: (tuple(p.cell.ax.get_xlim()), tuple(p.cell.ax.get_ylim())) for p in panels}
         # the Equal aspect box's override takes effect on linear axes only
-        equal = panel.figure.equal_override if panel.figure.linear else None
-        started, record = self._start_record("export", plot, path, view=limits, dpi=dpi,
-                                             figure_size_in=tuple(panel.figure.fig.get_size_inches()), equal=equal)
+        equal = panel.cell.equal_override if panel.cell.linear else None
+        name = panel.tab.page.name if panel.tab is not None else plot.name
+        started, record = self._start_record("export", plot, path, view=views[plot], dpi=dpi,
+                                             figure_size_in=tuple(figure.fig.get_size_inches()), equal=equal,
+                                             name=name)
         if not started:
             return
-        height, width = panel.figure.grid_shape(dpi)
-        grid = GridReducer(plot, limits[0], limits[1], height, width)
-        read_data = plot.needs_data
-
+        shapes = figure.grid_shapes(dpi)
+        grids = {p.plot: GridReducer(p.plot, *views[p.plot], *shapes[p.plot]) for p in panels}
+        read_data = any(p.plot.needs_data for p in panels)
+        iterations = [p.plot.iteration for p in panels] if panel.tab is not None else None
         rows_read = []
 
         def run(on_chunk):
-            source = self._in_view({plot: limits}, job, read_data)
-            rows_read.append(source.n_rows)
-            return source.stream([grid], read_data=read_data, on_chunk=on_chunk)
+            source = self._in_view(views, job, read_data)
+            rows_read.append(len(rows_of_iterations(source, iterations)) if iterations else source.n_rows)
+            return source.stream(list(grids.values()), read_data=read_data, on_chunk=on_chunk)
 
         def done(job):
             if not job.completed:
                 self._finish_record(record, "export", None, "stopped before the end of the selection; nothing saved")
                 return
-            panel.figure.show(grid, display_dpi=dpi)
-            status, shown_record = panel.figure.status.get_text(), panel.figure.record_id
-            panel.figure.set_status(grid_summary(grid, rows_read[0], self.source.n_rows))
+            figure.show_page(grids, display_dpi=dpi)
+            status, shown_record = figure.status.get_text(), figure.record_id
+            of_rows = panel.tab.rows if panel.tab is not None else self.source.n_rows
+            figure.set_status(grids_summary(list(grids.values()), rows_read[0], of_rows))
             if record is not None:
-                panel.figure.set_record(record.run_id)  # the file names the export's own record
-            preview = panel.figure.preview  # a redraw's preview stays out of the file
-            if preview is not None:
+                figure.set_record(record.run_id)  # the file names the export's own record
+            previews = [p.cell.preview for p in panels if p.cell.preview is not None]  # a redraw's: out of the file
+            for preview in previews:
                 preview.set_visible(False)
             try:
-                panel.figure.fig.savefig(path, dpi=dpi)
+                figure.fig.savefig(path, dpi=dpi)
                 error = None
             except (OSError, ValueError) as err:
                 error = f"could not save {path}: {err}"
-            if preview is not None:
+            for preview in previews:
                 preview.set_visible(True)
-            panel.figure.set_status(status)
-            panel.figure.set_record(shown_record)
-            if panel.grid is not None:  # back to the window's own image
-                panel.figure.show(panel.grid.snapshot(), display_dpi=panel.figure.fig.dpi)
+            figure.set_status(status)
+            figure.set_record(shown_record)
+            shown = {p.plot: p.grid.snapshot() for p in panels if p.grid is not None}
+            if shown:  # back to the window's own image
+                figure.show_page(shown, display_dpi=figure.fig.dpi)
             panel.canvas.draw_idle()
             self._finish_record(record, "export", None if error else path, error)
             if error is None:
@@ -650,7 +916,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
     def idle(self) -> bool:
-        return not self.jobs
+        """No job running or waiting, and no page waiting to be laid out."""
+        return not self.jobs and not self.laying_out
 
 
 _LOCATE_COLUMNS = [

@@ -29,12 +29,15 @@ from visplot.plot_spec import PRESETS
 from visplot.quantities import QUANTITIES, QuantityContext, units_of
 from visplot.request import PlotRequest, build_arg_parser
 from visplot.request_args import (
+    DEFAULT_PAGE_GRID,
+    MAX_PAGE_GRID,
     TABLE_PLOTS,
     resolve_antennas_arg,
     resolve_channels_arg,
     resolve_deg_range_arg,
     resolve_ha_range_arg,
     resolve_klambda_range_arg,
+    resolve_page_grid_arg,
     resolve_percentiles_arg,
     resolve_plain_range_arg,
     resolve_stokes_axis_selection,
@@ -53,12 +56,30 @@ ACTION_OPTIONS = {
     "figure_size": "Export on a plot (the plot's size in the window), or File > Save plots as files",
 }
 
-# Options whose GUI controls are still to be built, and the plan step building them (T26 pages, 2026-10-02).
-PENDING_GUI_OPTIONS = {
-    "one_plot_per": "T26 pages, step 5 (the GUI's fields)",
-    "page_grid": "T26 pages, step 5 (the GUI's fields)",
-    "x_range_from": "T26 pages, step 5 (the GUI's fields)",
-    "y_range_from": "T26 pages, step 5 (the GUI's fields)",
+# Options whose GUI controls are still to be built, and the plan step building each (none now).
+PENDING_GUI_OPTIONS: dict[str, str] = {}
+
+# Hover text of the Pages section (T26), in everyday words for a first-time reader.
+PAGES_HELP = {
+    "one_plot_per": "Make a separate plot for each baseline, antenna, source or Stokes product in your selection, "
+                    "laid out several to a page.\nAn antenna's plot shows all of that antenna's baselines, so each "
+                    "baseline appears in two antennas' plots.",
+    "page_grid": "How many plots go on a page: rows x columns.\nAuto: 5 rows by 6 columns, or a smaller grid "
+                 "when there are fewer plots.\n1 x 1 puts one plot on each page.",
+    "range_from": "How the {axis} axis range of each plot is chosen, when you make one plot per baseline (antenna, "
+                  "source, Stokes):\n"
+                  "- Each plot: every plot fits its own samples. Each fills its frame, but the scales differ, so "
+                  "read each plot's tick labels.\n"
+                  "- All plots: one range for every plot on every page, from all the samples. The scales match, so "
+                  "plots compare by eye; tick labels show on the outer row and column only.\n"
+                  "- Default: all plots when a page holds several plots; each plot with one plot a page.\n"
+                  "The Axes section's Range says how a range is found (min to max, or percentiles); a fixed range "
+                  "there (lo:hi) is used for every plot instead.",
+}
+RANGE_FROM_HELP = {
+    None: "All plots when a page holds several plots; each plot with one plot a page.",
+    "each": "Each plot's {axis} axis fits its own samples: every plot fills its frame, with its own scale.",
+    "all": "One {axis} range for every plot on every page, from all the samples: the plots compare by eye.",
 }
 
 # Quantity groups in the axis lists, in order; a quantity not listed here goes under "Other",
@@ -265,7 +286,7 @@ class RequestForm(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.data_section = self._data_section()
-        for section in (self.data_section, self._axes_section(), self._selection_section(),
+        for section in (self.data_section, self._axes_section(), self._selection_section(), self._pages_section(),
                         self._display_section(), self._performance_section()):
             layout.addWidget(section)
         layout.addStretch(1)
@@ -420,6 +441,71 @@ class RequestForm(QtWidgets.QWidget):
             edit = CheckedLineEdit(placeholder, lambda t: None if int(t) >= 0 else "a whole number, 0 or more")
             more_form.addRow(label, self._add(number_field(dest, edit, int)))
         form.addRow(more)
+        return section
+
+    def _pages_section(self) -> CollapsibleSection:
+        """One plot per baseline, antenna, source or Stokes (T26), laid out
+        on pages; the layout's fields frozen, and left out of the request,
+        until a kind is chosen."""
+        section = CollapsibleSection("Pages", expanded=False)
+        form = form_layout(section.body)
+        per = QtWidgets.QComboBox()
+        per.addItem("none (one plot)", None)
+        for name in _parser_choices("one_plot_per"):
+            per.addItem("Stokes product" if name == "stokes" else name, name)
+        per.setToolTip(PAGES_HELP["one_plot_per"])
+        form.addRow("One plot per", self._add(combo_field("one_plot_per", per)))
+
+        self.auto_grid = QtWidgets.QCheckBox("auto")
+        self.auto_grid.setChecked(True)
+        self.auto_grid.setToolTip(PAGES_HELP["page_grid"])
+        rows, cols = QtWidgets.QSpinBox(), QtWidgets.QSpinBox()
+        for box, value in ((rows, DEFAULT_PAGE_GRID[0]), (cols, DEFAULT_PAGE_GRID[1])):
+            box.setRange(1, MAX_PAGE_GRID)
+            box.setValue(value)
+        grid_box = row(self.auto_grid, rows, QtWidgets.QLabel("×"), cols, QtWidgets.QWidget(),
+                       stretches=(0, 0, 0, 0, 1))  # rows x columns: the hover says so
+
+        def get_grid():
+            if not per.currentData() or self.auto_grid.isChecked():
+                return None
+            return f"{rows.value()},{cols.value()}"
+
+        def set_grid(value):
+            grid = resolve_page_grid_arg(value)
+            self.auto_grid.setChecked(grid is None)
+            if grid is not None:
+                rows.setValue(grid[0])
+                cols.setValue(grid[1])
+        self.fields["page_grid"] = Field("page_grid", grid_box, get_grid, set_grid, self.auto_grid.toggled)
+        for box in (rows, cols):
+            box.valueChanged.connect(lambda *_: self.changed.emit())
+        for widget in (grid_box, rows, cols):
+            widget.setToolTip(PAGES_HELP["page_grid"])
+        form.addRow("Plots per page", grid_box)
+
+        range_boxes = []
+        for axis in ("x", "y"):
+            box = QtWidgets.QComboBox()
+            for text, value in (("default", None), ("each plot", "each"), ("all plots", "all")):  # the hover says more
+                box.addItem(text, value)
+                box.setItemData(box.count() - 1, RANGE_FROM_HELP[value].format(axis=axis), QtCore.Qt.ToolTipRole)
+            box.setToolTip(PAGES_HELP["range_from"].format(axis=axis))
+            range_field = combo_field(f"{axis}_range_from", box)
+            get_range = range_field.get
+            range_field.get = lambda g=get_range: g() if per.currentData() else None
+            form.addRow(f"{axis.upper()} range from", self._add(range_field))
+            range_boxes.append(box)
+
+        def layout_controls(*_):  # the layout's fields: with one plot per something only
+            on = per.currentData() is not None
+            for widget in (self.auto_grid, *range_boxes):
+                widget.setEnabled(on)
+            for box in (rows, cols):
+                box.setEnabled(on and not self.auto_grid.isChecked())
+        per.currentIndexChanged.connect(layout_controls)
+        self.auto_grid.toggled.connect(layout_controls)
+        layout_controls()
         return section
 
     def _display_section(self) -> CollapsibleSection:

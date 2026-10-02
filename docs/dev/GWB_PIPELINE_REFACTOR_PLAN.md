@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 518 tests passing; T26, T32 in progress; T40, T42,
+T47-T49, point D and T21 2026-10-01, 524 tests passing; T26, T32 in progress; T40, T42,
 T45, T46, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -605,6 +605,51 @@ Buildable now, ahead of Phase C.
   vs uv distance, one plot per baseline, without the high-resolution PDF: 378 plots on 13
   pages of 5 x 6 in 2 min 26 s, 1.2 GB peak (one per page: 7 min 41 s, 4.4 GB); the
   drawing pass took 55 s.
+  Steps 2 and 5 built 2026-10-02, together (the user: "have we updated the gui yet?";
+  then "yes please" to both next). The user asked meanwhile how --output-dir and the
+  pages relate: they combine like any other options (without --output-dir the window,
+  with it the files); steps 1 and 3 had required --output-dir only until the window
+  could show pages, and that check is gone. Window (`qt_inspector`): a streamed plot of a
+  run with --one-plot-per comes to the window as its pages (`run.PlotPages`, made with
+  the save path's `plan_pages` and `page_figure`, so a page on screen holds what the
+  saved page holds); its tab has ◀ ▶, the pages by name in a list, and Page Up/Down, and
+  shows one page, whose plots are the window's panels while shown (each its own grid,
+  zoom, resize re-bin, Locate box; the page's figure, canvas and toolbar shared). The
+  first pass finds the ranges from every plot (with the single plots' ranges); a page
+  whose plots take their own ranges gets a range pass over its rows when shown. A page's
+  shared axes are shared matplotlib axes, so a zoom on one plot zooms all, and the view
+  carries to the next page; Equal aspect acts on every plot of the page; Locate lists the
+  plot boxed; Export saves the whole page, each plot over its view. A window action on a
+  run with --one-plot-per records its request unchanged, its command reproducing the
+  whole run (`records.action_request`). Found on the way, on the
+  GWB file (a 5 x 6 page of C00's and C01's baselines): the first page took 55.8 s,
+  the second 19.1 s, the drawing pass 2 s of it: each plot's new grid drew the whole
+  figure again to measure the plot (30 draws of a 30-plot figure, 0.8 s each), and a page
+  shown before Qt laid its canvas out re-binned every plot one by one. Now the figure is
+  drawn once per request, the plots that need a redraw are requested together, and a new
+  page's views wait for its layout: 6.0 s and 3.5 s. GUI (`gui/form.py`): a Pages section,
+  "One plot per" (none, baseline, antenna, source, Stokes product), "Plots per page"
+  (auto: 5 x 6 or smaller for fewer; or rows x columns) and "X/Y range from" (default,
+  each plot's, all plots'), its layout fields frozen and left out of the request until a
+  kind is chosen; `PENDING_GUI_OPTIONS` is empty again. The save dialog's figure size
+  defaults to 16 x 11 in for a page of several plots. The user asked for the range
+  choices explained ("can you allow hover text to explain this in easy English if
+  someone wants to know or is confused?"): the Pages fields have hover text in
+  everyday words, each range choice its own. Then (the user: "the text on the X range
+  from and Y range from makes that field very long. Can we shorten the description since
+  we can have the hover to describe what a particular option means?") the choices read
+  "default", "each plot", "all plots", Plots per page "auto [5] x [6]" and One plot per
+  "none (one plot)": the range fields went from 368 to 83 pixels wide, and the form, its
+  sections all open, is 364 pixels at least, as before the Pages section. Found by the
+  user the same day: "once
+  you zoom on a page with multiple pages, you cannot get back to original size by
+  clicking on the home button ... or by clicking the back arrow". Cause: a page's
+  toolbar is made with the page, and its Home is the first view it sees, which after a
+  zoom on an earlier page was the zoom carried over (checked headlessly, the toolbar's
+  zoom driven by a mouse drag: Home worked on the page zoomed, failed on the next).
+  Now a page opening with a carried zoom puts its own ranges in the toolbar's history
+  first: Home and Back return to them, and the pages after open at full size. Test:
+  Back on a page reached with a carried zoom, then the previous page at full size.
   Step 1 built 2026-10-02 (`visplot/pages.py`; `stream.PageReducer`, `ChunkValues.page`,
   `visibility_data.narrow_block`; `run.draw_pages`, `_save_pages`): `--pages-by`,
   `--x-page-range`, `--y-page-range`. A page holds the selection's rows, or its Stokes

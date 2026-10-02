@@ -182,8 +182,10 @@ def action_request(request: PlotRequest, n_streamed: int, kind: str, view=None, 
     aspect box overrode the request's (`equal`; None: not overridden) -- run
     with --output-dir, it saves the export's image as its PNG. A request with
     several streamed plots (`n_streamed` > 1) cannot be narrowed to one
-    plot's action, so it comes back unchanged."""
-    if n_streamed != 1:
+    plot's action, so it comes back unchanged; so does one with
+    --one-plot-per, whose actions are on one iteration's plot or one page
+    (T26)."""
+    if n_streamed != 1 or request.one_plot_per:
         return request, False
 
     def span(lo, hi) -> str:

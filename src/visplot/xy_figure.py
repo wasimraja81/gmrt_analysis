@@ -425,7 +425,9 @@ class XYFigure:
         if page is None:
             self.cells = [PlotAxes(self.fig.add_subplot(), plot, ctx, self.theme, time_format)]
         else:
-            self.cells = [self._page_cell(p, i, time_format) for i, p in enumerate(page.plots)]
+            self.cells = []
+            for i, p in enumerate(page.plots):
+                self.cells.append(self._page_cell(p, i, time_format))
         self.panel = PlotPanel(self.fig, plot, ctx, facts, sources, font=panel_font, theme=theme)
         self.status = self.panel.status  # what was drawn (get_text / set_text)
         self._seen_codes: tuple = ()
@@ -444,7 +446,8 @@ class XYFigure:
         self.relayout()
 
     def _page_cell(self, plot: PlotSpec, i: int, time_format: str) -> PlotAxes:
-        """The `i`th plot of a page: its axes, tick labels only where the
+        """The `i`th plot of a page: its axes, a shared axis shared with the
+        first plot's (a zoom in one zooms all), tick labels only where the
         page's axes are not shared or on the outer row or column, and its
         iteration's name in its corner."""
         rows, cols = self.page.grid
@@ -457,6 +460,10 @@ class XYFigure:
         ax = cell.ax
         ax.tick_params(labelsize=PAGE_TICK_PT)
         shared_x, shared_y = self.page.shared
+        if i and shared_x:
+            ax.sharex(self.cells[0].ax)
+        if i and shared_y:
+            ax.sharey(self.cells[0].ax)
         lowest_in_column = i + cols >= n  # no plot below it on this page
         if shared_x and not lowest_in_column:
             ax.tick_params(axis="x", labelbottom=False)

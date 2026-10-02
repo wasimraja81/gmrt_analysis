@@ -158,8 +158,6 @@ def check_request(request: PlotRequest) -> CheckedRequest:
                              "gives every plot one color; color by source, or leave --colorize-by out")
         if request.one_plot_per and request.locate:
             raise ValueError("--locate lists the samples of one plot; --one-plot-per makes many")
-        if request.one_plot_per and not request.output_dir:
-            raise ValueError("--one-plot-per saves its pages with --output-dir; the window's pages are not built yet")
         for name in given:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
@@ -322,7 +320,8 @@ class PreparedRun:
 
     def figures(self) -> list[tuple[str, object]]:
         """Every figure, in the order the plots were named (table plots drawn
-        from the file's tables, once)."""
+        from the file's tables, once); with --one-plot-per, each streamed
+        plot's pages (`PlotPages`), whose figures are made page by page."""
         if self._figures is None:
             f, theme = self.file, self.request.plot_theme
             figures = []
@@ -333,10 +332,36 @@ class PreparedRun:
                                                          left_out=[a.name for a in f.dud_antennas])))
                 elif name == "source-listing":
                     figures.append((name, source_listing(f.source_table, theme=theme)))
+                elif self.iterations:
+                    figures += [(p.name, PlotPages(self, p)) for p in self.plots_by_name[name]]
                 else:
                     figures += [(p.name, self.xy_figures[p]) for p in self.plots_by_name[name]]
             self._figures = figures
         return self._figures
+
+    @property
+    def page_grid_layout(self) -> tuple[int, int]:
+        """(rows, columns) of plots on a page with --one-plot-per (`page_layout`)."""
+        return page_layout(len(self.iterations), self.page_grid, DEFAULT_PAGE_GRID)
+
+    def range_from(self, axis: str) -> str:
+        """Where a plot's range on `axis` comes from, without --x-range or
+        --y-range: "each" plot's own data, or "all" plots' (--x-range-from,
+        --y-range-from; default "all" on a grid, "each" with one plot a page)."""
+        rows, cols = self.page_grid_layout
+        return getattr(self.request, f"{axis}_range_from") or ("all" if rows * cols > 1 else "each")
+
+    def from_all(self, plots: list[PlotSpec]) -> list[tuple[PlotSpec, str]]:
+        """The (plot, axis) pairs of `plots` whose range comes from every
+        plot's data: one pass over the whole selection."""
+        return [(p, axis) for p in plots for axis in ("x", "y")
+                if self.range_from(axis) == "all" and (p.x_range if axis == "x" else p.y_range) is None]
+
+    def shared_axes(self, plot: PlotSpec) -> tuple[bool, bool]:
+        """(x, y): whether every plot of `plot` has one range on that axis
+        (from every plot's data, or given), so a page shares it."""
+        return tuple(self.range_from(axis) == "all" or (plot.x_range if axis == "x" else plot.y_range) is not None
+                     for axis in ("x", "y"))
 
     def iteration_plot(self, plot: PlotSpec, iteration: Iteration, fixed: dict[str, tuple] | None = None) -> PlotSpec:
         """`plot` of `iteration`, named for its files, with the axis ranges in
@@ -808,16 +833,36 @@ class PageOfPlots:
     panel_text: str
 
 
+@dataclass
+class PlotPages:
+    """A streamed plot's pages for a window (T26), in place of its figure:
+    planned once the ranges from every plot's data (`from_all`) are known,
+    each page's figure made when it is shown (`PreparedRun.page_figure`)."""
+
+    run: PreparedRun
+    plot: PlotSpec
+
+    @property
+    def from_all(self) -> list[tuple[PlotSpec, str]]:
+        return self.run.from_all([self.plot])
+
+    def pages(self, ranged: dict) -> list[PageOfPlots]:
+        """The pages, given the `from_all` ranges ({(plot, axis): extent})."""
+        fixed = {self.plot: {axis: ranged[(plot, axis)] for plot, axis in self.from_all}}
+        return [group[0] for group in plan_pages(self.run, fixed, streamed=[self.plot])]
+
+
 _PLURALS = {"baseline": "baselines", "antenna": "antennas", "source": "sources", "stokes": "Stokes"}
 
 
-def plan_pages(run: PreparedRun, grid: tuple[int, int], fixed: dict[PlotSpec, dict],
-               shared: dict[PlotSpec, tuple[bool, bool]]) -> list[list[PageOfPlots]]:
-    """The pages of a run with --one-plot-per, `grid` (rows, columns) of
-    iterations to a page, in groups of one page per streamed plot (the
-    plots of the same iterations, drawn and saved together); each
-    iteration's plot with the ranges in `fixed` set (`iteration_plot`), and
-    a grid's axes `shared` (x, y) per streamed plot."""
+def plan_pages(run: PreparedRun, fixed: dict[PlotSpec, dict], streamed: list[PlotSpec] | None = None
+               ) -> list[list[PageOfPlots]]:
+    """The pages of a run with --one-plot-per, its `page_grid_layout` of
+    iterations to a page, in groups of one page per streamed plot (`streamed`;
+    default every one: the plots of the same iterations, drawn and saved
+    together); each iteration's plot with the ranges in `fixed` set
+    (`iteration_plot`), its axes shared as `shared_axes` says."""
+    grid = run.page_grid_layout
     iterations = run.iterations
     per_page = grid[0] * grid[1]
     n_pages = math.ceil(len(iterations) / per_page)
@@ -834,18 +879,19 @@ def plan_pages(run: PreparedRun, grid: tuple[int, int], fixed: dict[PlotSpec, di
                           else f"{len(iterations):,} {plural}")
             panel_text = f"{title_part}: {chunk[0].label}" + (f" to {chunk[-1].label}" if len(chunk) > 1 else "")
         group = []
-        for plot in run.xy_plots:
-            plots = [run.iteration_plot(plot, iteration, fixed[plot]) for iteration in chunk]
+        for plot in streamed or run.xy_plots:
+            page_plots = [run.iteration_plot(plot, iteration, fixed[plot]) for iteration in chunk]
             if per_page == 1:
-                group.append(PageOfPlots(plot, plots, None, plots[0].name, panel_text))
+                group.append(PageOfPlots(plot, page_plots, None, page_plots[0].name, panel_text))
             else:
-                layout = PageLayout(tuple(plots), grid, shared[plot], title_part)
-                group.append(PageOfPlots(plot, plots, layout, f"{plot.name}_page{k + 1:0{digits}d}", panel_text))
+                layout = PageLayout(tuple(page_plots), grid, run.shared_axes(plot), title_part)
+                group.append(PageOfPlots(plot, page_plots, layout, f"{plot.name}_page{k + 1:0{digits}d}",
+                                         panel_text))
         groups.append(group)
     return groups
 
 
-def _rows_of(source: XYSource, iterations) -> np.ndarray:
+def rows_of_iterations(source: XYSource, iterations) -> np.ndarray:
     """The rows of `source` the `iterations` hold, each once."""
     return np.unique(np.concatenate([iteration_source(source, it).row_indices for it in iterations]))
 
@@ -868,17 +914,9 @@ def draw_pages(run: PreparedRun, report: Report = _silent, progress: ProgressFac
     request, source, iterations = run.request, run.source, run.iterations
     lowres_dpi = lowres_dpi or request.dpi
     factor = highres_dpi(lowres_dpi) // lowres_dpi
-    grid = page_layout(len(iterations), run.page_grid, DEFAULT_PAGE_GRID)
-
-    def range_from(axis: str) -> str:
-        return getattr(request, f"{axis}_range_from") or ("all" if grid[0] * grid[1] > 1 else "each")
-
-    def given(plot: PlotSpec, axis: str):
-        return plot.x_range if axis == "x" else plot.y_range
-
+    grid = run.page_grid_layout
     fixed = {p: {} for p in run.xy_plots}
-    from_all = [(p, axis) for p in run.xy_plots for axis in ("x", "y")
-                if range_from(axis) == "all" and given(p, axis) is None]
+    from_all = run.from_all(run.xy_plots)
     if from_all:
         read_data = any(QUANTITIES[p.x if axis == "x" else p.y].needs_data for p, axis in from_all)
         on_chunk = progress(pass_progress(source, "finding the range of every plot", read_data))
@@ -887,9 +925,7 @@ def draw_pages(run: PreparedRun, report: Report = _silent, progress: ProgressFac
             raise Stopped("stopped while finding the range of every plot; nothing saved")
         for (p, axis), extent in ranged.items():
             fixed[p][axis] = extent
-    shared = {p: tuple(range_from(axis) == "all" or given(p, axis) is not None for axis in ("x", "y"))
-              for p in run.xy_plots}
-    groups = plan_pages(run, grid, fixed, shared)
+    groups = plan_pages(run, fixed)
 
     def save_shapes(page: PageOfPlots, figure: XYFigure) -> dict[PlotSpec, tuple[int, int]]:
         # density counts at the PNG's pixels (a count per pixel means the pixel seen; T21), points at highres
@@ -919,7 +955,7 @@ def draw_pages(run: PreparedRun, report: Report = _silent, progress: ProgressFac
         pages = [page for group in batch for page in group]
         figures = [run.page_figure(page) for page in pages]
         plots = [plot for page in pages for plot in page.plots]
-        part = source.subset(_rows_of(source, dict.fromkeys(plot.iteration for plot in plots)))
+        part = source.subset(rows_of_iterations(source, dict.fromkeys(plot.iteration for plot in plots)))
         on_chunk = progress(pass_progress(part, f"{label}: finding data ranges", range_pass_reads_data(plots)))
         extents = resolve_extents(part, plots, on_chunk=on_chunk, cache=run.cache)
         if extents is None:
@@ -940,8 +976,8 @@ def draw_pages(run: PreparedRun, report: Report = _silent, progress: ProgressFac
         for page, figure in zip(pages, figures):
             page_grids = {plot: grids.pop(plot) for plot in page.plots}
             its = [plot.iteration for plot in page.plots]
-            figure.set_status(grids_summary(list(page_grids.values()), len(_rows_of(drawn, its)),
-                                            len(_rows_of(part, its))))
+            figure.set_status(grids_summary(list(page_grids.values()), len(rows_of_iterations(drawn, its)),
+                                            len(rows_of_iterations(part, its))))
             yield page, figure, page_grids
 
 
@@ -966,7 +1002,7 @@ def _save_pages(run: PreparedRun, report: Report, progress: ProgressFactory) -> 
         lowres_pdf = stack.enter_context(PdfPages(lowres_path))
         highres_pdf = stack.enter_context(PdfPages(highres_path)) if highres_path else None
         for name, item in run.figures():
-            if isinstance(item, XYFigure):
+            if isinstance(item, (XYFigure, PlotPages)):
                 continue  # drawn page by page below
             png_path = output_dir / f"{request.output_prefix}_{name}.png"
             item.savefig(png_path, dpi=lowres_dpi)

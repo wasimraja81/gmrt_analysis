@@ -289,3 +289,92 @@ def test_a_completed_zoom_leaves_no_preview_behind():
     assert panel.grid.x_extent == (400.5, 402.5)
     assert panel.figure.preview is None and list(panel.figure.ax.images) == [panel.figure.image]
     window.close()
+
+
+def _paged_window(name, **options):
+    """A window of one plot per baseline (T26), as the command line opens it."""
+    from visplot.request import PlotRequest
+    from visplot.run import open_file, prepare
+
+    path = _make_synthetic_file(make_scratch_dir(name) / "obs.fits")
+    run = prepare(PlotRequest(str(path), "amp-vs-freq", one_plot_per="baseline", **options), open_file(path))
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    window = InspectorWindow(run.source, run.figures(), labels=run.labels, cache=run.cache, cached=run.cached)
+    window.resize(1200, 900)
+    window.show()
+    return app, window
+
+
+def _settle(app, window):
+    """A zoom left to settle, then the redraw it starts."""
+    time.sleep(0.4)
+    app.processEvents()
+    time.sleep(0.4)
+    _wait(app, window)
+
+
+def test_a_tab_of_pages_steps_through_them_drawing_the_page_shown():
+    app, window = _paged_window("qt_pages_step", page_grid="1,1")
+    _wait(app, window)
+    (tab,) = window.paged
+    assert tab.counter.text() == "page 1 of 3" and tab.chooser.count() == 3
+    assert not tab.previous.isEnabled() and tab.next.isEnabled()
+    (first,) = tab.panels
+    assert first.plot.iteration.label == "C00:01-C01:02" and window.panels == {first.plot: first}
+    assert first.drawn and first.grid.n_samples == 14 * 4 * 2 - 1  # rows 0, 3, ..., 39; row 0's first RR flagged
+    tab.next.click()
+    _wait(app, window)
+    (second,) = tab.panels
+    assert tab.counter.text() == "page 2 of 3" and second.plot.iteration.label == "C00:01-C02:03"
+    assert first.plot not in window.panels and second.drawn
+    assert second.grid.n_samples == 13 * 4 * 2  # rows 1, 4, ..., 37
+    assert second.grid.y_extent != first.grid.y_extent  # one plot a page: each its own range
+    window.show_page(tab, 2)
+    _wait(app, window)
+    assert tab.counter.text() == "page 3 of 3" and not tab.next.isEnabled()
+    window.close()
+
+
+def test_a_zoom_on_a_page_zooms_every_plot_and_carries_to_the_next_page():
+    app, window = _paged_window("qt_pages_zoom", page_grid="1,2")
+    _wait(app, window)
+    (tab,) = window.paged
+    assert [p.plot.iteration.label for p in tab.panels] == ["C00:01-C01:02", "C00:01-C02:03"]
+    assert tab.figure.page.shared == (True, True)  # a grid: every plot's range
+    full = tab.panels[0].grid.x_extent
+    tab.panels[0].cell.ax.set_xlim(400.5, 402.5)  # one plot zoomed: its shared axis moves the other's
+    _settle(app, window)
+    assert [p.grid.x_extent for p in tab.panels] == [(400.5, 402.5), (400.5, 402.5)]
+    assert all(p.drawn for p in tab.panels)
+    tab.next.click()
+    _wait(app, window)
+    (last,) = tab.panels
+    assert last.plot.iteration.label == "C01:02-C02:03" and last.grid.x_extent == (400.5, 402.5)
+    # Back (and Home) return the page's own ranges, from a zoom carried over (the user, 2026-10-02)
+    last.toolbar.back()
+    _settle(app, window)
+    assert last.grid.x_extent == full and last.drawn
+    tab.previous.click()  # the full view carries on, back to page 1
+    _wait(app, window)
+    assert [p.grid.x_extent for p in tab.panels] == [full, full]
+    window.close()
+
+
+def test_locate_and_export_on_a_page():
+    app, window = _paged_window("qt_pages_tools")
+    _wait(app, window)
+    (tab,) = window.paged
+    assert len(tab.panels) == 3  # three baselines: one page of 1 x 3
+    window._locate(tab.panels[1], SimpleNamespace(xdata=400.5, ydata=0.0), SimpleNamespace(xdata=401.5, ydata=50.0))
+    _wait(app, window)
+    assert window.locate.n_found == 13 * 2  # C00:01-C02:03's 13 rows at channel 1, RR and LL
+    assert set(window.locate.by_baseline) == {(1, 3)}
+    path = make_scratch_dir("qt_pages_export") / "page.png"
+    window.export(tab.panels[0].plot, str(path), dpi=100)
+    _wait(app, window)
+    from matplotlib.image import imread
+
+    height, width = imread(path).shape[:2]
+    fig_w, fig_h = tab.figure.fig.get_size_inches()
+    assert (width, height) == (round(fig_w * 100), round(fig_h * 100))
+    window.close()

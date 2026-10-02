@@ -15,7 +15,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 pytestmark = pytest.mark.filterwarnings("ignore:Enum value 'Qt.*AA_UseHighDpiPixmaps' is marked as deprecated:DeprecationWarning")
-from PySide6 import QtWidgets  # noqa: E402
+from PySide6 import QtCore, QtWidgets  # noqa: E402
 
 from conftest import make_scratch_dir  # noqa: E402
 from test_cli_visplot_output import _make_synthetic_file  # noqa: E402
@@ -472,4 +472,59 @@ def test_the_style_field_draws_a_density_plot_in_the_window():
     panel = tab.panel.panels[plot]
     assert panel.grid.density and sum(int(c.sum()) for c in panel.grid.counts.values()) == panel.grid.n_samples == 319
     assert panel.figure.panel.density_peak.get_text() not in ("", "…")  # the scale's top, once drawn
+    window.close()
+
+
+def test_the_pages_fields_give_the_request_its_layout_and_stay_out_until_chosen():
+    app, window, path = _window("gui_pages_fields")
+    form = window.form
+    assert not form.auto_grid.isEnabled() and form.request().page_grid is None  # one plot: no layout
+    request = PlotRequest(str(path), "amp-vs-freq", one_plot_per="baseline", page_grid="2,3", x_range_from="each",
+                          x_unit="MHz", y_unit="UNCALIB")  # the form names the units
+    form.load(request)
+    assert form.request() == request
+    form.fields["one_plot_per"].set(None)  # one plot again: the layout's fields leave the request
+    assert (form.request().page_grid, form.request().x_range_from) == (None, None)
+    range_box = form.fields["y_range_from"].widget  # hover text, in everyday words
+    assert "How the y axis range of each plot is chosen" in range_box.toolTip()
+    assert "every plot fills its frame" in range_box.itemData(1, QtCore.Qt.ToolTipRole)
+    assert "rows x columns" in form.fields["page_grid"].widget.toolTip()
+    window.close()
+
+
+def test_plot_with_one_plot_per_opens_a_tab_of_pages():
+    app, window, _ = _window("gui_pages_plot")
+    window.form.fields["one_plot_per"].set("baseline")
+    tab = _plot_amp_vs_freq(app, window)
+    (pages,) = tab.panel.paged
+    assert pages.counter.text() == "page 1 of 1" and len(pages.panels) == 3  # 3 baselines: one 1 x 3 page
+    assert all(p.drawn for p in pages.panels)
+    window.close()
+
+
+def test_save_with_one_plot_per_writes_every_page_into_one_pdf():
+    import re
+
+    from visplot.gui.save_dialog import SaveDialog
+
+    app, window, path = _window("gui_save_pages")
+    select_data(window.form.y.quantity, "amp")
+    select_data(window.form.x.quantity, "freq")
+    window.form.fields["one_plot_per"].set("baseline")
+    window.form.fields["page_grid"].set("1,1")  # three baselines, a page each
+    _settle(app, window, lambda: window.save_action.isEnabled())
+    dialog = SaveDialog(window.form.request)
+    assert (dialog.width.value(), dialog.height.value()) == (8.0, 7.0)  # one plot a page: a plot's size
+    window.form.fields["page_grid"].set(None)  # auto: the three on one page
+    assert (SaveDialog(window.form.request).width.value(), SaveDialog(window.form.request).height.value()) == (
+        16.0, 11.0)  # a page of several plots
+    window.form.fields["page_grid"].set("1,1")
+    out = path.parent / "saved_pages"
+    window.save(window.form.request(output_dir=str(out), dpi=100, no_highres_pdf=True))
+    _settle(app, window, lambda: (out / "visplot_lowres.pdf").exists() and not window._tasks)
+    pdf = (out / "visplot_lowres.pdf").read_bytes()
+    assert len(re.findall(rb"/Type\s*/Page\b", pdf)) == 3  # every page in the one PDF
+    assert sorted(p.name for p in out.glob("*.png")) == [
+        "visplot_amp-vs-freq_C00_01-C01_02.png", "visplot_amp-vs-freq_C00_01-C02_03.png",
+        "visplot_amp-vs-freq_C01_02-C02_03.png"]
     window.close()
