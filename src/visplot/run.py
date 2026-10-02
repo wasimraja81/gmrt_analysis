@@ -760,9 +760,11 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
     for item in xy_figures.values():
         item.set_status(grid_summary(grids[item.plot], drawn.n_rows, source.n_rows))
     written = []
+    figures = run.figures()
     lowres_path = output_dir / f"{request.output_prefix}_lowres.pdf"
+    writing = progress(PassProgress(f"writing the PNGs and {lowres_path.name}", len(figures), 0, unit="plots"))
     with PdfPages(lowres_path) as pdf:
-        for name, item in run.figures():
+        for k, (name, item) in enumerate(figures, start=1):
             if isinstance(item, XYFigure):
                 item.show(grids[item.plot], display_dpi=lowres_dpi,
                           downsample=1 if item.plot.style == "density" else factor)
@@ -773,15 +775,20 @@ def save_outputs(run: PreparedRun, report: Report = _silent, progress: ProgressF
             pdf.savefig(_mpl_figure(item), dpi=lowres_dpi)
             report("info", f"saved {png_path}")
             written.append(png_path)
+            if writing(k) is False:
+                raise Stopped("stopped while writing the files; those written are kept")
     report("info", f"saved {lowres_path}")
     written.append(lowres_path)
     if not request.no_highres_pdf:
         highres_path = output_dir / f"{request.output_prefix}_highres.pdf"
+        writing = progress(PassProgress(f"writing {highres_path.name}", len(figures), 0, unit="plots"))
         with PdfPages(highres_path) as pdf:
-            for _, item in run.figures():
+            for k, (_, item) in enumerate(figures, start=1):
                 if isinstance(item, XYFigure):
                     item.show(grids[item.plot], display_dpi=highres)
                 pdf.savefig(_mpl_figure(item), dpi=highres)
+                if writing(k) is False:
+                    raise Stopped("stopped while writing the files; those written are kept")
         report("info", f"saved {highres_path}")
         written.append(highres_path)
     return written
@@ -1011,7 +1018,10 @@ def _save_pages(run: PreparedRun, report: Report, progress: ProgressFactory) -> 
                 highres_pdf.savefig(item, dpi=highres)
             report("info", f"saved {png_path}")
             written.append(png_path)
-        for page, figure, grids in draw_pages(run, report, progress):
+        rows, cols = run.page_grid_layout
+        n_pages = math.ceil(len(run.iterations) / (rows * cols)) * len(run.xy_plots)
+        writing = progress(PassProgress("writing the pages (PNG and PDF)", n_pages, 0, unit="pages"))
+        for k, (page, figure, grids) in enumerate(draw_pages(run, report, progress), start=1):
             figure.show_page(grids, display_dpi=lowres_dpi, downsample=1 if page.plot.style == "density" else factor)
             if figure.limits_warning:
                 report("warning", f"{page.name}: {figure.limits_warning}")
@@ -1024,6 +1034,8 @@ def _save_pages(run: PreparedRun, report: Report, progress: ProgressFactory) -> 
             figure.fig.clear()  # its images released before the next page's
             report("info", f"saved {png_path}")
             written.append(png_path)
+            if writing(k) is False:
+                raise Stopped("stopped while writing the pages; those written are kept")
     report("info", f"saved {lowres_path}")
     written.append(lowres_path)
     if highres_path:

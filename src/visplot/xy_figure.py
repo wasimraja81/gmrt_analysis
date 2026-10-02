@@ -56,6 +56,22 @@ XLABEL_IN = 0.55
 # Clock times on the x axis: tick labels tilted (the user, 2026-10-01), so up to this many fit.
 CLOCK_TILT_DEG = 30.0
 CLOCK_MAX_TICKS_TILTED = 10
+# Two views agreeing to within this fraction of each axis's span are the same view (floating-point rounding).
+VIEW_TOLERANCE = 1e-9
+
+
+def same_view(a, b, tolerance: float = VIEW_TOLERANCE) -> bool:
+    """Whether views `a` and `b` ((x0, x1), (y0, y1)) agree to within
+    `tolerance` of each axis's span."""
+    if a is None or b is None:
+        return a is b
+    for (a0, a1), (b0, b1) in zip(a, b):
+        span = max(abs(a1 - a0), abs(b1 - b0)) or 1.0
+        if abs(a0 - b0) > tolerance * span or abs(a1 - b1) > tolerance * span:
+            return False
+    return True
+
+
 # A page of several plots (T26), in inches: room left of the grid for the first column's tick labels and the
 # y label, right of it, and between plots (an axis shared by every plot: no tick labels between them; else each
 # plot's own); the title's top below the page's top edge; the plots' tick labels' size; and the width a tilted
@@ -308,15 +324,25 @@ class PlotAxes:
 
     def _widened_for_equal_scale(self, x_extent, y_extent):
         """Widen one axis's range about its centre, never narrow either, so a
-        unit spans the same number of pixels on both axes."""
+        unit spans the same number of pixels on both axes. An axis already on
+        the scale (to within VIEW_TOLERANCE) keeps its range as given, so
+        widening a view again leaves it unchanged (on a page's shared axes,
+        recomputed limits that differ in their last digits made every plot
+        look moved, and redrawn, in turn, without end)."""
         pos = self.ax.get_position()
         fig_w, fig_h = self.ax.figure.get_size_inches()
         width, height = pos.width * fig_w, pos.height * fig_h
         (x0, x1), (y0, y1) = x_extent, y_extent
         per_inch = max((x1 - x0) / width, (y1 - y0) / height)
-        xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
-        half_x, half_y = per_inch * width / 2, per_inch * height / 2
-        return (xc - half_x, xc + half_x), (yc - half_y, yc + half_y)
+        widened = []
+        for (lo, hi), size in (((x0, x1), width), ((y0, y1), height)):
+            span = per_inch * size
+            if abs((hi - lo) - span) <= VIEW_TOLERANCE * span:
+                widened.append((lo, hi))
+            else:
+                centre = (lo + hi) / 2
+                widened.append((centre - span / 2, centre + span / 2))
+        return tuple(widened[0]), tuple(widened[1])
 
     def grid_shape(self, dpi: float) -> tuple[int, int]:
         """(height, width) in pixels of the axes area at `dpi`."""

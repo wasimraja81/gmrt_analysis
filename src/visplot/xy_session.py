@@ -281,19 +281,22 @@ def _axis_label(plot: PlotSpec, axis: str, ctx: QuantityContext) -> str:
 
 class PassProgress:
     """Progress text for one pass over the selection: rows done, percentage,
-    data read and elapsed time -- all measured, no estimate of time left."""
+    data read and elapsed time -- all measured, no estimate of time left.
+    The same for writing saved files, counted in another `unit` (pages,
+    plots) with no data read."""
 
-    def __init__(self, label: str, total_rows: int, bytes_per_row: int):
+    def __init__(self, label: str, total_rows: int, bytes_per_row: int, unit: str = "rows"):
         self.label = label
-        self.total_rows = total_rows
+        self.total_rows = total_rows  # the items counted: rows, or the pages or plots written
         self.bytes_per_row = bytes_per_row
+        self.unit = unit
         self.start = time.monotonic()
 
     def text(self, rows_done: int) -> str:
         pct = 100.0 * rows_done / self.total_rows if self.total_rows else 100.0
         read = f", {rows_done * self.bytes_per_row / 1e9:.1f} GB read" if self.bytes_per_row else ""
         elapsed = int(time.monotonic() - self.start)
-        return (f"{self.label}: {rows_done:,} / {self.total_rows:,} rows ({pct:.0f}%){read}, "
+        return (f"{self.label}: {rows_done:,} / {self.total_rows:,} {self.unit} ({pct:.0f}%){read}, "
                 f"{elapsed // 60}:{elapsed % 60:02d} elapsed")
 
 

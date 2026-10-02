@@ -49,7 +49,7 @@ from visplot.quantities import QUANTITIES, utc_jd
 from visplot.request_args import DPI_LIMITS
 from visplot.run import PageOfPlots, PlotPages, rows_of_iterations
 from visplot.stream import GridReducer, LocateReducer
-from visplot.xy_figure import PlotAxes, XYFigure, grid_summary, grids_summary
+from visplot.xy_figure import PlotAxes, XYFigure, grid_summary, grids_summary, same_view
 from visplot.xy_session import (PassProgress, XYSource, range_pass_axes, resolve_axis_ranges, resolve_extents,
                                 source_in_views)
 
@@ -502,7 +502,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
             if id(panel.canvas) not in drawn_canvases:  # once per figure, however many of its plots (a page's)
                 panel.canvas.draw()
                 drawn_canvases.add(id(panel.canvas))
-            if (panel.grid is None or (panel.grid.x_extent, panel.grid.y_extent) != tuple(panel.extent)
+            if (panel.grid is None or not same_view((panel.grid.x_extent, panel.grid.y_extent), panel.extent)
                     or self._resized(panel)):
                 panel.cell.begin_redraw()  # the last complete image stays under the new one meanwhile
                 panel.grid = self._window_grid(panel, panel.extent)
@@ -622,13 +622,14 @@ class InspectorWindow(QtWidgets.QMainWindow):
             if panel.grid is None or panel.cell.image is None:
                 continue
             limits = (tuple(panel.cell.ax.get_xlim()), tuple(panel.cell.ax.get_ylim()))
-            if limits != panel.last_limits:
+            if not same_view(limits, panel.last_limits):
                 panel.last_limits, panel.changed_at = limits, now
                 panel.cell.hide_if_view_moved(panel.grid)
                 continue
             if panel.mouse_down or now - panel.changed_at < SETTLE_S:
                 continue
-            if limits != (panel.grid.x_extent, panel.grid.y_extent) and limits != tuple(panel.extent):
+            if (not same_view(limits, (panel.grid.x_extent, panel.grid.y_extent))
+                    and not same_view(limits, panel.extent)):
                 # the zoomed view, kept as the view the aspect toggle returns to; with equal
                 # aspect, widened again so both axes keep one scale and one span
                 panel.extent = self._set_view(panel, *limits)

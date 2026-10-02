@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 524 tests passing; T26, T32 in progress; T40, T42,
+T47-T49, point D and T21 2026-10-01, 527 tests passing; T26, T32 in progress; T40, T42,
 T45, T46, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
 Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -650,6 +650,36 @@ Buildable now, ahead of Phase C.
   Now a page opening with a carried zoom puts its own ranges in the toolbar's history
   first: Home and Back return to them, and the pages after open at full size. Test:
   Back on a page reached with a carried zoom, then the previous page at full size.
+  Found by the user after the commit (2026-10-02), saving pages from the GUI: "it takes
+  time to write the files on disk. The gui seems to snap back after i run your sequence.
+  It does not show any status bar showing "% finished", which is why i was misled". The
+  progress covered the passes over the rows only; writing the files (for pages the
+  longest part, about 0.8 s a page and 1.9 s more for the high-resolution PDF) said
+  nothing, the status bar staying at the last pass's 100%. Now writing reports too
+  (`PassProgress` counts rows, pages or plots): "writing the pages (PNG and PDF): 3 / 13
+  pages (23%), 0:41 elapsed", or for one plot's save "writing the PNGs and
+  visplot_lowres.pdf" and "writing visplot_highres.pdf"; the GUI's status bar and the
+  command line (every 10%) show it, and Stop takes effect between pages, the files
+  written kept. On the GWB file, C00's 27 baselines a page each: the drawing pass under
+  a second, the writing 21 s, now reported. Test: the writing's progress texts, a
+  page at a time, and a stop between pages.
+  Found by the user the same day, testing before the commit: a page of one plot per
+  baseline kept "re-drawing the view", cycling at 100% ("bin/visplot.sh ...gsb.FITS
+  --plots imag-vs-real --sources 3C468.1 ... --one-plot-per baseline"). Imaginary vs
+  real is one kind of quantity on both axes, so each plot has equal aspect (square, one
+  unit the same length on both axes, the shorter axis widened to the longer's scale), and
+  on a page the axes are shared. Reproduced headlessly on that selection: 66 redraw
+  requests before the page settled, 13 more in the 20 s after, one plot at a time. The
+  plots' sizes in inches, from the page's figure fractions, differ in their last digits,
+  so each plot's widening of the shared view moved it by about 1e-12, the window
+  (comparing views exactly) saw the other plots' views as moved and redrew them, and
+  their widening moved it back: a ping-pong between plots without end. A single square
+  plot shares nothing, so it never showed. Now views agreeing to within 1e-9 of each
+  axis's span are the same view (`xy_figure.same_view`, in the window's view checks),
+  and an axis already on the equal scale keeps its range as given, so widening a view
+  again leaves it unchanged. The same selection: 2 requests, none after. Tests: two
+  square plots sharing axes, sizes differing by 1e-12, keep one view (the test fails
+  with the exact comparison restored); a window page of square plots stays drawn.
   Step 1 built 2026-10-02 (`visplot/pages.py`; `stream.PageReducer`, `ChunkValues.page`,
   `visibility_data.narrow_block`; `run.draw_pages`, `_save_pages`): `--pages-by`,
   `--x-page-range`, `--y-page-range`. A page holds the selection's rows, or its Stokes

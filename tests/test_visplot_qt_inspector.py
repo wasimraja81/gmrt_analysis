@@ -291,13 +291,13 @@ def test_a_completed_zoom_leaves_no_preview_behind():
     window.close()
 
 
-def _paged_window(name, **options):
+def _paged_window(name, plots="amp-vs-freq", **options):
     """A window of one plot per baseline (T26), as the command line opens it."""
     from visplot.request import PlotRequest
     from visplot.run import open_file, prepare
 
     path = _make_synthetic_file(make_scratch_dir(name) / "obs.fits")
-    run = prepare(PlotRequest(str(path), "amp-vs-freq", one_plot_per="baseline", **options), open_file(path))
+    run = prepare(PlotRequest(str(path), plots, one_plot_per="baseline", **options), open_file(path))
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     window = InspectorWindow(run.source, run.figures(), labels=run.labels, cache=run.cache, cached=run.cached)
     window.resize(1200, 900)
@@ -377,4 +377,22 @@ def test_locate_and_export_on_a_page():
     height, width = imread(path).shape[:2]
     fig_w, fig_h = tab.figure.fig.get_size_inches()
     assert (width, height) == (round(fig_w * 100), round(fig_h * 100))
+    window.close()
+
+
+def test_a_page_of_square_plots_settles_once_drawn():
+    """Equal aspect on a page's shared axes: re-widening a view moved the
+    shared limits in their last digits, so each plot looked moved and was
+    redrawn in turn, without end (the user, 2026-10-02, imag vs real)."""
+    app, window = _paged_window("qt_pages_square", plots="v-vs-u")
+    _wait(app, window)
+    (tab,) = window.paged
+    assert all(p.plot.equal_aspect for p in tab.panels) and tab.figure.page.shared == (True, True)
+    grids = [p.grid for p in tab.panels]
+    end = time.monotonic() + 2.0
+    while time.monotonic() < end:
+        app.processEvents()
+        time.sleep(0.02)
+    assert [p.grid for p in tab.panels] == grids  # no plot drawn again
+    assert window.idle() and not window.to_draw
     window.close()

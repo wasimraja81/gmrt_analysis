@@ -243,3 +243,31 @@ def test_an_iteration_names_itself_and_its_file():
     iteration = Iteration("baseline", (1, 2), "C00:01-C01:02")
     assert iteration.text == "baseline C00:01-C01:02" and iteration.file_label == "C00_01-C01_02"
     assert Iteration("stokes", "RR", "RR").text == "Stokes RR"
+
+
+def test_a_save_reports_its_writing_page_by_page_and_can_be_stopped_there():
+    from visplot.run import Stopped
+
+    def recorder(texts, stop_at=None):
+        def factory(progress):
+            def on_chunk(done):
+                texts.append(progress.text(done))
+                return not (stop_at and stop_at in texts[-1])
+            return on_chunk
+        return factory
+
+    run, _ = _run("iterations_writing", one_plot_per="baseline", page_grid="1,1")
+    texts = []
+    save_outputs(run, progress=recorder(texts))
+    writing = [t for t in texts if t.startswith("writing the pages")]
+    assert [t.split(", ")[0] for t in writing] == [
+        "writing the pages (PNG and PDF): 1 / 3 pages (33%)", "writing the pages (PNG and PDF): 2 / 3 pages (67%)",
+        "writing the pages (PNG and PDF): 3 / 3 pages (100%)"]
+    run, _ = _run("iterations_writing_one_plot")
+    texts = []
+    save_outputs(run, progress=recorder(texts))
+    assert any(t.startswith("writing the PNGs and visplot_lowres.pdf: 1 / 1 plots (100%)") for t in texts)
+    run, _ = _run("iterations_writing_stopped", one_plot_per="baseline", page_grid="1,1")
+    with pytest.raises(Stopped, match="stopped while writing the pages"):
+        save_outputs(run, progress=recorder([], stop_at="2 / 3 pages"))
+    plt.close("all")

@@ -212,3 +212,28 @@ def test_a_redraw_keeps_the_last_complete_image_under_the_new_one_until_it_compl
     figure.end_redraw()
     assert figure.preview is None and list(figure.ax.images) == [figure.image]
     plt.close(figure.fig)
+
+
+def test_square_plots_sharing_axes_agree_on_one_view():
+    """Two plots of a page sharing their axes with equal aspect (T26), their
+    sizes in inches differing in the last digits, as a page's do: each
+    widening the shared view by its own size pushed it to and fro, and the
+    window redrew them in turn without end (the user, 2026-10-02). A view
+    already on the scale is kept as it is."""
+    from dataclasses import replace
+
+    from visplot.xy_figure import PageLayout, same_view
+
+    plot = PlotSpec(y="imag", x="real")  # one kind of quantity: equal aspect
+    plots = tuple(replace(plot, name=f"plot{i}") for i in range(2))
+    figure = XYFigure(plot, CTX, page=PageLayout(plots, (1, 2), (True, True)))
+    first, second = figure.cells
+    pos = second.ax.get_position()
+    second.ax.set_position([pos.x0, pos.y0, pos.width * (1 + 1e-12), pos.height * (1 + 1e-12)])
+    view = first.set_view((-8454.0306, 8448.1859), (-8450.5873, 8451.6293))
+    again = second.set_view(*view)
+    and_back = first.set_view(*again)
+    assert again == view and and_back == view  # kept: already on the scale
+    assert same_view(view, tuple(tuple(v * (1 + 1e-12) for v in pair) for pair in view))
+    assert not same_view(view, ((-8000.0, 8448.1859), (-8450.5873, 8451.6293)))
+    plt.close(figure.fig)
