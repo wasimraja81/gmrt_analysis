@@ -4,8 +4,8 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, 527 tests passing; T26, T32 in progress; T40, T42,
-T45, T46, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked until the
-Moon is imaged.
+T45, T46, T50-T52, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked
+until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -1372,6 +1372,64 @@ Buildable now, ahead of Phase C.
   Tests: the title for one source and several; the Sources line, and none beside a key
   of sources.
 
+- **T50 — The window keeps the pages last viewed — OPEN (user, 2026-10-03).** Asked
+  whether a page is drawn afresh when shown again (switching to page 3 and back to page
+  1): it is. Showing a page makes its figure, finds its plots' own ranges when they take
+  them (a pass over its rows), and draws it (a pass over the rows in view); the last
+  page's figure and drawing are dropped. Measured on the GWB file, a 5 x 6 page of 30
+  baselines, the rows in the OS cache: back to page 1 in 4.5 s (a range from every plot)
+  or 6.6 s (each plot's own); a zoom on a shared axis carries, a plot's own zoom does
+  not. The user: "would be a great addition if we kept the last few viewed pages in
+  memory", and, on the first draft of this ticket, "Do not be narrow. Think about
+  running this on a new machine! New Data.... etc etc". To build, for any machine and
+  data: the pages kept are bounded by memory, within a share of the host's RAM as the
+  stream's chunks and the save's batches are; what a kept page takes (its plots' grids
+  and its figure's images) depends on the screen's pixels, the grid of plots and the
+  plot's style, so it is counted as each page is kept, never assumed from one screen;
+  a page shown again is reused while its view, the window's size and the plot theme are
+  those it was drawn with, and drawn again otherwise; a page whose plots take their own
+  ranges keeps them.
+
+- **T51 — A save says what it will take, checks the disk, and advises — OPEN (user,
+  2026-10-03).** On whether the high-resolution PDF should stay on by default for large
+  page runs (it adds about 1.9 s a page here): "I would leave it default. If at all, we
+  should maybe check for diskspace on disk, and issue advise when saving plots?"; then,
+  on the first draft of this ticket (which judged by this machine's 328 GB free and
+  this file's sizes): "Do not be narrow. Think about running this on a new machine! New
+  Data.... etc etc". What a save writes depends on the machine and the data, so nothing
+  is taken from this one. Pages grow with the array: 378 baselines here make 13 pages of
+  5 x 6 per plot; a 64-antenna array's 2,016 baselines would make 68, a 512-station
+  array's 130,816 baselines 4,361: hours of writing (here a one-plot page takes 0.8 s,
+  and 1.9 s more for the high-resolution PDF; a page of 30 plots, more) and files to
+  match. Sizes measured here, for scale only (points, 150 dpi): the 13 pages of
+  378 baselines (3C286, RR, amplitude vs uv distance), PNGs and the low-resolution PDF,
+  3.6 MB; 27 one-plot pages of amplitude vs time, 0.35 MB low-resolution and 1.3 MB
+  high-resolution PDF; denser plots, density plots, more plots per run, a larger dpi
+  or figure take more. Design to settle:
+  - before any pass reads the data: a folder that cannot be created or written is
+    refused; the save states what it holds (pages and plots, resolutions, files) and
+    the folder's free space;
+  - after the first page: its files' size and the time it took, measured, give the
+    expected total, set against the free space; when short, advice (without the
+    high-resolution PDF, fewer pages (T52), a lower dpi, another folder), the GUI asking
+    before it goes on, the terminal saying it;
+  - free space as the file system reports it can miss a user's quota or a network file
+    system's limits, so a write that fails (no space, over quota, no permission) stops
+    the save, keeps the files written, names them and the cause, and the provenance
+    record says so.
+
+- **T52 — Save chosen pages (`--pages`) — OPEN (proposed 2026-10-03, after the user
+  asked what it meant).** `--pages 3`, `--pages 1,4-6`: a save writes those pages only;
+  the GUI's save dialog offers all, the page shown, or a list. A page export's record
+  then reproduces it in full: the request with `--pages`, the view, `--dpi` and
+  `--figure-size` (as a one-plot export's does now; a zoom on plots taking their own
+  ranges excepted, which no one `--x-range` states). A page number holds what the
+  selection, the grid and the file's iterations in their order make it, so page 3 of one
+  file or selection is other baselines in another (the user: "Think about running this
+  on a new machine! New Data"): a page is recorded by its number and the iterations it
+  holds (e.g. baselines C00:01-C01:02 to C01:02-C05:06), and a run of the record checks
+  that it holds them still, refusing, with what it holds now, when it does not.
+
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
   GSB file's antenna layout drew 32 antennas and put its inset on three points 1 m apart,
@@ -1442,7 +1500,10 @@ Buildable now, ahead of Phase C.
   after.
   Order to finish the GUI (user, 2026-09-30, easier first): T33, T38, point D, T21, T26
   pages; then T20 (a listObs tab) and T26's flag editing, each designed with the user;
-  T40 later; T42 with Phase C; then the data analysis.
+  T40 later; T42 with Phase C; then the data analysis. Taking stock (2026-10-03): T33,
+  T38, point D, T21 and T26 pages steps 1-3 and 5 done; next T26 pages step 4 (`+`
+  stacks, az-el-range as one figure), then T20 and T26's flag editing; T50-T52
+  added; the high-resolution PDF stays on by default (the user, the same day).
 
 ### Phase C — Primary Calibration (3C48)
 
