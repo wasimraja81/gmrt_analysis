@@ -33,6 +33,19 @@ def open_fits_readonly(path: PathLike) -> fits.HDUList:
     return fits.open(str(path), mode="readonly", memmap=True)
 
 
+def open_fits_tables(path: PathLike) -> fits.HDUList:
+    """Open a FITS file for reading its headers and tables (AN, SU, FQ)
+    only, read-only and without a memory map.
+
+    astropy's ``readonly`` memory map maps the whole file copy-on-write,
+    which a kernel refuses for a file larger than its memory and swap (the
+    389 GB GWB file), astropy then warning and falling back to a read-only
+    map (T53). Without a map, a table's data are its own bytes, read when
+    asked for; the visibilities are read through ``open_raw_memmap``.
+    """
+    return fits.open(str(path), mode="readonly", memmap=False)
+
+
 def open_raw_memmap(path: PathLike, dtype, shape: tuple[int, ...], offset: int = 0) -> np.memmap:
     """Memory-map a raw binary data block for reading only.
 

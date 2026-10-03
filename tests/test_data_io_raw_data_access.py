@@ -8,6 +8,7 @@ from data_io.raw_data_access import (
     RawDataProtectionError,
     guard_output_path,
     open_fits_readonly,
+    open_fits_tables,
     open_raw_memmap,
 )
 
@@ -43,6 +44,22 @@ def test_open_fits_readonly_exposes_no_write_mode_parameter():
 
     params = inspect.signature(raw_data_access.open_fits_readonly).parameters
     assert "mode" not in params
+
+
+def test_open_fits_tables_reads_a_table_read_only_without_a_memory_map():
+    import inspect
+
+    from data_io import raw_data_access
+
+    scratch = make_scratch_dir("data_io_fits_tables")
+    path = scratch / "tables.fits"
+    table = fits.BinTableHDU.from_columns([fits.Column(name="NOSTA", format="J", array=np.array([1, 2]))],
+                                          name="AIPS AN")
+    fits.HDUList([fits.PrimaryHDU(), table]).writeto(path)
+    with open_fits_tables(path) as hdul:
+        assert hdul.fileinfo(1)["filemode"] == "readonly"
+        assert list(hdul["AIPS AN"].data["NOSTA"]) == [1, 2]
+    assert "mode" not in inspect.signature(raw_data_access.open_fits_tables).parameters
 
 
 def test_open_raw_memmap_reads_expected_values_and_rejects_writes():
@@ -114,3 +131,18 @@ def test_open_fits_readonly_against_the_real_gwb_file():
     with open_fits_readonly(REAL_GWB_FITS) as hdul:
         assert hdul.fileinfo(0)["filemode"] == "readonly"
         assert hdul[0].header is not None
+
+
+@pytest.mark.skipif(not os.path.exists(REAL_GWB_FITS), reason="archival GWB raw data file not present on this host")
+def test_opening_the_archival_gwb_file_reads_its_tables_without_astropys_memory_map_warning():
+    """T53: astropy's readonly memory map of the 389 GB file was refused and fell back, warning."""
+    import warnings
+
+    from astropy.utils.exceptions import AstropyUserWarning
+
+    from visplot.run import open_file
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", AstropyUserWarning)
+        opened = open_file(REAL_GWB_FITS)
+    assert len(opened.antennas) == 30 and len(opened.frequency_setups) == 1

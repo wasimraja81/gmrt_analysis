@@ -32,7 +32,7 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import EarthLocation
 
-from data_io.raw_data_access import open_fits_readonly
+from data_io.raw_data_access import open_fits_tables
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ def _rotate_stabxyz_to_ecef(dx: float, dy: float, array_x: float, array_y: float
 def read_antenna_table(fits_path: Path | str) -> list[Antenna]:
     """Read every antenna in the AIPS AN table, in table order, with absolute
     ECEF positions."""
-    with open_fits_readonly(fits_path) as hdul:
+    with open_fits_tables(fits_path) as hdul:
         an = hdul["AIPS AN"]
         array_x, array_y, array_z = _array_reference_position_m(an.header)
         antennas = []
@@ -99,7 +99,7 @@ class AntennaFeeds:
 def read_antenna_feeds(fits_path: Path | str) -> dict[int, AntennaFeeds]:
     """Every antenna's mount and feeds, keyed by station number; a column the
     table lacks gives None (or "" for a feed type)."""
-    with open_fits_readonly(fits_path) as hdul:
+    with open_fits_tables(fits_path) as hdul:
         an = hdul["AIPS AN"]
         cols = set(an.columns.names)
 
@@ -138,7 +138,7 @@ def read_array_reference_position_m(fits_path: Path | str) -> tuple[float, float
     """The array's own reference position (absolute ECEF, metres) -- needed
     directly by observing-geometry code (hour angle, Az/El, parallactic
     angle), separately from any one antenna's position."""
-    with open_fits_readonly(fits_path) as hdul:
+    with open_fits_tables(fits_path) as hdul:
         return _array_reference_position_m(hdul["AIPS AN"].header)
 
 
@@ -201,7 +201,7 @@ class TimeReference:
 
 
 def read_time_reference(fits_path: Path | str) -> TimeReference:
-    with open_fits_readonly(fits_path) as hdul:
+    with open_fits_tables(fits_path) as hdul:
         date_obs = str(hdul[0].header.get("DATE-OBS", "")).strip()
         an_header = hdul["AIPS AN"].header if "AIPS AN" in hdul else {}
         rdate = str(an_header.get("RDATE", "")).strip()

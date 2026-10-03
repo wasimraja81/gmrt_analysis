@@ -3,9 +3,9 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20 2026-10-03, 545 tests passing; T26, T32 in
-progress; T40, T42, T45, T46, T50-T54 open (order in Phase B); T35 (Moon scans' u, v, w)
-open, parked until the Moon is imaged.
+T47-T49, point D and T21 2026-10-01, T20 and T53 2026-10-03, 547 tests passing; T26, T32
+in progress; T40, T42, T45, T46, T50-T52, T54 open (order in Phase B); T35 (Moon scans' u,
+v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -1576,7 +1576,7 @@ Buildable now, ahead of Phase C.
   holds (e.g. baselines C00:01-C01:02 to C01:02-C05:06), and a run of the record checks
   that it holds them still, refusing, with what it holds now, when it does not.
 
-- **T53 — astropy's memory-map warning on the GWB file — OPEN (found 2026-10-03).**
+- **T53 — astropy's memory-map warning on the GWB file — DONE (found and fixed 2026-10-03).**
   Every read of a table's data from the 389 GB GWB file (`open_fits_readonly`, memmap
   on: the AN table when the file opens, the SU and FQ tables) prints "Could not memory
   map array with mode='readonly', falling back to mode='denywrite'": astropy's readonly
@@ -1588,6 +1588,13 @@ Buildable now, ahead of Phase C.
   than a file. To weigh: reading the small tables without a memory map (memmap off reads
   the table's bytes alone), the visibilities' reading (`open_raw_memmap`, numpy's own
   read-only map) unchanged.
+  The user chose that, the same day. `raw_data_access.open_fits_tables`: read-only,
+  without a memory map, for headers and tables; the AN, SU and FQ readers use it.
+  `open_fits_readonly` (memory-mapped) stays for any read of data. The GWB file's AN, SU
+  and FQ tables read in 0.6 s, 50 MB resident, with astropy's warnings raised as errors.
+  Tests: a table read through it, read-only, with no mode parameter; opening the GWB
+  file with astropy's warnings as errors (the old open raises there). The test run's 8
+  warnings are gone.
 
 - **T54 — Stop one plot's reading — OPEN (proposed 2026-10-03, awaiting the user's
   choice).** The user asked whether Clear cancels a plot started on more data than

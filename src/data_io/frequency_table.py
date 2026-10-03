@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from data_io.raw_data_access import open_fits_readonly
+from data_io.raw_data_access import open_fits_tables
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ def _per_if(value) -> tuple:
 def read_frequency_setups(fits_path: Path | str) -> list[FrequencySetup]:
     """Every row of the AIPS FQ table, in table order; [] for a file
     without one."""
-    with open_fits_readonly(fits_path) as hdul:
+    with open_fits_tables(fits_path) as hdul:
         try:
             fq = hdul["AIPS FQ"]
         except KeyError:

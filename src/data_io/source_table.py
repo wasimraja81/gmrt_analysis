@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-from data_io.raw_data_access import open_fits_readonly
+from data_io.raw_data_access import open_fits_tables
 
 
 @dataclass(frozen=True)
@@ -65,7 +65,7 @@ class SourceTableFrame:
 
 
 def read_source_table_frame(fits_path: Path | str) -> SourceTableFrame:
-    with open_fits_readonly(fits_path) as hdul:
+    with open_fits_tables(fits_path) as hdul:
         try:
             header = hdul["AIPS SU"].header
         except KeyError:
@@ -85,7 +85,7 @@ def _per_if(row, column: str, cols) -> tuple[float, ...]:
 
 def read_source_table(fits_path: Path | str) -> dict[int, Source]:
     """Read every source in the AIPS SU table, keyed by source id."""
-    with open_fits_readonly(fits_path) as hdul:
+    with open_fits_tables(fits_path) as hdul:
         try:
             su = hdul["AIPS SU"]
         except KeyError:
