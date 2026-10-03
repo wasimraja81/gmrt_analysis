@@ -16,7 +16,12 @@ bin/build_venv.sh --clear   # delete gmrt/ and build it afresh
 One script builds all of it, so no part can be left out:
 
 1. creates `gmrt/` (`python3 -m venv --clear gmrt`, then upgrades pip) -- with `--clear`,
-   or when there is no venv yet; `PYTHON=python3.12 bin/build_venv.sh` picks the Python;
+   or when there is no venv yet; `PYTHON=python3.12 bin/build_venv.sh` picks the Python.
+   It needs Python 3.12 or later (the pins were frozen on Python 3.12.3): an older
+   Python, for a new venv or the existing one's, is refused before anything is created
+   or deleted, the message naming the version found. On a newer Python a pinned version
+   may have no wheel; if the pins do not install, the script says so and stops (build
+   with `PYTHON=python3.12`, or update the pins);
 2. installs the packages pinned in `config/requirements.txt`;
 3. installs the fonts pinned in `config/fonts.txt` (below);
 4. checks: the main packages import, and every pinned font is installed from its pin.
