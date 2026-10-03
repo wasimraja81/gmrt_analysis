@@ -990,6 +990,46 @@ Buildable now, ahead of Phase C.
   (2) the found set and the suspect list, stored at scale; (3) pattern finding; (4)
   Flag's entries; (5) applying, undo and versions; (6) provenance; (7) the AIPS UVFLG
   and CASA flagdata exports.
+  Stokes parameters (the user, 2026-10-03: "We will use correct defs: I = RR + LL, V =
+  RR - LL etc. No factor of 2 non-sense. That is not what IAU defines as."; and "do not
+  marry to R/L systen. We will use the code to run on linear systems as well").
+  Checked the same day: the IAU (1974) definition as Hamaker & Bregman (1996, A&AS 117,
+  161) interpret it, summarised by van Straten et al. (2010, PASA 27, 104; section 2.1,
+  eqs. 9-12): a right-handed frame, x North, y East, z toward the observer; I =
+  <|e_x|^2 + |e_y|^2>, Q = <|e_x|^2 - |e_y|^2>, U = <2 Re(e_x e_y*)>, V = <2 Im(e_x
+  e_y*)>, V positive for IEEE right-hand circular. With the products as coherencies
+  (XX = <e_x e_x*>, XY = <e_x e_y*>, ...) and the circular receptors of that paper's eq.
+  15, derived here: linear, I = XX + YY, Q = XX - YY, U = XY + YX, V = -i(XY - YX);
+  circular, I = RR + LL, V = RR - LL, Q = RL + LR, U = -i(RL - LR). A factor of 1/2
+  appears only where each hand is scaled to read an unpolarised source's full flux;
+  values compared with data scaled so differ by 2. The signs of V and U depend on
+  whether the instrument's R/L labels follow the IEEE handedness and on lower-sideband
+  conjugation (which flips V; van Straten et al., section 3.2): no matter for |V|, to be
+  settled for polarisation calibration. The products a file holds come from its STOKES
+  axis codes (AIPS: -1..-4 RR, LL, RL, LR; -5..-8 XX, YY, XY, YX; 1..4 I, Q, U, V held
+  already); a derived quantity uses the row of the table for the file's feeds, and one
+  needing products the selection lacks (V of linear feeds: XY and YX) is refused,
+  naming them. Conditions name the file's own products as well (the user: "include the
+  native corrs as well - XX,Xy, RR RL etc"): RR, LL, RL, LR, XX, YY, XY, YX as the file
+  holds them, beside the derived I, Q, U, V.
+  Every threshold is a parameter (the user: "Do not fixate on the 4.0 Jy! Parameterise
+  them"): a condition's threshold and unit given with it; the pattern finder's tiers
+  named parameters with defaults. Which of the pattern finder's settings are hard-coded,
+  derived from the data (scans, integration time, antennas with rows) or must be given
+  is to be decided with the user, to make it easy on the user; the user's thought: a
+  cfg file of key = value pairs, set up through the interface with every key listed.
+  Proposed: the keys are the parser's option names (one definition of each name,
+  default and help), so a `--config FILE`, a GUI page listing every key with its
+  default and help and saving a cfg file, and the provenance record share them.
+  The Fortran source (2026-10-03): `~/softwares/CURR_DEVEL/FLAG_COMMAND_GENERATION/
+  FLGCMD_GEN/` holds `SOURCE/my_uvflg.f` (1,079 lines, built with f77), its parameter
+  files (`PAR/`, 3C147, 3C286, 3C468.1, 3C48: scan times typed in, scan length, sampling
+  time, antennas, `maxbad_allowed`, a time tolerance), two AIPS UVFND listings of
+  3C468.1 for I and V (`DATA/`), and their outputs (`WORK/`: a `.FLG` flag file and a
+  `.SUM` summary). The 2011 workflow was AIPS UVFND (find visibilities by a condition)
+  then `my_uvflg` (flag commands from the found list, one channel per run): the shape of
+  Locate then pattern finding. The UVFND listings and their outputs can serve as a
+  reference case for the pattern finder.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
