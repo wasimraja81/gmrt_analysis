@@ -1997,6 +1997,38 @@ Buildable now, ahead of Phase C.
   needed: polygons are matplotlib's (`widgets.PolygonSelector`, and
   `path.Path.contains_points` for which points fall inside; matplotlib 3.11.2 in the
   venv).
+  The flag file, 2026-10-03 (revising the three-layer storage above; the user: "Is not
+  the idea to merely flip the 1s and 0s of the flag table based on what we decide to
+  flag?"). A flag needs one bit per visibility where the FITS file spends 96 (real,
+  imaginary, weight as 32-bit floats): the GWB file's 32,439,730,176 visibilities are
+  389.28 GB of data and 4.05 GB of flags (the GSB file's, 84 MB). The decisions:
+  - the flag table is a dense bit array of the data's shape, fixed in size, flipped in
+    place (memory-mapped, never held whole in memory). Beside it, kept up to date as
+    bits flip: a bit per row for "every visibility of the row flagged" (0.5 MB), which
+    reading uses to skip those rows (the user's row-level flags), and a bit per channel
+    and Stokes for "flagged in every row". The three layers are dropped. The found file
+    stays a list of matches: as a table, every Locate run would be 4.05 GB;
+  - the table holds this code's decisions alone; the file's own flags stay in its
+    weights (the user: "our original flags will remain with the UVFITS intact"), read
+    with the data, and a visibility is flagged when the file flags it and the flag is
+    not lifted, or when the table flags it. No pass to copy the file's flags first
+    (it would serve only views of the file's own flags without reading the data, and
+    skipping rows it flags whole; the whole GSB file has no flags, nor has the GWB
+    file's 3C286, the part of it counted); to add
+    if a file with heavy native flags needs it. Lifted flags (unflag of the file's
+    own) are rare: a list of their coordinates beside the table;
+  - versions: each Save records what was flipped and why (the decision list: rule and
+    parameters, or region with its plot, slice and vertices; the found-file run; the
+    record id), so any version is rebuilt from an empty table and the decisions up to
+    it; a full copy only when asked for;
+  - the flag files live beside the data, as the row index does
+    (`<FITS file>.<set>.flags`), never written over the FITS file (the raw-data guard
+    refuses any output that resolves to the input);
+  - named sets, "well-named sets or versioned" (the user): sets kept side by side for
+    alternatives (strategies compared, purposes such as calibration and imaging, an
+    automatic set and a reviewed one, stages before and after calibration), each with
+    its versions; applying takes one set or a union (`--flags auto-v5,review`); a set
+    named `default` when none is given.
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
