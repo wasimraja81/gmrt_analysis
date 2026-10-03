@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 531 tests passing; T26, T32 in progress; T40, T42,
+T47-T49, point D and T21 2026-10-01, 535 tests passing; T26, T32 in progress; T40, T42,
 T45, T46, T50-T52, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked
 until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -279,7 +279,7 @@ Buildable now, ahead of Phase C.
   - T20 (below): the AIPS FQ table and AN-table polarization columns, and DATE-OBS /
     per-source on-source time for richer plot titles and axis context.
 
-- **T20 — Observation metadata aggregator ("listObs") — NOT STARTED (added 2026-09-27).**
+- **T20 — Observation metadata aggregator ("listObs") — IN PROGRESS (added 2026-09-27).**
   A stock-take of what a UVFITS file actually carries, against what this codebase reads,
   found: the AIPS FQ table (`FRQSEL`/`IF FREQ`/`CH WIDTH`/`TOTAL BANDWIDTH`/`SIDEBAND`) is
   never consulted at all — `chan_freqs_hz` is computed purely from the primary header's
@@ -319,6 +319,58 @@ Buildable now, ahead of Phase C.
   - A shared `visplot` title helper reading `TELESCOP`/`DATE_OBS` (and the array's known
     location, if useful) off an `ObservationSummary`, replacing `antenna_layout`'s current
     ad hoc `telescope`/`source_path` parameters — and used by every other plot's title too.
+  Designed with the user 2026-10-03 (the GUI's data panel lists much of it already; "a
+  proper listObs App/Button would be nice. This may need its own buttons to select what to
+  list. Need to design it carefully. Perhaps as a new tab", 2026-09-30). Conventions
+  checked the same day: CASA listobs lists observation metadata, scans, fields, spectral
+  windows, sources and antennas (more with `verbose`; `listfile` writes it; `listunfl`,
+  unflagged row counts, warned of as costly); AIPS LISTR's OPTYPE 'SCAN' gives scan and
+  source summaries (OUTPRINT to a file); AIPS INDXR starts a new scan where the source or
+  frequency setup changes, after a gap longer than CPARM(1) (0: adaptive), or past
+  CPARM(2) (0: 60 min). Neither file has an NX table; both declare IAT-UTC (GWB 35 s,
+  GSB 34 s, one date). Derived from the rows with a new scan at a source change or a gap
+  of more than 3 integration times: 33 scans in each file (2.68 s and 8.05 s
+  integrations); three of the gaps fall within one source, 3C468.1's first observation
+  split by 27 s (GWB) or 32 s (GSB). The design:
+  - sections, each chosen: Observation (file, telescope, instrument, observer, object,
+    DATE-OBS, reference date, time system with the declared IAT-UTC and UT1-UTC and the
+    timestamp check, first and last integration, integration time derived, rows,
+    integrations, amplitude unit); Scans (derived by INDXR's rules, the gap limit and
+    the longest scan settable; per scan its source, start and end, length,
+    integrations, rows, elevation at start and end); Sources (the SU table in full,
+    time on source, scans, rows); Spectral setup (the FQ table, the Stokes products,
+    the setups the rows use; a file of several setups listed and its plotting refused
+    until each row's FREQSEL is read); Antennas (positions, mount, axis offset, feed
+    polarisations, rows; DUD entries marked); Flags (a pass over the data: the share
+    flagged per antenna, source, scan and Stokes; its size stated first, progress and
+    Stop);
+  - the user's choices: `--listobs [SECTIONS]` on the command line, printed, or with
+    `--output-dir` written to `PREFIX_listobs.txt` with its provenance record; a scan
+    gap limit of 3 integration times by default (any file's integration time), with
+    INDXR's 60 min longest scan; every section but Flags by default;
+  - GUI: a Listing tab beside the plots, its section boxes, the scan rule's limits, "the
+    selection only" (the form's sources, antennas and time range, as listobs's
+    `selectdata`), List, Copy, Save as text, the listing in fixed-width text;
+  - code: the proposed shape above; the GUI's data panel drawn from the same summary.
+  Build order: (1) the readers; (2) the summary with scans; (3) the listing and
+  `--listobs`; (4) the GUI's tab; (5) Flags.
+  Step 1 built 2026-10-03, the columns' meanings from AIPS Memo 117 (its 2025 revision,
+  checked that day): `data_io/observation_header.py` (TELESCOP, INSTRUME, OBSERVER,
+  OBJECT, DATE-OBS, BUNIT, EPOCH, the FREQ axis's reference frequency);
+  `data_io/frequency_table.py` (the FQ table: IF FREQ, the offset from that reference,
+  CH WIDTH, TOTAL BANDWIDTH, SIDEBAND -1 lower and +1 upper, the step per channel CH WIDTH
+  times SIDEBAND; the GWB file's one setup: 0 Hz, -97656.25 Hz, 200 MHz, +1, so its band
+  falls with channel number, as its header's CDELT says); `antenna_table.AntennaFeeds`
+  (MNTSTA, codes 0 alt-azimuth to 5 left-handed Naismith, STAXOF, POLTYA/POLTYB,
+  POLAA/POLAB; the GWB file's 30 antennas alt-azimuth, feeds R and L); `Source` gains the
+  rest of the SU table (QUAL, FREQOFF, BANDWIDTH, LSRVEL, RESTFREQ, PMRA, PMDEC) and
+  `SourceTableFrame` its keywords (NO_IF, VELTYP, VELDEF; the archival files' per-IF
+  columns hold two values with NO_IF 1). Every table and column optional, a file without
+  them giving None or nothing. A file of several frequency setups now opens (for its
+  listing and table plots) and its visibilities are not plotted, the reason given in the
+  GUI's count and the command line (the reading code takes frequencies from the header,
+  right for one setup). For later: keeping each row's FREQSEL in the row index, so a
+  listing can say which setups the rows use and plotting can follow them.
 
 - **T21 — visPlot density mode — DONE (added 2026-09-27, built 2026-10-01).** A plot style for dense
   generic Y-vs-X plots that colors each pixel by the number of samples landing in it —

@@ -75,6 +75,50 @@ def read_antenna_table(fits_path: Path | str) -> list[Antenna]:
         return antennas
 
 
+# AN table MNTSTA codes, per AIPS Memo 117.
+MOUNT_TYPES = {0: "alt-azimuth", 1: "equatorial", 2: "orbiting", 3: "X-Y", 4: "Naismith (right-handed)",
+               5: "Naismith (left-handed)"}
+
+
+@dataclass(frozen=True)
+class AntennaFeeds:
+    """An antenna's mount and feeds, from the AN table (T20; AIPS Memo 117):
+    `mount_type` MNTSTA (`MOUNT_TYPES`), `axis_offset_m` STAXOF, and for
+    feeds A and B their type (POLTYA/POLTYB: 'R', 'L', 'X' or 'Y') and
+    position angle (POLAA/POLAB, degrees)."""
+
+    station_number: int
+    mount_type: int | None
+    axis_offset_m: float | None
+    pol_type_a: str
+    pol_angle_a_deg: float | None
+    pol_type_b: str
+    pol_angle_b_deg: float | None
+
+
+def read_antenna_feeds(fits_path: Path | str) -> dict[int, AntennaFeeds]:
+    """Every antenna's mount and feeds, keyed by station number; a column the
+    table lacks gives None (or "" for a feed type)."""
+    with open_fits_readonly(fits_path) as hdul:
+        an = hdul["AIPS AN"]
+        cols = set(an.columns.names)
+
+        def value(row, column, kind):
+            return kind(row[column]) if column in cols else None
+
+        feeds = {}
+        for row in an.data:
+            station = int(row["NOSTA"])
+            feeds[station] = AntennaFeeds(
+                station_number=station, mount_type=value(row, "MNTSTA", int), axis_offset_m=value(row, "STAXOF", float),
+                pol_type_a=str(row["POLTYA"]).strip() if "POLTYA" in cols else "",
+                pol_angle_a_deg=value(row, "POLAA", float),
+                pol_type_b=str(row["POLTYB"]).strip() if "POLTYB" in cols else "",
+                pol_angle_b_deg=value(row, "POLAB", float),
+            )
+        return feeds
+
+
 def read_array_reference_position_m(fits_path: Path | str) -> tuple[float, float, float]:
     """The array's own reference position (absolute ECEF, metres) -- needed
     directly by observing-geometry code (hour angle, Az/El, parallactic

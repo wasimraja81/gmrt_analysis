@@ -29,6 +29,7 @@ from astropy.io import fits
 from astropy.time import Time
 
 from data_io.antenna_table import read_antenna_table, read_array_earth_location, read_time_reference
+from data_io.frequency_table import read_frequency_setups
 from data_io.astrometry import DEFAULT_UT1, fallback_message
 from data_io.row_index import default_row_index_path, load_row_index
 from data_io.row_selection import select_rows
@@ -261,6 +262,7 @@ class OpenedFile:
     bunit: str | None
     time_reference: object  # TimeReference
     dud_antennas: list = field(default_factory=list)  # the structural DUD entries left out
+    frequency_setups: list = field(default_factory=list)  # the AIPS FQ table's (T20); [] without one
 
     @property
     def reference_date_jd(self) -> float | None:
@@ -278,6 +280,13 @@ class OpenedFile:
         return check_timestamps(self.index, self.antennas, self.source_table, declared)
 
 
+def several_setups_message(opened: OpenedFile) -> str:
+    """Why a file of several frequency setups is not plotted (T20)."""
+    return (f"this file holds {len(opened.frequency_setups)} frequency setups (its AIPS FQ table), each row naming "
+            "its own (FREQSEL); visplot takes channel frequencies from the header, right for one setup only, so it "
+            "does not plot this file's visibilities (its listing and table plots still work)")
+
+
 def open_file(fits_path) -> OpenedFile:
     """Read what every request on this file needs, the AN table's structural
     DUD entries left out of its antennas (GMRT's C07 and S05, in the GSB
@@ -293,6 +302,7 @@ def open_file(fits_path) -> OpenedFile:
         array_location=read_array_earth_location(fits_path), source_table=read_source_table(fits_path),
         telescope=telescope, bunit=_header_keyword(fits_path, "BUNIT"),
         time_reference=read_time_reference(fits_path), dud_antennas=antennas.dud_antennas,
+        frequency_setups=read_frequency_setups(fits_path),
     )
 
 
@@ -459,6 +469,8 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
         check = opened.timestamp_check
         report("info" if check.agrees else "warning", check.summary())
 
+    if xy_plots and len(opened.frequency_setups) > 1:
+        raise RequestError(several_setups_message(opened))
     selected = select(request, opened, recorded_minus_utc_s)
     selection, axis_selection, stokes_labels = selected.selection, selected.axis_selection, selected.stokes_labels
     if xy_plots and not selection.n_rows:
@@ -648,6 +660,9 @@ def count_selection(request: PlotRequest, opened: OpenedFile) -> SelectionCount:
         recorded_minus_utc_s = opened.time_reference.recorded_minus_utc_s
     except ValueError as err:
         raise RequestError(str(err)) from err
+    streamed = any(check_request(request).plots_by_name.values())
+    if streamed and len(opened.frequency_setups) > 1:
+        raise RequestError(several_setups_message(opened))
     selected = select(request, opened, recorded_minus_utc_s)
     if not selected.selection.n_rows and check_request(request).plots_by_name:  # streamed plots need rows
         raise RequestError(empty_selection_message(request, opened.index, selected.kwargs))
