@@ -34,6 +34,17 @@ MAX_FIGURE_INCHES = 100.0
 # --page-grid: the plots on a page, rows by columns (the user, 2026-10-02: 5 x 6 by default), and the most of either.
 DEFAULT_PAGE_GRID = (5, 6)
 MAX_PAGE_GRID = 12
+# --correlation-type not given: a plot's cross-correlations (autocorrelation amplitudes sit far above them), a
+# listing's every row (what the file holds); resolved by what runs, as --figure-size is (the user, 2026-10-03).
+DEFAULT_PLOT_CORRELATION_TYPE = "cross"
+DEFAULT_LISTING_CORRELATION_TYPE = "both"
+
+
+def resolve_correlation_type(correlation_type: str | None, listing: bool = False) -> str:
+    """--correlation-type as given, or a plot's or a listing's default."""
+    if correlation_type is not None:
+        return correlation_type
+    return DEFAULT_LISTING_CORRELATION_TYPE if listing else DEFAULT_PLOT_CORRELATION_TYPE
 
 
 def resolve_dpi_arg(dpi: int) -> int:

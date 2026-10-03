@@ -14,7 +14,7 @@ from test_cli_visplot_output import _make_synthetic_file
 from visplot.flag_summary import FlagCounter
 from visplot.listing import ListingOptions, list_observation
 from visplot.request import PlotRequest
-from visplot.run import RequestError, Stopped, check_request, listing_text, open_file
+from visplot.run import RequestError, Stopped, check_request, count_selection, listing_text, open_file
 
 
 def test_scans_start_at_a_source_change_a_gap_or_the_longest_scan():
@@ -35,12 +35,14 @@ def test_a_listing_holds_its_sections_from_the_tables_and_the_rows():
     for heading in ("Observation", "Scans (2)", "Sources (2 in the SU table)", "Spectral setup", "Antennas (3"):
         assert heading in text
     assert "Selection       the whole file" in text and "Rows            40 (" in text
+    assert "Correlations    3 baselines, 40 cross-correlation rows; no autocorrelations" in text
     assert "No FQ table: the header's FREQ axis alone" in text and "Stokes: RR, LL" in text
     lines = text.splitlines()
     scan_rows = [line.split() for line in lines[lines.index(next(l for l in lines if l.startswith("Scans"))) + 2:][:2]]
     assert [(r[1], r[5], r[6]) for r in scan_rows] == [("3C286", "7", "20"), ("3C48", "8", "20")]
-    antennas = [line.split() for line in lines if line.strip().startswith(("1  C00", "2  C01", "3  C02"))]
-    assert [a[-1] for a in antennas] == ["27", "27", "26"]  # the rows each antenna holds
+    antennas = [line.split() for line in lines if line.split()[2:3] in (["C00:01"], ["C01:02"], ["C02:03"])]
+    assert [(a[0], a[1], a[-1]) for a in antennas] == [("1", "1", "27"), ("2", "2", "27"), ("3", "3", "26")]
+    assert "in no row of the file" not in text  # serial, station, and the rows each antenna holds
     only_scans = list_observation(open_file(path), ListingOptions(sections=("scans",)))
     assert only_scans.startswith("Scans (2)") and "Antennas" not in only_scans
 
@@ -57,7 +59,7 @@ def test_listobs_prints_saves_and_lists_a_selection(capsys):
     saved = (out / "visplot_listobs.txt").read_text()
     assert saved.startswith("# visplot listing of obs.fits\n# command: bin/visplot.sh")
     assert "--listobs observation,scans" in saved and "# record: run " in saved
-    assert "Rows            20 of 40" in saved and "Selection       sources 3C48, cross-correlations" in saved
+    assert "Rows            20 of 40" in saved and "Selection       sources 3C48, cross- and autocorrelations" in saved
     assert "Scans (1)" in saved and "Sources (" not in saved
 
 
@@ -77,13 +79,13 @@ def test_the_flags_section_counts_the_flagged_visibilities_by_stokes_source_scan
     reports = []
     text = listing_text(PlotRequest(str(path), None, listobs="flags"), opened,
                         report=lambda level, message: reports.append(message))
-    assert reports == ["flags: one pass over 40 rows, 0.0 GB of visibilities to read"]
+    assert reports[-1] == "flags: one pass over 40 rows, 0.0 GB of visibilities to read"
     assert text.startswith("Flags: 0.31% of 320 visibilities flagged")
     rows = {tuple(line.split()[:-3]): line.split()[-3:] for line in text.splitlines()[1:] if line.strip()}
     assert rows[("RR",)] == ["160", "1", "0.62"] and rows[("LL",)] == ["160", "0", "0.00"]
     assert rows[("1", "3C286")] == ["160", "1", "0.62"] and rows[("2", "3C48")] == ["160", "0", "0.00"]
     assert rows[("1", "3C286", "0/18:00:00")] == ["160", "1", "0.62"]
-    assert rows[("1", "C00:01")] == ["216", "1", "0.46"] and rows[("3", "C02:03")] == ["208", "0", "0.00"]
+    assert rows[("1", "1", "C00:01")] == ["216", "1", "0.46"] and rows[("3", "3", "C02:03")] == ["208", "0", "0.00"]
     only_ll = listing_text(PlotRequest(str(path), None, listobs="flags", stokes="LL"), opened)
     assert only_ll.startswith("Flags: 0.00% of 160 visibilities") and "RR" not in only_ll
     with pytest.raises(Stopped, match="stopped while counting the flags"):
@@ -105,3 +107,56 @@ def test_flag_counts_take_an_autocorrelation_once_and_a_file_without_stokes():
     assert (counts.flagged, counts.total) == (2, 6) and counts.by_stokes == {"all": [2, 6]}
     assert counts.by_antenna == {1: [0, 3], 2: [0, 3], 4: [2, 3]} and counts.by_source == {5: [2, 6]}
     assert counts.integration_flagged.tolist() == [0, 2] and counts.integration_total.tolist() == [3, 3]
+
+
+def test_a_listing_counts_the_files_autocorrelations_selected_or_not():
+    scratch = make_scratch_dir("listing_autos")
+    path = _make_synthetic_file(scratch / "obs.fits", baselines=(1 * 256 + 1, 1 * 256 + 2, 2 * 256 + 3))  # 1-1: auto
+    opened = open_file(path)
+    reports = []
+    whole = listing_text(PlotRequest(str(path), None, listobs="observation"), opened,
+                         report=lambda level, message: reports.append(message))
+    assert reports == ["listing cross- and autocorrelations (--correlation-type not given: a listing's default)"]
+    assert "Selection       the whole file" in whole
+    assert "Correlations    2 baselines, 26 cross-correlation rows; autocorrelations of 1 antenna, 14 rows\n" in whole
+    cross = listing_text(PlotRequest(str(path), None, listobs="observation", correlation_type="cross"), opened)
+    assert "Rows            26 of 40" in cross and "Selection       cross-correlations" in cross
+    assert "autocorrelations of 1 antenna, 14 rows (none of them selected)" in cross
+
+
+def test_correlation_type_not_given_resolves_by_what_runs():
+    """One request without --correlation-type, as the command line and the
+    GUI both write it: a plot takes the cross-correlations, a listing every
+    row, and a rerun of the same command line the same."""
+    scratch = make_scratch_dir("correlation_default")
+    path = _make_synthetic_file(scratch / "obs.fits", baselines=(1 * 256 + 1, 1 * 256 + 2, 2 * 256 + 3))
+    opened = open_file(path)
+    request = PlotRequest(str(path), "amp-vs-freq", listobs="observation")
+    assert "--correlation-type" not in request.command_line()
+    assert count_selection(request, opened).rows == 26  # the plot: cross-correlations
+    assert "Rows            40 (" in listing_text(request, opened)  # the listing: every row
+    rerun = PlotRequest.from_argv(request.to_argv())
+    assert rerun == request and count_selection(rerun, opened).rows == 26
+    autos_only = _make_synthetic_file(scratch / "autos.fits", baselines=(1 * 256 + 1, 2 * 256 + 2, 3 * 256 + 3))
+    with pytest.raises(RequestError, match=r"no cross-correlation rows \(--correlation-type cross, not given: a "
+                                           r"plot's default\)"):
+        count_selection(PlotRequest(str(autos_only), "amp-vs-freq"), open_file(autos_only))
+
+
+def test_antennas_without_rows_are_named_and_the_rest_counted():
+    """An antenna of the AN table that no row holds (as the archival files' C03:04
+    and C10:10): the Antennas and Flags tables say so, their Serial column
+    counting the antennas each lists."""
+    scratch = make_scratch_dir("listing_antennas_without_rows")
+    path = _make_synthetic_file(scratch / "obs.fits", baselines=(1 * 256 + 3,))  # C01:02 (station 2) in no row
+    opened = open_file(path)
+    text = listing_text(PlotRequest(str(path), None, listobs="antennas,flags"), opened)
+    lines = text.splitlines()
+    antennas = [line.split() for line in lines if line.split()[2:3] in (["C00:01"], ["C01:02"], ["C02:03"])]
+    listed = [(a[0], a[1], a[-1]) for a in antennas]
+    assert listed[:3] == [("1", "1", "40"), ("2", "2", "0"), ("3", "3", "40")]  # the Antennas table: all three
+    assert [(a[0], a[1], a[2]) for a in antennas[3:]] == [("1", "1", "C00:01"), ("2", "3", "C02:03")]  # Flags: two
+    assert text.count("In the AN table, in no row of the file (nothing recorded for them): C01:02") == 2
+    three = _make_synthetic_file(scratch / "three.fits")  # baselines 1-2, 1-3, 2-3
+    unselected = listing_text(PlotRequest(str(three), None, listobs="antennas", exclude_antennas="C02"), open_file(three))
+    assert "In no selected row: C02:03" in unselected and "in no row of the file" not in unselected

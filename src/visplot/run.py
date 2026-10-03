@@ -60,6 +60,7 @@ from visplot.request_args import (
     parse_plot_names,
     resolve_antennas_arg,
     resolve_channels_arg,
+    resolve_correlation_type,
     resolve_deg_range_arg,
     resolve_dpi_arg,
     resolve_figure_size_arg,
@@ -485,10 +486,11 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     selection, axis_selection, stokes_labels = selected.selection, selected.axis_selection, selected.stokes_labels
     if xy_plots and not selection.n_rows:
         raise RequestError(empty_selection_message(request, index, selected.kwargs))
-    report("info", f"selected {selection.n_rows:,} rows; sources present: {selection.sources}")
+    report("info", f"selected {selection.n_rows:,} rows ({correlations_used(request)}); sources present: "
+                   f"{selection.sources}")
     if selection.stride_pairs is not None and selection.stride_pairs[0] < selection.stride_pairs[1]:
         kept, available = selection.stride_pairs
-        what = "baselines" if request.correlation_type == "cross" else "antenna pairs"
+        what = "baselines" if selected.kwargs["correlation_type"] == "cross" else "antenna pairs"
         per_integration = int(np.median(np.diff(index.integration_boundaries)))
         report("warning", f"--every-nth {request.every_nth} keeps {kept:,} of the selection's {available:,} {what}: "
                           f"rows are in baseline order within each integration ({per_integration:,} rows here), so "
@@ -560,17 +562,30 @@ class Selected:
     kwargs: dict  # the `select_rows` arguments
 
 
-def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float) -> Selected:
+CORRELATION_TEXT = {"cross": "cross-correlations", "auto": "autocorrelations", "both": "cross- and autocorrelations"}
+
+
+def correlations_used(request: PlotRequest, listing: bool = False) -> str:
+    """The correlation type a plot (or a listing) of `request` selects, and
+    whether given or its default, for its report and record."""
+    text = CORRELATION_TEXT[resolve_correlation_type(request.correlation_type, listing)]
+    if request.correlation_type is None:
+        text += f" (--correlation-type not given: a {'listing' if listing else 'plot'}'s default)"
+    return text
+
+
+def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float, listing: bool = False) -> Selected:
     """The request's row selection (`select_rows`) and channel/Stokes
-    selection. Raises RequestError for a filter that does not parse or
-    match."""
+    selection, a plot's (or with `listing`, a listing's: the correlation
+    type's default differs). Raises RequestError for a filter that does not
+    parse or match."""
     index = opened.index
     geometry_filters = any(v is not None for v in (request.ha_range, request.az_range, request.el_range,
                                                     request.pa_range))
     try:
         select_kwargs = dict(
             sources=[s.strip() for s in request.sources.split(",")] if request.sources else None,
-            correlation_type=request.correlation_type,
+            correlation_type=resolve_correlation_type(request.correlation_type, listing),
             antennas=resolve_antennas_arg(request.antennas, opened.antennas),
             baselines_with=resolve_antennas_arg(request.baselines_with, opened.antennas),
             exclude_antennas=resolve_antennas_arg(request.exclude_antennas, opened.antennas),
@@ -643,10 +658,13 @@ def empty_selection_message(request: PlotRequest, index, kwargs: dict) -> str:
             n_before = n
             continue
         option = f"--{dest.replace('_', '-')} {getattr(request, dest)}"
+        if dest == "correlation_type":
+            option = f"--correlation-type {kwargs['correlation_type']}" + (
+                "" if request.correlation_type is not None else ", not given: a plot's default")
         if dest == "antennas" and request.baselines_with:
             option += f" --baselines-with {request.baselines_with}"
-        if dest == "correlation_type" and not select_rows(index, correlation_type=request.correlation_type).n_rows:
-            kind = "autocorrelation" if request.correlation_type == "auto" else "cross-correlation"
+        if dest == "correlation_type" and not select_rows(index, correlation_type=kwargs["correlation_type"]).n_rows:
+            kind = "autocorrelation" if kwargs["correlation_type"] == "auto" else "cross-correlation"
             return f"no rows selected: this file has no {kind} rows ({option})"
         return f"no rows selected: {option} leaves none of the {n_before:,} rows selected before it"
     return "no rows selected"
@@ -840,7 +858,8 @@ def listing_text(request: PlotRequest, opened: OpenedFile, sections: tuple[str, 
         recorded_minus_utc_s = opened.time_reference.recorded_minus_utc_s
     except ValueError:
         recorded_minus_utc_s = 0.0
-    selected = select(request, opened, recorded_minus_utc_s)
+    selected = select(request, opened, recorded_minus_utc_s, listing=True)
+    report("info", f"listing {correlations_used(request, listing=True)}")
     index = opened.index
     channels = (selected.axis_selection or {}).get("FREQ")
     whole = (selected.selection.n_rows == int(index.gcount) and request.stokes is None and channels is None)
@@ -850,7 +869,7 @@ def listing_text(request: PlotRequest, opened: OpenedFile, sections: tuple[str, 
         return list_observation(opened, options, flags=flags)
     parts = [text for text in (
         f"sources {request.sources}" if request.sources else "",
-        f"{request.correlation_type}-correlations" if request.correlation_type != "both" else "",
+        CORRELATION_TEXT[selected.kwargs["correlation_type"]],
         f"Stokes {request.stokes}" if request.stokes else "", f"channels {request.channels}" if request.channels else "",
         selection_filters(request)) if text]
     selection = ListingSelection(selected.selection.row_indices, tuple(selected.stokes_labels or ()), channels,

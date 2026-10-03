@@ -560,6 +560,8 @@ def test_the_listing_tab_lists_the_file_or_the_forms_selection_and_saves_it():
     _settle(app, window, lambda: "Scans (2)" in tab.text.toPlainText())
     assert "Selection       the whole file" in tab.text.toPlainText() and "Flags" not in tab.text.toPlainText()
     assert not tab.boxes["flags"].isChecked()  # it reads every visibility: asked for
+    # not given, as `--listobs` alone writes it: the listing's default, the whole file with any autocorrelations
+    assert window.form.request().correlation_type is None and window._listing_request().correlation_type is None
     tab.boxes["flags"].setChecked(True)
     window._list()
     _settle(app, window, lambda: "Flags: 0.31% of 320" in tab.text.toPlainText())

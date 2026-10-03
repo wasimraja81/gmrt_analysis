@@ -97,6 +97,27 @@ def scan_of_integration(integrations: Integrations, scans: list[Scan], n_integra
     return numbers
 
 
+@dataclass(frozen=True)
+class Correlations:
+    """Rows of cross-correlations (two antennas) and autocorrelations (one)."""
+
+    cross_rows: int
+    baselines: int  # distinct antenna pairs among the cross-correlations
+    auto_rows: int
+    auto_antennas: int  # distinct antennas among the autocorrelations
+
+
+def correlations_of(index, row_indices=None) -> Correlations:
+    """The cross- and autocorrelations among the rows `row_indices` (None:
+    every row) of a `RowIndex`."""
+    rows = slice(None) if row_indices is None else np.asarray(row_indices)
+    ant1, ant2 = np.asarray(index.ant1)[rows].astype(np.int64), np.asarray(index.ant2)[rows].astype(np.int64)
+    auto = ant1 == ant2
+    span = int(max(ant1.max(initial=0), ant2.max(initial=0))) + 1
+    baselines = np.unique(ant1[~auto] * span + ant2[~auto]).size
+    return Correlations(int((~auto).sum()), int(baselines), int(auto.sum()), int(np.unique(ant1[auto]).size))
+
+
 def rows_per_antenna(index, row_indices=None) -> dict[int, int]:
     """How many of the rows hold each antenna (as either end; an
     autocorrelation counted once)."""

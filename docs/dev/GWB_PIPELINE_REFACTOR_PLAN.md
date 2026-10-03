@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20 2026-10-03, 542 tests passing; T26, T32 in
+T47-T49, point D and T21 2026-10-01, T20 2026-10-03, 545 tests passing; T26, T32 in
 progress; T40, T42, T45, T46, T50-T54 open (order in Phase B); T35 (Moon scans' u, v, w)
 open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -405,6 +405,35 @@ Buildable now, ahead of Phase C.
   scan and antenna, a Stokes selection, a stop, the command line's progress; an
   autocorrelation counted once and a file without a STOKES axis; the GUI's box unticked
   at first and its listing with flags.
+  Autocorrelations, the same day (the user: "This data we are testing does not seem to
+  have autos. Even that is an information."): the Observation section's Correlations
+  line, from the row index (`observation_summary.correlations_of`): the file's
+  baselines and cross-correlation rows, and its autocorrelations (antennas, rows) or "no
+  autocorrelations"; where the file has some and the selection none of them, it says
+  so. Both archival files: 378 baselines of 28 antennas, no autocorrelations.
+  `--correlation-type` had one default, cross, so `--listobs` alone listed a file's
+  cross-correlations while the GUI's tab was to list the whole file: the two would
+  differ for one intent. The user: "we should bridge the gap - provenance and
+  repeatiability should not be compromised"; chose, of three, the default resolved by
+  what runs. `--correlation-type` now has no default, as `--figure-size` has none: not
+  given, a plot takes cross-correlations and a listing every row
+  (`request_args.resolve_correlation_type`). A request not giving it writes no
+  `--correlation-type` in its command line or record, from the command line or the
+  GUI alike (the form's Correlations box: "default (plots cross, listings both)"), and
+  a rerun resolves it the same way; the run's report, kept in its record, states the
+  type used and that it was the default, and so does a listing's Selection line. Tests:
+  the line on the synthetic file, on one with an autocorrelating antenna, selected and
+  not; one request resolving to a plot's cross rows and a listing's every row, and its
+  rerun the same; a file of autocorrelations alone refusing a plot with the default
+  named; the GUI's form and tab writing no `--correlation-type`.
+  Antennas without rows, the same day: the user asked why the GWB file's two dead
+  antennas showed no flags. Both files' AN tables hold 30 antennas (the GSB file's two
+  structural DUD entries aside), and no row of either file holds C03:04 or C10:10: their
+  data were not recorded, so a pass over the rows counts nothing for them. The Antennas
+  and Flags tables gain a Serial column (station numbers 1 to 30 with two missing read
+  as 30 antennas; the Flags table's serials end at 28), and a note under each names the
+  AN table's antennas in no row of the file, and those in no selected row. Tests: a file
+  whose AN table has an antenna no row holds, and a selection leaving one out.
 
 - **T21 — visPlot density mode — DONE (added 2026-09-27, built 2026-10-01).** A plot style for dense
   generic Y-vs-X plots that colors each pixel by the number of samples landing in it —

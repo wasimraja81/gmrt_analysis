@@ -29,7 +29,9 @@ from visplot.plot_spec import PRESETS
 from visplot.quantities import QUANTITIES, QuantityContext, units_of
 from visplot.request import PlotRequest, build_arg_parser
 from visplot.request_args import (
+    DEFAULT_LISTING_CORRELATION_TYPE,
     DEFAULT_PAGE_GRID,
+    DEFAULT_PLOT_CORRELATION_TYPE,
     MAX_PAGE_GRID,
     TABLE_PLOTS,
     resolve_antennas_arg,
@@ -422,6 +424,9 @@ class RequestForm(QtWidgets.QWidget):
         form.addRow("Sources", self._add(self.sources))
         form.addRow("", row(all_sources, no_sources, QtWidgets.QWidget(), stretches=(0, 0, 1)))
         correlation = QtWidgets.QComboBox()
+        # not given (None): resolved by what runs, as on the command line
+        correlation.addItem(f"default (plots {DEFAULT_PLOT_CORRELATION_TYPE}, listings {DEFAULT_LISTING_CORRELATION_TYPE})",
+                            None)
         for name in _parser_choices("correlation_type"):
             correlation.addItem(name, name)
         form.addRow("Correlations", self._add(combo_field("correlation_type", correlation)))

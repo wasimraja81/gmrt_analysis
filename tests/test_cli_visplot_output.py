@@ -16,16 +16,16 @@ from data_io.row_index import build_row_index, default_row_index_path, save_row_
 JD0 = 2459421.2  # 2021-07-25
 
 
-def _make_synthetic_file(path, n_rows=40):
-    """n_rows rows over 3 baselines, 2 sources (first and second half), 2 Stokes x 4 channels;
-    amplitude grows with row; row 0's first sample is flagged."""
+def _make_synthetic_file(path, n_rows=40, baselines=(1 * 256 + 2, 1 * 256 + 3, 2 * 256 + 3)):
+    """n_rows rows over 3 baselines (AIPS codes, 256 * ant1 + ant2), 2 sources (first and second half),
+    2 Stokes x 4 channels; amplitude grows with row; row 0's first sample is flagged."""
     rng = np.random.default_rng(0)
     image_data = np.zeros((n_rows, 1, 4, 2, 3), dtype=">f4")
     image_data[..., 0] = (np.arange(n_rows)[:, None, None, None] + 1.0) * np.ones((1, 1, 4, 2))
     image_data[..., 1] = rng.random((n_rows, 1, 4, 2))
     image_data[..., 2] = 1.0
     image_data[0, 0, 0, 0, 2] = -1.0
-    baseline = np.tile(np.array([1 * 256 + 2, 1 * 256 + 3, 2 * 256 + 3], dtype=">f4"), n_rows)[:n_rows]
+    baseline = np.tile(np.array(baselines, dtype=">f4"), n_rows)[:n_rows]
     source = np.where(np.arange(n_rows) < n_rows // 2, 1, 2).astype(">f4")
     parnames = ["UU---SIN", "VV---SIN", "WW---SIN", "BASELINE", "DATE", "DATE", "SOURCE", "FREQSEL"]
     pardata = [

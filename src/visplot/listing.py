@@ -26,8 +26,8 @@ from astropy.time import Time
 from data_io.antenna_table import MOUNT_TYPES, antenna_enu_m, read_antenna_feeds
 from data_io.astrometry import altaz_deg
 from data_io.observation_header import read_observation_header
-from data_io.observation_summary import (DEFAULT_GAP_INTEGRATIONS, DEFAULT_LONGEST_SCAN_S, Scan, derive_scans,
-                                         integrations_of, rows_per_antenna, scan_of_integration)
+from data_io.observation_summary import (DEFAULT_GAP_INTEGRATIONS, DEFAULT_LONGEST_SCAN_S, Scan, correlations_of,
+                                         derive_scans, integrations_of, rows_per_antenna, scan_of_integration)
 from data_io.row_index import default_row_index_path
 from data_io.source_table import read_source_table_frame
 from visplot.clock_axis import DEFAULT_TIME_FORMAT, clock_text
@@ -144,6 +144,38 @@ class _Listing:
                           self.opened.array_location)
         return f"{float(el):.1f}"
 
+    def correlations(self) -> str:
+        """The file's cross- and autocorrelations, from its row index; and
+        where the file's autocorrelations are none of the selection's rows."""
+        index = self.opened.index
+        whole = correlations_of(index)
+        text = f"{whole.baselines:,} baselines, {whole.cross_rows:,} cross-correlation rows; "
+        if not whole.auto_rows:
+            return text + "no autocorrelations"
+        plural = "s" if whole.auto_antennas != 1 else ""
+        text += f"autocorrelations of {whole.auto_antennas} antenna{plural}, {whole.auto_rows:,} rows"
+        rows = self.selection.row_indices
+        if rows is not None and not correlations_of(index, rows).auto_rows:
+            text += " (none of them selected)"
+        return text
+
+    def antennas_without_rows(self) -> list[str]:
+        """Notes naming the AN table's antennas no row holds: in the file
+        (nothing recorded for them, so nothing to flag either), and of the
+        rest, in the selection."""
+        index, antennas = self.opened.index, self.opened.antennas
+        in_file = rows_per_antenna(index)
+        notes = []
+        absent = [a.name for a in antennas if not in_file.get(a.station_number)]
+        if absent:
+            notes.append(f"In the AN table, in no row of the file (nothing recorded for them): {', '.join(absent)}")
+        if self.selection.row_indices is not None:
+            selected = rows_per_antenna(index, self.selection.row_indices)
+            unselected = [a.name for a in antennas if in_file.get(a.station_number) and not selected.get(a.station_number)]
+            if unselected:
+                notes.append(f"In no selected row: {', '.join(unselected)}")
+        return notes
+
     def source_name(self, source_id: int) -> str:
         source = self.opened.source_table.get(source_id)
         return source.name if source is not None else self.opened.index.id_to_name.get(source_id, str(source_id))
@@ -184,6 +216,7 @@ class _Listing:
         of = f" of {int(index.gcount):,}" if self.selection.row_indices is not None else ""
         lines += [
             ("Rows", f"{self.n_rows:,}{of} ({self.n_rows * row_bytes / 1e9:.1f} GB of visibilities)"),
+            ("Correlations", self.correlations()),
             ("Amplitude unit", header.bunit or "BUNIT not given"),
             ("Selection", self.selection.text or "the whole file"),
         ]
@@ -285,7 +318,7 @@ class _Listing:
         counts = rows_per_antenna(opened.index, self.selection.row_indices)
         east, north, up = antenna_enu_m(opened.antennas, location)
         rows = []
-        for a, e, n, h in zip(opened.antennas, east, north, up):
+        for serial, (a, e, n, h) in enumerate(zip(opened.antennas, east, north, up), start=1):
             feed = feeds.get(a.station_number)
             mount = "" if feed is None or feed.mount_type is None else MOUNT_TYPES.get(feed.mount_type,
                                                                                       str(feed.mount_type))
@@ -294,14 +327,14 @@ class _Listing:
                 f"{kind}" + (f" {angle:g} deg" if angle else "")
                 for kind, angle in ((feed.pol_type_a, feed.pol_angle_a_deg), (feed.pol_type_b, feed.pol_angle_b_deg))
                 if kind)
-            rows.append([str(a.station_number), a.name, _fixed(e, 1), _fixed(n, 1), _fixed(h, 1), mount, offset,
-                         polarisations, f"{counts.get(a.station_number, 0):,}"])
-        table = _table(["Station", "Name", "East (m)", "North (m)", "Up (m)", "Mount", "Axis offset (m)", "Feeds",
-                        "Rows"], rows, right={0, 2, 3, 4, 6, 8})
+            rows.append([str(serial), str(a.station_number), a.name, _fixed(e, 1), _fixed(n, 1), _fixed(h, 1), mount,
+                         offset, polarisations, f"{counts.get(a.station_number, 0):,}"])
+        table = _table(["Serial", "Station", "Name", "East (m)", "North (m)", "Up (m)", "Mount", "Axis offset (m)",
+                        "Feeds", "Rows"], rows, right={0, 1, 3, 4, 5, 7, 9})
         geodetic = location.to_geodetic()
         heading = (f"Antennas ({len(opened.antennas)}; positions from the array's reference at latitude "
                    f"{geodetic.lat.deg:.5f} deg, longitude {geodetic.lon.deg:.5f} deg, height {geodetic.height.value:.1f} m)")
-        notes = []
+        notes = self.antennas_without_rows()
         if opened.dud_antennas:
             notes.append(f"Left out: {', '.join(a.name for a in opened.dud_antennas)} (the telescope's structural DUD "
                          "entries of the AN table)")
@@ -331,10 +364,12 @@ class _Listing:
                         right={0, 3, 4, 5})
         lines.append("")
         names = {a.station_number: a.name for a in self.opened.antennas}
-        lines += _table(["Station", "Name"] + columns, [[str(a), names.get(a, "")] + share(entry)
-                                                        for a, entry in sorted(counts.by_antenna.items())],
-                        right={0, 2, 3, 4})
+        lines += _table(["Serial", "Station", "Name"] + columns,
+                        [[str(serial), str(a), names.get(a, "")] + share(entry)
+                         for serial, (a, entry) in enumerate(sorted(counts.by_antenna.items()), start=1)],
+                        right={0, 1, 3, 4, 5})
         lines.append("An antenna's visibilities: those of every baseline it is on (an autocorrelation's once).")
+        lines += self.antennas_without_rows()
         whole = f"{100.0 * counts.flagged / counts.total:.2f}%" if counts.total else "none"
         return [f"Flags: {whole} of {counts.total:,} visibilities flagged (a visibility: one channel and Stokes of a "
                 f"row, flagged when its weight is not positive)"] + _indent(lines)

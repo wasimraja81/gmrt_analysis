@@ -24,8 +24,8 @@ from data_io.observation_summary import DEFAULT_GAP_INTEGRATIONS, DEFAULT_LONGES
 from visplot.iterations import ITERATION_KINDS
 from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIONS as LISTING_SECTIONS
 from visplot.plot_theme import DEFAULT_PLOT_THEME, MIN_CONTRAST, PLOT_THEMES
-from visplot.request_args import (CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DEFAULT_PAGE_FIGURE_SIZE, DPI_LIMITS,
-                                  quantity_help)
+from visplot.request_args import (CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DEFAULT_LISTING_CORRELATION_TYPE,
+                                  DEFAULT_PAGE_FIGURE_SIZE, DEFAULT_PLOT_CORRELATION_TYPE, DPI_LIMITS, quantity_help)
 from visplot.xy_session import DEFAULT_STREAM_THREADS
 
 PROG = "bin/visplot.sh"
@@ -164,8 +164,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sel = parser.add_argument_group("row selection (all given filters are combined)")
     sel.add_argument("--sources", help="comma-separated source names or ids, e.g. 3C286,3C48 (default: all)")
     sel.add_argument(
-        "--correlation-type", choices=["cross", "auto", "both"], default="cross",
-        help="cross-correlations, autocorrelations, or both (default: cross)",
+        "--correlation-type", choices=["cross", "auto", "both"],
+        help=f"cross-correlations, autocorrelations, or both (not given: {DEFAULT_PLOT_CORRELATION_TYPE} for a plot, "
+        f"{DEFAULT_LISTING_CORRELATION_TYPE} for a listing)",
     )
     sel.add_argument(
         "--antennas",
@@ -366,9 +367,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--listobs", nargs="?", const=",".join(DEFAULT_LISTING_SECTIONS), metavar="SECTIONS",
         help="list what the file holds, as CASA listobs and AIPS LISTR's scan listing: the sections, "
         f"comma-separated, of {', '.join(LISTING_SECTIONS)} (default: all but flags); printed, or with --output-dir "
-        "written to PREFIX_listobs.txt. The request's selection applies (none given: the whole file). Reads the "
-        "header, tables and row index; flags (the share of visibilities flagged, by Stokes, source, scan and "
-        "antenna) also reads every selected visibility, one pass",
+        "written to PREFIX_listobs.txt. The request's selection applies (none given: the whole file, "
+        "autocorrelations included). Reads the header, tables and row index; flags (the share of visibilities "
+        "flagged, by Stokes, source, scan and antenna) also reads every selected visibility, one pass",
     )
     listing.add_argument(
         "--scan-gap", type=float, default=DEFAULT_GAP_INTEGRATIONS, metavar="N",
