@@ -1,0 +1,16 @@
+# Par file for my_uvflg.f code
+# Set the scan times (If substantial #vis are bad in a scan, 
+# entire scan will be flagged intelligently)
+3                             ; Number of scans: Actually this is number of scans + 1, since each scan has a begtime and an endtime
+5.                            ; scan length (real mins): should be "roughly" close to scan-length on the source used for flagging
+ 1, 1, 1                      ; dd for scans
+11,11,21                      ; hh for scans
+12,17,41                      ; mm for scans
+ 0,30, 0                      ; ss for scans
+# Some more parameters: 
+2                              ; sampling time in seconds: this is also the time within which points around a bad point is flagged
+30                             ; n_antennas
+5                              ; maxbad_allowed: If no. of badvis >= maxbad_allowed, then entire scan-length(scan_len+target) will be flagged
+60                             ; tolerance in seconds: for smart flagging
+/media/GMRT_CASA/DATA/WORK/UVFND/                       ; path to indata
+/media/GMRT_CASA/DATA/WORK/UVFND/FLAG/                  ; path to outdata

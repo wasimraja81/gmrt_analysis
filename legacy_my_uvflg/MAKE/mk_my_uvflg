@@ -1,0 +1,1 @@
+f77 -Wall -o ../EXEC/my_uvflg ../SOURCE/my_uvflg.f
