@@ -550,3 +550,24 @@ def test_a_stack_round_trips_through_the_form_and_plots_in_one_figure():
     assert [p.plot.y for p in panels] == ["amp", "phase"] and panels[0].figure is panels[1].figure
     assert panels[1].plot.y_unit == "rad" and all(p.drawn for p in panels)
     window.close()
+
+
+def test_the_listing_tab_lists_the_file_or_the_forms_selection_and_saves_it():
+    app, window, path = _window("gui_listing")
+    tab = window.listing
+    assert tab.list_button.isEnabled() and window.tabs.tabText(1) == "Listing"
+    window._list()
+    _settle(app, window, lambda: "Scans (2)" in tab.text.toPlainText())
+    assert "Selection       the whole file" in tab.text.toPlainText()
+    # the form's selection, its plot a stack with the lower plot's unit: the listing takes the selection alone
+    window.form.load(PlotRequest(str(path), "amp-vs-freq+phase-vs-freq", sources="3C48", x_unit="MHz",
+                                 y_unit="UNCALIB", y2_unit="rad"))
+    tab.selection_only.setChecked(True)
+    window._list()
+    _settle(app, window, lambda: "20 of 40" in tab.text.toPlainText())
+    assert "Selection       sources 3C48" in tab.text.toPlainText()
+    saved = path.parent / "listing.txt"
+    window._save_listing(str(saved))
+    text = saved.read_text()
+    assert text.startswith("# visplot listing of obs.fits") and "--sources 3C48" in text and "--y2-unit" not in text
+    window.close()

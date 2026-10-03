@@ -119,6 +119,21 @@ def read_antenna_feeds(fits_path: Path | str) -> dict[int, AntennaFeeds]:
         return feeds
 
 
+def antenna_enu_m(antennas: list[Antenna], location: EarthLocation) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Each antenna's east, north and up offset (m) from `location` (the
+    array's reference position), in the local frame there (the standard
+    ECEF-to-ENU rotation at the reference's geodetic latitude and
+    longitude)."""
+    ref = np.array([v.to_value(u.m) for v in location.to_geocentric()])
+    d = np.array([[a.x_m, a.y_m, a.z_m] for a in antennas]).reshape(-1, 3) - ref
+    lat, lon = location.lat.rad, location.lon.rad
+    sin_lat, cos_lat, sin_lon, cos_lon = np.sin(lat), np.cos(lat), np.sin(lon), np.cos(lon)
+    east = -sin_lon * d[:, 0] + cos_lon * d[:, 1]
+    north = -sin_lat * cos_lon * d[:, 0] - sin_lat * sin_lon * d[:, 1] + cos_lat * d[:, 2]
+    up = cos_lat * cos_lon * d[:, 0] + cos_lat * sin_lon * d[:, 1] + sin_lat * d[:, 2]
+    return east, north, up
+
+
 def read_array_reference_position_m(fits_path: Path | str) -> tuple[float, float, float]:
     """The array's own reference position (absolute ECEF, metres) -- needed
     directly by observing-geometry code (hour angle, Az/El, parallactic

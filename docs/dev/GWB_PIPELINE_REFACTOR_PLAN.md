@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 535 tests passing; T26, T32 in progress; T40, T42,
+T47-T49, point D and T21 2026-10-01, 540 tests passing; T26, T32 in progress; T40, T42,
 T45, T46, T50-T52, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked
 until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -371,6 +371,25 @@ Buildable now, ahead of Phase C.
   GUI's count and the command line (the reading code takes frequencies from the header,
   right for one setup). For later: keeping each row's FREQSEL in the row index, so a
   listing can say which setups the rows use and plotting can follow them.
+  Steps 2-4 built 2026-10-03 (the user: "commit step 1 now and carry on that way", to
+  see the GUI tab sooner): `data_io/observation_summary.py` (a selection's integrations,
+  scans by INDXR's rules, rows per antenna); `visplot/listing.py` (the sections as
+  fixed-width text: each scan's elevation at start and end from the source's apparent
+  position, its UTC from the declared offset; a scan cut by the longest-scan rule named
+  under the table; SU columns all zero said so); `--listobs [SECTIONS]`, `--scan-gap N`,
+  `--scan-longest MIN` (`--plots` no longer required: a listing alone, printed or written
+  to PREFIX_listobs.txt headed by its command and record; the request's selection
+  applies, the whole file when it selects everything); the GUI's Listing tab, kept beside
+  Start (sections, scan gap, longest scan, "the form's selection only" taking the parser's
+  row and channel/Stokes selection options alone, List off the window's thread with its
+  record and history entry, Copy, Save as text). On the archival files, in about 3 s
+  each (the timestamp check 2 s of it): 34 scans each, scan 34 a one-integration tail of
+  DA240 cut at 60 min; C03:04 and C10:10 hold no rows in the GSB file; the GSB file's
+  declared IAT-UTC 34 s against 33.078 s from its u, v, w, the GWB file's 35 s against
+  34.078 s (T34's offset). Tests: the scan rules; the synthetic file's sections; the
+  command line printing, saving and listing a selection; the option checks; the GUI tab
+  listing the file and the form's selection (a stack's lower-plot options left out),
+  and saving.
 
 - **T21 — visPlot density mode — DONE (added 2026-09-27, built 2026-10-01).** A plot style for dense
   generic Y-vs-X plots that colors each pixel by the number of samples landing in it —

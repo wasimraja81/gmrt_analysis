@@ -41,9 +41,10 @@ from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observato
 from instruments.structural_duds import without_structural_duds
 from visplot.antenna_layout import antenna_layout
 from visplot.fonts import font_file
+from visplot.listing import SECTIONS as LISTING_SECTIONS, ListingOptions, ListingSelection, list_observation
 from visplot.locate_csv import LocateCsvWriter
 from visplot.iterations import Iteration, iteration_source, list_iterations, page_layout
-from visplot.plot_panel import panel_facts
+from visplot.plot_panel import panel_facts, selection_filters
 from visplot.plot_spec import PlotSpec, expand_stack
 from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_table, convert, local_time_zone, \
     utc_jd, utc_offset_text
@@ -124,6 +125,7 @@ class CheckedRequest:
     figure_size: tuple[float, float]  # inches, of each streamed plot's figure
     page_figure_size: tuple[float, float] = (16.0, 11.0)  # inches, of a page of several plots (T26)
     page_grid: tuple[int, int] | None = None  # --page-grid as given; None: the default (`page_layout`)
+    listing_sections: tuple[str, ...] = ()  # --listobs's (T20)
 
 
 def check_request(request: PlotRequest) -> CheckedRequest:
@@ -162,7 +164,12 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         for name in given:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
-        plot_names = parse_plot_names(request.plots)
+        if not request.plots and not request.listobs:
+            raise ValueError("give --plots, --listobs, or both")
+        plot_names = parse_plot_names(request.plots) if request.plots else []
+        listing_sections = parse_listing_sections(request.listobs) if request.listobs else ()
+        if request.scan_gap <= 0 or request.scan_longest <= 0:
+            raise ValueError("--scan-gap and --scan-longest take a positive number")
         if request.colorize_by:
             validate_colorize_by(request.colorize_by)
         x_range = resolve_plain_range_arg(request.x_range)
@@ -223,7 +230,8 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         n_streamed = sum(len(p) for p in plots_by_name.values())
         if n_streamed != 1:
             raise RequestError(f"--locate needs exactly one streamed plot; --plots gives {n_streamed}")
-    return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size, page_figure_size, page_grid)
+    return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size, page_figure_size, page_grid,
+                          listing_sections)
 
 
 def with_elevation_limits(plot: PlotSpec, telescope: str | None) -> PlotSpec:
@@ -806,6 +814,60 @@ def page_cells(page) -> list[list[PlotSpec]]:
     without a stack)."""
     stack = page.layout.stack if page.layout is not None else 1
     return [page.plots[i:i + stack] for i in range(0, len(page.plots), stack)]
+
+
+def parse_listing_sections(spec: str) -> tuple[str, ...]:
+    """--listobs SECTIONS: comma-separated names of `listing.SECTIONS`, in
+    the listing's order."""
+    names = [name.strip() for name in spec.split(",") if name.strip()]
+    unknown = [name for name in names if name not in LISTING_SECTIONS]
+    if unknown or not names:
+        raise ValueError(f"--listobs takes sections among {', '.join(LISTING_SECTIONS)}; got {spec!r}")
+    return tuple(name for name in LISTING_SECTIONS if name in names)
+
+
+def listing_text(request: PlotRequest, opened: OpenedFile, sections: tuple[str, ...] | None = None) -> str:
+    """The listing (T20) of `request`'s file: its --listobs sections (or
+    `sections`), over the request's selection, or the whole file when the
+    selection is all of it."""
+    sections = sections or parse_listing_sections(request.listobs or ",".join(LISTING_SECTIONS))
+    try:
+        recorded_minus_utc_s = opened.time_reference.recorded_minus_utc_s
+    except ValueError:
+        recorded_minus_utc_s = 0.0
+    selected = select(request, opened, recorded_minus_utc_s)
+    index = opened.index
+    channels = (selected.axis_selection or {}).get("FREQ")
+    whole = (selected.selection.n_rows == int(index.gcount) and request.stokes is None and channels is None)
+    options = ListingOptions(sections, request.scan_gap, request.scan_longest * 60.0, request.time_format)
+    if whole:
+        return list_observation(opened, options)
+    parts = [text for text in (
+        f"sources {request.sources}" if request.sources else "",
+        f"{request.correlation_type}-correlations" if request.correlation_type != "both" else "",
+        f"Stokes {request.stokes}" if request.stokes else "", f"channels {request.channels}" if request.channels else "",
+        selection_filters(request)) if text]
+    selection = ListingSelection(selected.selection.row_indices, tuple(selected.stokes_labels or ()), channels,
+                                 ", ".join(parts))
+    return list_observation(opened, options, selection)
+
+
+def write_listing(request: PlotRequest, text: str, record: str | None = None) -> Path:
+    """`text` (a listing) to PREFIX_listobs.txt in --output-dir (`write_listing_to`)."""
+    output_dir = Path(request.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return write_listing_to(output_dir / f"{request.output_prefix}_listobs.txt", request, text, record)
+
+
+def write_listing_to(path, request: PlotRequest, text: str, record: str | None = None) -> Path:
+    """`text` (a listing) to `path`, headed by the command that lists it and
+    its provenance record."""
+    path = Path(path)
+    head = [f"# visplot listing of {Path(request.fits_path).name}", f"# command: {request.command_line()}"]
+    if record:
+        head.append(f"# record: {record}")
+    path.write_text("\n".join(head) + "\n\n" + text)
+    return path
 
 
 def highres_dpi(dpi: int) -> int:

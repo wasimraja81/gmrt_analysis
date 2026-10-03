@@ -33,7 +33,8 @@ from data_io.astrometry import AstrometryWarning  # noqa: E402
 from visplot.range_cache import clear_cache  # noqa: E402
 from visplot.records import PlotRecord, WindowProvenance, recorded_run  # noqa: E402
 from visplot.request import PlotRequest, build_arg_parser  # noqa: E402,F401  (build_arg_parser: for callers)
-from visplot.run import MissingIndexError, RequestError, prepare, run_locate, save_outputs  # noqa: E402
+from visplot.run import (MissingIndexError, RequestError, check_request, listing_text, open_file, prepare,  # noqa: E402
+                         run_locate, save_outputs, write_listing)
 
 
 def _print_report(level: str, text: str) -> None:
@@ -80,7 +81,8 @@ def main(argv: list[str]) -> int:
     request = PlotRequest.from_namespace(parser.parse_args(argv[1:]))
     warnings.simplefilter("ignore", AstrometryWarning)  # reported once, through the run's report
 
-    action = ", ".join(name for name, on in (("locate", request.locate), ("save", request.output_dir)) if on)
+    action = ", ".join(name for name, on in (("listobs", request.listobs), ("locate", request.locate),
+                                             ("save", request.output_dir and request.plots)) if on)
     try:
         with recorded_run(request, action or "window") as record:
             print(f"provenance record: {record.describe()}", flush=True)
@@ -94,7 +96,20 @@ def main(argv: list[str]) -> int:
 
 def _run(request: PlotRequest, record: PlotRecord, parser: argparse.ArgumentParser) -> int:
     report = record.reporting(_print_report)
-    run = prepare(request, report=report)
+    opened = None
+    if request.listobs:  # the listing first (T20); with --plots, the plots after it
+        check_request(request)
+        opened = open_file(request.fits_path)
+        text = listing_text(request, opened)
+        if request.output_dir:
+            path = write_listing(request, text, record.describe())
+            record.add_output(path)
+            report("info", f"saved {path}")
+        else:
+            print(text, end="", flush=True)
+        if not request.plots:
+            return 0
+    run = prepare(request, opened, report=report)
     run.set_record(record.run_id)
     if run.locate_box is not None:
         written = run_locate(run, report, _terminal_progress, record=record.describe())

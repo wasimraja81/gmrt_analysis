@@ -20,7 +20,9 @@ from pathlib import Path
 from visplot.axis_scale import SCALE_NAMES
 from visplot.clock_axis import DEFAULT_TIME_FORMAT, TIME_FORMATS
 from visplot.fonts import DEFAULT_PANEL_FONT, PANEL_FONTS
+from data_io.observation_summary import DEFAULT_GAP_INTEGRATIONS, DEFAULT_LONGEST_SCAN_S
 from visplot.iterations import ITERATION_KINDS
+from visplot.listing import SECTIONS as LISTING_SECTIONS
 from visplot.plot_theme import DEFAULT_PLOT_THEME, MIN_CONTRAST, PLOT_THEMES
 from visplot.request_args import (CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DEFAULT_PAGE_FIGURE_SIZE, DPI_LIMITS,
                                   quantity_help)
@@ -155,8 +157,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "already exist -- build it with the pipeline's build_index stage",
     )
     parser.add_argument(
-        "--plots", required=True,
-        help="comma-separated plot names; see 'plot names' below",
+        "--plots",
+        help="comma-separated plot names; see 'plot names' below (needed unless --listobs is given)",
     )
 
     sel = parser.add_argument_group("row selection (all given filters are combined)")
@@ -359,6 +361,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
             f"grid, each with one plot per page. --{axis}-range fixes the axis for every plot either way",
         )
 
+    listing = parser.add_argument_group("listing (listObs: what the file holds)")
+    listing.add_argument(
+        "--listobs", nargs="?", const=",".join(LISTING_SECTIONS), metavar="SECTIONS",
+        help="list what the file holds, as CASA listobs and AIPS LISTR's scan listing: the sections, "
+        f"comma-separated, of {', '.join(LISTING_SECTIONS)} (default: all); printed, or with --output-dir written "
+        "to PREFIX_listobs.txt. The request's selection applies (none given: the whole file). Reads the header, "
+        "tables and row index; no visibility data",
+    )
+    listing.add_argument(
+        "--scan-gap", type=float, default=DEFAULT_GAP_INTEGRATIONS, metavar="N",
+        help="a listing's scans (derived, as AIPS INDXR derives them): a gap longer than N integration times starts "
+        f"a new scan (default: {DEFAULT_GAP_INTEGRATIONS:g}; INDXR's CPARM(1))",
+    )
+    listing.add_argument(
+        "--scan-longest", type=float, default=DEFAULT_LONGEST_SCAN_S / 60.0, metavar="MIN",
+        help="a listing's scans: a scan on one source longer than MIN minutes is cut, the rest a new scan "
+        f"(default: {DEFAULT_LONGEST_SCAN_S / 60.0:g}; INDXR's CPARM(2))",
+    )
+
     out = parser.add_argument_group("output")
     out.add_argument(
         "--output-dir",
@@ -428,6 +449,16 @@ def request_actions(parser: argparse.ArgumentParser | None = None) -> list[argpa
     (the FITS path first)."""
     parser = parser or build_arg_parser()
     return [a for a in parser._actions if a.dest not in _NOT_REQUEST_OPTIONS]
+
+
+def selection_option_names() -> list[str]:
+    """The options that select a file's rows, channels and Stokes (the
+    parser's two selection groups): what a listing of a selection takes
+    (T20)."""
+    parser = build_arg_parser()
+    return [action.dest for group in parser._action_groups
+            if group.title and group.title.startswith(("row selection", "channel/Stokes selection"))
+            for action in group._group_actions]
 
 
 def request_option_names() -> list[str]:

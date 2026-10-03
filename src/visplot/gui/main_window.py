@@ -41,8 +41,10 @@ from visplot.gui.save_dialog import SaveDialog
 from visplot.gui.widgets import CommandLine
 from visplot.gui.style import THEMES, apply_theme
 from visplot.records import PlotRecord, SessionRecord, WindowProvenance, recorded_run
-from visplot.request import build_arg_parser
-from visplot.run import RequestError, Stopped, check_request, count_selection, open_file, prepare, save_outputs
+from visplot.gui.listing_tab import ListingTab
+from visplot.request import PlotRequest, build_arg_parser, selection_option_names
+from visplot.run import (RequestError, Stopped, check_request, count_selection, listing_text, open_file, prepare,
+                         save_outputs, write_listing_to)
 
 POLL_MS = 100
 COUNT_DELAY_MS = 400
@@ -195,6 +197,10 @@ class VisplotWindow(QtWidgets.QMainWindow):
         layout.addStretch(2)
         self.tabs.addTab(welcome, "Start")
         self.tabs.tabBar().setTabButton(0, QtWidgets.QTabBar.RightSide, None)
+        # what the file holds (T20, listObs): a tab of its own, kept open
+        self.listing = ListingTab(self._list, self._save_listing)
+        self.tabs.addTab(self.listing, "Listing")
+        self.tabs.tabBar().setTabButton(1, QtWidgets.QTabBar.RightSide, None)
         return self.tabs
 
     def _build_docks(self) -> None:
@@ -371,6 +377,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
     def _form_changed(self) -> None:
         """Check the form (field checks, then the request as the command line
         checks it), show its command, and recount the selection shortly."""
+        self.listing.set_file_open(self.opened is not None)
         problem, request = None, None
         invalid = self.form.invalid_fields()
         if invalid:
@@ -554,6 +561,58 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self._saving.stop = True
             self.stop_button.setEnabled(False)
             self.statusBar().showMessage("stopping the save …")
+
+    # ---- listing (T20) ---------------------------------------------------------------
+
+    def _listing_request(self) -> PlotRequest:
+        """The Listing tab's request: --listobs with its sections and scan
+        limits, over the form's selection or the whole file."""
+        choices = self.listing.choices()
+        actions = dict(listobs=",".join(choices.sections) or None, scan_gap=choices.scan_gap,
+                       scan_longest=choices.scan_longest_min)
+        form = self.form.request()
+        selected = {dest: getattr(form, dest) for dest in selection_option_names()} if choices.selection_only else {}
+        return PlotRequest(form.fits_path, None, time_format=form.time_format, provenance_dir=form.provenance_dir,
+                           **selected, **actions)
+
+    def _list(self) -> None:
+        """List what the file holds, as --listobs does, with its provenance record."""
+        if self.opened is None:
+            return
+        try:
+            request = self._listing_request()
+            check_request(request)
+        except (RequestError, ValueError) as err:
+            self.listing.show_failed(str(err))
+            return
+        opened, session_id = self.opened, self.session.session_id
+        self.listing.show_busy()
+
+        def work():
+            with recorded_run(request, "listobs", session_id) as record:
+                self.report("info", f"listing {record.run_id}: {record.command}")
+                text = listing_text(request, opened)
+            return text, record
+
+        def done(result):
+            text, record = result
+            self.listing.show_listing(text, request, record.run_id)
+            self._add_history(request, record, "listing")
+
+        def failed(message):
+            self.listing.show_failed(message)
+            self.report("warning", f"the listing failed: {message}")
+
+        self._start(work, done, failed)
+
+    def _save_listing(self, path: str) -> None:
+        """The listing shown, to `path`, headed by its command and the save's record."""
+        request = self.listing.shown_request
+        with recorded_run(request, "listobs", self.session.session_id) as record:
+            written = write_listing_to(path, request, self.listing.text.toPlainText(), record.describe())
+            record.add_output(written)
+        self.report("info", f"listing saved to {written}; record {record.run_id}")
+        self.statusBar().showMessage(f"listing saved to {written}", 8000)
 
     def _close_tab(self, index: int) -> None:
         tab = self.tabs.widget(index)

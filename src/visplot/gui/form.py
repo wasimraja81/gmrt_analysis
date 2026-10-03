@@ -54,6 +54,9 @@ ACTION_OPTIONS = {
     "no_highres_pdf": "File > Save plots as files",
     "dpi": "Export on a plot (its dpi), or File > Save plots as files",
     "figure_size": "Export on a plot (the plot's size in the window), or File > Save plots as files",
+    "listobs": "the Listing tab's section boxes and List",
+    "scan_gap": "the Listing tab's scan gap",
+    "scan_longest": "the Listing tab's longest scan",
 }
 
 # Options whose GUI controls are still to be built, and the plan step building each (none now).
