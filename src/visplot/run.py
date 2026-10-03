@@ -41,7 +41,9 @@ from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observato
 from instruments.structural_duds import without_structural_duds
 from visplot.antenna_layout import antenna_layout
 from visplot.fonts import font_file
-from visplot.listing import SECTIONS as LISTING_SECTIONS, ListingOptions, ListingSelection, list_observation
+from visplot.flag_summary import FlagCounter
+from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIONS as LISTING_SECTIONS, \
+    ListingOptions, ListingSelection, list_observation
 from visplot.locate_csv import LocateCsvWriter
 from visplot.iterations import Iteration, iteration_source, list_iterations, page_layout
 from visplot.plot_panel import panel_facts, selection_filters
@@ -826,11 +828,14 @@ def parse_listing_sections(spec: str) -> tuple[str, ...]:
     return tuple(name for name in LISTING_SECTIONS if name in names)
 
 
-def listing_text(request: PlotRequest, opened: OpenedFile, sections: tuple[str, ...] | None = None) -> str:
+def listing_text(request: PlotRequest, opened: OpenedFile, sections: tuple[str, ...] | None = None,
+                 report: Report = _silent, progress: ProgressFactory = _no_progress) -> str:
     """The listing (T20) of `request`'s file: its --listobs sections (or
     `sections`), over the request's selection, or the whole file when the
-    selection is all of it."""
-    sections = sections or parse_listing_sections(request.listobs or ",".join(LISTING_SECTIONS))
+    selection is all of it. The flags section reads the selection's
+    visibilities, one pass: its size reported first, then its `progress`;
+    Stopped when that asks to stop."""
+    sections = sections or parse_listing_sections(request.listobs or ",".join(DEFAULT_LISTING_SECTIONS))
     try:
         recorded_minus_utc_s = opened.time_reference.recorded_minus_utc_s
     except ValueError:
@@ -840,8 +845,9 @@ def listing_text(request: PlotRequest, opened: OpenedFile, sections: tuple[str, 
     channels = (selected.axis_selection or {}).get("FREQ")
     whole = (selected.selection.n_rows == int(index.gcount) and request.stokes is None and channels is None)
     options = ListingOptions(sections, request.scan_gap, request.scan_longest * 60.0, request.time_format)
+    flags = _count_flags(request, opened, selected, report, progress) if "flags" in sections else None
     if whole:
-        return list_observation(opened, options)
+        return list_observation(opened, options, flags=flags)
     parts = [text for text in (
         f"sources {request.sources}" if request.sources else "",
         f"{request.correlation_type}-correlations" if request.correlation_type != "both" else "",
@@ -849,7 +855,23 @@ def listing_text(request: PlotRequest, opened: OpenedFile, sections: tuple[str, 
         selection_filters(request)) if text]
     selection = ListingSelection(selected.selection.row_indices, tuple(selected.stokes_labels or ()), channels,
                                  ", ".join(parts))
-    return list_observation(opened, options, selection)
+    return list_observation(opened, options, selection, flags)
+
+
+def _count_flags(request: PlotRequest, opened: OpenedFile, selected: Selected, report: Report,
+                 progress: ProgressFactory):
+    """The listing's flag counts: one pass over the selection's visibilities."""
+    index = opened.index
+    ctx = QuantityContext(time_reference_jd=float(index.jd.min()), bunit=opened.bunit,
+                          stokes_labels=tuple(selected.stokes_labels or ()))
+    source = XYSource(request.fits_path, index, selected.selection.row_indices, selected.axis_selection, ctx,
+                      stream_chunk_bytes(), threads=max(1, request.threads))
+    report("info", f"flags: one pass over {source.n_rows:,} rows, {source.n_rows * source.row_bytes / 1e9:.1f} GB "
+                   f"of visibilities to read")
+    counter = FlagCounter(index.integration_boundaries)
+    if not source.stream([counter], read_data=True, on_chunk=progress(pass_progress(source, "counting flags", True))):
+        raise Stopped("stopped while counting the flags; nothing listed")
+    return counter.counts
 
 
 def write_listing(request: PlotRequest, text: str, record: str | None = None) -> Path:

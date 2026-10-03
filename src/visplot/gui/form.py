@@ -295,7 +295,8 @@ class RequestForm(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.data_section = self._data_section()
-        for section in (self.data_section, self._axes_section(), self._selection_section(), self._pages_section(),
+        # Selection before Axes: what a plot reads is seen before what it shows (all the data can be slow).
+        for section in (self.data_section, self._selection_section(), self._axes_section(), self._pages_section(),
                         self._display_section(), self._performance_section()):
             layout.addWidget(section)
         layout.addStretch(1)

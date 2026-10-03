@@ -100,7 +100,7 @@ def _run(request: PlotRequest, record: PlotRecord, parser: argparse.ArgumentPars
     if request.listobs:  # the listing first (T20); with --plots, the plots after it
         check_request(request)
         opened = open_file(request.fits_path)
-        text = listing_text(request, opened)
+        text = listing_text(request, opened, report=report, progress=_terminal_progress)
         if request.output_dir:
             path = write_listing(request, text, record.describe())
             record.add_output(path)

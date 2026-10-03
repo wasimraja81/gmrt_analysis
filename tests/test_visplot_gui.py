@@ -558,7 +558,13 @@ def test_the_listing_tab_lists_the_file_or_the_forms_selection_and_saves_it():
     assert tab.list_button.isEnabled() and window.tabs.tabText(1) == "Listing"
     window._list()
     _settle(app, window, lambda: "Scans (2)" in tab.text.toPlainText())
-    assert "Selection       the whole file" in tab.text.toPlainText()
+    assert "Selection       the whole file" in tab.text.toPlainText() and "Flags" not in tab.text.toPlainText()
+    assert not tab.boxes["flags"].isChecked()  # it reads every visibility: asked for
+    tab.boxes["flags"].setChecked(True)
+    window._list()
+    _settle(app, window, lambda: "Flags: 0.31% of 320" in tab.text.toPlainText())
+    assert tab.stop_button.isHidden() and window._listing_task is None
+    tab.boxes["flags"].setChecked(False)
     # the form's selection, its plot a stack with the lower plot's unit: the listing takes the selection alone
     window.form.load(PlotRequest(str(path), "amp-vs-freq+phase-vs-freq", sources="3C48", x_unit="MHz",
                                  y_unit="UNCALIB", y2_unit="rad"))

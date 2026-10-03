@@ -1,12 +1,15 @@
 """listObs (T20): what a file holds, as text, as CASA listobs and AIPS
 LISTR's scan listing and PRTAN list it -- from the header, the AN, FQ and SU
-tables and the row index, no visibility data read.
+tables and the row index; the flags section alone reads visibility data.
 
-Sections (`SECTIONS`, every one by default, as the user chose 2026-10-03):
-observation, scans (derived by AIPS INDXR's rules,
-`data_io.observation_summary`), sources, spectral setup, antennas. A listing
-covers the whole file, or a selection (`ListingSelection`: the rows,
-Stokes and channels a request selects, as listobs's `selectdata`).
+Sections (`SECTIONS`; every one but flags by default, `DEFAULT_SECTIONS`,
+as the user chose 2026-10-03): observation, scans (derived by AIPS INDXR's
+rules, `data_io.observation_summary`), sources, spectral setup, antennas,
+and flags -- the one section that reads the visibilities, one pass counting
+the flagged ones (`visplot.flag_summary`; `visplot.run.listing_text` runs
+it). A listing covers the whole file, or a selection (`ListingSelection`:
+the rows, Stokes and channels a request selects, as listobs's
+`selectdata`).
 """
 
 from __future__ import annotations
@@ -24,19 +27,21 @@ from data_io.antenna_table import MOUNT_TYPES, antenna_enu_m, read_antenna_feeds
 from data_io.astrometry import altaz_deg
 from data_io.observation_header import read_observation_header
 from data_io.observation_summary import (DEFAULT_GAP_INTEGRATIONS, DEFAULT_LONGEST_SCAN_S, Scan, derive_scans,
-                                         integrations_of, rows_per_antenna)
+                                         integrations_of, rows_per_antenna, scan_of_integration)
 from data_io.row_index import default_row_index_path
 from data_io.source_table import read_source_table_frame
 from visplot.clock_axis import DEFAULT_TIME_FORMAT, clock_text
+from visplot.flag_summary import FlagCounts
 
-SECTIONS = ("observation", "scans", "sources", "spectral", "antennas")
+SECTIONS = ("observation", "scans", "sources", "spectral", "antennas", "flags")
+DEFAULT_SECTIONS = tuple(name for name in SECTIONS if name != "flags")  # flags reads every selected visibility
 SECTION_TITLES = {"observation": "Observation", "scans": "Scans", "sources": "Sources", "spectral": "Spectral setup",
-                  "antennas": "Antennas"}
+                  "antennas": "Antennas", "flags": "Flags"}
 
 
 @dataclass(frozen=True)
 class ListingOptions:
-    sections: tuple[str, ...] = SECTIONS
+    sections: tuple[str, ...] = DEFAULT_SECTIONS
     gap_integrations: float = DEFAULT_GAP_INTEGRATIONS  # a gap longer than this many integration times: a new scan
     longest_s: float = DEFAULT_LONGEST_SCAN_S  # a scan on one source longer than this: a new scan
     time_format: str = DEFAULT_TIME_FORMAT
@@ -54,10 +59,13 @@ class ListingSelection:
 
 
 def list_observation(opened, options: ListingOptions = ListingOptions(),
-                     selection: ListingSelection | None = None) -> str:
+                     selection: ListingSelection | None = None, flags: FlagCounts | None = None) -> str:
     """The listing of `opened` (a `visplot.run.OpenedFile`), its
-    `options.sections` in order."""
-    listing = _Listing(opened, options, selection or ListingSelection())
+    `options.sections` in order; the flags section's counts are `flags`,
+    from a pass over the same selection."""
+    if "flags" in options.sections and flags is None:
+        raise ValueError("the flags section needs the counts of a pass over the visibilities")
+    listing = _Listing(opened, options, selection or ListingSelection(), flags)
     blocks = [getattr(listing, f"_{name}")() for name in options.sections]
     return "\n\n".join("\n".join(block) for block in blocks) + "\n"
 
@@ -96,6 +104,7 @@ class _Listing:
     opened: object
     options: ListingOptions
     selection: ListingSelection
+    flag_counts: FlagCounts | None = None
     integrations: object = field(init=False)
     scans: list[Scan] = field(init=False)
 
@@ -297,3 +306,35 @@ class _Listing:
             notes.append(f"Left out: {', '.join(a.name for a in opened.dud_antennas)} (the telescope's structural DUD "
                          "entries of the AN table)")
         return [heading] + _indent(table + notes)
+
+    def _flags(self) -> list[str]:
+        counts = self.flag_counts
+
+        def share(entry) -> list[str]:
+            flagged, total = entry
+            return [f"{total:,}", f"{flagged:,}", f"{100.0 * flagged / total:.2f}" if total else ""]
+
+        columns = ["Visibilities", "Flagged", "Flagged (%)"]
+        lines = _table(["Stokes"] + columns, [[label] + share(entry) for label, entry in counts.by_stokes.items()],
+                       right={1, 2, 3})
+        lines.append("")
+        lines += _table(["ID", "Source"] + columns, [[str(sid), self.source_name(sid)] + share(entry)
+                                                     for sid, entry in sorted(counts.by_source.items())],
+                        right={0, 2, 3, 4})
+        lines.append("")
+        numbers = scan_of_integration(self.integrations, self.scans, counts.n_integrations)
+        flagged = np.bincount(numbers, weights=counts.integration_flagged, minlength=len(self.scans) + 1)
+        total = np.bincount(numbers, weights=counts.integration_total, minlength=len(self.scans) + 1)
+        lines += _table(["Scan", "Source", "Start"] + columns,
+                        [[str(s.number), self.source_name(s.source_id), self.clock(s.start_jd)]
+                         + share((int(flagged[s.number]), int(total[s.number]))) for s in self.scans],
+                        right={0, 3, 4, 5})
+        lines.append("")
+        names = {a.station_number: a.name for a in self.opened.antennas}
+        lines += _table(["Station", "Name"] + columns, [[str(a), names.get(a, "")] + share(entry)
+                                                        for a, entry in sorted(counts.by_antenna.items())],
+                        right={0, 2, 3, 4})
+        lines.append("An antenna's visibilities: those of every baseline it is on (an autocorrelation's once).")
+        whole = f"{100.0 * counts.flagged / counts.total:.2f}%" if counts.total else "none"
+        return [f"Flags: {whole} of {counts.total:,} visibilities flagged (a visibility: one channel and Stokes of a "
+                f"row, flagged when its weight is not positive)"] + _indent(lines)

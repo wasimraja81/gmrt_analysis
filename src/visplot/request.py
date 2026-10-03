@@ -22,7 +22,7 @@ from visplot.clock_axis import DEFAULT_TIME_FORMAT, TIME_FORMATS
 from visplot.fonts import DEFAULT_PANEL_FONT, PANEL_FONTS
 from data_io.observation_summary import DEFAULT_GAP_INTEGRATIONS, DEFAULT_LONGEST_SCAN_S
 from visplot.iterations import ITERATION_KINDS
-from visplot.listing import SECTIONS as LISTING_SECTIONS
+from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIONS as LISTING_SECTIONS
 from visplot.plot_theme import DEFAULT_PLOT_THEME, MIN_CONTRAST, PLOT_THEMES
 from visplot.request_args import (CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DEFAULT_PAGE_FIGURE_SIZE, DPI_LIMITS,
                                   quantity_help)
@@ -363,11 +363,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     listing = parser.add_argument_group("listing (listObs: what the file holds)")
     listing.add_argument(
-        "--listobs", nargs="?", const=",".join(LISTING_SECTIONS), metavar="SECTIONS",
+        "--listobs", nargs="?", const=",".join(DEFAULT_LISTING_SECTIONS), metavar="SECTIONS",
         help="list what the file holds, as CASA listobs and AIPS LISTR's scan listing: the sections, "
-        f"comma-separated, of {', '.join(LISTING_SECTIONS)} (default: all); printed, or with --output-dir written "
-        "to PREFIX_listobs.txt. The request's selection applies (none given: the whole file). Reads the header, "
-        "tables and row index; no visibility data",
+        f"comma-separated, of {', '.join(LISTING_SECTIONS)} (default: all but flags); printed, or with --output-dir "
+        "written to PREFIX_listobs.txt. The request's selection applies (none given: the whole file). Reads the "
+        "header, tables and row index; flags (the share of visibilities flagged, by Stokes, source, scan and "
+        "antenna) also reads every selected visibility, one pass",
     )
     listing.add_argument(
         "--scan-gap", type=float, default=DEFAULT_GAP_INTEGRATIONS, metavar="N",

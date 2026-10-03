@@ -69,7 +69,7 @@ class _Task:
         self.done = False
         self.status = ""  # progress text `fn` may set, shown in the status bar
         self.fraction: float | None = None  # how much of it is done, for one that says (an index build)
-        self.stop = False  # set to ask `fn` to stop, for one that checks it (a save, an index build)
+        self.stop = False  # set to ask `fn` to stop, for one that checks it (a save, an index build, a listing)
         self.thread = threading.Thread(target=self._body, daemon=True)
 
     def _body(self):
@@ -98,6 +98,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self._count_generation = 0
         self._saving: _Task | None = None  # the save running, if any (one at a time)
         self._building: _Task | None = None  # the index build running, if any
+        self._listing_task: _Task | None = None  # the listing running, if any (its flags pass shows progress)
         self._index_note = ""  # what building the open file's missing index takes
         self.session = SessionRecord(provenance_dir or build_arg_parser().get_default("provenance_dir"))
 
@@ -198,7 +199,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(welcome, "Start")
         self.tabs.tabBar().setTabButton(0, QtWidgets.QTabBar.RightSide, None)
         # what the file holds (T20, listObs): a tab of its own, kept open
-        self.listing = ListingTab(self._list, self._save_listing)
+        self.listing = ListingTab(self._list, self._save_listing, self._stop_listing)
         self.tabs.addTab(self.listing, "Listing")
         self.tabs.tabBar().setTabButton(1, QtWidgets.QTabBar.RightSide, None)
         return self.tabs
@@ -576,8 +577,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
                            **selected, **actions)
 
     def _list(self) -> None:
-        """List what the file holds, as --listobs does, with its provenance record."""
-        if self.opened is None:
+        """List what the file holds, as --listobs does, with its provenance
+        record; the flags section's pass shows its progress, and Stop."""
+        if self.opened is None or self._listing_task is not None:
             return
         try:
             request = self._listing_request()
@@ -586,24 +588,40 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self.listing.show_failed(str(err))
             return
         opened, session_id = self.opened, self.session.session_id
-        self.listing.show_busy()
+        self.listing.show_busy(reading="flags" in self.listing.choices().sections)
+
+        def progress(pass_progress):
+            def on_chunk(rows_done: int) -> bool:
+                task.status = pass_progress.text(rows_done)
+                return not task.stop
+            return on_chunk
 
         def work():
             with recorded_run(request, "listobs", session_id) as record:
                 self.report("info", f"listing {record.run_id}: {record.command}")
-                text = listing_text(request, opened)
+                text = listing_text(request, opened, report=record.reporting(self.report), progress=progress)
             return text, record
 
         def done(result):
+            self._listing_task = None
             text, record = result
             self.listing.show_listing(text, request, record.run_id)
             self._add_history(request, record, "listing")
 
         def failed(message):
+            self._listing_task = None
             self.listing.show_failed(message)
-            self.report("warning", f"the listing failed: {message}")
+            self.report("warning", f"the listing {'stopped' if task.stop else 'failed'}: {message}")
 
-        self._start(work, done, failed)
+        task = _Task(work, done, failed)
+        self._listing_task = task
+        self._launch(task)
+
+    def _stop_listing(self) -> None:
+        """Ask the listing's flags pass to stop at its next chunk."""
+        if self._listing_task is not None:
+            self._listing_task.stop = True
+            self.listing.stopping()
 
     def _save_listing(self, path: str) -> None:
         """The listing shown, to `path`, headed by its command and the save's record."""
@@ -663,6 +681,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
         building = self._building
         if building is not None and not building.done and not building.stop and building.status:
             self.form.show_progress(building.status, building.fraction, stoppable=True)
+        listing = self._listing_task
+        if listing is not None and not listing.done and not listing.stop and listing.status:
+            self.listing.show_progress(listing.status)
         if running and running[-1] != self.statusBar().currentMessage():
             self.statusBar().showMessage(running[-1])
         for task in [t for t in self._tasks if t.done]:
@@ -713,6 +734,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
         if self._saving is not None:  # stopped at its next chunk, so its record says how it ended
             self._saving.stop = True
             self._saving.thread.join(timeout=30)
+        if self._listing_task is not None:
+            self._listing_task.stop = True
+            self._listing_task.thread.join(timeout=30)
         self.poll_timer.stop()
         self._show_reports()  # the last messages, into the session's log
         self.session.close()

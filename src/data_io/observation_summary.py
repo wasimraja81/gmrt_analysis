@@ -26,11 +26,13 @@ DEFAULT_LONGEST_SCAN_S = 3600.0
 @dataclass(frozen=True)
 class Integrations:
     """A selection's integrations, in time order: each one's timestamp
-    (recorded JD), source and selected rows."""
+    (recorded JD), source and selected rows, and its place among the file's
+    integrations (`integration`; None when not given)."""
 
     jd: np.ndarray
     source_id: np.ndarray
     n_rows: np.ndarray
+    integration: np.ndarray | None = None
 
     @property
     def integration_s(self) -> float | None:
@@ -61,7 +63,8 @@ def integrations_of(index, row_indices=None) -> Integrations:
         which = np.searchsorted(bounds, np.asarray(row_indices), side="right") - 1
         present, n_rows = np.unique(which, return_counts=True)
     first_rows = starts[present]
-    return Integrations(np.asarray(index.jd)[first_rows], np.asarray(index.source_id)[first_rows], np.asarray(n_rows))
+    return Integrations(np.asarray(index.jd)[first_rows], np.asarray(index.source_id)[first_rows], np.asarray(n_rows),
+                        np.asarray(present))
 
 
 def derive_scans(integrations: Integrations, gap_integrations: float = DEFAULT_GAP_INTEGRATIONS,
@@ -83,6 +86,15 @@ def derive_scans(integrations: Integrations, gap_integrations: float = DEFAULT_G
                                   int(k - piece), int(rows[piece:k].sum()), float((k - piece) * integration_s)))
                 piece = k
     return scans
+
+
+def scan_of_integration(integrations: Integrations, scans: list[Scan], n_integrations: int) -> np.ndarray:
+    """For each of the file's `n_integrations` integrations, the number of
+    the scan holding it (0: none of `scans`): the scans cover the
+    selection's integrations in order."""
+    numbers = np.zeros(n_integrations, dtype=np.int64)
+    numbers[integrations.integration] = np.repeat([s.number for s in scans], [s.n_integrations for s in scans])
+    return numbers
 
 
 def rows_per_antenna(index, row_indices=None) -> dict[int, int]:

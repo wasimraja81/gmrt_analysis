@@ -1,5 +1,8 @@
 """listObs (T20): the listing of what a file holds -- its sections, scans
-derived by AIPS INDXR's rules, --listobs on the command line."""
+derived by AIPS INDXR's rules, the flags section's pass, --listobs on the
+command line."""
+
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -8,9 +11,10 @@ from cli.run_visplot import main
 from conftest import make_scratch_dir
 from data_io.observation_summary import Integrations, derive_scans
 from test_cli_visplot_output import _make_synthetic_file
+from visplot.flag_summary import FlagCounter
 from visplot.listing import ListingOptions, list_observation
 from visplot.request import PlotRequest
-from visplot.run import RequestError, check_request, open_file
+from visplot.run import RequestError, Stopped, check_request, listing_text, open_file
 
 
 def test_scans_start_at_a_source_change_a_gap_or_the_longest_scan():
@@ -46,7 +50,7 @@ def test_listobs_prints_saves_and_lists_a_selection(capsys):
     path = _make_synthetic_file(scratch / "obs.fits")
     assert main(["visplot", str(path), "--listobs", "--provenance-dir", str(scratch / "runs")]) == 0
     printed = capsys.readouterr().out
-    assert "Scans (2)" in printed and "Antennas (3" in printed
+    assert "Scans (2)" in printed and "Antennas (3" in printed and "Flags" not in printed  # flags: asked for
     out = scratch / "out"
     assert main(["visplot", str(path), "--listobs", "observation,scans", "--sources", "3C48", "--output-dir", str(out),
                  "--provenance-dir", str(scratch / "runs")]) == 0
@@ -64,3 +68,40 @@ def test_listing_options_are_checked():
                              (dict(listobs="scans", scan_gap=0.0), "--scan-gap and --scan-longest take a positive")):
         with pytest.raises(RequestError, match=message):
             check_request(PlotRequest("obs.fits", None, **options))
+
+
+def test_the_flags_section_counts_the_flagged_visibilities_by_stokes_source_scan_and_antenna(capsys):
+    scratch = make_scratch_dir("listing_flags")
+    path = _make_synthetic_file(scratch / "obs.fits")  # row 0 (baseline 1-2, 3C286, scan 1): RR, channel 1 flagged
+    opened = open_file(path)
+    reports = []
+    text = listing_text(PlotRequest(str(path), None, listobs="flags"), opened,
+                        report=lambda level, message: reports.append(message))
+    assert reports == ["flags: one pass over 40 rows, 0.0 GB of visibilities to read"]
+    assert text.startswith("Flags: 0.31% of 320 visibilities flagged")
+    rows = {tuple(line.split()[:-3]): line.split()[-3:] for line in text.splitlines()[1:] if line.strip()}
+    assert rows[("RR",)] == ["160", "1", "0.62"] and rows[("LL",)] == ["160", "0", "0.00"]
+    assert rows[("1", "3C286")] == ["160", "1", "0.62"] and rows[("2", "3C48")] == ["160", "0", "0.00"]
+    assert rows[("1", "3C286", "0/18:00:00")] == ["160", "1", "0.62"]
+    assert rows[("1", "C00:01")] == ["216", "1", "0.46"] and rows[("3", "C02:03")] == ["208", "0", "0.00"]
+    only_ll = listing_text(PlotRequest(str(path), None, listobs="flags", stokes="LL"), opened)
+    assert only_ll.startswith("Flags: 0.00% of 160 visibilities") and "RR" not in only_ll
+    with pytest.raises(Stopped, match="stopped while counting the flags"):
+        listing_text(PlotRequest(str(path), None, listobs="scans,flags"), opened,
+                     progress=lambda pass_progress: lambda rows_done: False)
+    assert main(["visplot", str(path), "--listobs", "flags", "--provenance-dir", str(scratch / "runs")]) == 0
+    printed = capsys.readouterr().out
+    assert "counting flags: 40 / 40 rows (100%)" in printed and "Flags: 0.31% of 320" in printed
+
+
+def test_flag_counts_take_an_autocorrelation_once_and_a_file_without_stokes():
+    weight = np.ones((2, 1, 3), dtype=np.float32)  # 2 rows, IF, 3 channels: no STOKES axis
+    weight[1, 0, :2] = 0.0
+    block = SimpleNamespace(weight=weight, axis_types=["IF", "FREQ"], stokes_labels=None, row_indices=np.array([0, 2]),
+                            ant1=np.array([1, 4]), ant2=np.array([2, 4]), source_id=np.array([5, 5]))
+    counter = FlagCounter(np.array([0, 2, 4]))
+    counter.apply(counter.compute(SimpleNamespace(block=block)))
+    counts = counter.counts
+    assert (counts.flagged, counts.total) == (2, 6) and counts.by_stokes == {"all": [2, 6]}
+    assert counts.by_antenna == {1: [0, 3], 2: [0, 3], 4: [2, 3]} and counts.by_source == {5: [2, 6]}
+    assert counts.integration_flagged.tolist() == [0, 2] and counts.integration_total.tolist() == [3, 3]

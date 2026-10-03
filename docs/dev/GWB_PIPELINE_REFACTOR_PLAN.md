@@ -3,9 +3,9 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, 540 tests passing; T26, T32 in progress; T40, T42,
-T45, T46, T50-T52, T20 open (order in Phase B); T35 (Moon scans' u, v, w) open, parked
-until the Moon is imaged.
+T47-T49, point D and T21 2026-10-01, T20 2026-10-03, 542 tests passing; T26, T32 in
+progress; T40, T42, T45, T46, T50-T54 open (order in Phase B); T35 (Moon scans' u, v, w)
+open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -279,7 +279,7 @@ Buildable now, ahead of Phase C.
   - T20 (below): the AIPS FQ table and AN-table polarization columns, and DATE-OBS /
     per-source on-source time for richer plot titles and axis context.
 
-- **T20 — Observation metadata aggregator ("listObs") — IN PROGRESS (added 2026-09-27).**
+- **T20 — Observation metadata aggregator ("listObs") — DONE (added 2026-09-27, built 2026-10-03).**
   A stock-take of what a UVFITS file actually carries, against what this codebase reads,
   found: the AIPS FQ table (`FRQSEL`/`IF FREQ`/`CH WIDTH`/`TOTAL BANDWIDTH`/`SIDEBAND`) is
   never consulted at all — `chan_freqs_hz` is computed purely from the primary header's
@@ -390,6 +390,21 @@ Buildable now, ahead of Phase C.
   command line printing, saving and listing a selection; the option checks; the GUI tab
   listing the file and the form's selection (a stack's lower-plot options left out),
   and saving.
+  Step 5 built 2026-10-03: the Flags section, `visplot/flag_summary.py`'s reducer on one
+  pass over the selection (`run_stream`, as a plot reads it): a visibility is one channel
+  and Stokes of a row, flagged when its weight is not positive; counted by Stokes,
+  source, antenna (every baseline it is on, an autocorrelation once) and integration,
+  the listing summing integrations into its scans. `--listobs` alone lists every section
+  but flags (`listing.DEFAULT_SECTIONS`); `--listobs flags` (or with others) first
+  reports the rows and GB to read, then its progress. The GUI's Flags box starts
+  unticked; its progress shows under the buttons, with Stop (Stopped: nothing listed,
+  the record says so). On the archival files: the whole GSB file, 8.1 GB, in 47 s with
+  6 threads (1.0 GB resident), nothing flagged (its weights all 1.0, as an astropy read
+  of 2000 rows spread over the file also gives); the GWB file's 3C286, 6.8 GB of 4
+  Stokes, in 40 s, nothing flagged. Tests: the synthetic file's counts by Stokes, source,
+  scan and antenna, a Stokes selection, a stop, the command line's progress; an
+  autocorrelation counted once and a file without a STOKES axis; the GUI's box unticked
+  at first and its listing with flags.
 
 - **T21 — visPlot density mode — DONE (added 2026-09-27, built 2026-10-01).** A plot style for dense
   generic Y-vs-X plots that colors each pixel by the number of samples landing in it —
@@ -1172,6 +1187,12 @@ Buildable now, ahead of Phase C.
   per block and a stop saving nothing; the GUI building a missing index and opening the
   file; Stop ending a build with nothing built and saying so.
   Next: point D and T26's controls.
+  The form's Selection section above Axes (the user, 2026-10-03: "That way user gets to
+  see the selections first. Inadvertent plotting of ALL data can be slow."). Asked then
+  whether Clear cancels a plot: Clear closes every plot tab, and closing a tab stops its
+  reading at the next chunk (the window waits up to 5 s for it); a plot still being
+  prepared (row index and tables, no visibilities, seconds) is not stopped, and its tab
+  opens after. A Stop for one plot: T54.
 
 - **T33 — Themes — DONE (added 2026-09-28, built 2026-09-30).** Light and dark themes for
   Qt and matplotlib; a color too close to the background (e.g. `k` on dark) is flipped in
@@ -1526,6 +1547,25 @@ Buildable now, ahead of Phase C.
   holds (e.g. baselines C00:01-C01:02 to C01:02-C05:06), and a run of the record checks
   that it holds them still, refusing, with what it holds now, when it does not.
 
+- **T53 — astropy's memory-map warning on the GWB file — OPEN (found 2026-10-03).**
+  Every read of a table's data from the 389 GB GWB file (`open_fits_readonly`, memmap
+  on: the AN table when the file opens, the SU and FQ tables) prints "Could not memory
+  map array with mode='readonly', falling back to mode='denywrite'": astropy's readonly
+  mode maps the whole file copy-on-write (`mmap.ACCESS_COPY`), the kernel refuses that
+  for a file larger than this host's memory and swap (62 + 59 GB, overcommit heuristic)
+  with ENOMEM, and astropy retries with a read-only map, which reads the tables
+  correctly. The 8.1 GB GSB file maps without it. It shows on every GWB run, command line
+  and GUI, and among the test run's warnings, and on any machine whose memory is smaller
+  than a file. To weigh: reading the small tables without a memory map (memmap off reads
+  the table's bytes alone), the visibilities' reading (`open_raw_memmap`, numpy's own
+  read-only map) unchanged.
+
+- **T54 — Stop one plot's reading — OPEN (proposed 2026-10-03, awaiting the user's
+  choice).** The user asked whether Clear cancels a plot started on more data than
+  meant. It does, by closing every plot tab (T32's note). Proposed: Stop beside the
+  plot's progress, ending its reading at the next chunk and keeping the tab and what is
+  drawn; and a plot still being prepared stopped by Clear, its tab not opened.
+
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
   GSB file's antenna layout drew 32 antennas and put its inset on three points 1 m apart,
@@ -1599,7 +1639,8 @@ Buildable now, ahead of Phase C.
   T40 later; T42 with Phase C; then the data analysis. Taking stock (2026-10-03): T33,
   T38, point D, T21 and T26 pages steps 1-3 and 5 done; next T26 pages step 4 (`+`
   stacks, az-el-range as one figure; done the same day), then T20 and T26's flag editing; T50-T52
-  added; the high-resolution PDF stays on by default (the user, the same day).
+  added; the high-resolution PDF stays on by default (the user, the same day). T20 done
+  the same day; T53 and T54 added.
 
 ### Phase C — Primary Calibration (3C48)
 
