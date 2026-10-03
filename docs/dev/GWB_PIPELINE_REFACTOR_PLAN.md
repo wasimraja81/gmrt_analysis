@@ -1029,7 +1029,120 @@ Buildable now, ahead of Phase C.
   `.SUM` summary). The 2011 workflow was AIPS UVFND (find visibilities by a condition)
   then `my_uvflg` (flag commands from the found list, one channel per run): the shape of
   Locate then pattern finding. The UVFND listings and their outputs can serve as a
-  reference case for the pattern finder.
+  reference case for the pattern finder. Copied into the repository as
+  `legacy_my_uvflg/` (the user, the same day), without the compiled binary; its
+  `WORK/image42.jpg` is a hand-drawn flowchart of the per-baseline step (a baseline with
+  more than `maxbad_allowed` bad points flagged for all times; otherwise its bad times
+  grouped into intervals [t(i1), t(i2)] with t(i2) - t(i1) <= (i2 - i1) * dt +
+  tolerance, each flagged).
+  Conditions, piece 1 (2026-10-03). Proposed: a condition names a product (the file's
+  own, or I, Q, U, V by the IAU table), a function of it (amp, phase, real, imag), or
+  any quantity a plot shows; written one `--where` per condition, all to hold
+  ("amp(V) > 5", "phase(RL) in -30:30 deg", "el < 20 deg"); operators >, >=, <, <=,
+  `in a:b`, `not in a:b`; amplitudes in the file's BUNIT (another unit refused); no
+  threshold has a default. A match on a native product points at that visibility; on a
+  derived one, at the products it is made from (V of circular feeds: RR and LL of that
+  row and channel). Visibilities the file flags are skipped by default, a derived value
+  flagged when any product it uses is; an option includes them, for review. The GUI: a
+  Locate tab of condition lines writing the same `--where` text. The user's answers:
+  - geometry quantities in conditions: "absolutely! we would want to flag based on
+    elevation for example". The selection's filters stay;
+  - no relative thresholds and no time-frequency statistical flaggers ("no tfcrop
+    needed. No rflag needed"). The strategy: "We just use the very "obvious" BAD
+    visibilities (using say the StokesV threshold) to list the coordinates of such
+    visibilities. Then we use those coordinates to find patterns - bad times, bad
+    channels, bad baselines/antenna etc. So instead of clipping just these bad obvious
+    outliers, we will write conditions to flag the coordinates as well. So use outliers
+    to identify bad coordinates, and then use patterns in those coordinates to decide
+    flagging all visibilities generated at those coordinates (not just the obvious
+    outliers)." (As `my_uvflg` does: a baseline with more than `maxbad_allowed` bad
+    points flagged for all times.);
+  - `--locate XLO:XHI,YLO:YHI` stays, "as long as these do not conflict or have race
+    conditions with the new options": the box becomes two conditions on the plot's
+    axes, evaluated with any `--where` in the same pass.
+  Locate and flag generation are separate tasks (the user, the same day): "the locate
+  should be equivalent of AIPS UVFND. It should write to a file. The flag generation
+  should be a separate task. It reads the output of locate (if needed several of them
+  appended) and decide on how to write the compact flagging command. If compactification
+  is not efficient/possible, then we should have a mechanism to write the flag table
+  itself - dimension of this table is the same as that of the data shape." So:
+  - Locate: the selection and conditions in, a found file out (each match's
+    coordinates: row, baseline, time, channel, product; with its value and weight);
+  - flag generation: one or more found files in, a flag file out: compact entries, and
+    where compacting is not efficient, the flag table of the data's shape (one bit per
+    visibility in row order: piece 2's mask). An OR of conditions is two Locate runs
+    whose found files flag generation reads together.
+  Confirmed by the user, with two clarifications (2026-10-03):
+  - "the flag table same in shape as the data must be generated in all cases": the
+    data-shaped table is the flag file's content in every case, what is applied; compact
+    entries describe it where its flags compact (for reading, and for the AIPS and CASA
+    exports). This revises piece 2, where entries held what compacts and the mask the
+    rest. Flag generation's two modes: exact ("in the easy case we will directly update
+    the flags per visibility") and patterns ("we will "analyse" the outputs of locate,
+    find patterns, and extend the flags beyond the detected outliers as per my_uvflg.f");
+  - "the my_uvflg.f looks for outliers in the calibrator observations that interlace
+    the science data. So we identify the bad coords based on calibrator, and transfer
+    the flags to the target science observations." Outliers are found on the
+    calibrators' scans, where a source of known structure makes them clear; the bad
+    coordinates found there are carried to the target's scans between them (the 2011
+    parameter file: "If no. of badvis >= maxbad_allowed, then entire
+    scan-length(scan_len+target) will be flagged"). The rules of that transfer are part
+    of pattern finding, read from `my_uvflg.f` first. The net state's unflag set (the
+    file's own flags lifted) needs its own place beside the data-shaped table: to be
+    settled with the found file's storage.
+  Row-level flags (the user, 2026-10-03: "we should have row level flags as well. That
+  could speed things up. If an entire row is bad, we should ever only need to flag the
+  whole row"; as the Measurement Set's FLAG_ROW beside its FLAG cube). The flag table
+  stays logically the data's shape and is stored in three layers, ORed; the user agreed
+  the third (channels flagged in every row) the same day:
+
+      Flag table: logically one bit per visibility, [nrows x nchan x nStokes]
+                  (GWB: 3,959,928 x 2,048 x 4 = 32,439,730,176 bits, 4.05 GB)
+      stored as three layers:
+
+      L1  all-rows mask      [nchan x nStokes]        GWB: 2,048 x 4 bits = 1 KB
+          bit set: that channel and Stokes flagged in every row
+                        RR LL RL LR
+            chan    0  [ #  #  #  # ]   <- band edge
+            chan    1  [ .  .  .  . ]
+              ...
+            chan 2047  [ #  #  #  # ]
+
+      L2  row flags          [nrows]                  GWB: 3,959,928 bits = 0.5 MB
+          bit set: every visibility of that row (one baseline, one time) flagged
+            row   0  1  2  3  4  5  6 ...
+                [ .  #  .  .  #  #  . ... ]
+
+      L3  visibility flags   for partly flagged rows only
+          rows      [n_partial]               sorted row numbers, e.g. [17, 905, 1206, ...]
+          bits      [n_partial x nchan x nStokes]   one channel x Stokes block per row listed
+
+      flagged(r, c, s) = L1[c, s]  or  L2[r]  or  (r listed in L3 and L3[r][c, s])
+
+  The gain, on the GWB file: one antenna flagged for the whole observation is 282,852
+  rows (the listing's count); as visibility bits 282,852 x 8,192 bits = 290 MB, as row
+  flags 282,852 bits of the 0.5 MB L2; and rows with L2 set are dropped from the
+  selection before reading (282,852 x 98.3 KB = 27.8 GB not read). Fifty band-edge
+  channels in all four Stokes: 3,959,928 x 200 bits = 99 MB as visibility bits, 200
+  bits in L1. Generating flags sets the coarsest layer that covers them: a pattern
+  condemning a baseline, an antenna or a time range sets L2 bits; only rows flagged in
+  part need L3. The unflag set (the file's own flags lifted) takes the same three
+  layers; a visibility's final flag is (the file's flag and not lifted) or flagged here.
+  Rows are numbered as in the FITS file, which the flag file is tied to.
+  `my_uvflg.f` read in full (2026-10-03): `docs/dev/MY_UVFLG_ANALYSIS.md` (its inputs,
+  algorithm per channel, what reaches the target, findings, and where each of its
+  settings comes from in the flag generator, with the user's answers): `maxbad_allowed`
+  a fraction of a baseline's integrations in the calibrator scan; calibrator-target
+  pairs given by the user (3C468.1 with Cas-A in 40_014); the tiers adopted as they are,
+  all channels in one run, a pattern across channels to be designed. Its whole-bin test
+  can never fire (line 353 multiplies by the baseline count twice: 0.7 x 465 x 69,750 =
+  22.7 million against at most 69,750 visibilities in a bin; checked at the user's
+  questions: `nbase` and `nsamp_per_scan` are each assigned once); a bad bin was still
+  flagged through its antenna and baseline tiers. Ported as its comment states it, with
+  three guards against such bugs (the user: "would be good to not have such bugs"):
+  limits as fractions of named counts from the data, tests on both sides of every
+  limit, and each run's report of what every tier decided. No reference run against
+  `my_uvflg` itself (the user: "We can have tests to verify our implementations").
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
