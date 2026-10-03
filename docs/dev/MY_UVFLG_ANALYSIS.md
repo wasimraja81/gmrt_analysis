@@ -84,7 +84,11 @@ bad times, padded by one sample.
   over all times is printed and not used in a decision.
 - The bins are typed in, one calibrator scan and the target scan after it each; the
   calibrator's scan length is one value for all bins.
-- Detection uses one Stokes (I or V) per run; the flags cover all Stokes.
+- Detection uses one Stokes (I or V) per run; the flags cover all Stokes
+  (`STOKES ''`, line 193): a detection flags every product of its row and channel.
+  Not in `my_uvflg`: neighbouring channels (each command is one channel, lines
+  187-195), time-channel patches, array-wide bursts (the later Python port's), and
+  decisions across bins (the all-times matrix is only printed, lines 334-335).
 - The 2011 outputs in `WORK/` came from an earlier version: they write
   `SOURCES '3C468.1'` and `REASON 'MY_UVFLG'` where the source now writes empty
   strings, and its merged lines read `BASE= BASE= 2, 3, ...`, which the current source
@@ -101,7 +105,7 @@ bad times, padded by one sample.
 
 | `my_uvflg` | 2011 value | proposed source |
 |---|---|---|
-| bins (`nscans`, boundaries) | typed in | from the data: the derived scans (T20), each calibrator scan with the target scans up to the next calibrator scan, the calibrator-target pairs given by the user (e.g. 3C468.1, the phase calibrator, with Cas-A in 40_014) |
+| bins (`nscans`, boundaries) | typed in | cycles, from the data (defined below), for the calibrator-target pairs the user gives (e.g. 3C468.1, the phase calibrator, with Cas-A in 40_014) |
 | `scan_len` | 5 min | from the data: each calibrator scan's own length |
 | `tsamp_sec` | 2 s | from the data: the measured integration time |
 | `nante`, `nbase` | 30, 465 | from the data: antennas and baselines with rows (autocorrelations only where present) |
@@ -119,6 +123,60 @@ bad times, padded by one sample.
 In the flag table's layers, whole-bin decisions are rows (L2) for their channels: a
 bin's antenna or baseline flagged in every channel of the found files is L2; in some
 channels, L3 bits for those channels; channels flagged in every row, L1.
+
+## Cycles: the bins, from the data
+
+`my_uvflg`'s bin is the span between two consecutive boundary times of its parameter
+file, each holding one calibrator scan and the target scan after it (line 265). The
+flag generator takes them from the derived scans (T20), named cycles (the user asked
+for "bin" to be qualified, 2026-10-03):
+
+- a calibrator run: consecutive scans of the calibrator, no other source between them
+  (a gap or the longest-scan cut can split one stretch into two scans);
+- a cycle: a calibrator run and the paired target's scans after it, up to the
+  calibrator's next run; target scans before the first calibrator run are in no cycle
+  (`my_uvflg` ignores points outside its bins). Scans of other sources within that span:
+  `my_uvflg` flags them too (`SOURCES ''`, line 192: every source in the bin's span),
+  and so does the flag generator (the user, 2026-10-03: "flag all sources within the
+  time span of the cycle"; in 40_014, cycle 2 holds 3C303, 3C345, B1929+10 and 3C48
+  scans);
+- the tiers' counts use the calibrator run's integrations (`visibilities_in_cycle` =
+  baselines with rows x the run's integrations, per channel and detection product); the
+  cycle's target scans inherit its decisions.
+
+The pair (3C468.1, Cas-A) in the GSB file's listing (2026-10-03):
+
+| cycle | calibrator run (3C468.1) | target scans (Cas-A) | other scans within |
+|---|---|---|---|
+| 1 | 4, 5 (17:11:33, 17:14:47) | 6, 7 | none |
+| 2 | 8, 9 | none | 10-13 (3C303, 3C345, B1929+10, 3C48) |
+| 3 | 14 | 15 | none |
+| 4-8 | 16, 18, 20, 22, 24 | 17, 19, 21, 23, 25 | none |
+| 9 | 26 | none (Moon scans follow) | none |
+
+## Across channels: a vote
+
+The tiers run per channel as ported; then, for each cycle, a whole-cycle, antenna or
+baseline decision made in at least a fraction `f_chan` of the searched channels is
+applied to all of them (the user agreed, 2026-10-03, default 0.75). The runs of bad
+times stay per channel. An extended decision covers the searched channels only (the
+user: "Searched channels only").
+
+## Beyond `my_uvflg`: further extension rules
+
+Every flag a rule sets covers all products of its row and channel (as `STOKES ''`).
+Adopted in addition (the user, 2026-10-03: "All of B1-B5 should be adopted for the
+flagging"), each with parameters and defaults to be defined, and with the same guards:
+
+- B1 neighbouring channels: a detected channel run padded by m channels on each side,
+  as runs are padded in time;
+- B2 time-channel patches: detections crowding a time x channel patch of one baseline or
+  antenna flag the whole patch (the two-dimensional form of the run rule);
+- B3 array-wide bursts: an integration with detections on at least `f_burst` of the
+  baselines, in at least `f_chan` of the searched channels, flagged for every baseline
+  (the Python port's burst tier, its default 0.5);
+- B5 across cycles: an antenna or baseline decided in at least `f_cycle` of the cycles
+  flagged for the whole observation.
 
 ## Porting without such bugs
 

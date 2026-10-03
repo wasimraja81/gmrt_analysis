@@ -4,8 +4,8 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 550 tests passing; T26,
-T32 in progress; T40, T42, T45, T46, T50-T52 open (order in Phase B); T35 (Moon scans' u,
-v, w) open, parked until the Moon is imaged.
+T32 in progress; T40, T42, T45, T46, T50-T52, T55 open (order in Phase B); T35 (Moon
+scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -1143,6 +1143,22 @@ Buildable now, ahead of Phase C.
   limits as fractions of named counts from the data, tests on both sides of every
   limit, and each run's report of what every tier decided. No reference run against
   `my_uvflg` itself (the user: "We can have tests to verify our implementations").
+  Further decisions (2026-10-03): a cycle's decisions flag every source within its time
+  span (the user: "flag all sources within the time span of the cycle"), as `my_uvflg`
+  does (`SOURCES ''`); a detection flags all products of its row and channel (as
+  `STOKES ''`); and four rules beyond `my_uvflg` are adopted ("All of B1-B5 should be
+  adopted"): neighbouring channels, time-channel patches, array-wide bursts, and
+  decisions across cycles, their parameters to be defined (the analysis). Seeing the
+  flags: T55.
+  Its bins become cycles (the user asked for "bin" to be qualified): a cycle is a
+  calibrator run (consecutive scans of the calibrator) and the paired target's scans
+  after it, up to the calibrator's next run, from the derived scans; the tiers count the
+  calibrator run's integrations, the target scans inherit. Across channels, a vote: a
+  cycle's whole-cycle, antenna or baseline decision made in at least `f_chan` of the
+  searched channels (default 0.75, the user) is applied to all of them, the searched
+  channels only (the user); runs of bad
+  times stay per channel. The GSB file's cycles for (3C468.1, Cas-A) are tabled in the
+  analysis.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
@@ -1882,6 +1898,78 @@ Buildable now, ahead of Phase C.
   threads), Stop took 0.36 s. Tests: a draw stopped after its first chunk keeping its
   samples, starting nothing, a zoom drawing again in full; a stop while finding the
   ranges; Clear cancelling a plot being prepared, with its record.
+
+- **T55 — Seeing the flags in their dimensions — OPEN (the user, 2026-10-03: "think of
+  facilitating visualision of the flagging of these multi-dimensional data").** A flag
+  table spans time x baseline x channel x Stokes (the GWB file: 10,476 integrations x
+  378 baselines x 2,048 channels x 4 Stokes); seeing what the outliers were and how far
+  the rules carried flags from them needs views that collapse some axes. Proposed (as
+  AIPS SPFLG and TVFLG lay time against channel and time against baseline):
+  - summary matrices, per cycle and over all times: antenna x antenna, the fraction of
+    each baseline flagged (`my_uvflg`'s ANTE-BASE summary as a heat map), antenna x
+    cycle and channel x cycle;
+  - rasters: time x channel for a baseline or an antenna, time x baseline for a channel
+    range, each pixel the fraction of its visibilities flagged, drawn at the window's
+    pixels as the density plots are (pages for one per baseline or antenna);
+  - origin: each flagged cell coloured by what set it (the file's own flag, an outlier
+    found, or the rule that extended it: cycle, antenna, baseline, run, neighbour
+    channel, patch, burst, across cycles); the flag generator keeps its decisions, each
+    with its rule (a short list beside the table), so a view draws origins from them
+    without a per-visibility record;
+  - before and after: the existing plots (amplitude against time, u-v distance) with a
+    generated flag table applied, its flagged points drawn as crosses as the file's own
+    are now;
+  - from summary to detail: a matrix cell opens its raster; a raster's pixel is located
+    (its visibilities listed).
+  Views of flags alone need the row index, the flag table and the decisions, no
+  visibility data; before-and-after plots read the data as plots do. To design with the
+  user once the flag generator's output exists.
+  The basic view, and the interactive flagging mode (the user, 2026-10-03, in place of a
+  proposed raster of values): "We have the flag array (same shape as data). This is
+  initialised to whatever the original flagging is. Each point on this data is 1 or 0.
+  Each point on this data is a unique coordinate. We can use scatter plots of any
+  dimension versus any dimension (2D at a time) holding all other dimensions fixed. Any
+  cluster for that 2D view indicates that all of the visibilities within that cluster
+  for all of the coords held constant should be flagged." So:
+  - a point set to plot: the coordinates whose flag is 1 (or the outliers a found file
+    holds), one point each, as `--show-flagged` draws flagged points now;
+  - axes: any two coordinates, every pair (the user: "You will allow all 2D
+    combinations"): time, channel or frequency, baseline, antenna, Stokes, and the
+    derived coordinates the plots have (u, v, w, uvdist, hour angle, elevation,
+    azimuth, parallactic angle). Time and frequency exist as axes; channel index,
+    baseline and antenna to be added. Examples: time x channel (as AIPS SPFLG), time x
+    baseline at one channel (as AIPS TVFLG), baseline x channel at one time, antenna x
+    antenna (ant1 against ant2: `my_uvflg`'s ANTE-BASE summary as points), elevation x
+    channel. On a single antenna axis a visibility is drawn at both its antennas, and a
+    region there flags every baseline of the antennas it covers; on a categorical axis
+    (baseline, antenna, Stokes) a region selects the categories it spans;
+  - the dimensions held fixed: the selection (`--antennas`/`--baselines-with`,
+    `--stokes`, `--channels`, `--time-range`) or pages (one per baseline, antenna or
+    Stokes);
+  - a region (a box; polygons to be added) on such a plot is a condition on the two
+    coordinates: Flag sets every visibility at the coordinates inside it, in the slice
+    held fixed, whatever its value; the holes of a cluster are filled, which is the
+    extrapolation;
+  - one pass reads the file's weights into the flag array (as the Listing's Flags
+    section reads them); these plots then read the flag array and the row index alone,
+    so a replot after an edit is quick;
+  - light (the user: "this would be much more lightweight than AIPS's SPFLG or anything
+    else, since we will only be looking at sparse "samples" that are outliers - not each
+    visibility point. If the points overlap, we can use histogram equalisation like
+    methods as we already have in the visplot"): the plot holds the sparse outliers (a
+    found file is that list) or the set coordinates, never every visibility's value;
+    overlap drawn in density mode, `--density-scale histogram`. Flags of whole rows or
+    whole channels (layers L2, L1) are drawn as filled spans (a row's time across its
+    channels, a channel across all times), one each, so the view stays light once the
+    rules have run.
+  Two modes, both kept (the user: "this is the interactive mode. We must retain the
+  algorithmic batch mode for flagging. Idea is the same, one involves human, and once
+  does not. We should allow both modes please."): interactive, a person reading
+  clusters on these plots and marking regions; batch, Locate and the flag generator
+  (`my_uvflg`'s tiers and the rules beyond them) deciding the same kind of coordinates
+  without one. Both set coordinates in the same flag array, each change recorded with
+  what made it (a region with its plot and slice, or a rule with its parameters), so a
+  batch result can be reviewed and edited interactively, and the reverse.
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
