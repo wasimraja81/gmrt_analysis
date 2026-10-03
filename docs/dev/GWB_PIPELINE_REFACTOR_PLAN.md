@@ -1156,9 +1156,8 @@ Buildable now, ahead of Phase C.
   calibrator run's integrations, the target scans inherit. Across channels, a vote: a
   cycle's whole-cycle, antenna or baseline decision made in at least `f_chan` of the
   searched channels (default 0.75, the user) is applied to all of them, the searched
-  channels only (the user); runs of bad
-  times stay per channel. The GSB file's cycles for (3C468.1, Cas-A) are tabled in the
-  analysis.
+  channels only (the user); runs of bad times stay per channel. The GSB file's cycles
+  for (3C468.1, Cas-A) are tabled in the analysis.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
@@ -1970,6 +1969,34 @@ Buildable now, ahead of Phase C.
   without one. Both set coordinates in the same flag array, each change recorded with
   what made it (a region with its plot and slice, or a rule with its parameters), so a
   batch result can be reviewed and edited interactively, and the reverse.
+  The found file (Locate's output, the flag generator's input), 2026-10-03; the venv has
+  numpy alone (no pyarrow, h5py, pandas). The user's decisions:
+  - `.npz`, a JSON header inside, as the row index is stored;
+  - one file per session, growing as Locate runs are appended to it ("One file per
+    session ID"); each run's part kept with its own provenance record, conditions and
+    searched space, and a match found twice merged by the flag generator;
+  - each match stores what makes patterns visible without a lookup (the user: "store
+    and avoid look up - all of u, v, w and the weight? (flags can lead to discovery -
+    recording these makes it easy to see patterns)"): its row, channel and product,
+    and with them its time, antennas, source, u, v, w, weight and value;
+  - the searched space recorded: the rows searched as a bit set (0.5 MB for the GWB
+    file), the channels and products searched, the conditions and request; the FITS
+    file's identity, a found file of another file refused.
+  Matches are written as Locate reads, chunk by chunk, never all held in memory (V on
+  the GWB file's 8.1e9 row-channel cells: were 1% to match, 81 million matches).
+  The record of a match, agreed by the user the same day: row (uint32), channel
+  (uint16), product (int8, the AIPS Stokes code), time as recorded (JD, float64),
+  antennas 1 and 2 (uint16 station numbers), source id (uint16), u, v, w (float32,
+  light-seconds as the row index holds them), the product's complex value (float32
+  real and imaginary), each condition's value (float32), the weights of the products
+  used (both of RR and LL for V; float32), flagged (uint8): 54 bytes with one
+  condition, 4.4 GB for 81 million matches before compression. Sessions: the GUI's
+  session ID; on the command line `--session ID`, a name the user chooses, every run
+  with that ID appending to its found file in the provenance directory (made on first
+  use); runs writing to one session at once take turns (a lock). No new package is
+  needed: polygons are matplotlib's (`widgets.PolygonSelector`, and
+  `path.Path.contains_points` for which points fall inside; matplotlib 3.11.2 in the
+  venv).
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
