@@ -609,7 +609,9 @@ Buildable now, ahead of Phase C.
     3, with an optional per-entry `stokes` list (absent = all Stokes, as before) and
     `reason`/`created` fields; an atomic flag is one entry (baseline, time interval,
     channel range, Stokes). The archived decoder ignores the added keys, so it reads a v3
-    Stokes-specific entry as all Stokes (it over-flags, never under-flags). A converter
+    Stokes-specific entry as all Stokes (it over-flags, never under-flags). [Corrected
+    2026-10-03: the archived loader refuses any version but 1 or 2 (`load_flag_table`),
+    so it reads no v3 file at all; and the format is now this code's own, below.] A converter
     writes an AIPS FG table: FG rows carry an antenna pair, time range, channel range and
     per-Stokes `PFLAGS`, one row per entry; how AIPS loads a standalone FG table to be
     checked when the converter is built.
@@ -874,6 +876,120 @@ Buildable now, ahead of Phase C.
   flag grid, the selected visibilities marked; a flag or unflag applies to a cell, a
   channel across Stokes, a Stokes across channels, or the row. Flag file entries use the
   same terms: time range, baseline, channel range, Stokes set.
+  Flag file format, piece 1 of the flagging design (2026-10-03; the user: "take flagging
+  design piece by piece - file format and compacting the flagging commands need careful
+  decisions"). Found first in the archived code: its loader refuses versions other than
+  1 or 2, and its interval strings, labelled UTC, are the rows' recorded timestamps (IAT
+  in both files) with no offset applied, 34-35 s from UTC. The user's decisions:
+  - this code's own format, independent of the archived one: "we do not want to
+    marry with archived formats - those may be good for insights but inadequate in terms
+    of correctness and scalability". The archived v1/v2 files are neither read nor
+    converted;
+  - a flat list of entries, each naming what it flags (antennas, meaning every baseline
+    of each; one baseline; or all), its times, channels and Stokes (each absent: all),
+    and why, when and by what run;
+  - times as the rows record them, the time scale named in the file's header (IAT for
+    both archival files), matched to integrations within a fraction of the integration
+    time; the GUI shows UTC beside them;
+  - channels as 0-based index ranges (as `--channels` takes them), matched exactly, with
+    each range's edge frequencies (MHz) written beside and checked when the file is
+    applied, so data with another channel layout is refused;
+  - a flag file is tied to the FITS file it was made on: its header records the file's
+    name, size, row count and time system, and applying it to a file that differs is
+    refused, naming what differs.
+  Compacting, piece 2 (2026-10-03). Its scale: the GWB file holds 3,959,928 rows x 2,048
+  channels x 4 Stokes = 32,439,730,176 visibilities, 4.05 GB at one bit each (the GSB
+  file 672,150,528, 0.08 GB). A box on a plot gives runs in channel, time and Stokes,
+  which merge; scattered cells do not (were 1% of the GWB file's visibilities chosen, no
+  two adjacent, that would be 324 million entries, some 65 GB of JSON at ~200 bytes
+  each). Merging is exact: channels into ranges, consecutive integrations of a baseline
+  into intervals, Stokes into sets, and baselines into an antenna entry or an all-array
+  entry only where the chosen cells cover every row of that antenna (or of the array) in
+  the file at those times, checked against the row index, so a merge never flags a row
+  the plot did not show. The user's decisions:
+  - the file records the net state: the visibilities it flags, and the FITS file's own
+    flags it lifts (unflag); a visibility is in one set or neither, so applying is
+    order-free (as AIPS FG rows are ORed together). An edit changes the sets and the
+    entries are compacted again; the history of edits is the undo/versions piece;
+  - compacting is exact: entries flag the chosen visibilities and no others. Growing a
+    flag across small gaps in time or channel (as CASA flagdata's extend mode,
+    growtime/growfreq) is an edit of its own, recorded as such;
+  - flags that do not compact go to a companion bit mask: one bit per visibility in the
+    file's row order, compressed, a chunk's slice read when flags are applied; entries
+    hold what compacts. The AIPS and CASA exports write what compacts and state what
+    they cannot.
+  Flag and unflag in the window, piece 3 (2026-10-03; CASA plotms checked as the
+  reference: regions marked with a tool, then Locate, Flag or Unflag on all of them, and
+  flag extension across correlations, channels and time). The user's decisions:
+  - mark, then act: boxes drawn on a plot stay marked; Locate, Flag or Unflag then acts
+    on all of them, and Clear marks removes them. Locate keeps its listing, as one of
+    the three actions;
+  - a Flag covers what is drawn inside the boxes (a u-v point: its row and channel for
+    every selected Stokes), nothing the plot does not show; Flag offers extending to all
+    Stokes, all channels, or the whole row of those rows, the choice recorded with the
+    entry;
+  - edits are pending until Save: an edit shows at once (the plots redrawn with it),
+    with Undo; Save writes the pending edits to the flag file as one new version;
+    closing with edits pending asks.
+  The two workflows (the user, 2026-10-03; a per-row channel x Stokes flag editor,
+  proposed, was set aside):
+  1. direct flag: outliers seen on a plot ("Very obvious outliers", the user) are marked
+     with the intent to flag; the tool records exactly those visibilities, one or a
+     cluster, and writes entries that flag exactly them, when the user chooses;
+  2. collect, then find patterns: suspect visibilities are listed during an inspection,
+     appended to one list across boxes, plots, pages and sessions; at the end a
+     pattern-finding step over the list proposes compact entries, which may cover more
+     than was listed (an antenna bad on most of its baselines), each proposal stating
+     what it adds; the user accepts or rejects each, accepted ones becoming pending
+     edits. The list is also a record of what was looked at and why.
+  Suspects come from a condition as well as a box: "Locate me visibilities with Stokes V
+  amplitude > 5 Units" (the user: high Stokes V is not expected from astronomical
+  sources in general), the output assessed for clustering in time, baseline, channel,
+  antenna and polarisation; with clustering it compacts, and without, the flags are a
+  good fraction of the data array (the bit mask). The user: "we need to design this
+  carefully without conflicting between flagging and locate - one is a batch listing
+  based on generic conditions with no visualisation needed. And one is the visual mode
+  where user clicks and specifies regions inside which additional conditions can be
+  used". The model:
+  - selection (exists): the rows, channels and Stokes a request covers;
+  - condition: a test on quantities for each visibility of the selection (|V| > 5,
+    amp > 3000, a phase range);
+  - Locate: the batch listing, selection and conditions in, one pass, a found set out
+    (each matching visibility with its values); no plot needed; the command line and a
+    GUI tab. `--locate XLO:XHI,YLO:YHI` is its first form (a box is two range
+    conditions on the plotted quantities), to be generalised to any conditions without
+    `--plots`;
+  - region: a box marked on a plot in the window, the conditions "x in [a, b] and y in
+    [c, d]" on its quantities within its selection; written conditions inside a region
+    allowed, secondary (the user: "less intuitive, since the user can already select
+    what they are plotting");
+  - Flag: an action on a set of visibilities; it evaluates no condition itself.
+  A region located in the window and its equivalent `--locate` give the same found set,
+  so a record replays it. From a found set: Flag at once (workflow 1, exact), or append
+  to a suspect list, find patterns, review, Flag (workflow 2). "Flag" names only the
+  action writing flag entries, apart from `--apply-flags`/`--show-flagged` (the file's
+  own flags) and the Listing's Flags section (counting them).
+  Not in visplot yet: Stokes V (the registry's `v` is the baseline coordinate). With the
+  files' R and L feeds it combines RR and LL of one row and channel (the archived test
+  quantity: |RR-LL|/2); its sign and factor convention to be checked against the AIPS
+  and IAU documents, its flag (either of RR, LL flagged), and which visibilities a high
+  V makes suspect (RR and LL, or all four), all to be designed. With BUNIT UNCALIB a
+  fixed threshold means different things on baselines of different gains; relative
+  conditions (V against I, a multiple of the robust scatter per baseline and channel)
+  to be considered with the user.
+  Pattern finding: the archived Python port of the user's thesis flagging code
+  (`legacy_gsb_40_014/experimental/outlier_detection.py`, "ported from my_uvflg.f,
+  2011"; a copy in `src/modules/` differing only in an import fallback) carries its
+  tiers as named thresholds: a whole scan at >= 70% bad, an antenna for a scan at >= 60%
+  of its visibilities bad (method 1) or more than `maxbad_allowed` bad on more than 50%
+  of its baselines (method 2), a baseline at `maxbad_allowed` (100), time gaps merged up
+  to 2 integrations, and global bursts at >= 50% of baselines. The Fortran source
+  (`my_uvflg.f`) is not in the repository or its history; the user: "We will analyse
+  that fortran code, if needed, and make it better in our implementation."
+  Design order, each piece with the user: (1) the condition language, Stokes V with it;
+  (2) the found set and the suspect list, stored at scale; (3) pattern finding; (4)
+  Flag's entries; (5) applying, undo and versions; (6) provenance; (7) the AIPS UVFLG
+  and CASA flagdata exports.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
