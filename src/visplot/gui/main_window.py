@@ -99,6 +99,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self._saving: _Task | None = None  # the save running, if any (one at a time)
         self._building: _Task | None = None  # the index build running, if any
         self._listing_task: _Task | None = None  # the listing running, if any (its flags pass shows progress)
+        self._preparing: list[_Task] = []  # plots being prepared, their tabs not yet open (Clear cancels them)
         self._index_note = ""  # what building the open file's missing index takes
         self.session = SessionRecord(provenance_dir or build_arg_parser().get_default("provenance_dir"))
 
@@ -156,7 +157,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.plot_button.setDefault(True)
         self.plot_button.clicked.connect(self._plot)
         clear = QtWidgets.QPushButton("Clear")
-        clear.setToolTip("Close every plot tab")
+        clear.setToolTip("Close every plot tab, stopping their reading, and cancel a plot being prepared")
         clear.clicked.connect(self._clear_plots)
         buttons = QtWidgets.QHBoxLayout()
         buttons.addWidget(clear)
@@ -443,7 +444,9 @@ class VisplotWindow(QtWidgets.QMainWindow):
 
     def _plot(self) -> None:
         """Run the form's request as the command line does, into a new tab,
-        with its provenance record (no record, no plot)."""
+        with its provenance record (no record, no plot). Clear while it is
+        prepared cancels it: its tab does not open, and its record says so
+        (T54)."""
         request = self.form.request()
         opened = self.opened
         session_id = self.session.session_id
@@ -455,12 +458,20 @@ class VisplotWindow(QtWidgets.QMainWindow):
                 self.report("info", f"plot {record.run_id}: {record.command}")
                 run = prepare(request, opened, report=record.reporting(self.report))
                 run.set_record(record.run_id)
+                if task.stop:
+                    raise Stopped(f"plot {record.run_id} cleared before its tab opened")
             return run, record
 
         def done(result):
             from visplot.qt_inspector import InspectorWindow
 
+            self._preparing.remove(task)
             run, record = result
+            if task.stop:  # cleared after it was prepared, before this poll
+                self.report("info", f"plot {record.run_id} cleared before its tab opened")
+                self.statusBar().showMessage("the plot was cleared before its tab opened", 8000)
+                self._form_changed()
+                return
             provenance = WindowProvenance(request, len(run.xy_plots), parent_run_id=record.run_id,
                                           session_id=session_id)
             panel = InspectorWindow(run.source, run.figures(), labels=run.labels, cache=run.cache, cached=run.cached,
@@ -492,11 +503,18 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self._form_changed()
 
         def failed(message):
-            self.report("warning", message)
-            self.statusBar().showMessage("the plot could not be prepared")
+            self._preparing.remove(task)
+            if task.stop:
+                self.report("info", message)
+                self.statusBar().showMessage("the plot was cleared before its tab opened", 8000)
+            else:
+                self.report("warning", message)
+                self.statusBar().showMessage("the plot could not be prepared")
             self._form_changed()
 
-        self._start(work, done, failed)
+        task = _Task(work, done, failed)
+        self._preparing.append(task)
+        self._launch(task)
 
     # ---- saving -----------------------------------------------------------------------
 
@@ -640,6 +658,10 @@ class VisplotWindow(QtWidgets.QMainWindow):
         tab.deleteLater()
 
     def _clear_plots(self) -> None:
+        """Close every plot tab (each stops its reading) and cancel the plots
+        being prepared."""
+        for task in self._preparing:
+            task.stop = True
         for index in reversed(range(self.tabs.count())):
             if hasattr(self.tabs.widget(index), "panel"):
                 self._close_tab(index)

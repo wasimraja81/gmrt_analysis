@@ -6,6 +6,7 @@ import json
 import os
 import shlex
 import time
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -578,4 +579,23 @@ def test_the_listing_tab_lists_the_file_or_the_forms_selection_and_saves_it():
     window._save_listing(str(saved))
     text = saved.read_text()
     assert text.startswith("# visplot listing of obs.fits") and "--sources 3C48" in text and "--y2-unit" not in text
+    window.close()
+
+
+def test_clear_cancels_a_plot_being_prepared():
+    """T54: Clear while a plot is prepared: its tab does not open, and its
+    record says why."""
+    app, window, path = _window("gui_clear_preparing")
+    _settle(app, window, lambda: window.plot_button.isEnabled())
+    tabs = window.tabs.count()
+    window._plot()
+    window._clear_plots()  # before the window's next poll, so before the tab could open
+    _settle(app, window, lambda: window.plot_button.isEnabled() and not window._preparing)
+    assert window.tabs.count() == tabs
+    messages = [window.messages.item(i).text() for i in range(window.messages.count())]
+    cleared = [m for m in messages if "cleared before its tab opened" in m]
+    assert cleared and "WARNING" not in cleared[-1]
+    run_id = cleared[-1].split("plot ")[1].split()[0]
+    record = json.loads(next(Path(window.form.request().provenance_dir).rglob(f"{run_id}.json")).read_text())
+    assert "cleared before its tab opened" in json.dumps(record)
     window.close()

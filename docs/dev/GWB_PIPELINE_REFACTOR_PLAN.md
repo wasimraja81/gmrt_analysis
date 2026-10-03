@@ -3,8 +3,8 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20 and T53 2026-10-03, 547 tests passing; T26, T32
-in progress; T40, T42, T45, T46, T50-T52, T54 open (order in Phase B); T35 (Moon scans' u,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 550 tests passing; T26,
+T32 in progress; T40, T42, T45, T46, T50-T52 open (order in Phase B); T35 (Moon scans' u,
 v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -1596,11 +1596,23 @@ Buildable now, ahead of Phase C.
   file with astropy's warnings as errors (the old open raises there). The test run's 8
   warnings are gone.
 
-- **T54 — Stop one plot's reading — OPEN (proposed 2026-10-03, awaiting the user's
-  choice).** The user asked whether Clear cancels a plot started on more data than
+- **T54 — Stop one plot's reading — DONE (proposed and built 2026-10-03; the user:
+  "YES").** The user asked whether Clear cancels a plot started on more data than
   meant. It does, by closing every plot tab (T32's note). Proposed: Stop beside the
   plot's progress, ending its reading at the next chunk and keeping the tab and what is
   drawn; and a plot still being prepared stopped by Clear, its tab not opened.
+  Built: the plot window's status bar (a GUI plot tab's, and the command line's window)
+  shows Stop while its plots read, the ranges pass or a draw (a locate and an export
+  show their own progress). Stop ends the pass at its next chunk and drops the draws
+  waiting: a stopped draw keeps the samples read, its panel and status bar saying how
+  far ("stopped: drawing: 173,856 / 1,312,794 rows (13%) ..."), and no draw starts by
+  itself; a zoom, pan, resize or another page reads again. Stopped while finding the
+  ranges, nothing is drawn, and the status bar says so. Clear (its hover text says so)
+  also cancels a plot being prepared: its tab does not open, and its record ends with
+  "cleared before its tab opened". On the GSB file in the GUI (amp-vs-uvdist, 6
+  threads), Stop took 0.36 s. Tests: a draw stopped after its first chunk keeping its
+  samples, starting nothing, a zoom drawing again in full; a stop while finding the
+  ranges; Clear cancelling a plot being prepared, with its record.
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The

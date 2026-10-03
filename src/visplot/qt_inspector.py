@@ -62,6 +62,7 @@ POLL_MS = 150
 REFRESH_S = 0.5
 SETTLE_S = 0.3
 RESIZE_TOLERANCE_PX = 2  # a grid this close to the axes' pixel size is kept (rounding)
+READING_JOBS = ("ranges", "draw")  # the plots' own reading, which Stop ends (T54)
 EXPORT_FILTERS = "PNG (*.png);;PDF (*.pdf);;SVG (*.svg);;EPS (*.eps);;TIFF (*.tif);;JPEG (*.jpg)"
 
 
@@ -79,6 +80,7 @@ class _Job:
         self.completed = False
         self.error: str | None = None
         self.stop = False
+        self.stopped_by_user = False  # Stop (T54), as against a draw a newer view replaced
         self.started = False
         self._run = run
         self._thread = threading.Thread(target=self._body, name=f"visplot-{kind}", daemon=True)
@@ -187,6 +189,12 @@ class InspectorWindow(QtWidgets.QMainWindow):
             else:
                 self._add_static_tab(name, item)
         self._build_locate_dock()
+        self.stop_button = QtWidgets.QPushButton("Stop")
+        self.stop_button.setToolTip("Stop reading: the plots keep what is drawn; a zoom, pan, resize or another "
+                                    "page reads again")
+        self.stop_button.clicked.connect(self.stop_reading)
+        self.stop_button.hide()
+        self.statusBar().addPermanentWidget(self.stop_button)
         self.statusBar().showMessage("starting")
 
         self.timer = QtCore.QTimer(self)
@@ -354,6 +362,9 @@ class InspectorWindow(QtWidgets.QMainWindow):
         def done(job):
             if job.completed and tab.page is page:
                 self._set_page_views(tab, found["extents"])
+            elif job.stopped_by_user:
+                self.statusBar().showMessage(f"stopped while {job.progress.label}: nothing drawn; another page "
+                                             f"reads again")
 
         self._queue(_Job("ranges", f"finding the ranges of page {index + 1}", run, done,
                          self.source.row_bytes if read_data else 0, part.n_rows), front=True)
@@ -465,6 +476,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
 
         def done(job):
             if not job.completed:
+                if job.stopped_by_user:  # the plots' ranges unknown: no view to draw, nor to zoom
+                    self.statusBar().showMessage(f"stopped while {job.progress.label}: nothing drawn")
                 return
             figures = {id(self.panels[plot].figure): self.panels[plot].figure for plot in plots}
             extents = stack_extents(self.extents, [figure.plots for figure in figures.values()])
@@ -539,6 +552,8 @@ class InspectorWindow(QtWidgets.QMainWindow):
 
         def done(job):
             if not job.completed:
+                if job.stopped_by_user:
+                    self._show_stopped(job, plots)
                 return
             finished = {}
             for plot, grid in grids.items():
@@ -556,6 +571,42 @@ class InspectorWindow(QtWidgets.QMainWindow):
 
         job = _Job("draw", label, run, done, self.source.row_bytes if read_data else 0, self.source.n_rows)
         self._queue(job)
+
+    def stop_reading(self) -> None:
+        """Stop the plots' reading at its next chunk (T54): the pass running,
+        and the plots waiting for one. What is drawn stays; a zoom, pan,
+        resize or another page reads again."""
+        running = self.jobs[0] if self.jobs else None
+        if running is None or running.kind not in READING_JOBS:
+            return
+        running.stop = running.stopped_by_user = True
+        self.jobs[1:] = [job for job in self.jobs[1:] if job.kind not in READING_JOBS]
+        self.to_draw.clear()
+        self.stop_button.setEnabled(False)
+        self.statusBar().showMessage("stopping at the next chunk …")
+
+    def _update_stop_button(self) -> None:
+        """Stop shown while the plots read (not for a locate or an export,
+        which show their own progress)."""
+        reading = bool(self.jobs) and self.jobs[0].kind in READING_JOBS and not self.jobs[0].stop
+        if reading == self.stop_button.isHidden():  # isHidden: a window in a tab not shown is not visible
+            self.stop_button.setVisible(reading)
+            self.stop_button.setEnabled(True)
+
+    def _show_stopped(self, job: _Job, plots: list[PlotSpec]) -> None:
+        """A draw the user stopped: its plots as far as they were read, each
+        figure once, and in its panel and the status bar, how far."""
+        text = f"stopped: {job.progress.text(job.rows_done)}"
+        shown = {}
+        for plot in plots:
+            panel = self.panels.get(plot)
+            if panel is not None and panel.grid is not None:
+                shown[id(panel.figure)] = panel
+        for panel in shown.values():
+            self._render(panel)
+            panel.figure.set_status(text)
+            panel.canvas.draw_idle()
+        self.statusBar().showMessage(f"{text}; a zoom, pan, resize or another page reads again")
 
     def _in_view(self, views: dict, job: _Job, read_data: bool) -> XYSource:
         """For a pass reading visibility data: the selection narrowed to the
@@ -598,6 +649,7 @@ class InspectorWindow(QtWidgets.QMainWindow):
                     self.last_refresh = now
         elif self.statusBar().currentMessage().endswith("elapsed"):
             self.statusBar().showMessage("ready")
+        self._update_stop_button()
         self._check_views(now)
 
     def _render(self, panel: _Panel, final: bool = False) -> None:

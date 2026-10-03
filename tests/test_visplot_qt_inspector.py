@@ -27,7 +27,7 @@ from visplot.xy_figure import XYFigure  # noqa: E402
 from visplot.xy_session import XYSource  # noqa: E402
 
 
-def _window(name, plot):
+def _window(name, plot, chunk_bytes=64 * 1024):
     scratch = make_scratch_dir(name)
     path = _make_synthetic_file(scratch / "obs.fits")
     index = load_row_index(default_row_index_path(path))
@@ -36,7 +36,7 @@ def _window(name, plot):
         float(index.jd.min()), read_source_table(path), read_array_earth_location(path), "UNCALIB",
         index.stokes_labels, antenna_names={a.station_number: a.name for a in read_antenna_table(path)},
     )
-    source = XYSource(path, index, selection.row_indices, None, ctx, chunk_bytes=64 * 1024)
+    source = XYSource(path, index, selection.row_indices, None, ctx, chunk_bytes=chunk_bytes)
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     figure = XYFigure(plot, ctx)
     window = InspectorWindow(source, [("plot", figure)])
@@ -53,6 +53,18 @@ def _wait(app, window, timeout=30.0):
             return
         time.sleep(0.02)
     raise AssertionError("the window did not finish its jobs")
+
+
+def _poll_until(app, window, condition, timeout=30.0):
+    """The window's poll driven here (its timer stopped), so a test acts between two polls."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        app.processEvents()
+        window._poll()
+        if condition():
+            return
+        time.sleep(0.02)
+    raise AssertionError("the window did not reach the state")
 
 
 def test_window_draws_every_sample_and_reports_it():
@@ -438,4 +450,48 @@ def test_pages_of_stacks_hold_one_stack_per_baseline():
         ("C00:01-C01:02", "amp"), ("C00:01-C01:02", "phase"), ("C00:01-C02:03", "amp"), ("C00:01-C02:03", "phase"),
         ("C01:02-C02:03", "amp"), ("C01:02-C02:03", "phase")]
     assert all(p.drawn for p in tab.panels)
+    window.close()
+
+
+def test_stop_ends_a_draw_keeping_what_is_drawn_and_a_zoom_reads_again():
+    """T54: Stop ends the plot's reading at its next chunk; the plot keeps the
+    samples read, no draw starts again by itself, and a zoom reads again."""
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_stop_draw", plot, chunk_bytes=1024)  # a few rows a chunk
+    window.timer.stop()
+    _poll_until(app, window, lambda: window.extents is not None and not window.jobs)  # the ranges found
+    assert window.to_draw and window.stop_button.isHidden()
+    window._start_draw()  # queued; stopped before its thread starts, it ends after its first chunk
+    window._update_stop_button()
+    assert not window.stop_button.isHidden()
+    window.stop_reading()
+    assert not window.to_draw and not window.stop_button.isEnabled()
+    _poll_until(app, window, lambda: not window.jobs)
+    panel = window.panels[plot]
+    assert not panel.drawn and 0 < panel.grid.n_samples < 40 * 4 * 2 - 1 and panel.cell.image is not None
+    assert panel.figure.status.get_text().startswith("stopped: drawing: ")
+    assert window.statusBar().currentMessage().endswith("a zoom, pan, resize or another page reads again")
+    assert window.stop_button.isHidden()
+    for _ in range(3):
+        window._poll()
+    assert not window.jobs  # no draw started by itself
+    window.timer.start()
+    panel.figure.ax.set_xlim(400.5, 402.5)  # channels 1 and 2 (401, 402 MHz)
+    panel.figure.ax.set_ylim(0.0, 50.0)
+    time.sleep(0.4)
+    app.processEvents()
+    time.sleep(0.4)
+    _wait(app, window)
+    assert panel.drawn and panel.grid.n_samples == 40 * 2 * 2
+    window.close()
+
+
+def test_stop_while_finding_the_ranges_draws_nothing():
+    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    app, window, _ = _window("qt_stop_ranges", plot, chunk_bytes=1024)
+    window.timer.stop()
+    window.stop_reading()  # the ranges pass, queued and not started
+    _poll_until(app, window, lambda: not window.jobs)
+    assert window.extents is None and not window.to_draw and window.panels[plot].grid is None
+    assert window.statusBar().currentMessage() == "stopped while finding data ranges: nothing drawn"
     window.close()
