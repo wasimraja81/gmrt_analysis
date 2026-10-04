@@ -314,6 +314,16 @@ def test_select_rows_by_u_range_klambda_includes_rows_whose_range_overlaps():
     np.testing.assert_array_equal(sel.row_indices, [0, 2, 3])
 
 
+def test_select_rows_by_uu_vv_ww_in_metres_one_value_per_row_both_ends_included():
+    index = _make_klambda_index()
+    # In metres (uu_sec x c): rows 0-3 at 299.8, 599.6, -299.8, 1.5 m in uu; 89.9, 0, 0, 0 m in ww; vv all 0.
+    np.testing.assert_array_equal(select_rows(index, correlation_type="both", uu_range_m=(-300.0, 300.0)).row_indices,
+                                  [0, 2, 3])
+    np.testing.assert_array_equal(select_rows(index, correlation_type="both", ww_range_m=(80.0, 90.0)).row_indices, [0])
+    np.testing.assert_array_equal(select_rows(index, correlation_type="both", vv_range_m=(0.0, 0.0)).row_indices,
+                                  [0, 1, 2, 3])
+
+
 def test_select_rows_by_w_range_klambda():
     index = _make_klambda_index()
     # Only row 0 has a nonzero w; its exact range is [0.3, 0.33] kλ.

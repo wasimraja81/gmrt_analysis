@@ -11,16 +11,15 @@ from __future__ import annotations
 import math
 import re
 import textwrap
-
-import astropy.units as u
+from dataclasses import dataclass
 
 from data_io.antenna_table import Antenna
 from data_io.stokes_products import ProductPlan, plan_products
 from instruments.gmrt.antenna_selection import resolve_antenna_selection
 from visplot.channel_selection import resolve_channel_selection
 from visplot.plot_spec import PRESETS
-from visplot.quantities import QUANTITIES, convert, domain_in, resolve_unit, units_of
-from visplot.range_spec import NUMBER, parse_single_quantity_range, parse_single_range
+from visplot.quantities import QUANTITIES, convert, domain_in, domain_text, resolve_unit, units_of
+from visplot.range_spec import NUMBER, parse_single_range
 from visplot.time_range import resolve_time_range_jd
 
 TABLE_PLOTS = {"antenna-layout", "source-listing"}  # drawn from the file's tables
@@ -179,48 +178,69 @@ def resolve_time_range_arg(spec: str | None, reference_jd: float,
     return resolve_time_range_jd(spec, reference_jd, recorded_minus_utc_s) if spec else None
 
 
-def resolve_uvdist_range_arg(spec: str | None) -> tuple[float, float] | None:
-    """Metres by default (matching `select_rows`'s own `uvdist_range_m`),
-    or an explicit unit ("km")."""
-    return parse_single_quantity_range(spec, u.m) if spec else None
-
-
-def resolve_klambda_range_arg(spec: str | None) -> tuple[float, float] | None:
-    """A plain "lo:hi" in kilo-wavelengths -- no unit suffix is meaningful
-    here, since kilo-wavelengths is the unit (see `select_rows`'s own
-    u/v/w/uvdist_range_klambda docstring for why it isn't a scalar-unit
-    conversion in the first place)."""
-    return parse_single_range(spec) if spec else None
-
-
 _UNIT_RANGE = re.compile(rf"^\s*({NUMBER})\s*:\s*({NUMBER})\s*(\S*)\s*$")
-# The selection's ranges of a quantity: option -> (quantity, the unit select_rows takes, an example of
-# LO above HI wrapping through the quantity's boundary, or None: the quantity does not wrap).
+_IN_WAVELENGTHS = ("in wavelengths a row is kept when its value at some frequency between the lowest and highest "
+                   "--channels frequency (the whole band without --channels) is in the range")
+
+
+@dataclass(frozen=True)
+class UnitRange:
+    """A selection range of quantity `quantity`, 'LO:HI UNIT', as the help
+    names it (`name`). `arguments`: each unit `select_rows` takes, and its
+    argument taking it; a unit given goes to the one of its base (km to m,
+    Mlambda to klambda). `wraps`: an example of LO above HI wrapping through
+    the quantity's boundary, or None: it does not wrap. `note`: added to the
+    help."""
+
+    quantity: str
+    name: str
+    arguments: dict[str, str]
+    wraps: str | None = None
+    note: str | None = None
+
+
 UNIT_RANGES = {
-    "--ha-range": ("ha", "h", "10:-10 h, through lower culmination"),
-    "--az-range": ("az", "deg", "350:10 deg, through north"),
-    "--el-range": ("el", "deg", None),
-    "--pa-range": ("pa", "deg", "170:-170 deg, through 180 deg"),
+    "--uvdist-range": UnitRange("uvdist", "uv distance", {"m": "uvdist_range_m", "klambda": "uvdist_range_klambda"},
+                                note=_IN_WAVELENGTHS),
+    **{f"--{c}-range": UnitRange(c, f"baseline coordinate {c}", {"m": f"{c}_range_m", "klambda": f"{c}_range_klambda"},
+                                 note=_IN_WAVELENGTHS) for c in ("uu", "vv", "ww")},
+    "--ha-range": UnitRange("ha", "hour angle", {"h": "ha_range_hours"}, "10:-10 h, through lower culmination"),
+    "--az-range": UnitRange("az", "azimuth", {"deg": "az_range_deg"}, "350:10 deg, through north"),
+    "--el-range": UnitRange("el", "elevation", {"deg": "el_range_deg"}),
+    "--pa-range": UnitRange("pa", "parallactic angle", {"deg": "parallactic_angle_range_deg"},
+                            "170:-170 deg, through 180 deg"),
 }
 
 
 def unit_range_help(option: str) -> str:
     """The help of a selection range option, from `UNIT_RANGES`."""
-    quantity, _, wrap = UNIT_RANGES[option]
-    units = ", ".join(unit.name for unit in units_of(quantity))
-    wraps = f"; LO above HI wraps ({wrap})" if wrap else ""
-    return (f"'LO:HI UNIT' {QUANTITIES[quantity].display_name.lower()}, both ends included, the unit required: "
-            f"{units}{wraps}")
+    unit_range = UNIT_RANGES[option]
+    units = ", ".join(unit.name for unit in units_of(unit_range.quantity))
+    wraps = f"; LO above HI wraps ({unit_range.wraps})" if unit_range.wraps else ""
+    note = f"; {unit_range.note}" if unit_range.note else ""
+    return f"'LO:HI UNIT' {unit_range.name}, both ends included, the unit required: {units}{wraps}{note}"
 
 
-def resolve_range_arg(option: str, spec: str | None) -> tuple[float, float] | None:
+def split_range_unit(spec: str) -> tuple[str, str | None]:
+    """'LO:HI UNIT' as written, split into its 'LO:HI' and its unit (None:
+    none given); text not of that form whole, with None."""
+    match = _UNIT_RANGE.match(spec)
+    if not match:
+        return spec.strip(), None
+    return spec[:match.start(3)].strip(), match.group(3) or None
+
+
+def resolve_range_arg(option: str, spec: str | None) -> dict[str, tuple[float, float]]:
     """A selection range (`UNIT_RANGES`), 'LO:HI UNIT': both ends included;
     the unit required, one of the quantity's (as --where takes them); values
     outside its physical domain refused; for a cyclic quantity LO above HI
-    wraps through its boundary. Returned in the unit `select_rows` takes."""
+    wraps through its boundary. Returned as the `select_rows` argument it
+    gives, in that argument's unit, e.g. {"uvdist_range_klambda": (2.0, 5.0)};
+    {} when `spec` is None."""
     if spec is None:
-        return None
-    quantity, to_unit, wrap = UNIT_RANGES[option]
+        return {}
+    unit_range = UNIT_RANGES[option]
+    quantity = unit_range.quantity
     units = ", ".join(unit.name for unit in units_of(quantity))
     match = _UNIT_RANGE.match(spec)
     if not match:
@@ -229,17 +249,19 @@ def resolve_range_arg(option: str, spec: str | None) -> tuple[float, float] | No
     if not unit:
         raise ValueError(f"{option} {spec!r}: give the unit, one of: {units}")
     try:
-        unit = resolve_unit(quantity, unit).name
+        given = resolve_unit(quantity, unit)
     except ValueError:
         raise ValueError(f"{option} {spec!r}: unit {unit!r} does not apply; one of: {units}") from None
-    lowest, highest = domain_in(quantity, unit) or (None, None)
+    lowest, highest = domain_in(quantity, given.name) or (None, None)
     for value in (lo, hi):
         if (lowest is not None and value < lowest) or (highest is not None and value > highest):
-            raise ValueError(f"{option} {spec!r}: {quantity} lies in {lowest:g}..{highest:g} {unit}; {value:g} is "
-                             "outside it")
-    if lo > hi and not wrap:
+            raise ValueError(f"{option} {spec!r}: {quantity} lies in {domain_text(lowest, highest, given.name)}; "
+                             f"{value:g} {given.name} is outside it")
+    if lo > hi and not unit_range.wraps:
         raise ValueError(f"{option} {spec!r}: the lower end {lo:g} is above the upper end {hi:g}")
-    return convert(lo, quantity, unit, to_unit), convert(hi, quantity, unit, to_unit)
+    to_unit = next(to for to in unit_range.arguments if resolve_unit(quantity, to).base == given.base)
+    return {unit_range.arguments[to_unit]: (convert(lo, quantity, given.name, to_unit),
+                                            convert(hi, quantity, given.name, to_unit))}
 
 
 def resolve_stokes_products(spec: str | None, stokes_labels: list[str] | None) -> ProductPlan | None:

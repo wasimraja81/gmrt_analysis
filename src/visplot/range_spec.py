@@ -1,23 +1,18 @@
-"""One compact "lo:hi" range syntax, shared by every range-taking CLI flag
-(antennas, channels, time, uvdist, w, HA, Az, El, parallactic angle, ...) --
-not a different format per flag.
+"""One compact "lo:hi" range syntax for the flags taking ids or numbers
+(antennas, channels, the axis limits, percentiles, a locate box), one format
+for all of them. The selection's ranges of a quantity (uv distance, uu, vv,
+ww, HA, Az, El, parallactic angle) take 'LO:HI UNIT', the unit required:
+`request_args.resolve_range_arg`.
 
 `"1:5,10,12:14"` is a comma-separated union of terms, each either a single
 value ("10") or an inclusive range ("1:5"). `parse_range_spec` is the one
 parser; `expand_int_ranges` and `parse_single_range` adapt it for the two
-shapes a caller actually needs: a discrete set of ids (antennas, channel
-indices), or one continuous (lo, hi) bound (everything `select_rows`
-already takes as a range tuple).
+shapes its callers take: a discrete set of ids (antennas, channel indices),
+or one continuous (lo, hi) bound.
 
-For a quantity with a genuine physical unit (frequency, distance, angle --
-not kilo-wavelengths, which isn't one: see `data_io.row_selection`'s
-uu/vv/ww_range_klambda, which handle it exactly via each row's own channel
-frequencies, not a unit conversion), `parse_quantity_range`/
-`parse_single_quantity_range` accept an optional unit suffix on the whole
-spec ("300:310MHz", "-6:6deg") and convert via `astropy.units` rather than
-a hand-maintained conversion table -- `astropy.units` already knows every
-frequency/distance/angle unit correctly, including the 15deg-per-hour
-`hourangle` conversion HA needs, so there is no reason to reimplement it.
+For channels by frequency, `parse_quantity_range` accepts an optional unit
+suffix on the whole spec ("300:310MHz") and converts it with
+`astropy.units`.
 """
 
 from __future__ import annotations
@@ -118,12 +113,3 @@ def parse_quantity_range(spec: str, native_unit: u.Unit) -> list[tuple[float, fl
         ((lo * unit).to_value(native_unit), (hi * unit).to_value(native_unit))
         for lo, hi in (_parse_one_term(term) for term in numeric_terms)
     ]
-
-
-def parse_single_quantity_range(spec: str, native_unit: u.Unit) -> tuple[float, float]:
-    """`parse_quantity_range`, requiring exactly one lo:hi term (see
-    `parse_single_range`)."""
-    ranges = parse_quantity_range(spec, native_unit)
-    if len(ranges) != 1:
-        raise ValueError(f"expected a single lo:hi range, got {spec!r} ({len(ranges)} terms)")
-    return ranges[0]

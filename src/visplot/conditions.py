@@ -39,7 +39,7 @@ from dataclasses import dataclass, replace
 from astropy.time import Time
 
 from data_io.stokes_products import CIRCULAR, DERIVED, LINEAR, plan_products
-from visplot.quantities import QuantityContext, convert, domain_in, resolve_unit, units_of
+from visplot.quantities import QuantityContext, convert, domain_in, domain_text, resolve_unit, units_of
 from visplot.range_spec import NUMBER
 
 FUNCTIONS = ("amp", "phase", "real", "imag")
@@ -217,8 +217,7 @@ def _check_domain(operand: Operand, value: float, unit: str | None, text: str) -
     lowest, highest = domain
     if (lowest is not None and value < lowest) or (highest is not None and value > highest):
         where = f" {unit}" if unit else ""
-        span = f"{lowest:g}..{highest:g}{where}" if highest is not None else f"at least {lowest:g}{where}"
-        raise _refuse(text, f"{operand} lies in {span}; {value:g}{where} is outside it")
+        raise _refuse(text, f"{operand} lies in {domain_text(lowest, highest, unit)}; {value:g}{where} is outside it")
 
 
 def parse_condition(text: str) -> Condition:

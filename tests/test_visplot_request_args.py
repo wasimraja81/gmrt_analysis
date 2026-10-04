@@ -7,10 +7,8 @@ from visplot.request_args import (
     resolve_channels_arg,
     resolve_dpi_arg,
     resolve_figure_size_arg,
-    resolve_klambda_range_arg,
     resolve_stokes_products,
     resolve_time_range_arg,
-    resolve_uvdist_range_arg,
     resolve_plain_range_arg,
     resolve_range_arg,
     validate_colorize_by,
@@ -75,24 +73,23 @@ def test_resolve_time_range_arg_resolves_relative_hours():
     assert hi == pytest.approx(2460123.5 + 1.0 / 24.0)
 
 
-def test_resolve_uvdist_range_arg_defaults_to_metres():
-    assert resolve_uvdist_range_arg("0:5000") == (0.0, 5000.0)
+def test_a_selection_range_takes_its_unit_explicitly_and_gives_the_select_rows_argument_of_its_unit():
+    assert resolve_range_arg("--ha-range", "-6:6 h") == {"ha_range_hours": (-6.0, 6.0)}
+    assert resolve_range_arg("--ha-range", "-90:90deg")["ha_range_hours"] == pytest.approx((-6.0, 6.0))  # no space
+    assert resolve_range_arg("--el-range", "0:0.5 rad")["el_range_deg"] == pytest.approx((0.0, 28.6478897565))
+    assert resolve_range_arg("--az-range", "350:10 deg") == {"az_range_deg": (350.0, 10.0)}  # wraps through north
+    assert resolve_range_arg("--el-range", None) == {}
 
 
-def test_resolve_uvdist_range_arg_converts_km():
-    assert resolve_uvdist_range_arg("0:5km") == (0.0, 5000.0)
-
-
-def test_resolve_klambda_range_arg_is_a_plain_number_range():
-    assert resolve_klambda_range_arg("0:5") == (0.0, 5.0)
-
-
-def test_a_selection_range_takes_its_unit_explicitly_and_converts_to_select_rows_units():
-    assert resolve_range_arg("--ha-range", "-6:6 h") == (-6.0, 6.0)
-    assert resolve_range_arg("--ha-range", "-90:90deg") == pytest.approx((-6.0, 6.0))  # a space is optional
-    assert resolve_range_arg("--el-range", "0:0.5 rad") == pytest.approx((0.0, 28.6478897565))
-    assert resolve_range_arg("--az-range", "350:10 deg") == (350.0, 10.0)  # wraps through north
-    assert resolve_range_arg("--el-range", None) is None
+def test_a_baseline_range_in_lengths_gives_metres_and_in_wavelengths_kilo_wavelengths():
+    """Metres are one value per row; wavelengths depend on the channel, so select_rows evaluates them over the
+    selected band (its exact per-band filter): no fixed factor converts one to the other."""
+    assert resolve_range_arg("--uvdist-range", "0:5 km") == {"uvdist_range_m": (0.0, 5000.0)}
+    assert resolve_range_arg("--uvdist-range", "2:5 klambda") == {"uvdist_range_klambda": (2.0, 5.0)}
+    assert resolve_range_arg("--uvdist-range", "0.5:1 Mlambda") == {"uvdist_range_klambda": (500.0, 1000.0)}
+    assert resolve_range_arg("--uu-range", "-5:5 kλ") == {"uu_range_klambda": (-5.0, 5.0)}  # a unit's label too
+    assert resolve_range_arg("--vv-range", "-300:300 lambda") == {"vv_range_klambda": (-0.3, 0.3)}
+    assert resolve_range_arg("--ww-range", "-200:200 m") == {"ww_range_m": (-200.0, 200.0)}
 
 
 @pytest.mark.parametrize("option, spec, message", [
@@ -100,11 +97,16 @@ def test_a_selection_range_takes_its_unit_explicitly_and_converts_to_select_rows
     ("--el-range", "0:30", r"give the unit, one of: deg, rad"),
     ("--el-range", "0:30 h", r"unit 'h' does not apply; one of: deg, rad"),
     ("--el-range", "0:30 DEG", r"unit 'DEG' does not apply"),  # units are case-sensitive
-    ("--el-range", "0:95 deg", r"el lies in -90\.\.90 deg; 95 is outside it"),
+    ("--el-range", "0:95 deg", r"el lies in -90\.\.90 deg; 95 deg is outside it"),
     ("--ha-range", "-13:0 h", r"ha lies in -12\.\.12 h"),
     ("--az-range", "0:400 deg", r"az lies in 0\.\.360 deg"),
     ("--el-range", "30:10 deg", r"the lower end 30 is above the upper end 10"),  # elevation does not wrap
     ("--el-range", "0-30 deg", r"write 'LO:HI UNIT'"),
+    ("--uvdist-range", "0:5000", r"give the unit, one of: lambda, klambda, Mlambda, m, km"),
+    ("--uvdist-range", "-1:5 km", r"uvdist lies in at least 0 km; -1 km is outside it"),
+    ("--uvdist-range", "-1:5 klambda", r"uvdist lies in at least 0 klambda"),
+    ("--uu-range", "5:-5 klambda", r"the lower end 5 is above the upper end -5"),  # uu does not wrap
+    ("--ww-range", "0:5 deg", r"unit 'deg' does not apply; one of: lambda, klambda, Mlambda, m, km"),
 ])
 def test_a_selection_range_without_its_unit_or_outside_its_domain_is_refused(option, spec, message):
     with pytest.raises(ValueError, match=message):

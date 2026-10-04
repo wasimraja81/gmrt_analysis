@@ -11,7 +11,7 @@ def _every_kind_of_value():
         "tmp/obs.fits", "amp-vs-uvdist,ha-range", sources="3C286,3C48", correlation_type="both",
         antennas="1:5,W01", baselines_with="C01", exclude_antennas="C00",
         time_range="2021-07-25T17:00:00/2021-07-25T18:00:00",
-        uvdist_range="0:5km", uu_range_klambda="-5:5", ha_range="-2:2 h", every_nth=3, channels="400:450MHz",
+        uvdist_range="0:5 km", uu_range="-5:5 klambda", ha_range="-2:2 h", every_nth=3, channels="400:450MHz",
         stokes="RR,LL", point_size=0.25, color="k", colorize_by="stokes", show_flagged=True, mirror=True,
         x_unit="Mlambda", y_unit="UNCALIB", time_zone="Asia/Kolkata", x_range="0:40", y_range_mode="percentile",
         range_percentiles="1:99", y_scale="asinh", aspect="free", scale_linear_width=0.1, output_dir="tmp/out",

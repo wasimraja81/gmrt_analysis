@@ -27,7 +27,7 @@ from visplot.fonts import PANEL_FONTS
 from visplot.gui.widgets import (CheckedLineEdit, CollapsibleSection, NoteBox, form_layout, grouped_combo, hint, row,
                                  select_data)
 from visplot.plot_spec import PRESETS
-from visplot.quantities import QUANTITIES, QuantityContext, units_of
+from visplot.quantities import QUANTITIES, QuantityContext, resolve_unit, units_of
 from visplot.request import PlotRequest, build_arg_parser
 from visplot.request_args import (
     DEFAULT_LISTING_CORRELATION_TYPE,
@@ -38,13 +38,12 @@ from visplot.request_args import (
     UNIT_RANGES,
     resolve_antennas_arg,
     resolve_channels_arg,
-    resolve_klambda_range_arg,
     resolve_page_grid_arg,
     resolve_percentiles_arg,
     resolve_plain_range_arg,
     resolve_range_arg,
     resolve_time_range_arg,
-    resolve_uvdist_range_arg,
+    split_range_unit,
 )
 
 # Options the GUI sets through an action (a tool or a menu item), and the action that sets each.
@@ -150,7 +149,7 @@ def unit_range_field(dest: str, option: str) -> Field:
     box for LO:HI beside a menu of the quantity's units, none chosen at first
     -- the unit is the user's to give (2026-10-04) -- the field marked until
     it is."""
-    quantity = UNIT_RANGES[option][0]
+    quantity = UNIT_RANGES[option].quantity
     edit = CheckedLineEdit("lo:hi")
     menu = QtWidgets.QComboBox()
     menu.addItem("unit…", None)
@@ -162,9 +161,13 @@ def unit_range_field(dest: str, option: str) -> Field:
         return None if not text else f"{text} {unit}" if unit else text
 
     def show(spec):
-        lo_hi, _, unit = (spec or "").strip().rpartition(" ")
-        edit.setText(lo_hi if lo_hi else (spec or ""))
-        select_data(menu, unit if lo_hi else None)
+        lo_hi, unit = split_range_unit(spec or "")
+        try:
+            unit = resolve_unit(quantity, unit).name if unit else None  # by its name or label: "kλ" is klambda
+        except ValueError:
+            lo_hi, unit = (spec or "").strip(), None  # a unit not the quantity's: the text as given, marked
+        edit.setText(lo_hi)
+        menu.setCurrentIndex(menu.findData(unit) if unit else 0)
 
     def check(_text: str) -> str | None:
         resolve_range_arg(option, value())
@@ -495,15 +498,9 @@ class RequestForm(QtWidgets.QWidget):
 
         more = CollapsibleSection("More filters", expanded=False)
         more_form = form_layout(more.body)
-        for dest, label, placeholder, resolver in (
-            ("uvdist_range", "UV distance", "lo:hi m, or with km", resolve_uvdist_range_arg),
-            ("uu_range_klambda", "u (kλ)", "lo:hi", resolve_klambda_range_arg),
-            ("vv_range_klambda", "v (kλ)", "lo:hi", resolve_klambda_range_arg),
-            ("ww_range_klambda", "w (kλ)", "lo:hi", resolve_klambda_range_arg),
-            ("uvdist_range_klambda", "UV dist. (kλ)", "lo:hi", resolve_klambda_range_arg),
-        ):
-            more_form.addRow(label, self._add(text_field(dest, CheckedLineEdit(placeholder, _check_with(resolver)))))
-        for dest, label, option in (("ha_range", "Hour angle", "--ha-range"), ("az_range", "Azimuth", "--az-range"),
+        for dest, label, option in (("uvdist_range", "UV distance", "--uvdist-range"), ("uu_range", "uu", "--uu-range"),
+                                    ("vv_range", "vv", "--vv-range"), ("ww_range", "ww", "--ww-range"),
+                                    ("ha_range", "Hour angle", "--ha-range"), ("az_range", "Azimuth", "--az-range"),
                                     ("el_range", "Elevation", "--el-range"),
                                     ("pa_range", "Parallactic angle", "--pa-range")):
             more_form.addRow(label, self._add(unit_range_field(dest, option)))

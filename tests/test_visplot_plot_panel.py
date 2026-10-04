@@ -29,9 +29,10 @@ def test_category_palettes_leave_out_red_and_pink_which_mark_flags():
 
 
 def test_the_selection_filters_read_as_text():
-    request = PlotRequest("x.fits", "amp-vs-time", uvdist_range="0:5km", ha_range="-2:2 h", every_nth=40,
-                          random_subset_n=1000, random_seed=3)
-    assert selection_filters(request) == "uv distance 0:5km, hour angle -2:2 h, every 40th row, 1,000 random rows, seed 3"
+    request = PlotRequest("x.fits", "amp-vs-time", uvdist_range="0:5 km", vv_range="-2:2 klambda", ha_range="-2:2 h",
+                          every_nth=40, random_subset_n=1000, random_seed=3)
+    assert selection_filters(request) == ("uv distance 0:5 km, vv -2:2 klambda, hour angle -2:2 h, every 40th row, "
+                                          "1,000 random rows, seed 3")
     assert [selection_filters(PlotRequest("x.fits", "vv-vs-uu", every_nth=n)) for n in (1, 2, 3, 11, 21, 112)] == [
         "", "every 2nd row", "every 3rd row", "every 11th row", "every 21st row", "every 112th row"]
 

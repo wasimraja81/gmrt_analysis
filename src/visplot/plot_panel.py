@@ -60,8 +60,7 @@ _ORDINAL = {1: "st", 2: "nd", 3: "rd"}
 # Row filters of a request, as the panel names them.
 _FILTERS = (("antennas", "antennas {}"), ("baselines_with", "baselines with {}"), ("exclude_antennas", "excluding {}"),
             ("time_range", "time {}"),
-            ("uvdist_range", "uv distance {}"), ("uu_range_klambda", "u {} kλ"), ("vv_range_klambda", "v {} kλ"),
-            ("ww_range_klambda", "w {} kλ"), ("uvdist_range_klambda", "uv distance {} kλ"),
+            ("uvdist_range", "uv distance {}"), ("uu_range", "uu {}"), ("vv_range", "vv {}"), ("ww_range", "ww {}"),
             ("ha_range", "hour angle {}"), ("az_range", "azimuth {}"), ("el_range", "elevation {}"),
             ("pa_range", "parallactic angle {}"))
 
@@ -118,7 +117,7 @@ class PanelFacts:
 
 
 def selection_filters(request) -> str:
-    """A request's row filters, e.g. "uv distance 0:5km, every 40th row"."""
+    """A request's row filters, e.g. "uv distance 0:5 km, every 40th row"."""
     parts = [text.format(getattr(request, dest)) for dest, text in _FILTERS if getattr(request, dest)]
     for n, what in ((request.every_nth, "row"), (request.every_nth_integration, "integration")):
         if n and n > 1:

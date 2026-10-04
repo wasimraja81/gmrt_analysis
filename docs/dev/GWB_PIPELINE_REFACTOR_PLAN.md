@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 613 tests passing; T26,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 615 tests passing; T26,
 T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1371,6 +1371,28 @@ Buildable now, ahead of Phase C.
   "0:30 deg" it draws the 429,030 rows below 30 deg. Tests: units required, converted,
   case-sensitive, domains, wrapping and its refusal for elevation; the GUI field's
   menu, its marking, the request it writes and loads. 613 tests pass.
+  The baseline ranges second, the same day: `--uvdist-range`, `--uu-range`,
+  `--vv-range`, `--ww-range` in lambda, klambda, Mlambda, m, km; the four `-klambda`
+  options removed. One option, two filters behind it: a length goes to `select_rows`'
+  metres filter, one value per row (`uu_range_m`, `vv_range_m`, `ww_range_m` added
+  beside `uvdist_range_m`); a wavelength goes to its filter over the selected band,
+  which keeps a row when its value at some frequency of the band is in the range.
+  Metres and wavelengths have no fixed factor between them. `UNIT_RANGES` became a
+  table of `UnitRange` (the quantity, its name in the help, each unit `select_rows`
+  takes with its argument, the wrapping example, a note for the help), and
+  `resolve_range_arg` gives the `select_rows` argument of the unit's base; `run.select`
+  and the empty-selection message read the table, so a range option is added in one
+  place. The empty-selection message quotes a value as the shell needs it
+  (`--uu-range '-5:5 klambda'`). `range_spec.parse_single_quantity_range` (unit
+  optional, metres or hours by default) had no caller left and is removed;
+  `quantities.domain_text` words a domain for the conditions and the ranges alike. The
+  GUI: the four ranges in the unit field, which now reads a unit written without a
+  space ("0:5km") or by its label ("kλ") into the menu, and keeps text whose unit the
+  quantity lacks as typed, marked; it had left the menu's earlier choice in place. GSB
+  file (306-339 MHz): `--uvdist-range "0:5000"` refused naming the five units; "0:2 km"
+  draws 309,377 rows; "0:2 klambda" with `--uu-range "-1:1 km"` draws 263,795 rows, u
+  within ±1.13 kλ (1 km at 339 MHz) and v up to 2.2 kλ (a row within 2 kλ at 306 MHz
+  is 2.2 kλ at 339 MHz, and every channel of a row kept is drawn). 615 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

@@ -116,6 +116,9 @@ def select_rows(
     baselines: list[tuple[int, int]] | None = None,
     exclude_baselines: list[tuple[int, int]] | None = None,
     uvdist_range_m: tuple[float, float] | None = None,
+    uu_range_m: tuple[float, float] | None = None,
+    vv_range_m: tuple[float, float] | None = None,
+    ww_range_m: tuple[float, float] | None = None,
     uu_range_klambda: tuple[float, float] | None = None,
     vv_range_klambda: tuple[float, float] | None = None,
     ww_range_klambda: tuple[float, float] | None = None,
@@ -165,9 +168,10 @@ def select_rows(
     the same row can land on either side of a boundary. These need no
     extra input beyond `index` itself (`chan_freqs_hz` is already part of
     it); they raise if the index has no FREQ axis at all. The plain
-    (frequency-independent) `uvdist_range_m` above is unrelated -- kilo-
-    wavelengths cannot be substituted into it, since uvdist_range_m has no
-    frequency dependence to convert.
+    (frequency-independent) `uvdist_range_m`/`uu_range_m`/`vv_range_m`/
+    `ww_range_m` are unrelated -- kilo-wavelengths cannot be substituted
+    into them, since lengths in metres have no frequency dependence to
+    convert. All ranges include both ends.
 
     `ha_range_hours`/`az_range_deg`/`el_range_deg`/`parallactic_angle_range_deg`
     filter by each row's own source, at that row's own JD, as seen from
@@ -256,6 +260,10 @@ def select_rows(
         lo, hi = uvdist_range_m
         uvdist_m = np.sqrt(index.uu_sec.astype(np.float64) ** 2 + index.vv_sec.astype(np.float64) ** 2) * SPEED_OF_LIGHT_M_PER_S
         mask &= (uvdist_m >= lo) & (uvdist_m <= hi)
+    for range_m, delay_sec in ((uu_range_m, index.uu_sec), (vv_range_m, index.vv_sec), (ww_range_m, index.ww_sec)):
+        if range_m is not None:
+            length_m = delay_sec.astype(np.float64) * SPEED_OF_LIGHT_M_PER_S
+            mask &= (length_m >= range_m[0]) & (length_m <= range_m[1])
 
     klambda_filters = (uu_range_klambda, vv_range_klambda, ww_range_klambda, uvdist_range_klambda)
     if any(f is not None for f in klambda_filters):

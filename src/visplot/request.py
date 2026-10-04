@@ -191,16 +191,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "or absolute JD (UTC) with a 'jd' suffix, or 'start/end' as ISO-8601 UTC timestamps; absolute times "
         "become the file's recorded time by its TIMSYS/IATUTC (see 'time' under 'plot names')",
     )
-    sel.add_argument("--uvdist-range", help="'lo:hi' baseline length, metres by default, or with a unit suffix, e.g. 'km'")
-    klambda_help = (
-        "'lo:hi' in kilo-wavelengths; a row is kept if its value at any frequency between the "
-        "lowest and highest --channels frequency (whole band if --channels is not given) falls in range"
-    )
-    sel.add_argument("--uu-range-klambda", help=klambda_help)
-    sel.add_argument("--vv-range-klambda", help=klambda_help)
-    sel.add_argument("--ww-range-klambda", help=klambda_help)
-    sel.add_argument("--uvdist-range-klambda", help=klambda_help)
-    for option in UNIT_RANGES:  # --ha-range, --az-range, --el-range, --pa-range
+    for option in UNIT_RANGES:  # --uvdist-range, --uu/vv/ww-range, --ha-range, --az-range, --el-range, --pa-range
         sel.add_argument(option, metavar="'LO:HI UNIT'", help=unit_range_help(option))
     sel.add_argument(
         "--every-nth", type=int, metavar="N",

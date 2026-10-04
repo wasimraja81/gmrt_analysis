@@ -419,6 +419,14 @@ def domain_in(name: str, unit: str | None) -> tuple[float | None, float | None] 
     return into(lowest), into(highest)
 
 
+def domain_text(lowest: float | None, highest: float | None, unit: str | None) -> str:
+    """A domain as a refusal names it: "-90..90 deg", "at least 0 m"."""
+    where = f" {unit}" if unit else ""
+    if lowest is not None and highest is not None:
+        return f"{lowest:g}..{highest:g}{where}"
+    return f"at least {lowest:g}{where}" if lowest is not None else f"at most {highest:g}{where}"
+
+
 def resolve_unit(name: str, unit: str | None = None, ctx: QuantityContext | None = None) -> Unit:
     """Quantity `name`'s unit called `unit` (by name, e.g. "klambda", or
     label, e.g. "kλ"); its default if `unit` is None (the file's

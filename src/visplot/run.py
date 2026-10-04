@@ -19,6 +19,7 @@ everything worth telling the user goes to a `report(level, text)` callback
 from __future__ import annotations
 
 import math
+import shlex
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
@@ -58,13 +59,13 @@ from visplot.request_args import (
     DEFAULT_PAGE_FIGURE_SIZE,
     DEFAULT_PAGE_GRID,
     TABLE_PLOTS,
+    UNIT_RANGES,
     parse_plot_names,
     resolve_antennas_arg,
     resolve_channels_arg,
     resolve_correlation_type,
     resolve_dpi_arg,
     resolve_figure_size_arg,
-    resolve_klambda_range_arg,
     resolve_locate_box_arg,
     resolve_page_grid_arg,
     resolve_percentiles_arg,
@@ -72,7 +73,6 @@ from visplot.request_args import (
     resolve_range_arg,
     resolve_stokes_products,
     resolve_time_range_arg,
-    resolve_uvdist_range_arg,
     validate_colorize_by,
 )
 from visplot.source_listing import source_listing
@@ -602,20 +602,13 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
             baselines_with=resolve_antennas_arg(request.baselines_with, opened.antennas),
             exclude_antennas=resolve_antennas_arg(request.exclude_antennas, opened.antennas),
             jd_range=resolve_time_range_arg(request.time_range, float(index.jd.min()), recorded_minus_utc_s),
-            uvdist_range_m=resolve_uvdist_range_arg(request.uvdist_range),
-            uu_range_klambda=resolve_klambda_range_arg(request.uu_range_klambda),
-            vv_range_klambda=resolve_klambda_range_arg(request.vv_range_klambda),
-            ww_range_klambda=resolve_klambda_range_arg(request.ww_range_klambda),
-            uvdist_range_klambda=resolve_klambda_range_arg(request.uvdist_range_klambda),
-            ha_range_hours=resolve_range_arg("--ha-range", request.ha_range),
-            az_range_deg=resolve_range_arg("--az-range", request.az_range),
-            el_range_deg=resolve_range_arg("--el-range", request.el_range),
-            parallactic_angle_range_deg=resolve_range_arg("--pa-range", request.pa_range),
             every_nth=request.every_nth,
             every_nth_integration=request.every_nth_integration,
             random_subset_n=request.random_subset_n,
             random_seed=request.random_seed,
         )
+        for option in UNIT_RANGES:  # e.g. --uu-range "-5:5 klambda" gives uu_range_klambda=(-5.0, 5.0)
+            select_kwargs.update(resolve_range_arg(option, getattr(request, _dest(option))))
         if geometry_filters:
             select_kwargs.update(source_table=opened.source_table, array_location=opened.array_location,
                                  recorded_minus_utc_s=recorded_minus_utc_s)
@@ -638,14 +631,17 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
     return Selected(selection, axis_selection or None, stokes_labels, geometry_filters, select_kwargs, products)
 
 
-# The row filters in the command line's order: each option and the `select_rows` arguments it gives.
+def _dest(option: str) -> str:
+    """An option's request name: "--uu-range" -> "uu_range"."""
+    return option[2:].replace("-", "_")
+
+
+# The row filters in the command line's order: each option and the `select_rows` arguments it can give.
 _ROW_FILTERS = (
     ("sources", ("sources",)), ("correlation_type", ("correlation_type",)),
     ("antennas", ("antennas", "baselines_with")), ("exclude_antennas", ("exclude_antennas",)),
-    ("time_range", ("jd_range",)), ("uvdist_range", ("uvdist_range_m",)), ("uu_range_klambda", ("uu_range_klambda",)),
-    ("vv_range_klambda", ("vv_range_klambda",)), ("ww_range_klambda", ("ww_range_klambda",)),
-    ("uvdist_range_klambda", ("uvdist_range_klambda",)), ("ha_range", ("ha_range_hours",)),
-    ("az_range", ("az_range_deg",)), ("el_range", ("el_range_deg",)), ("pa_range", ("parallactic_angle_range_deg",)),
+    ("time_range", ("jd_range",)),
+    *((_dest(option), tuple(unit_range.arguments.values())) for option, unit_range in UNIT_RANGES.items()),
 )
 # What the filters are evaluated with, and never select rows by themselves.
 _FILTER_CONTEXT = ("freq_range_hz", "source_table", "array_location", "recorded_minus_utc_s")
@@ -662,12 +658,12 @@ def empty_selection_message(request: PlotRequest, index, kwargs: dict) -> str:
     for dest, keys in _ROW_FILTERS:
         if all(kwargs.get(k) is None for k in keys):
             continue
-        applied.update({k: kwargs[k] for k in keys})
+        applied.update({k: kwargs.get(k) for k in keys})
         n = select_rows(index, **applied).n_rows
         if n:
             n_before = n
             continue
-        option = f"--{dest.replace('_', '-')} {getattr(request, dest)}"
+        option = f"--{dest.replace('_', '-')} {shlex.quote(str(getattr(request, dest)))}"
         if dest == "correlation_type":
             option = f"--correlation-type {kwargs['correlation_type']}" + (
                 "" if request.correlation_type is not None else ", not given: a plot's default")
