@@ -4,7 +4,7 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 562 tests passing; T26,
-T32 in progress; T40, T42, T45, T46, T50-T52, T55 open (order in Phase B); T35 (Moon
+T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -1195,6 +1195,111 @@ Buildable now, ahead of Phase C.
   on one line of the form. Tests: what each feed basis derives and its texts; the
   empty request; the form's list, its ticks, the requests it writes and loads. 562
   tests.
+  Step 2's conditions, `--where`, designed 2026-10-04 (the user: "This option should be
+  mathematically waterproof, and at the same time very user-friendly - no ambiguity in
+  English"). One `--where` holds one comparison, tested on every cell of the selection
+  (a row, one baseline at one time, and one channel); a cell matches when all the
+  `--where` of a run hold. Grammar:
+
+      condition := operand cmp value
+                 | value cmp operand cmp value      a bounded range, both cmp one direction
+      operand   := function "(" product ")"        a data value of one product
+                 | coordinate                      a value of the row or channel
+      function  := amp | phase | real | imag
+      product   := RR LL RL LR XX YY XY YX          as the file holds it
+                 | I Q U V                         derived, IAU (step 1)
+      coordinate:= uvdist | u | v | w | el | az | ha | pa | freq | channel | time
+      cmp       := <  <=  >  >=
+      value     := number [unit]                   5, 1e3, -170, 20 deg, 2 klambda, 400 MHz
+                 | time scale                      1/17:42:09 UTC, 2021-07-25T17:42:09 UTC
+
+  Rules: a data value names its product (`amp(V)`; a bare `amp` refused); a product
+  only inside the parentheses, a coordinate only bare (`v < 2 klambda` the baseline
+  coordinate; a bare `V > 5` refused, naming both readings); every dimensional
+  coordinate and phase with its unit, no default (deg or rad, Hz or MHz, m or klambda);
+  amplitude, real and imaginary in the file's BUNIT, writing it optional, another unit
+  refused (uncalibrated data does not convert); only `<`, `<=`, `>`, `>=` (no equality
+  on floats, no "in" or "between", whose bounds English leaves open); a range one
+  direction, its lower bound below its upper; no `and`, `or`, `not`; time with its
+  scale (`recorded` or `UTC`: 34-35 s apart in these files), `d/hh:mm:ss` counting
+  days from the file's day 0 as the plots' time axis does, or an ISO date; `channel`
+  0-based, as `--channels`; names case-insensitive, units case-sensitive (mJy, MJy); a
+  cell the file flags skipped by default (a derived value flagged where any product it
+  uses is), an option including them; a value that cannot be computed never matches;
+  the ranges of wrapping quantities stated (phase and pa (-180, 180] deg, az [0, 360)
+  deg, ha (-12, 12] h), a band across the wrap two runs; each condition quoted on the
+  command line (`>` and the parentheses are the shell's), as the command lines visplot
+  writes are.
+  AND and OR: the `--where` of one run must all hold; an OR is one run per
+  alternative, written to the same session's found file, a cell found by both counted
+  once. Any combination of conditions is an OR of AND-groups (disjunctive normal
+  form): each group one run; NOT is the opposite comparison (`not (x > 5)` is
+  `x <= 5`). Each run is its own provenance record, so the session says which
+  alternative found which cells. Examples: `--where "amp(V) > 5" --where "el < 20 deg"`
+  (both); `--where "amp(V) > 5"`, then `--where "amp(RR) > 3000"` in the same session
+  (either); `--where "phase(RL) > 170 deg"`, then `--where "phase(RL) < -170 deg"` (a
+  band across the wrap).
+  Conflicts (the user: "what happens if 2 conditions are in conflict, mathematically
+  impossible?"): the conditions on one operand (one quantity, one product) are
+  intersected as intervals, in one unit, their open and closed ends kept; an empty
+  intersection is refused before any data is read, naming the conditions (`amp(V) > 5`
+  with `amp(V) < 3`; `el > 0.5 rad` with `el < 20 deg`; `phase(RL) > 170 deg` with
+  `phase(RL) < -170 deg`, the hint: a band across the wrap is two runs); so is a
+  condition outside its quantity's domain (`el > 95 deg`, `amp(V) < 0`, `channel > 5000`
+  of 2,048 channels, `freq > 600 MHz` for a 300-500 MHz band). Conditions on different
+  operands are never judged impossible (|V| <= I is physics, which uncalibrated data and
+  RFI break). Possible but matching nothing in the data: the pass runs and its report
+  and record say 0 cells matched, apart from a refusal. A condition holding for every
+  cell (`amp(V) >= 0`): run, the report warning so. Across runs (an OR) no conflict
+  arises.
+  A match records the cell, each condition's value, and which of the file's products the
+  conditions used (`amp(V)` and `amp(I)`: RR and LL); a condition naming no product
+  (`el < 20 deg`) points at every product of the cell, so the found record's product
+  field becomes a mask of the file's products.
+  The GUI: a condition is one line (operand: function and product, or coordinate;
+  operator; value; unit), checked as it is typed, writing the command line's text.
+  The examples have one source in the code (a list of example and meaning), shown in
+  `--help`, as hover help on the GUI's condition lines and Locate tab (the user: "have
+  provision for the various examples to be shown as hover help. We will use this later
+  in the user documentation"), and in the user guide (T56); tests check that each
+  example parses and finds what its meaning says.
+  The user's answers (2026-10-04): units required ("We should suggest possibilities but
+  enforce user commitment to a unit. Reject unphysical values user puts in": a missing
+  or wrong unit refused, the message and the GUI's unit list giving the quantity's
+  units; values outside a quantity's domain refused, as above); `time` kept in
+  `--where`; AND within a run and OR by runs agreed; the Locate action named:
+  `--locate` alone locates by the `--where` conditions, `--locate XLO:XHI,YLO:YHI` is
+  the box, and a `--where` without `--locate` is refused.
+  Runs of a session (the user: "what if user wants to UNDO outputs from a past run in
+  the same session? Basically, I may want to REPLACE, I may want a UNION (your OR), I
+  may want to even AND (intersection) between runs"; adopted the same day): a run is
+  never edited or erased (its provenance record); each run is active or set aside, and
+  the session's found set, the flag generator's input, is the union of its active runs.
+  Undo sets a run aside (kept, restorable); replace makes a new run with the old set
+  aside; intersect and difference make a derived run (the cells in both, or in the
+  first and not the second, with both runs' values), their inputs set aside; restore
+  makes a run active again. Each operation is itself an entry of the session, with its
+  record. Runs over different selections intersect within the space both searched,
+  the derived run recording both searched spaces. The GUI: a session panel listing the
+  runs (conditions, counts, status), these as its actions.
+  The found record (the user: "I am inclined towards (b)"): one record per visibility,
+  (row, channel, product of the file), the flag table's unit, each with its own complex
+  value and weight, and the values of the run's conditions. A condition on a derived
+  product gives a record for each product it is made from (`amp(I) < 0.005`, the
+  user's dead-antenna example: RR and LL, or XX and YY), on the file's own product one
+  record (`amp(RL) > T`: RL), for every product the IAU table allows, V only an example
+  ("I hope you will design it for all possible Stokes, not just for V"). Conditions
+  naming no product (the user: "The elevation should indeed be used as selections or
+  region flags - not for outlier listing").
+  The baseline coordinates renamed `uu`, `vv`, `ww` (AIPS's names for the random
+  parameters), so neither Stokes U nor V can be read for them (the user: "I like uu,
+  vv, ww"): everywhere, command lines, `--where`, plot names, the GUI; the axis labels
+  keep the literature's lowercase u, v, w. No alias for the old names: the software is
+  not released, so no backward compatibility is kept ("We would rather keep all code
+  consistent and minimise technical debts. If that means renaming variables, we do that
+  without apology."); the alias mechanism already in the code (`ALIASES`,
+  `RETIRED_NAMES`: unit-carrying names such as `freq_mhz`, `u_klambda`, `u_sec`) goes
+  with it, proposed as step 1d before step 2.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
@@ -2066,6 +2171,15 @@ Buildable now, ahead of Phase C.
     automatic set and a reviewed one, stages before and after calibration), each with
     its versions; applying takes one set or a union (`--flags auto-v5,review`); a set
     named `default` when none is given.
+
+- **T56 — visplot's user documentation — OPEN (the user, 2026-10-04: "keep in mind that
+  we will need a user doc as well pretty soon. This should be kept in docs/user/
+  separate from docs/dev/").** `docs/user/GWB_USER_GUIDE.md` (2026-09-25) covers the
+  pipeline's run records, raw data, logs and the row index, and not visplot. A user
+  guide for visplot in `docs/user/`: the command line and the GUI, plots and pages,
+  units and time, the listing, Locate and `--where` (its examples from their one source
+  in the code), flagging. Written for researchers, every statement checked against the
+  code, with no links into `docs/dev/` (as the gh-pages rule has it).
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
