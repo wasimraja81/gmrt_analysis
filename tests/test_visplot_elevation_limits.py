@@ -18,7 +18,7 @@ from visplot.stream import GridReducer
 from visplot.xy_figure import XYFigure
 
 CTX = QuantityContext(time_reference_jd=2459421.0, source_names={0: "3C286", 1: "MOON0520", 2: "DA240"})
-PLOT = PlotSpec(y="el", x="time_h", colorize_by="source", apply_flags=False, y_range=(0.0, 90.0),
+PLOT = PlotSpec(y="el", x="time", x_unit="h", colorize_by="source", apply_flags=False, y_range=(0.0, 90.0),
                 limits=("y", 15.0, 110.0))
 
 

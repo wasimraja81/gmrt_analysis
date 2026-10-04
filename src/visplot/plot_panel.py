@@ -60,8 +60,8 @@ _ORDINAL = {1: "st", 2: "nd", 3: "rd"}
 # Row filters of a request, as the panel names them.
 _FILTERS = (("antennas", "antennas {}"), ("baselines_with", "baselines with {}"), ("exclude_antennas", "excluding {}"),
             ("time_range", "time {}"),
-            ("uvdist_range", "uv distance {}"), ("u_range_klambda", "u {} kλ"), ("v_range_klambda", "v {} kλ"),
-            ("w_range_klambda", "w {} kλ"), ("uvdist_range_klambda", "uv distance {} kλ"),
+            ("uvdist_range", "uv distance {}"), ("uu_range_klambda", "u {} kλ"), ("vv_range_klambda", "v {} kλ"),
+            ("ww_range_klambda", "w {} kλ"), ("uvdist_range_klambda", "uv distance {} kλ"),
             ("ha_range", "hour angle {}"), ("az_range", "azimuth {}"), ("el_range", "elevation {}"),
             ("pa_range", "parallactic angle {}"))
 
@@ -83,7 +83,7 @@ def varies_along(plot: PlotSpec, axis_type: str, ctx: QuantityContext) -> bool:
     """Whether `plot`'s points differ along `axis_type` ("STOKES" or "FREQ")
     -- some quantity on its axes, or its color, varies along it -- as
     `stream.ChunkValues` shapes them: the visibility quantities along both;
-    Stokes as a category along STOKES; frequency, and u, v, w and uv distance
+    Stokes as a category along STOKES; frequency, and uu, vv, ww and uv distance
     in wavelengths, along FREQ. Where a plot does not vary along Stokes, each
     point combines its visibility's selected Stokes (`combine_flags`)."""
     names = [(plot.x, plot.unit("x", ctx)), (plot.y, plot.unit("y", ctx))]

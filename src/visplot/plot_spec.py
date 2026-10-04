@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 
 from visplot.axis_scale import AxisScale
 from visplot.iterations import Iteration
-from visplot.quantities import QUANTITIES, QuantityContext, Unit, canonical, convert, resolve_unit
+from visplot.quantities import QUANTITIES, QuantityContext, Unit, convert, resolve_unit
 
 
 @dataclass(frozen=True)
@@ -43,19 +43,18 @@ class PlotSpec:
     y_range_mode: str = "minmax"
     range_percentiles: tuple[float, float] = (0.1, 99.9)
     scale_linear_width: float = 1.0  # symlog's linthresh, asinh's linear width
-    aspect: str = "auto"  # auto (equal for same-kind axes, e.g. u vs v), equal, free
+    aspect: str = "auto"  # auto (equal for same-kind axes, e.g. uu vs vv), equal, free
     x_unit: str | None = None  # None: the quantity's default unit
     y_unit: str | None = None
     iteration: Iteration | None = None  # T26: the part of the selection this plot draws (`visplot.iterations`)
 
     def __post_init__(self):
-        """Alias names become their quantity and unit (u_klambda: u in
-        klambda), a unit given by its label becomes its name (kλ: klambda),
-        and combinations no plot can show raise ValueError. Units of the
+        """A unit given by its label becomes its name (kλ: klambda), and
+        combinations no plot can show raise ValueError. Units of the
         visibility quantities depend on the file's BUNIT and are checked
         against it by `check_units`."""
         for axis in ("x", "y"):
-            name, unit = canonical(getattr(self, axis), getattr(self, f"{axis}_unit"))
+            name, unit = getattr(self, axis), getattr(self, f"{axis}_unit")
             if name in QUANTITIES and not QUANTITIES[name].unit_from_bunit:
                 chosen = resolve_unit(name, unit)
                 unit = chosen.name if unit is not None else None
@@ -86,7 +85,7 @@ class PlotSpec:
     def equal_aspect(self) -> bool:
         """Whether one unit is drawn the same length on both axes. `auto`:
         when x and y are the same kind of quantity (their aspect group, e.g.
-        u and v) in the same unit, and both axes are linear."""
+        uu and vv) in the same unit, and both axes are linear."""
         if self.aspect != "auto":
             return self.aspect == "equal"
         gx, gy = QUANTITIES[self.x].aspect_group, QUANTITIES[self.y].aspect_group

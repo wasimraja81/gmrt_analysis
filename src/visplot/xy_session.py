@@ -110,8 +110,8 @@ def rows_in_views(source: XYSource, views: dict[PlotSpec, tuple]) -> np.ndarray:
 
     The pass evaluates the selection's two band-edge channels alone: every
     quantity it evaluates (row metadata) is either independent of frequency
-    (time, u, v, w and uv distance in metres, hour angle, azimuth,
-    elevation, parallactic angle, source) or proportional to it (u, v, w and
+    (time, uu, vv, ww and uv distance in metres, hour angle, azimuth,
+    elevation, parallactic angle, source) or proportional to it (uu, vv, ww and
     uv distance in wavelengths, and frequency itself), so a row's values over
     the band reach their extremes at its edges."""
     if not views:

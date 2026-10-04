@@ -72,7 +72,7 @@ def _pixels(figure: XYFigure) -> np.ndarray:
 
 
 def test_a_dark_figure_draws_axes_text_panel_and_markers_in_the_dark_colors():
-    plot = PlotSpec(y="amp", x="freq_mhz", color="k", show_flagged=True, point_size=0.25)
+    plot = PlotSpec(y="amp", x="freq", color="k", show_flagged=True, point_size=0.25)
     figure = XYFigure(plot, CTX, sources=["3C286"], theme="dark")
     figure.show(_grid(plot), display_dpi=100)
     _pixels(figure)  # drawn, so the tick labels exist
@@ -90,7 +90,7 @@ def test_a_dark_figure_draws_axes_text_panel_and_markers_in_the_dark_colors():
 
 
 def test_the_dark_figure_is_saved_in_its_colors():
-    plot = PlotSpec(y="amp", x="freq_mhz", colorize_by="stokes", show_flagged=True, point_size=0.25)
+    plot = PlotSpec(y="amp", x="freq", colorize_by="stokes", show_flagged=True, point_size=0.25)
     grid = _grid(plot)
     grid.seen_codes = {0}
     light, dark = XYFigure(plot, CTX, sources=["3C286"]), XYFigure(plot, CTX, sources=["3C286"], theme="dark")

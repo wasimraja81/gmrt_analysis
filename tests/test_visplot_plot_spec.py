@@ -8,21 +8,8 @@ from visplot.quantities import QuantityContext
 CTX = QuantityContext(time_reference_jd=2459421.2, bunit="JY")
 
 
-def test_an_alias_becomes_its_quantity_and_unit():
-    assert PlotSpec(y="amp", x="uvdist_klambda") == PlotSpec(y="amp", x="uvdist", x_unit="klambda")
-    assert PlotSpec(y="v_klambda", x="u_klambda").y_unit == "klambda"
-    with pytest.raises(ValueError, match="'u_sec' is no longer available"):
-        PlotSpec(y="amp", x="u_sec")
-
-
 def test_a_unit_given_by_its_label_is_stored_by_name():
-    assert PlotSpec(y="v", x="u", x_unit="kλ", y_unit="Mλ") == PlotSpec(y="v", x="u", x_unit="klambda", y_unit="Mlambda")
-
-
-def test_an_alias_with_a_different_unit_is_rejected():
-    with pytest.raises(ValueError, match="'uvdist_klambda' is 'uvdist' in klambda"):
-        PlotSpec(y="amp", x="uvdist_klambda", x_unit="m")
-    assert PlotSpec(y="amp", x="uvdist_klambda", x_unit="kλ").x_unit == "klambda"  # the same unit is fine
+    assert PlotSpec(y="vv", x="uu", x_unit="kλ", y_unit="Mλ") == PlotSpec(y="vv", x="uu", x_unit="klambda", y_unit="Mlambda")
 
 
 def test_a_unit_that_does_not_apply_is_rejected_with_the_choices():
@@ -50,10 +37,10 @@ def test_with_units_names_every_default():
 
 
 def test_equal_aspect_needs_the_same_unit():
-    assert PlotSpec(y="v", x="u").equal_aspect
-    assert PlotSpec(y="v", x="u", x_unit="klambda").equal_aspect  # the default named
-    assert PlotSpec(y="v", x="u", x_unit="m", y_unit="m").equal_aspect
-    assert not PlotSpec(y="v", x="u", x_unit="m").equal_aspect  # m against kλ
+    assert PlotSpec(y="vv", x="uu").equal_aspect
+    assert PlotSpec(y="vv", x="uu", x_unit="klambda").equal_aspect  # the default named
+    assert PlotSpec(y="vv", x="uu", x_unit="m", y_unit="m").equal_aspect
+    assert not PlotSpec(y="vv", x="uu", x_unit="m").equal_aspect  # m against kλ
 
 
 def test_a_preset_takes_the_units_with_its_range_and_lines_converted():

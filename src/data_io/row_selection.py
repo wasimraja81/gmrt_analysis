@@ -77,7 +77,7 @@ def _cyclic_range_mask(values: np.ndarray, bounds: tuple[float, float]) -> np.nd
 def _row_klambda_range(sec_values: np.ndarray, freq_lo_hz: float, freq_hi_hz: float) -> tuple[np.ndarray, np.ndarray]:
     """Each row's exact [min, max] value in kilo-wavelengths across
     [freq_lo_hz, freq_hi_hz], computed from its own frequency-independent
-    value in seconds (u_sec/v_sec/w_sec, or a uvdist derived from them).
+    value in seconds (uu_sec/vv_sec/ww_sec, or a uvdist derived from them).
 
     Exact, not approximate: a row's own seconds-value is constant across
     every channel, and frequency varies monotonically with channel index,
@@ -116,9 +116,9 @@ def select_rows(
     baselines: list[tuple[int, int]] | None = None,
     exclude_baselines: list[tuple[int, int]] | None = None,
     uvdist_range_m: tuple[float, float] | None = None,
-    u_range_klambda: tuple[float, float] | None = None,
-    v_range_klambda: tuple[float, float] | None = None,
-    w_range_klambda: tuple[float, float] | None = None,
+    uu_range_klambda: tuple[float, float] | None = None,
+    vv_range_klambda: tuple[float, float] | None = None,
+    ww_range_klambda: tuple[float, float] | None = None,
     uvdist_range_klambda: tuple[float, float] | None = None,
     freq_range_hz: tuple[float, float] | None = None,
     ha_range_hours: tuple[float, float] | None = None,
@@ -156,7 +156,7 @@ def select_rows(
     `baselines_with` is refused with "auto". `exclude_antennas` drops every
     row with one of them.
 
-    `u_range_klambda`/`v_range_klambda`/`w_range_klambda`/`uvdist_range_klambda`
+    `uu_range_klambda`/`vv_range_klambda`/`ww_range_klambda`/`uvdist_range_klambda`
     filter by each row's exact achievable range in kilo-wavelengths across
     `freq_range_hz` (defaulting to the index's own full channel band) --
     see `_row_klambda_range` for why this is exact rather than an
@@ -257,11 +257,11 @@ def select_rows(
         uvdist_m = np.sqrt(index.uu_sec.astype(np.float64) ** 2 + index.vv_sec.astype(np.float64) ** 2) * SPEED_OF_LIGHT_M_PER_S
         mask &= (uvdist_m >= lo) & (uvdist_m <= hi)
 
-    klambda_filters = (u_range_klambda, v_range_klambda, w_range_klambda, uvdist_range_klambda)
+    klambda_filters = (uu_range_klambda, vv_range_klambda, ww_range_klambda, uvdist_range_klambda)
     if any(f is not None for f in klambda_filters):
         if index.chan_freqs_hz is None or len(index.chan_freqs_hz) == 0:
             raise ValueError(
-                "u_range_klambda/v_range_klambda/w_range_klambda/uvdist_range_klambda "
+                "uu_range_klambda/vv_range_klambda/ww_range_klambda/uvdist_range_klambda "
                 "require channel frequencies, which this index does not have (no FREQ axis)"
             )
         if freq_range_hz is not None:
@@ -270,15 +270,15 @@ def select_rows(
             freq_lo_hz = float(np.min(index.chan_freqs_hz))
             freq_hi_hz = float(np.max(index.chan_freqs_hz))
 
-        if u_range_klambda is not None:
+        if uu_range_klambda is not None:
             row_lo, row_hi = _row_klambda_range(index.uu_sec.astype(np.float64), freq_lo_hz, freq_hi_hz)
-            mask &= _overlaps_range_mask(row_lo, row_hi, u_range_klambda)
-        if v_range_klambda is not None:
+            mask &= _overlaps_range_mask(row_lo, row_hi, uu_range_klambda)
+        if vv_range_klambda is not None:
             row_lo, row_hi = _row_klambda_range(index.vv_sec.astype(np.float64), freq_lo_hz, freq_hi_hz)
-            mask &= _overlaps_range_mask(row_lo, row_hi, v_range_klambda)
-        if w_range_klambda is not None:
+            mask &= _overlaps_range_mask(row_lo, row_hi, vv_range_klambda)
+        if ww_range_klambda is not None:
             row_lo, row_hi = _row_klambda_range(index.ww_sec.astype(np.float64), freq_lo_hz, freq_hi_hz)
-            mask &= _overlaps_range_mask(row_lo, row_hi, w_range_klambda)
+            mask &= _overlaps_range_mask(row_lo, row_hi, ww_range_klambda)
         if uvdist_range_klambda is not None:
             uvdist_sec = np.hypot(index.uu_sec.astype(np.float64), index.vv_sec.astype(np.float64))
             row_lo, row_hi = _row_klambda_range(uvdist_sec, freq_lo_hz, freq_hi_hz)

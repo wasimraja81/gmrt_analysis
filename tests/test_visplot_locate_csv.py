@@ -26,7 +26,7 @@ def _block(rows):
 def test_writer_streams_every_located_sample_with_readable_and_exact_columns():
     scratch = make_scratch_dir("locate_csv_all")
     path = scratch / "located.csv"
-    locate = LocateReducer(PlotSpec(y="amp", x="freq_mhz"), (0.0, 2000.0), (2.5, 4.5), limit=1)
+    locate = LocateReducer(PlotSpec(y="amp", x="freq"), (0.0, 2000.0), (2.5, 4.5), limit=1)
     writer = LocateCsvWriter(path, locate, CTX)
     locate.sink = writer
     run_stream([_block([0, 1, 2]), _block([3, 4])], CTX, [locate])
@@ -48,7 +48,7 @@ def test_writer_streams_every_located_sample_with_readable_and_exact_columns():
 def test_an_interrupted_pass_leaves_no_file():
     scratch = make_scratch_dir("locate_csv_interrupted")
     path = scratch / "located.csv"
-    locate = LocateReducer(PlotSpec(y="amp", x="freq_mhz"), (0.0, 2000.0), (0.0, 100.0))
+    locate = LocateReducer(PlotSpec(y="amp", x="freq"), (0.0, 2000.0), (0.0, 100.0))
     writer = LocateCsvWriter(path, locate, CTX)
     locate.sink = writer
     run_stream([_block([0, 1])], CTX, [locate])
@@ -61,7 +61,7 @@ def test_time_utc_is_the_recorded_time_less_the_files_offset():
 
     scratch = make_scratch_dir("locate_csv_utc")
     ctx = replace(CTX, recorded_minus_utc_s=35.0, time_system="IAT")
-    locate = LocateReducer(PlotSpec(y="amp", x="freq_mhz"), (0.0, 2000.0), (0.5, 1.5))  # row 0 only
+    locate = LocateReducer(PlotSpec(y="amp", x="freq"), (0.0, 2000.0), (0.5, 1.5))  # row 0 only
     writer = LocateCsvWriter(scratch / "located.csv", locate, ctx)
     locate.sink = writer
     run_stream([_block([0])], ctx, [locate])

@@ -593,9 +593,9 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
             exclude_antennas=resolve_antennas_arg(request.exclude_antennas, opened.antennas),
             jd_range=resolve_time_range_arg(request.time_range, float(index.jd.min()), recorded_minus_utc_s),
             uvdist_range_m=resolve_uvdist_range_arg(request.uvdist_range),
-            u_range_klambda=resolve_klambda_range_arg(request.u_range_klambda),
-            v_range_klambda=resolve_klambda_range_arg(request.v_range_klambda),
-            w_range_klambda=resolve_klambda_range_arg(request.w_range_klambda),
+            uu_range_klambda=resolve_klambda_range_arg(request.uu_range_klambda),
+            vv_range_klambda=resolve_klambda_range_arg(request.vv_range_klambda),
+            ww_range_klambda=resolve_klambda_range_arg(request.ww_range_klambda),
             uvdist_range_klambda=resolve_klambda_range_arg(request.uvdist_range_klambda),
             ha_range_hours=resolve_ha_range_arg(request.ha_range),
             az_range_deg=resolve_deg_range_arg(request.az_range),
@@ -632,8 +632,8 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
 _ROW_FILTERS = (
     ("sources", ("sources",)), ("correlation_type", ("correlation_type",)),
     ("antennas", ("antennas", "baselines_with")), ("exclude_antennas", ("exclude_antennas",)),
-    ("time_range", ("jd_range",)), ("uvdist_range", ("uvdist_range_m",)), ("u_range_klambda", ("u_range_klambda",)),
-    ("v_range_klambda", ("v_range_klambda",)), ("w_range_klambda", ("w_range_klambda",)),
+    ("time_range", ("jd_range",)), ("uvdist_range", ("uvdist_range_m",)), ("uu_range_klambda", ("uu_range_klambda",)),
+    ("vv_range_klambda", ("vv_range_klambda",)), ("ww_range_klambda", ("ww_range_klambda",)),
     ("uvdist_range_klambda", ("uvdist_range_klambda",)), ("ha_range", ("ha_range_hours",)),
     ("az_range", ("az_range_deg",)), ("el_range", ("el_range_deg",)), ("pa_range", ("parallactic_angle_range_deg",)),
 )

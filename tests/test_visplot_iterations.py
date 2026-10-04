@@ -61,12 +61,12 @@ def test_an_iteration_narrows_the_selection_to_its_rows_or_its_stokes():
 
 
 @pytest.mark.parametrize("by", ["baseline", "antenna", "source", "stokes"])
-@pytest.mark.parametrize("y, x", [("amp", "freq_mhz"), ("v", "u")])
+@pytest.mark.parametrize("y, x", [("amp", "freq"), ("vv", "uu")])
 def test_one_pass_fills_every_iteration_as_a_pass_over_each_alone(by, y, x):
     source = _source(f"iterations_pass_{by}_{y}")
     plot = PlotSpec(y=y, x=x, colorize_by="stokes", show_flagged=True)
     iterations = list_iterations(by, source.index, source.row_indices, source.ctx.stokes_labels, source.ctx)
-    extent = ((-1e9, 1e9), (-1e9, 1e9)) if y == "v" else ((399.5, 403.5), (0.0, 41.0))
+    extent = ((-1e9, 1e9), (-1e9, 1e9)) if y == "vv" else ((399.5, 403.5), (0.0, 41.0))
     together = {it: GridReducer(replace(plot, iteration=it), *extent, 20, 30) for it in iterations}
     ranges = {it: RangeReducer(replace(plot, iteration=it), "y", source.ctx) for it in iterations}
     source.stream([*together.values(), *ranges.values()], read_data=True)

@@ -32,7 +32,7 @@ def test_the_selection_filters_read_as_text():
     request = PlotRequest("x.fits", "amp-vs-time", uvdist_range="0:5km", ha_range="-2:2", every_nth=40,
                           random_subset_n=1000, random_seed=3)
     assert selection_filters(request) == "uv distance 0:5km, hour angle -2:2, every 40th row, 1,000 random rows, seed 3"
-    assert [selection_filters(PlotRequest("x.fits", "v-vs-u", every_nth=n)) for n in (1, 2, 3, 11, 21, 112)] == [
+    assert [selection_filters(PlotRequest("x.fits", "vv-vs-uu", every_nth=n)) for n in (1, 2, 3, 11, 21, 112)] == [
         "", "every 2nd row", "every 3rd row", "every 11th row", "every 21st row", "every 112th row"]
 
 
@@ -139,7 +139,7 @@ def test_the_panel_knows_which_axes_a_plot_varies_along_as_the_stream_shapes_it(
             continue
         for unit in (units_of(name, ctx) if not quantity.categorical else [None]):
             unit_name = unit.name if unit is not None else None
-            plot = PlotSpec(y=name, x="time_h", y_unit=unit_name) if unit_name else PlotSpec(y=name, x="time_h")
+            plot = PlotSpec(y=name, x="time", x_unit="h", y_unit=unit_name) if unit_name else PlotSpec(y=name, x="time", x_unit="h")
             try:
                 shape = values.axis(plot, "y").shape
             except ValueError:  # e.g. local time: this context has no time zone
@@ -159,9 +159,9 @@ def test_the_panel_says_what_a_row_stride_kept():
 
 
 def test_the_flags_line_states_the_flag_rule():
-    _, any_figure = _run("panel_flag_rule_any", plots="v-vs-u")
+    _, any_figure = _run("panel_flag_rule_any", plots="vv-vs-uu")
     assert any_figure.panel.flag_rule() == "a point is flagged if any of RR, LL is"
-    _, all_figure = _run("panel_flag_rule_all", plots="v-vs-u", combine_flags="all")
+    _, all_figure = _run("panel_flag_rule_all", plots="vv-vs-uu", combine_flags="all")
     assert all_figure.panel.flag_rule() == "a point is flagged if all of RR, LL are"
     _, per_stokes = _run("panel_flag_rule_amp", combine_flags="all")  # amp varies with Stokes: no line
     assert per_stokes.panel.flag_rule() == ""

@@ -36,7 +36,7 @@ def test_a_zoom_reads_only_the_rows_that_reach_it_and_draws_the_same_grid():
 
 
 def test_a_mirrored_plot_keeps_the_rows_whose_mirror_reaches_the_view():
-    source, plot, (x_full, y_full) = _run("prune_mirror", "v-vs-u", mirror=True)
+    source, plot, (x_full, y_full) = _run("prune_mirror", "vv-vs-uu", mirror=True)
     view = ((x_full[0], x_full[0] / 2), (y_full[0], y_full[0] / 2))  # the far negative corner: mirrored points
     rows = rows_in_views(source, {plot: view})
     assert rows.size > 0 and _same_grid(source, plot, view, rows)

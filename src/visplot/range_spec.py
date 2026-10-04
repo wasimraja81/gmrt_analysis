@@ -11,7 +11,7 @@ already takes as a range tuple).
 
 For a quantity with a genuine physical unit (frequency, distance, angle --
 not kilo-wavelengths, which isn't one: see `data_io.row_selection`'s
-u/v/w_range_klambda, which handle it exactly via each row's own channel
+uu/vv/ww_range_klambda, which handle it exactly via each row's own channel
 frequencies, not a unit conversion), `parse_quantity_range`/
 `parse_single_quantity_range` accept an optional unit suffix on the whole
 spec ("300:310MHz", "-6:6deg") and convert via `astropy.units` rather than

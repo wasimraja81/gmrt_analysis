@@ -92,7 +92,7 @@ RANGE_FROM_HELP = {
 QUANTITY_GROUPS = (
     ("Visibility", ("amp", "phase", "real", "imag")),
     ("Time", ("time",)),
-    ("Baseline", ("uvdist", "u", "v", "w")),
+    ("Baseline", ("uvdist", "uu", "vv", "ww")),
     ("Frequency", ("freq",)),
     ("Observing geometry", ("ha", "az", "el", "pa")),
     ("Category", ("stokes", "source")),
@@ -462,9 +462,9 @@ class RequestForm(QtWidgets.QWidget):
         more_form = form_layout(more.body)
         for dest, label, placeholder, resolver in (
             ("uvdist_range", "UV distance", "lo:hi m, or with km", resolve_uvdist_range_arg),
-            ("u_range_klambda", "u (kλ)", "lo:hi", resolve_klambda_range_arg),
-            ("v_range_klambda", "v (kλ)", "lo:hi", resolve_klambda_range_arg),
-            ("w_range_klambda", "w (kλ)", "lo:hi", resolve_klambda_range_arg),
+            ("uu_range_klambda", "u (kλ)", "lo:hi", resolve_klambda_range_arg),
+            ("vv_range_klambda", "v (kλ)", "lo:hi", resolve_klambda_range_arg),
+            ("ww_range_klambda", "w (kλ)", "lo:hi", resolve_klambda_range_arg),
             ("uvdist_range_klambda", "UV dist. (kλ)", "lo:hi", resolve_klambda_range_arg),
             ("ha_range", "Hour angle", "lo:hi h, or with deg", resolve_ha_range_arg),
             ("az_range", "Azimuth", "lo:hi deg, or with rad", resolve_deg_range_arg),

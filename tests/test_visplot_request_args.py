@@ -25,7 +25,7 @@ ANTENNAS = [
 
 
 def test_parse_plot_names_splits_on_comma():
-    assert parse_plot_names("antenna-layout, amp-vs-time_h") == ["antenna-layout", "amp-vs-time_h"]
+    assert parse_plot_names("antenna-layout, amp-vs-time") == ["antenna-layout", "amp-vs-time"]
 
 
 def test_parse_plot_names_rejects_empty():
@@ -34,8 +34,15 @@ def test_parse_plot_names_rejects_empty():
 
 
 def test_parse_quantity_pair_splits_on_the_literal_separator():
-    assert parse_quantity_pair("amp-vs-freq_mhz") == ("amp", "freq_mhz")
-    assert parse_quantity_pair("u_klambda-vs-v_klambda") == ("u_klambda", "v_klambda")
+    assert parse_quantity_pair("amp-vs-freq") == ("amp", "freq")
+    assert parse_quantity_pair("uu-vs-vv") == ("uu", "vv")
+
+
+def test_names_that_carried_a_unit_and_the_single_letter_baseline_names_are_unknown():
+    # removed 2026-10-04 (pre-release, no aliases): a unit is given with --x-unit / --y-unit
+    for name in ("amp-vs-freq_mhz", "amp-vs-time_h", "vv-vs-u"):
+        with pytest.raises(ValueError, match="unknown quantity"):
+            parse_plot_names(name)
 
 
 def test_parse_quantity_pair_rejects_a_name_with_no_separator():
@@ -123,13 +130,13 @@ def test_resolve_stokes_products_derives_i_q_u_v():
 
 
 def test_parse_plot_names_rejects_a_bare_quantity_and_suggests_pairs():
-    with pytest.raises(ValueError, match=r"is a quantity; a plot needs two.*amp-vs-uvdist_klambda"):
-        parse_plot_names("uvdist_klambda")
+    with pytest.raises(ValueError, match=r"is a quantity; a plot needs two.*amp-vs-uvdist"):
+        parse_plot_names("uvdist")
 
 
 def test_parse_plot_names_rejects_an_unknown_quantity_in_a_pair():
-    with pytest.raises(ValueError, match=r"unknown quantity 'ampl' in plot 'ampl-vs-freq_mhz'"):
-        parse_plot_names("ampl-vs-freq_mhz")
+    with pytest.raises(ValueError, match=r"unknown quantity 'ampl' in plot 'ampl-vs-freq'"):
+        parse_plot_names("ampl-vs-freq")
 
 
 def test_parse_plot_names_rejects_an_unrecognized_name():
@@ -145,7 +152,7 @@ def test_validate_colorize_by_accepts_only_categories():
 
 
 def test_parse_plot_names_accepts_presets_and_geometry_quantities():
-    assert parse_plot_names("ha-range,el_deg-vs-time_h") == ["ha-range", "el_deg-vs-time_h"]
+    assert parse_plot_names("ha-range,el-vs-time") == ["ha-range", "el-vs-time"]
 
 
 def test_resolve_plain_range_arg():
@@ -154,8 +161,8 @@ def test_resolve_plain_range_arg():
 
 
 def test_parse_plot_names_accepts_quantity_names_and_earlier_names_with_units():
-    assert parse_plot_names("amp-vs-uvdist,v-vs-u,amp-vs-uvdist_klambda,phase_deg-vs-time_h") == [
-        "amp-vs-uvdist", "v-vs-u", "amp-vs-uvdist_klambda", "phase_deg-vs-time_h"]
+    assert parse_plot_names("amp-vs-uvdist,vv-vs-uu,amp-vs-uvdist,phase-vs-time") == [
+        "amp-vs-uvdist", "vv-vs-uu", "amp-vs-uvdist", "phase-vs-time"]
 
 
 def test_dpi_and_figure_size_are_checked():

@@ -310,14 +310,14 @@ def test_select_rows_by_u_range_klambda_includes_rows_whose_range_overlaps():
     # Window (-1.05, 1.05): row 0 [1.0,1.1] overlaps at its low edge, row 2
     # [-1.1,-1.0] overlaps at its high edge, row 3 [0.005,0.0055] is fully
     # inside, row 1 [2.0,2.2] is fully outside.
-    sel = select_rows(index, correlation_type="both", u_range_klambda=(-1.05, 1.05))
+    sel = select_rows(index, correlation_type="both", uu_range_klambda=(-1.05, 1.05))
     np.testing.assert_array_equal(sel.row_indices, [0, 2, 3])
 
 
 def test_select_rows_by_w_range_klambda():
     index = _make_klambda_index()
     # Only row 0 has a nonzero w; its exact range is [0.3, 0.33] kλ.
-    sel = select_rows(index, correlation_type="both", w_range_klambda=(0.1, 0.4))
+    sel = select_rows(index, correlation_type="both", ww_range_klambda=(0.1, 0.4))
     np.testing.assert_array_equal(sel.row_indices, [0])
 
 
@@ -335,7 +335,7 @@ def test_select_rows_klambda_range_respects_an_explicit_freq_range_hz():
     # row 0's range to [1.05, 1.1] kλ, no longer overlapping a window that
     # only reached up to 1.02.
     sel = select_rows(
-        index, correlation_type="both", u_range_klambda=(0.9, 1.02), freq_range_hz=(1.05e9, 1.1e9),
+        index, correlation_type="both", uu_range_klambda=(0.9, 1.02), freq_range_hz=(1.05e9, 1.1e9),
     )
     np.testing.assert_array_equal(sel.row_indices, [])
 
@@ -344,7 +344,7 @@ def test_select_rows_klambda_range_raises_without_a_freq_axis():
     index = _make_klambda_index()
     object.__setattr__(index, "chan_freqs_hz", np.array([]))
     with pytest.raises(ValueError, match="FREQ axis"):
-        select_rows(index, u_range_klambda=(0.0, 1.0))
+        select_rows(index, uu_range_klambda=(0.0, 1.0))
 
 
 def test_geometry_filters_read_the_timestamps_as_utc_after_the_offset():

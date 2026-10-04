@@ -68,7 +68,7 @@ def _poll_until(app, window, condition, timeout=30.0):
 
 
 def test_window_draws_every_sample_and_reports_it():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_draw", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -78,7 +78,7 @@ def test_window_draws_every_sample_and_reports_it():
 
 
 def test_zoom_redraws_the_view_over_the_new_limits():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_zoom", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -94,7 +94,7 @@ def test_zoom_redraws_the_view_over_the_new_limits():
 
 
 def test_locate_lists_the_samples_in_a_box_and_saves_them():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, scratch = _window("qt_locate", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -119,7 +119,7 @@ def test_saving_more_located_samples_than_the_table_keeps_reads_again_and_writes
     import visplot.qt_inspector as qi
 
     monkeypatch.setattr(qi, "LOCATE_LIMIT", 3)
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, scratch = _window("qt_locate_all", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -136,7 +136,7 @@ def test_saving_more_located_samples_than_the_table_keeps_reads_again_and_writes
 
 
 def test_export_re_reads_the_view_at_the_chosen_dpi():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, scratch = _window("qt_export", plot)
     _wait(app, window)
     path = scratch / "exported.png"
@@ -163,7 +163,7 @@ def _drag(canvas, ax, start, end):
 
 
 def test_locate_through_the_toolbar_and_a_mouse_drag_after_zooming():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_locate_ui", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -193,7 +193,7 @@ def test_locate_through_the_toolbar_and_a_mouse_drag_after_zooming():
 
 
 def test_the_located_samples_panel_opens_in_its_own_window_and_the_plot_keeps_its_size():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_locate_panel", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -230,7 +230,7 @@ def test_the_panel_opens_right_of_the_window_or_against_the_screens_edge():
 
 
 def test_equal_aspect_toggle_redraws_with_equal_scaling():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_aspect", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -246,7 +246,7 @@ def test_equal_aspect_toggle_redraws_with_equal_scaling():
 
 
 def test_equal_aspect_off_returns_to_the_datas_range_and_on_widens_again():
-    plot = PlotSpec(y="v", x="u", x_unit="m", y_unit="m", name="v-vs-u")  # auto: equal scale
+    plot = PlotSpec(y="vv", x="uu", x_unit="m", y_unit="m", name="vv-vs-uu")  # auto: equal scale
     app, window, _ = _window("qt_aspect_off", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -272,7 +272,7 @@ def test_equal_aspect_off_returns_to_the_datas_range_and_on_widens_again():
 
 
 def test_a_resized_window_redraws_the_view_at_its_new_pixel_size():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_resize", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -289,7 +289,7 @@ def test_a_resized_window_redraws_the_view_at_its_new_pixel_size():
 
 
 def test_a_completed_zoom_leaves_no_preview_behind():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_zoom_preview", plot)
     _wait(app, window)
     panel = window.panels[plot]
@@ -396,7 +396,7 @@ def test_a_page_of_square_plots_settles_once_drawn():
     """Equal aspect on a page's shared axes: re-widening a view moved the
     shared limits in their last digits, so each plot looked moved and was
     redrawn in turn, without end (the user, 2026-10-02, imag vs real)."""
-    app, window = _paged_window("qt_pages_square", plots="v-vs-u")
+    app, window = _paged_window("qt_pages_square", plots="vv-vs-uu")
     _wait(app, window)
     (tab,) = window.paged
     assert all(p.plot.equal_aspect for p in tab.panels) and tab.figure.page.shared == (True, True)
@@ -456,7 +456,7 @@ def test_pages_of_stacks_hold_one_stack_per_baseline():
 def test_stop_ends_a_draw_keeping_what_is_drawn_and_a_zoom_reads_again():
     """T54: Stop ends the plot's reading at its next chunk; the plot keeps the
     samples read, no draw starts again by itself, and a zoom reads again."""
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_stop_draw", plot, chunk_bytes=1024)  # a few rows a chunk
     window.timer.stop()
     _poll_until(app, window, lambda: window.extents is not None and not window.jobs)  # the ranges found
@@ -487,7 +487,7 @@ def test_stop_ends_a_draw_keeping_what_is_drawn_and_a_zoom_reads_again():
 
 
 def test_stop_while_finding_the_ranges_draws_nothing():
-    plot = PlotSpec(y="amp", x="freq_mhz", name="amp-vs-freq_mhz")
+    plot = PlotSpec(y="amp", x="freq", name="amp-vs-freq")
     app, window, _ = _window("qt_stop_ranges", plot, chunk_bytes=1024)
     window.timer.stop()
     window.stop_reading()  # the ranges pass, queued and not started

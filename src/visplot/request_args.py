@@ -18,13 +18,13 @@ from data_io.stokes_products import ProductPlan, plan_products
 from instruments.gmrt.antenna_selection import resolve_antenna_selection
 from visplot.channel_selection import resolve_channel_selection
 from visplot.plot_spec import PRESETS
-from visplot.quantities import ALIASES, QUANTITIES, RETIRED_NAMES
+from visplot.quantities import QUANTITIES
 from visplot.range_spec import parse_single_quantity_range, parse_single_range
 from visplot.time_range import resolve_time_range_jd
 
 TABLE_PLOTS = {"antenna-layout", "source-listing"}  # drawn from the file's tables
 NAMED_PLOTS = TABLE_PLOTS | set(PRESETS)
-QUANTITY_NAMES = set(QUANTITIES) | set(ALIASES)  # earlier names that carry a unit still work
+QUANTITY_NAMES = set(QUANTITIES)
 CATEGORY_NAMES = {name for name, q in QUANTITIES.items() if q.categorical}
 # Saved files: --dpi (the plot window's Export offers the same range) and --figure-size.
 DEFAULT_DPI = 150
@@ -104,9 +104,6 @@ def quantity_help(indent: int = 4, width: int = 79) -> str:
         else:
             lines.append(head.ljust(column) + text.pop(0))
         lines += [" " * column + t for t in text]
-    aliases = ", ".join(f"{name} ({q} in {unit})" for name, (q, unit) in ALIASES.items())
-    lines += textwrap.wrap(f"earlier names carrying a unit still work: {aliases}", width,
-                           initial_indent=" " * indent, subsequent_indent=" " * indent)
     return "\n".join(lines)
 
 
@@ -152,19 +149,14 @@ def validate_plot_name(name: str) -> None:
 
 
 def validate_quantity_name(name: str, context: str = "") -> None:
-    if name in RETIRED_NAMES:
-        raise ValueError(f"{name!r} is no longer available: use {RETIRED_NAMES[name]}")
     if name not in QUANTITY_NAMES:
         where = f" {context}" if context else ""
-        raise ValueError(f"unknown quantity {name!r}{where}: expected one of {sorted(QUANTITIES)} "
-                         f"(or an earlier name: {sorted(ALIASES)})")
+        raise ValueError(f"unknown quantity {name!r}{where}: expected one of {sorted(QUANTITIES)}")
 
 
 def parse_quantity_pair(name: str) -> tuple[str, str]:
     """A generic "Y-vs-X" plot name into (y_quantity, x_quantity) -- names
-    from the quantity registry, joined by the separator "-vs-"
-    (distinct from the underscores within a quantity name like "freq_mhz",
-    an earlier name for freq in MHz)."""
+    from the quantity registry, joined by the separator "-vs-"."""
     if "-vs-" not in name:
         raise ValueError(f"{name!r} is not a recognized plot name (not one of {sorted(NAMED_PLOTS)}, no '-vs-')")
     y_name, x_name = name.split("-vs-", 1)

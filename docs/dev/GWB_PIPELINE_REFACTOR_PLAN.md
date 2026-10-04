@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 562 tests passing; T26,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 559 tests passing; T26,
 T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1300,6 +1300,18 @@ Buildable now, ahead of Phase C.
   without apology."); the alias mechanism already in the code (`ALIASES`,
   `RETIRED_NAMES`: unit-carrying names such as `freq_mhz`, `u_klambda`, `u_sec`) goes
   with it, proposed as step 1d before step 2.
+  Step 1d built 2026-10-04 (the user: "yes"): the quantities `uu`, `vv`, `ww`, their
+  axes labelled u, v, w; the row filters `--uu-range-klambda`, `--vv-range-klambda`,
+  `--ww-range-klambda` (and `select_rows`' arguments); the GUI's Baseline group; the
+  help and docstrings that name them. Removed: `ALIASES`, `RETIRED_NAMES`,
+  `canonical()` and its calls, the alias expansion in `PlotSpec`, the help's "earlier
+  names carrying a unit still work". The tests that used the old names were rewritten
+  to a quantity and its unit by a script touching only `x=`/`y=` values and `Y-vs-X`
+  names (`time_h` became `time` with `x_unit="h"`, its default being the recorded
+  clock), the rest by hand; the four tests of the alias mechanism removed, a test added
+  that the old names are unknown. Command lines and records using them are refused;
+  range-cache files keyed by them are recomputed. 559 tests pass (562, less the four,
+  plus the one).
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

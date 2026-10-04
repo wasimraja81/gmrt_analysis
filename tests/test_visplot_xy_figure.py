@@ -68,7 +68,7 @@ def test_layers_to_rgba_colors_each_layer_and_leaves_empty_transparent():
 
 
 def test_xy_figure_labels_title_and_grid_shape():
-    plot = PlotSpec(y="amp", x="freq_mhz")
+    plot = PlotSpec(y="amp", x="freq")
     fig = XYFigure(plot, CTX, sources=["3C286"], telescope="GMRT", source_path="/d/obs.fits")
     assert fig.ax.get_xlabel() == "Frequency (MHz)"
     assert fig.ax.get_ylabel() == "Amplitude (UNCALIB)"
@@ -97,7 +97,7 @@ def test_xy_figure_shows_a_grid_as_an_image_with_its_extent():
 
 
 def test_xy_figure_non_linear_axis_uses_the_scale_and_pins_the_image_to_the_axes():
-    plot = PlotSpec(y="amp", x="freq_mhz", y_scale="log")
+    plot = PlotSpec(y="amp", x="freq", y_scale="log")
     grid = GridReducer(plot, (100.0, 200.0), (1.0, 1000.0), height=4, width=4)
     grid.layers[5] = 1
     grid.n_samples = 1
@@ -115,30 +115,30 @@ def test_xy_figure_non_linear_axis_uses_the_scale_and_pins_the_image_to_the_axes
 def test_grid_summary_mentions_samples_left_out():
     from visplot.xy_figure import grid_summary
 
-    grid = GridReducer(PlotSpec(y="amp", x="freq_mhz"), (0.0, 1.0), (0.0, 1.0), height=1, width=1)
+    grid = GridReducer(PlotSpec(y="amp", x="freq"), (0.0, 1.0), (0.0, 1.0), height=1, width=1)
     grid.n_samples, grid.n_outside = 1200, 3
     assert grid_summary(grid, 40) == "1,200 samples from 40 rows; 3 outside the axis ranges, left out"
 
 
 def test_auto_aspect_is_equal_only_for_the_same_kind_of_quantity_on_linear_axes():
-    assert PlotSpec(y="v_klambda", x="u_klambda").equal_aspect
+    assert PlotSpec(y="vv", x="uu").equal_aspect
     assert PlotSpec(y="imag", x="real").equal_aspect
-    assert not PlotSpec(y="amp", x="uvdist_klambda").equal_aspect
-    assert not PlotSpec(y="ha_h", x="time_h").equal_aspect  # both in hours, different kinds
-    assert not PlotSpec(y="v_klambda", x="u_klambda", y_scale="symlog").equal_aspect
-    assert PlotSpec(y="amp", x="time_h", aspect="equal").equal_aspect
-    assert not PlotSpec(y="v_klambda", x="u_klambda", aspect="free").equal_aspect
+    assert not PlotSpec(y="amp", x="uvdist").equal_aspect
+    assert not PlotSpec(y="ha", x="time", x_unit="h").equal_aspect  # both in hours, different kinds
+    assert not PlotSpec(y="vv", x="uu", y_scale="symlog").equal_aspect
+    assert PlotSpec(y="amp", x="time", x_unit="h", aspect="equal").equal_aspect
+    assert not PlotSpec(y="vv", x="uu", aspect="free").equal_aspect
 
 
 def test_set_view_with_equal_aspect_gives_equal_pixels_per_unit():
-    plot = PlotSpec(y="v_klambda", x="u_klambda")
+    plot = PlotSpec(y="vv", x="uu")
     fig = XYFigure(plot, CTX, figsize=(8, 6))
     (x0, x1), (y0, y1) = fig.set_view((-10.0, 10.0), (-2.0, 2.0))
     bbox = fig.ax.get_window_extent()
     assert (x1 - x0) / bbox.width == pytest.approx((y1 - y0) / bbox.height, rel=1e-3)
     assert (x0, x1) == pytest.approx((-10.0, 10.0))  # never narrowed: no data cut off
     assert (y1 - y0) > 4.0  # the y range widened instead
-    free = XYFigure(PlotSpec(y="amp", x="uvdist_klambda"), CTX)
+    free = XYFigure(PlotSpec(y="amp", x="uvdist"), CTX)
     assert free.set_view((0.0, 40.0), (0.0, 5.0)) == ((0.0, 40.0), (0.0, 5.0))
     plt.close(fig.fig)
 
@@ -176,7 +176,7 @@ def test_the_time_format_writes_the_clock_axis_and_room_is_left_for_tilted_label
 
 
 def test_equal_aspect_gives_a_square_box_with_the_same_span_on_both_axes():
-    fig = XYFigure(PlotSpec(y="v", x="u", mirror=True), CTX, figsize=(8, 6))
+    fig = XYFigure(PlotSpec(y="vv", x="uu", mirror=True), CTX, figsize=(8, 6))
     (x0, x1), (y0, y1) = fig.set_view((-20.0, 20.0), (-35.0, 35.0))
     fig.fig.canvas.draw()
     box = fig.ax.get_window_extent()
@@ -192,7 +192,7 @@ def test_equal_aspect_gives_a_square_box_with_the_same_span_on_both_axes():
 
 
 def test_a_redraw_keeps_the_last_complete_image_under_the_new_one_until_it_completes():
-    plot = PlotSpec(y="amp", x="freq_mhz", point_size=0.25)
+    plot = PlotSpec(y="amp", x="freq", point_size=0.25)
     figure = XYFigure(plot, CTX)
     full = GridReducer(plot, (0.0, 10.0), (0.0, 10.0), height=8, width=8)
     full.layers[:] = 1

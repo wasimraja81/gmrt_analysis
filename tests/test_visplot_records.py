@@ -116,7 +116,7 @@ def test_located_samples_name_their_command_and_record(capsys):
     scratch = make_scratch_dir("records_cli_locate")
     path = _make_synthetic_file(scratch / "obs.fits")
     csv_path = scratch / "located.csv"
-    assert main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--locate", "400.5:401.5,4.5:6.5",
+    assert main(["visplot", str(path), "--plots", "amp-vs-freq", "--locate", "400.5:401.5,4.5:6.5",
                  "--locate-csv", str(csv_path), "--provenance-dir", str(scratch / "runs")]) == 0
 
     (record,) = _records(scratch / "runs")

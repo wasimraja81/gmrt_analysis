@@ -32,7 +32,7 @@ class _Samples:
 
 
 def test_a_density_grid_counts_the_samples_in_each_pixel_by_category():
-    plot = PlotSpec(y="amp", x="freq_mhz", colorize_by="stokes", style="density", show_flagged=True)
+    plot = PlotSpec(y="amp", x="freq", colorize_by="stokes", style="density", show_flagged=True)
     grid = GridReducer(plot, (0.0, 4.0), (0.0, 4.0), height=4, width=4)
     grid.update(_Samples([0.5, 0.5, 0.5, 2.5, 2.5], [0.5, 0.5, 0.5, 0.5, 0.5], [0, 0, 1, 1, 0],
                          [False, False, False, False, True]))
@@ -81,7 +81,7 @@ def test_the_histogram_scale_follows_each_pixels_rank():
 
 
 def test_the_panel_states_the_density_scale():
-    plot = PlotSpec(y="amp", x="freq_mhz", style="density")
+    plot = PlotSpec(y="amp", x="freq", style="density")
     figure = XYFigure(plot, CTX)
     grid = GridReducer(plot, (0.0, 4.0), (0.0, 4.0), height=4, width=4)
     grid.update(_Samples([0.5] * 7 + [2.5], [0.5] * 7 + [2.5]))

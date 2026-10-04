@@ -118,12 +118,12 @@ def test_a_second_run_takes_the_ranges_from_the_cache_without_a_pass():
     scratch = make_scratch_dir("range_cache_reuse")
     source = _Source(_fits_stand_in(scratch))
     cache = RangeCache(scratch / "cache")
-    plot = PlotSpec(y="amp", x="time_h")
+    plot = PlotSpec(y="amp", x="time", x_unit="h")
 
     first = resolve_extents(source, [plot], cache=cache)
     assert source.passes == 1 and len(cache.written) == 2  # x and y ranges
 
-    percentile_plot = PlotSpec(y="amp", x="time_h", y_range_mode="percentile", range_percentiles=(20.0, 80.0))
+    percentile_plot = PlotSpec(y="amp", x="time", x_unit="h", y_range_mode="percentile", range_percentiles=(20.0, 80.0))
     again = resolve_extents(source, [plot], cache=RangeCache(scratch / "cache"))
     narrowed = resolve_extents(source, [percentile_plot], cache=RangeCache(scratch / "cache"))
     assert source.passes == 1  # both answered from the cache
@@ -146,5 +146,5 @@ def test_an_interrupted_pass_saves_nothing_and_gives_no_ranges():
     source = _Source(_fits_stand_in(scratch))
     cache = RangeCache(scratch / "cache")
     # ranges from part of the selection would pass for the whole selection's
-    assert resolve_extents(source, [PlotSpec(y="amp", x="time_h")], on_chunk=lambda rows: False, cache=cache) is None
+    assert resolve_extents(source, [PlotSpec(y="amp", x="time", x_unit="h")], on_chunk=lambda rows: False, cache=cache) is None
     assert cache.written == [] and cache.usage() == (0, 0)

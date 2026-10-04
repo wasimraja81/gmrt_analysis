@@ -82,14 +82,14 @@ def test_highres_pdf_is_written_by_default_and_can_be_suppressed():
 
 
 def test_point_size_defaults_to_automatic():
-    assert build_arg_parser().parse_args(["x.fits", "--plots", "amp-vs-freq_mhz"]).point_size is None
+    assert build_arg_parser().parse_args(["x.fits", "--plots", "amp-vs-freq"]).point_size is None
 
 
 def test_colorize_by_accepts_only_categories():
     parser = build_arg_parser()
-    assert parser.parse_args(["x.fits", "--plots", "amp-vs-freq_mhz", "--colorize-by", "stokes"]).colorize_by == "stokes"
+    assert parser.parse_args(["x.fits", "--plots", "amp-vs-freq", "--colorize-by", "stokes"]).colorize_by == "stokes"
     with pytest.raises(SystemExit):
-        parser.parse_args(["x.fits", "--plots", "amp-vs-freq_mhz", "--colorize-by", "amp"])
+        parser.parse_args(["x.fits", "--plots", "amp-vs-freq", "--colorize-by", "amp"])
 
 
 def test_saved_run_writes_every_output():
@@ -97,12 +97,12 @@ def test_saved_run_writes_every_output():
     path = _make_synthetic_file(scratch / "obs.fits")
     out = scratch / "out"
 
-    code = main(["visplot", str(path), "--plots", "antenna-layout,amp-vs-freq_mhz,az-el-range",
+    code = main(["visplot", str(path), "--plots", "antenna-layout,amp-vs-freq,az-el-range",
                  "--colorize-by", "stokes", "--output-dir", str(out), "--output-prefix", "t"])
 
     assert code == 0
     assert sorted(p.name for p in out.iterdir()) == sorted([
-        "t_antenna-layout.png", "t_amp-vs-freq_mhz.png", "t_az-el-range.png",  # elevation over azimuth: one figure
+        "t_antenna-layout.png", "t_amp-vs-freq.png", "t_az-el-range.png",  # elevation over azimuth: one figure
         "t_lowres.pdf", "t_highres.pdf",
     ])
     plt.close("all")
@@ -122,10 +122,10 @@ def test_saved_generic_plot_marks_every_unflagged_sample(monkeypatch):
         return real_show(self, grids, display_dpi, downsample)
 
     monkeypatch.setattr(cli.XYFigure, "show_page", spy)
-    main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--output-dir", str(scratch / "out"),
+    main(["visplot", str(path), "--plots", "amp-vs-freq", "--output-dir", str(scratch / "out"),
           "--no-highres-pdf"])
 
-    assert shown["amp-vs-freq_mhz"].n_samples == 40 * 4 * 2 - 1  # every sample but the one flagged
+    assert shown["amp-vs-freq"].n_samples == 40 * 4 * 2 - 1  # every sample but the one flagged
     plt.close("all")
 
 
@@ -174,7 +174,7 @@ def test_ut1_fallback_is_warned_in_the_terminal_and_on_the_plot(monkeypatch, cap
 
     scratch = make_scratch_dir("cli_visplot_ut1_fallback")
     path = _make_synthetic_file(scratch / "obs.fits")
-    main(["visplot", str(path), "--plots", "ha-range,amp-vs-freq_mhz", "--output-dir", str(scratch / "out"),
+    main(["visplot", str(path), "--plots", "ha-range,amp-vs-freq", "--output-dir", str(scratch / "out"),
           "--no-highres-pdf"])
 
     assert "WARNING: UT1 - UTC unavailable" in capsys.readouterr().err
@@ -192,7 +192,7 @@ def test_scale_on_a_category_axis_is_rejected(capsys):
 
 def test_log_scale_with_a_non_positive_range_is_rejected(capsys):
     with pytest.raises(SystemExit):
-        main(["visplot", "x.fits", "--plots", "amp-vs-freq_mhz", "--y-scale", "log", "--y-range", "0:100"])
+        main(["visplot", "x.fits", "--plots", "amp-vs-freq", "--y-scale", "log", "--y-range", "0:100"])
     assert "positive values only" in capsys.readouterr().err
 
 
@@ -206,7 +206,7 @@ def test_log_scale_and_percentile_range_run_end_to_end(monkeypatch):
     original_set_status = cli.XYFigure.set_status
     monkeypatch.setattr(cli.XYFigure, "set_status",
                         lambda self, text: (statuses.append(text), original_set_status(self, text)))
-    assert main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--y-scale", "log",
+    assert main(["visplot", str(path), "--plots", "amp-vs-freq", "--y-scale", "log",
                  "--y-range-mode", "percentile", "--range-percentiles", "10:90",
                  "--output-dir", str(scratch / "out"), "--no-highres-pdf"]) == 0
     assert any("outside the axis ranges, left out" in s for s in statuses)
@@ -217,7 +217,7 @@ def test_cache_dir_skips_the_range_pass_on_a_repeat_run_and_clear_cache_removes_
     scratch = make_scratch_dir("cli_visplot_cache")
     path = _make_synthetic_file(scratch / "obs.fits")
     cache_dir = scratch / "cache"
-    run = ["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--output-dir", str(scratch / "out"),
+    run = ["visplot", str(path), "--plots", "amp-vs-freq", "--output-dir", str(scratch / "out"),
            "--no-highres-pdf", "--cache-dir", str(cache_dir)]
 
     main(run)
@@ -238,7 +238,7 @@ def test_locate_from_the_command_line_writes_every_sample(capsys):
     scratch = make_scratch_dir("cli_visplot_locate")
     path = _make_synthetic_file(scratch / "obs.fits")
     csv_path = scratch / "located.csv"
-    assert main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--locate", "400.5:401.5,4.5:6.5",
+    assert main(["visplot", str(path), "--plots", "amp-vs-freq", "--locate", "400.5:401.5,4.5:6.5",
                  "--locate-csv", str(csv_path)]) == 0
     assert "located 4 samples on 2 baselines" in capsys.readouterr().out
     rows = [line for line in csv_path.read_text().splitlines() if not line.startswith("#")]
@@ -249,10 +249,10 @@ def test_locate_needs_one_plot_and_a_csv(capsys):
     scratch = make_scratch_dir("cli_visplot_locate_errors")
     path = _make_synthetic_file(scratch / "obs.fits")
     with pytest.raises(SystemExit):
-        main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--locate", "0:1,0:1"])
+        main(["visplot", str(path), "--plots", "amp-vs-freq", "--locate", "0:1,0:1"])
     assert "--locate needs --locate-csv" in capsys.readouterr().err
     with pytest.raises(SystemExit):
-        main(["visplot", str(path), "--plots", "amp-vs-freq_mhz,amp-vs-time_h", "--locate", "0:1,0:1",
+        main(["visplot", str(path), "--plots", "amp-vs-freq,amp-vs-time", "--locate", "0:1,0:1",
               "--locate-csv", str(scratch / "x.csv")])
     assert "exactly one streamed plot" in capsys.readouterr().err
 
@@ -289,8 +289,6 @@ def test_units_apply_to_every_plots_axis_presets_included(monkeypatch, capsys):
 
 
 @pytest.mark.parametrize("args, message", [
-    (["--plots", "amp-vs-uvdist_klambda", "--x-unit", "m"],
-     "plot 'amp-vs-uvdist_klambda': 'uvdist_klambda' is 'uvdist' in klambda"),
     (["--plots", "amp-vs-time", "--x-unit", "klambda"], "unit 'klambda' does not apply to 'time'"),
     (["--plots", "amp-vs-time", "--y-unit", "mJy"], "BUNIT ('UNCALIB'), which is not a flux density"),
     (["--plots", "amp-vs-time", "--x-unit", "UTC", "--x-scale", "log"], "needs a linear x scale"),
@@ -377,9 +375,9 @@ def test_dpi_and_figure_size_set_the_saved_pngs_pixels():
     scratch = make_scratch_dir("cli_visplot_dpi_figure_size")
     path = _make_synthetic_file(scratch / "obs.fits")
     out = scratch / "out"
-    assert main(["visplot", str(path), "--plots", "amp-vs-freq_mhz", "--dpi", "100", "--figure-size", "5,4",
+    assert main(["visplot", str(path), "--plots", "amp-vs-freq", "--dpi", "100", "--figure-size", "5,4",
                  "--output-dir", str(out), "--output-prefix", "t", "--no-highres-pdf"]) == 0
-    assert plt.imread(out / "t_amp-vs-freq_mhz.png").shape[:2] == (400, 500)
+    assert plt.imread(out / "t_amp-vs-freq.png").shape[:2] == (400, 500)
     plt.close("all")
 
 

@@ -195,9 +195,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "'lo:hi' in kilo-wavelengths; a row is kept if its value at any frequency between the "
         "lowest and highest --channels frequency (whole band if --channels is not given) falls in range"
     )
-    sel.add_argument("--u-range-klambda", help=klambda_help)
-    sel.add_argument("--v-range-klambda", help=klambda_help)
-    sel.add_argument("--w-range-klambda", help=klambda_help)
+    sel.add_argument("--uu-range-klambda", help=klambda_help)
+    sel.add_argument("--vv-range-klambda", help=klambda_help)
+    sel.add_argument("--ww-range-klambda", help=klambda_help)
     sel.add_argument("--uvdist-range-klambda", help=klambda_help)
     sel.add_argument("--ha-range", help="'lo:hi' hour angle, hours by default, or with a 'deg' suffix")
     sel.add_argument("--az-range", help="'lo:hi' azimuth, degrees by default, or with a 'rad' suffix")
@@ -338,7 +338,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     style.add_argument(
         "--aspect", choices=["auto", "equal", "free"], default="auto",
         help="equal: one unit the same length on both axes; auto (default): equal when x and y are the same "
-        "kind of quantity (u, v, w; real, imag) on linear axes, free otherwise",
+        "kind of quantity (uu, vv, ww; real, imag) on linear axes, free otherwise",
     )
     style.add_argument(
         "--scale-linear-width", type=float, default=1.0, metavar="W",

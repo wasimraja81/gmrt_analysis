@@ -7,7 +7,6 @@ from data_io.astrometry import altaz_deg, hour_angle_hours, local_sidereal_time_
 from data_io.source_table import Source
 from data_io.visibility_data import VisibilityBlock
 from visplot.quantities import (
-    ALIASES,
     QUANTITIES,
     QuantityContext,
     category_label,
@@ -102,16 +101,16 @@ def test_time_uses_the_shared_reference_so_chunks_agree():
 
 
 def test_wavelength_units_vary_along_rows_and_channels_delay_units_along_rows():
-    u_kl = _eval("u")  # default: klambda
-    assert u_kl.shape == (2, 1, 2)
-    np.testing.assert_allclose(u_kl[:, 0, :], np.outer([1e-6, 2e-6], [1e9, 1.1e9]) / 1e3)
-    assert _eval("u", unit="m").shape == (2, 1, 1)
-    np.testing.assert_allclose(_eval("u", unit="m").ravel(), np.array([1e-6, 2e-6]) * C)
+    uu_kl = _eval("uu")  # default: klambda
+    assert uu_kl.shape == (2, 1, 2)
+    np.testing.assert_allclose(uu_kl[:, 0, :], np.outer([1e-6, 2e-6], [1e9, 1.1e9]) / 1e3)
+    assert _eval("uu", unit="m").shape == (2, 1, 1)
+    np.testing.assert_allclose(_eval("uu", unit="m").ravel(), np.array([1e-6, 2e-6]) * C)
 
 
 def test_units_of_one_base_differ_by_their_factor():
-    np.testing.assert_allclose(_eval("w", unit="km"), _eval("w", unit="m") / 1e3)
-    np.testing.assert_allclose(_eval("v", unit="Mlambda"), _eval("v", unit="klambda") / 1e3)
+    np.testing.assert_allclose(_eval("ww", unit="km"), _eval("ww", unit="m") / 1e3)
+    np.testing.assert_allclose(_eval("vv", unit="Mlambda"), _eval("vv", unit="klambda") / 1e3)
     np.testing.assert_allclose(_eval("time", unit="min"), _eval("time", unit="h") * 60)
     np.testing.assert_allclose(_eval("freq", unit="GHz"), _eval("freq", unit="Hz") / 1e9)
     block = _block(with_data=False)
@@ -119,21 +118,12 @@ def test_units_of_one_base_differ_by_their_factor():
     np.testing.assert_allclose(_eval("el", block, "rad"), np.radians(_eval("el", block)))
 
 
-def test_aliases_are_their_quantity_in_their_unit():
-    for alias, (quantity, unit) in ALIASES.items():
-        block = _block()
-        np.testing.assert_array_equal(_eval(alias, block), _eval(quantity, block, unit))
-    np.testing.assert_allclose(_eval("u_klambda")[:, 0, :], np.outer([1e-6, 2e-6], [1e9, 1.1e9]) / 1e3)
-    with pytest.raises(ValueError, match="'u_klambda' is 'u' in klambda"):
-        _eval("u_klambda", unit="m")
-
-
 def test_units_are_found_by_name_or_label_and_a_wrong_one_lists_the_choices():
-    assert resolve_unit("u", "kλ").name == "klambda"
-    assert resolve_unit("u", "Mλ").name == "Mlambda"
-    assert resolve_unit("u").name == "klambda"
+    assert resolve_unit("uu", "kλ").name == "klambda"
+    assert resolve_unit("uu", "Mλ").name == "Mlambda"
+    assert resolve_unit("uu").name == "klambda"
     with pytest.raises(ValueError, match="choose one of: lambda, klambda, Mlambda, m, km"):
-        resolve_unit("u", "deg")
+        resolve_unit("uu", "deg")
     with pytest.raises(ValueError, match="category and has no unit"):
         resolve_unit("stokes", "h")
 
@@ -189,7 +179,7 @@ def test_freq_varies_only_along_channels():
 
 
 def test_pairing_two_quantities_broadcasts_to_the_shape_the_pair_needs():
-    x, y = np.broadcast_arrays(_eval("time"), _eval("u", unit="m"))
+    x, y = np.broadcast_arrays(_eval("time"), _eval("uu", unit="m"))
     assert x.shape == (2, 1, 1)
     x, y = np.broadcast_arrays(_eval("freq"), _eval("amp"))
     assert x.shape == (2, 2, 2)
@@ -222,14 +212,11 @@ def test_only_data_quantities_need_data():
 def test_quantity_label_units():
     ctx = _ctx()
     assert quantity_label("freq", ctx) == "Frequency (MHz)"
-    assert quantity_label("freq_mhz", ctx) == "Frequency (MHz)"
     assert quantity_label("amp", ctx) == "Amplitude (UNCALIB)"
     assert quantity_label("amp", QuantityContext(time_reference_jd=JD0)) == "Amplitude"
     assert quantity_label("stokes", ctx) == "Stokes"
-    assert quantity_label("u_klambda", ctx) == "U (kλ)"
-    assert quantity_label("u", ctx, "km") == "U (km)"
-    with pytest.raises(ValueError, match="'u_sec' is no longer available"):
-        quantity_label("u_sec", ctx)
+    assert quantity_label("uu", ctx) == "u (kλ)"  # named uu, labelled as the literature writes it
+    assert quantity_label("vv", ctx, "km") == "v (km)"
     assert quantity_label("time", ctx) == "Time (recorded; day 0 = 2021-07-25)"
     assert quantity_label("time", ctx, "h") == "Time since 2021-07-25 16:48:00 UTC (h)"
 
@@ -242,15 +229,15 @@ def test_every_unit_is_named_in_its_quantitys_help():
 
 def test_convert_between_units_of_one_base_only():
     assert convert(-12.0, "ha", "h", "deg") == pytest.approx(-180.0)
-    assert convert(1.0, "u", "km", "m") == pytest.approx(1000.0)
+    assert convert(1.0, "uu", "km", "m") == pytest.approx(1000.0)
     with pytest.raises(ValueError, match="cannot be converted"):
-        convert(1.0, "u", "m", "klambda")
+        convert(1.0, "uu", "m", "klambda")
 
 
 def test_klambda_without_a_freq_axis_raises():
     block = VisibilityBlock(**{**_block().__dict__, "chan_freqs_hz": None})
     with pytest.raises(ValueError, match="no channel frequencies"):
-        _eval("u_klambda", block)
+        _eval("uu", block, "klambda")
 
 
 def test_utc_based_quantities_subtract_the_recorded_minus_utc_offset():

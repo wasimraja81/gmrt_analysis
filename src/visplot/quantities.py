@@ -14,13 +14,13 @@ Evaluated values keep a size-1 axis wherever the quantity does not vary
 (a row quantity is shaped (n_rows, 1, 1, ...); frequency is 1 everywhere but
 the FREQ axis), so pairing two quantities with numpy broadcasting yields only
 the shape the pair needs: hour angle vs time stays one value per row, while
-amplitude vs frequency covers every sample. The base decides the shape: u in
-s is one value per row, u in kλ one per row and channel.
+amplitude vs frequency covers every sample. The base decides the shape: uu in
+m is one value per row, uu in kλ one per row and channel.
 
 The visibility quantities (real, imag, amp) are in the file's BUNIT; when
-BUNIT is a flux density they can also be shown in Jy, mJy or µJy. Old
-quantity names that carried their unit (u_klambda, time_h, ...) stay as
-aliases of a quantity and unit (`ALIASES`).
+BUNIT is a flux density they can also be shown in Jy, mJy or µJy. The
+baseline coordinates are named uu, vv, ww (AIPS's UU, VV, WW), apart from
+Stokes U and V; their axes are labelled u, v, w as the literature writes them.
 
 Categories (Stokes, source) evaluate to integer codes; `category_label`
 turns a code into its label.
@@ -282,7 +282,7 @@ def _uvdist_sec(block):
 
 
 def _baseline_bases(delay_sec):
-    """The two bases of u, v, w and uv distance, from the file's values in
+    """The two bases of uu, vv, ww and uv distance, from the file's values in
     seconds (light travel time): the length in m (one value per row) and in
     wavelengths at each channel's frequency."""
     return (
@@ -298,8 +298,8 @@ _BASELINE_UNITS = (
     + _units("length", u.m, ("m", "m", u.m), ("km", "km", u.km))
 )
 # Help text, shared by quantities with the same units (the help lists them together).
-_BASELINE_HELP = ("baseline u, v, w and uv distance sqrt(u^2 + v^2): at each channel's frequency in lambda, "
-                  "klambda (default), Mlambda; or m, km")
+_BASELINE_HELP = ("baseline coordinates uu, vv, ww (AIPS's UU, VV, WW; apart from Stokes U and V) and uv distance "
+                  "sqrt(uu^2 + vv^2): at each channel's frequency in lambda, klambda (default), Mlambda; or m, km")
 _DATA_HELP = ("visibility real part, imaginary part, amplitude: in the file's BUNIT; also Jy, mJy, uJy when "
               "BUNIT is a flux density")
 _ANGLE_HELP = "azimuth, elevation, parallactic angle: deg (default), rad"
@@ -327,11 +327,11 @@ _ALL = [
              (Unit("recorded", "recorded", "recorded", clock=True), Unit("UTC", "UTC", "utc", clock=True),
               Unit("local", "local", "local", clock=True), Unit("LST", "LST", "lst", clock=True))
              + _units("elapsed", u.h, ("h", "h", u.h), ("min", "min", u.min), ("s", "s", u.s)), "recorded"),
-    Quantity("u", "U", _BASELINE_HELP, False, False,
+    Quantity("uu", "u", _BASELINE_HELP, False, False,
              _baseline_bases(lambda b: b.uu_sec), _BASELINE_UNITS, "klambda", aspect_group="uvw"),
-    Quantity("v", "V", _BASELINE_HELP, False, False,
+    Quantity("vv", "v", _BASELINE_HELP, False, False,
              _baseline_bases(lambda b: b.vv_sec), _BASELINE_UNITS, "klambda", aspect_group="uvw"),
-    Quantity("w", "W", _BASELINE_HELP, False, False,
+    Quantity("ww", "w", _BASELINE_HELP, False, False,
              _baseline_bases(lambda b: b.ww_sec), _BASELINE_UNITS, "klambda", aspect_group="uvw"),
     Quantity("uvdist", "UV distance", _BASELINE_HELP, False, False,
              _baseline_bases(_uvdist_sec), _BASELINE_UNITS, "klambda"),
@@ -356,19 +356,6 @@ _ALL = [
 ]
 
 QUANTITIES: dict[str, Quantity] = {q.name: q for q in _ALL}
-
-# Earlier names that carried their unit: name -> (quantity, unit).
-ALIASES: dict[str, tuple[str, str]] = {
-    "phase_deg": ("phase", "deg"),
-    "time_h": ("time", "h"),
-    "uvdist_m": ("uvdist", "m"),
-    "u_klambda": ("u", "klambda"), "v_klambda": ("v", "klambda"), "w_klambda": ("w", "klambda"),
-    "uvdist_klambda": ("uvdist", "klambda"),
-    "freq_mhz": ("freq", "MHz"),
-    "ha_h": ("ha", "h"),
-    "az_deg": ("az", "deg"), "el_deg": ("el", "deg"), "pa_deg": ("pa", "deg"),
-}
-
 
 @lru_cache(maxsize=None)
 def _flux_unit(bunit: str | None):
@@ -430,34 +417,9 @@ def resolve_unit(name: str, unit: str | None = None, ctx: QuantityContext | None
     raise ValueError(f"unit {unit!r} does not apply to {name!r}; choose one of: {names}")
 
 
-# Earlier names whose unit is no longer offered: name -> what to write instead.
-RETIRED_NAMES: dict[str, str] = {
-    f"{q}_sec": f"{q} with a unit of m, km, lambda, klambda or Mlambda (seconds of light travel time were dropped)"
-    for q in ("u", "v", "w")
-}
-
-
-def canonical(name: str, unit: str | None = None) -> tuple[str, str | None]:
-    """(quantity, unit) for a quantity name or alias. An alias fixes the
-    unit; a different `unit` alongside it raises ValueError, as does a
-    retired name."""
-    if name in RETIRED_NAMES:
-        raise ValueError(f"{name!r} is no longer available: use {RETIRED_NAMES[name]}")
-    if name not in ALIASES:
-        return name, unit
-    quantity, alias_unit = ALIASES[name]
-    if unit is not None and resolve_unit(quantity, unit).name != alias_unit:
-        raise ValueError(
-            f"{name!r} is {quantity!r} in {alias_unit}, but the unit asked for is {unit!r}: "
-            f"write {quantity!r} with that unit instead"
-        )
-    return quantity, alias_unit
-
-
 def evaluate(name: str, block: VisibilityBlock, ctx: QuantityContext, unit: str | None = None) -> np.ndarray:
-    """Quantity (or alias) `name` on `block`, in `unit` (default: the
-    quantity's default)."""
-    name, unit = canonical(name, unit)
+    """Quantity `name` on `block`, in `unit` (default: the quantity's
+    default)."""
     chosen = resolve_unit(name, unit, ctx)
     values = QUANTITIES[name].evaluate_base(chosen.base, block, ctx)
     return values if chosen.factor == 1.0 else values * chosen.factor
@@ -486,7 +448,6 @@ def quantity_label(name: str, ctx: QuantityContext | None = None, unit: str | No
     file has none). Clock time names the date its days count from, and
     recorded time the file's declared time system; elapsed time names its
     origin."""
-    name, unit = canonical(name, unit)
     q = QUANTITIES[name]
     chosen = resolve_unit(name, unit, ctx)
     if ctx is not None and chosen.clock:
@@ -508,7 +469,6 @@ def quantity_label(name: str, ctx: QuantityContext | None = None, unit: str | No
 def value_description(name: str, ctx: QuantityContext | None = None, unit: str | None = None) -> str:
     """What a value in `unit` means, spelled out for a file header, e.g.
     "uvdist in kλ", "time in UTC, hours since 2021-07-24 00:00 UTC"."""
-    name, unit = canonical(name, unit)
     chosen = resolve_unit(name, unit, ctx)
     if ctx is not None and chosen.clock:
         origin = _iso_utc(day_origin_jd(ctx), 0)[:16]
