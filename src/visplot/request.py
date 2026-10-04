@@ -225,7 +225,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--channels",
         help="channel indices ('10:20') or a frequency band with a unit ('400:450MHz') (default: all)",
     )
-    axis.add_argument("--stokes", help="comma-separated Stokes/correlation labels, e.g. RR,LL (default: all)")
+    axis.add_argument(
+        "--stokes",
+        help="comma-separated products: the file's own correlations (e.g. RR,LL; XX,XY), and Stokes I, Q, U, V "
+        "derived from them as the IAU defines them, with no factor of 1/2 (circular feeds: I = RR + LL, "
+        "Q = RL + LR, U = -i(RL - LR), V = RR - LL; linear: I = XX + YY, Q = XX - YY, U = XY + YX, "
+        "V = -i(XY - YX)); a derived product is flagged where any product it uses is (default: the file's own, all)",
+    )
 
     style = parser.add_argument_group("style (generic Y-vs-X plots)")
     style.add_argument(

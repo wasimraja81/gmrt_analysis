@@ -40,6 +40,17 @@ def test_key_changes_with_everything_the_range_depends_on():
     assert _key(cache, path) != base  # the file changed
 
 
+def test_key_tells_derived_stokes_products_from_the_pixels_they_are_read_from():
+    # --stokes I,V reads the pixels --stokes RR,LL reads; a range of one must not serve the other
+    scratch = make_scratch_dir("range_cache_key_products")
+    path = _fits_stand_in(scratch)
+    cache = RangeCache(scratch / "cache")
+    native = _key(cache, path)
+    assert _key(cache, path, derived_products=None) == native  # the file's own products: the key as before
+    derived = _key(cache, path, derived_products=("I", "V"))
+    assert derived != native and _key(cache, path, derived_products=("V",)) != derived
+
+
 def test_save_and_load_leave_one_prefixed_file_and_no_partial():
     scratch = make_scratch_dir("range_cache_save")
     path = _fits_stand_in(scratch)
@@ -85,6 +96,7 @@ class _Source:
         self.fits_path = fits_path
         self.row_indices = np.arange(6)
         self.axis_selection = None
+        self.products = None  # as XYSource: the file's own Stokes products
         self.n_rows = 6
         self.ctx = CTX
         self.passes = 0

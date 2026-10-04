@@ -14,6 +14,7 @@ import textwrap
 import astropy.units as u
 
 from data_io.antenna_table import Antenna
+from data_io.stokes_products import ProductPlan, plan_products
 from instruments.gmrt.antenna_selection import resolve_antenna_selection
 from visplot.channel_selection import resolve_channel_selection
 from visplot.plot_spec import PRESETS
@@ -211,20 +212,19 @@ def resolve_deg_range_arg(spec: str | None) -> tuple[float, float] | None:
     return parse_single_quantity_range(spec, u.deg) if spec else None
 
 
-def resolve_stokes_axis_selection(spec: str | None, stokes_labels: list[str] | None):
-    """Which STOKES-axis indices `spec` (a comma-separated list of labels,
-    e.g. "RR,LL") selects, matched case-insensitively against this file's
-    own `stokes_labels` -- `None` if `spec` is `None`. Raises if `spec` is
-    given but matches no label at all, or if this file has no STOKES axis."""
+def resolve_stokes_products(spec: str | None, stokes_labels: list[str] | None) -> ProductPlan | None:
+    """--stokes: the file's own products (e.g. "RR,LL", any case) and I, Q, U,
+    V derived from them as the IAU defines them (`data_io.stokes_products`) --
+    `None` if `spec` is `None`. Raises if this file has no STOKES axis, and for
+    any product it neither holds nor can derive, naming what is missing."""
     if spec is None:
         return None
     if not stokes_labels:
         raise ValueError("--stokes was given, but this file has no STOKES axis")
-    wanted = {s.strip().upper() for s in spec.split(",") if s.strip()}
-    indices = [i for i, label in enumerate(stokes_labels) if label.upper() in wanted]
-    if not indices:
-        raise ValueError(f"--stokes {spec!r} matched none of this file's Stokes labels {stokes_labels}")
-    return indices
+    try:
+        return plan_products(spec.split(","), stokes_labels)
+    except ValueError as err:
+        raise ValueError(f"--stokes {spec!r}: {err}") from err
 
 
 def validate_colorize_by(name: str) -> None:

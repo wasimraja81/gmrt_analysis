@@ -34,6 +34,7 @@ from data_io.astrometry import DEFAULT_UT1, fallback_message
 from data_io.row_index import default_row_index_path, load_row_index
 from data_io.row_selection import select_rows
 from data_io.source_table import read_source_table
+from data_io.stokes_products import ProductPlan
 from data_io.timestamp_check import check_timestamps
 from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes
 from instruments.elevation_limits import elevation_limits_deg, known_elevation_limits_deg
@@ -70,7 +71,7 @@ from visplot.request_args import (
     resolve_page_grid_arg,
     resolve_percentiles_arg,
     resolve_plain_range_arg,
-    resolve_stokes_axis_selection,
+    resolve_stokes_products,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
     validate_colorize_by,
@@ -505,7 +506,7 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
         recorded_minus_utc_s=recorded_minus_utc_s,
     )
     source = XYSource(request.fits_path, index, selection.row_indices, axis_selection, ctx,
-                      stream_chunk_bytes(), threads=max(1, request.threads))
+                      stream_chunk_bytes(), threads=max(1, request.threads), products=selected.products)
     sources_present = list(selection.sources.values())
     channel_indices = (axis_selection or {}).get("FREQ")
     facts = panel_facts(request, index, selection.row_indices, channel_indices, stokes_labels, selection.sources, ctx,
@@ -557,9 +558,10 @@ class Selected:
 
     selection: object  # RowSelection
     axis_selection: dict | None  # FREQ / STOKES indices; None: every channel and Stokes
-    stokes_labels: list[str]  # of the selected Stokes
+    stokes_labels: list[str]  # of the selected Stokes products (the file's own, or derived I, Q, U, V)
     geometry_filters: bool  # hour angle, Az/El or parallactic angle filters given
     kwargs: dict  # the `select_rows` arguments
+    products: ProductPlan | None = None  # how the products shown come from the file's (None: as it holds them)
 
 
 CORRELATION_TEXT = {"cross": "cross-correlations", "auto": "autocorrelations", "both": "cross- and autocorrelations"}
@@ -613,19 +615,17 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
         if channel_indices is not None:
             selected_freqs_hz = np.asarray(index.chan_freqs_hz)[channel_indices]
             select_kwargs["freq_range_hz"] = (float(selected_freqs_hz.min()), float(selected_freqs_hz.max()))
-        stokes_indices = resolve_stokes_axis_selection(request.stokes, index.stokes_labels)
+        products = resolve_stokes_products(request.stokes, index.stokes_labels)
         selection = select_rows(index, **select_kwargs)
     except ValueError as err:
         raise RequestError(str(err)) from err
     axis_selection = {}
     if channel_indices is not None:
         axis_selection["FREQ"] = np.array(channel_indices)
-    if stokes_indices is not None:
-        axis_selection["STOKES"] = np.array(stokes_indices)
-    stokes_labels = list(index.stokes_labels or [])
-    if stokes_indices is not None:
-        stokes_labels = [stokes_labels[i] for i in stokes_indices]
-    return Selected(selection, axis_selection or None, stokes_labels, geometry_filters, select_kwargs)
+    if products is not None:
+        axis_selection["STOKES"] = np.array(products.read)
+    stokes_labels = list(products.labels) if products is not None else list(index.stokes_labels or [])
+    return Selected(selection, axis_selection or None, stokes_labels, geometry_filters, select_kwargs, products)
 
 
 # The row filters in the command line's order: each option and the `select_rows` arguments it gives.
@@ -695,7 +695,7 @@ def count_selection(request: PlotRequest, opened: OpenedFile) -> SelectionCount:
     if not selected.selection.n_rows and check_request(request).plots_by_name:  # streamed plots need rows
         raise RequestError(empty_selection_message(request, opened.index, selected.kwargs))
     source = XYSource(request.fits_path, opened.index, selected.selection.row_indices, selected.axis_selection,
-                      ctx=None, chunk_bytes=0)
+                      ctx=None, chunk_bytes=0, products=selected.products)
     return SelectionCount(source.n_rows, source.samples_per_row, source.n_rows * source.row_bytes / 1e9)
 
 
@@ -884,7 +884,7 @@ def _count_flags(request: PlotRequest, opened: OpenedFile, selected: Selected, r
     ctx = QuantityContext(time_reference_jd=float(index.jd.min()), bunit=opened.bunit,
                           stokes_labels=tuple(selected.stokes_labels or ()))
     source = XYSource(request.fits_path, index, selected.selection.row_indices, selected.axis_selection, ctx,
-                      stream_chunk_bytes(), threads=max(1, request.threads))
+                      stream_chunk_bytes(), threads=max(1, request.threads), products=selected.products)
     report("info", f"flags: one pass over {source.n_rows:,} rows, {source.n_rows * source.row_bytes / 1e9:.1f} GB "
                    f"of visibilities to read")
     counter = FlagCounter(index.integration_boundaries)

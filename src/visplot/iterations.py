@@ -14,6 +14,8 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
+from data_io.stokes_products import plan_products
+
 ITERATION_KINDS = ("baseline", "antenna", "source", "stokes")
 
 
@@ -99,10 +101,10 @@ def page_layout(n_plots: int, grid: tuple[int, int] | None, default: tuple[int, 
 def iteration_source(source, iteration: Iteration):
     """`source` (an `XYSource`) narrowed to `iteration`: its rows there, or
     its one Stokes product, with the iteration's quantity context."""
-    if iteration.by == "stokes":
-        pixel = list(source.index.stokes_labels).index(iteration.value)
-        axis_selection = {**(source.axis_selection or {}), "STOKES": np.array([pixel])}
-        return replace(source, axis_selection=axis_selection, ctx=iteration.context(source.ctx))
+    if iteration.by == "stokes":  # the file's own product, or a derived one (read from those it is made of)
+        products = plan_products([iteration.value], source.index.stokes_labels)
+        axis_selection = {**(source.axis_selection or {}), "STOKES": np.array(products.read)}
+        return replace(source, axis_selection=axis_selection, products=products, ctx=iteration.context(source.ctx))
     rows = source.row_indices
     index = source.index
     mask = iteration.row_mask(np.asarray(index.ant1)[rows], np.asarray(index.ant2)[rows],

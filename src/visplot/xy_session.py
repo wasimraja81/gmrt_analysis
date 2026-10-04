@@ -16,6 +16,7 @@ from typing import Callable
 import numpy as np
 
 from data_io.row_index import RowIndex
+from data_io.stokes_products import ProductPlan, apply_products
 from data_io.uvfits_group_params import DEFAULT_RAM_FRACTION_TO_USE, host_total_memory_bytes
 from data_io.visibility_data import iter_visibility_chunks
 from visplot.iterations import iteration_source
@@ -58,6 +59,7 @@ class XYSource:
     ctx: QuantityContext
     chunk_bytes: int
     threads: int = 1
+    products: ProductPlan | None = None  # derived Stokes products: made from those read, chunk by chunk
 
     @property
     def n_rows(self) -> int:
@@ -71,11 +73,14 @@ class XYSource:
 
     @property
     def samples_per_row(self) -> int:
-        """Samples per row under the axis selection (every data axis but COMPLEX)."""
+        """Samples per row under the axis selection (every data axis but
+        COMPLEX), counting the Stokes products shown (derived ones too)."""
         selection = self.axis_selection or {}
         n = 1
         for ctype, length in zip(self.index.data_axis_types, self.index.data_axis_lengths):
-            if ctype != "COMPLEX":
+            if ctype == "STOKES" and self.products is not None:
+                n *= len(self.products.labels)
+            elif ctype != "COMPLEX":
                 n *= len(selection[ctype]) if ctype in selection else length
         return n
 
@@ -88,6 +93,8 @@ class XYSource:
             self.fits_path, self.index, self.row_indices, self.axis_selection,
             max_chunk_bytes=self.chunk_bytes, read_data=read_data, spread=spread,
         )
+        if self.products is not None and self.products.derived:
+            chunks = (apply_products(block, self.products) for block in chunks)
         return run_stream(chunks, self.ctx, reducers, on_chunk, threads=self.threads)
 
     def subset(self, row_indices: np.ndarray) -> XYSource:
@@ -197,6 +204,7 @@ def _cache_key(cache, source: XYSource, plot: PlotSpec, axis: str) -> str:
         f"{quantity}@{plot.unit(axis, source.ctx).base}",
         apply_flags=plot.apply_flags, show_flagged=plot.show_flagged, mirror=plot.mirror,
         log_axis=plot.axis_scale(axis).name == "log",
+        derived_products=source.products.labels if source.products is not None and source.products.derived else None,
     )
 
 

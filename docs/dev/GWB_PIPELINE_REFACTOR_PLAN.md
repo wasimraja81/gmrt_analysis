@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 550 tests passing; T26,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 560 tests passing; T26,
 T32 in progress; T40, T42, T45, T46, T50-T52, T55 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1158,6 +1158,32 @@ Buildable now, ahead of Phase C.
   searched channels (default 0.75, the user) is applied to all of them, the searched
   channels only (the user); runs of bad times stay per channel. The GSB file's cycles
   for (3C468.1, Cas-A) are tabled in the analysis.
+  Build order agreed 2026-10-03: (1) the products; (2) Locate by condition; (3) the flag
+  file; (4) the flag generator; (5) interactive flagging; (6) T55's views and the
+  exports. Step 1, the products, built 2026-10-04: `data_io/stokes_products.py` holds
+  the IAU recipes for circular and linear feeds, the feed basis read from the file's
+  products, `plan_products` (the products shown, the STOKES pixels to read, a matrix of
+  coefficients; any product the file neither holds nor can derive refused, naming what
+  is missing) and `apply_products` (each chunk's derived products made from those
+  read, a derived product's weight the least of its inputs', so it is flagged where any
+  of them is). `--stokes` takes them (`request_args.resolve_stokes_products`; the
+  file's own first in its order, then I, Q, U, V); the selection carries the plan,
+  `XYSource.stream` applies it chunk by chunk, samples per row count the products
+  shown, per-Stokes pages read each product's own inputs, and a cached range of a
+  derived selection is keyed by its products (`--stokes I,V` reads the pixels
+  `--stokes RR,LL` reads; the keys of the file's own products unchanged, so existing
+  cache files stay valid). The resolver it replaces (this code's own, from the
+  command line's first commit, 2026-09-27) dropped unmatched labels without a word
+  (`--stokes RR,XX` plotted RR); every label is now held, derived or refused.
+  Tests: the products of both bases checked by hand (circular RR = 3+1j, LL = 1-1j,
+  RL = 0.5+0.25j, LR = 0.5-0.75j: I 4, V 2+2j, Q 1-0.5j, U 1; linear: I 3, Q 1, U 1,
+  V 1), a flag carried to the products using it, refusals; on the synthetic file, I
+  and V from a pass equal to RR + LL and RR - LL read with astropy, flagged at the
+  file's one flagged RR only; samples per row, per-Stokes pages of a derived product,
+  the command line saving a V plot; the cache key. The GSB file's 3C286, amplitude
+  against time for I and V coloured by product: 11,612,160 samples (22,680 rows x 256
+  channels x 2), I up to about 17,500, V mostly below 3,000 (the data uncalibrated,
+  V holds the two hands' gain difference too). Next: the GUI's Stokes choices.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

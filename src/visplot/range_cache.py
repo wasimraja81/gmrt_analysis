@@ -38,10 +38,14 @@ class RangeCache:
         self.written: list[Path] = []
 
     def key(self, fits_path, row_indices: np.ndarray, axis_selection, quantity: str, *,
-            apply_flags: bool, show_flagged: bool, mirror: bool, log_axis: bool) -> str:
+            apply_flags: bool, show_flagged: bool, mirror: bool, log_axis: bool,
+            derived_products: tuple[str, ...] | None = None) -> str:
+        """`derived_products`: the Stokes products shown when any is derived
+        (`--stokes I,V` reads the pixels `--stokes RR,LL` reads); left out of
+        the key otherwise, so keys of the file's own products stay as they were."""
         stat = os.stat(fits_path)
         h = hashlib.sha256()
-        h.update(json.dumps({
+        described = {
             "version": FORMAT_VERSION,
             "file": str(Path(fits_path).resolve()),
             "size": stat.st_size,
@@ -51,7 +55,10 @@ class RangeCache:
             "mirror": mirror,
             "log_axis": log_axis,
             "axes": sorted((axis, np.asarray(idx).tolist()) for axis, idx in (axis_selection or {}).items()),
-        }, sort_keys=True).encode())
+        }
+        if derived_products:
+            described["products"] = list(derived_products)
+        h.update(json.dumps(described, sort_keys=True).encode())
         h.update(np.ascontiguousarray(row_indices, dtype=np.int64).tobytes())
         return h.hexdigest()[:20]
 

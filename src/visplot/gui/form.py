@@ -42,7 +42,6 @@ from visplot.request_args import (
     resolve_page_grid_arg,
     resolve_percentiles_arg,
     resolve_plain_range_arg,
-    resolve_stokes_axis_selection,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
 )

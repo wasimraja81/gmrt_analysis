@@ -10,7 +10,7 @@ from visplot.request_args import (
     resolve_figure_size_arg,
     resolve_ha_range_arg,
     resolve_klambda_range_arg,
-    resolve_stokes_axis_selection,
+    resolve_stokes_products,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
     resolve_plain_range_arg,
@@ -95,22 +95,31 @@ def test_resolve_deg_range_arg_defaults_to_degrees():
     assert resolve_deg_range_arg("0:90") == (0.0, 90.0)
 
 
-def test_resolve_stokes_axis_selection_returns_none_when_not_given():
-    assert resolve_stokes_axis_selection(None, ["RR", "LL"]) is None
+def test_resolve_stokes_products_returns_none_when_not_given():
+    assert resolve_stokes_products(None, ["RR", "LL"]) is None
 
 
-def test_resolve_stokes_axis_selection_matches_case_insensitively():
-    assert resolve_stokes_axis_selection("rr", ["RR", "LL"]) == [0]
+def test_resolve_stokes_products_matches_case_insensitively_in_the_files_order():
+    plan = resolve_stokes_products("ll,rr", ["RR", "LL"])
+    assert plan.labels == ("RR", "LL") and plan.read == (0, 1) and not plan.derived
 
 
-def test_resolve_stokes_axis_selection_raises_without_a_stokes_axis():
+def test_resolve_stokes_products_raises_without_a_stokes_axis():
     with pytest.raises(ValueError, match="no STOKES axis"):
-        resolve_stokes_axis_selection("RR", None)
+        resolve_stokes_products("RR", None)
 
 
-def test_resolve_stokes_axis_selection_raises_when_nothing_matches():
-    with pytest.raises(ValueError, match="matched none"):
-        resolve_stokes_axis_selection("XX", ["RR", "LL"])
+def test_resolve_stokes_products_refuses_any_product_it_cannot_give():
+    # the resolver it replaced kept RR here and dropped XX without a word
+    with pytest.raises(ValueError, match=r"--stokes 'RR,XX': Stokes XX: not among this file's products"):
+        resolve_stokes_products("RR,XX", ["RR", "LL"])
+    with pytest.raises(ValueError, match=r"Stokes U of circular feeds needs RL, LR"):
+        resolve_stokes_products("U", ["RR", "LL"])
+
+
+def test_resolve_stokes_products_derives_i_q_u_v():
+    plan = resolve_stokes_products("RR,V", ["RR", "LL"])
+    assert plan.labels == ("RR", "V") and plan.read == (0, 1) and plan.derived
 
 
 def test_parse_plot_names_rejects_a_bare_quantity_and_suggests_pairs():
