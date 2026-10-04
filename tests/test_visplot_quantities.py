@@ -68,9 +68,9 @@ def _sources():
     return {1: _source(1, "3C286", 202.8, 30.5), 2: _source(2, "3C48", 24.4, 33.2)}
 
 
-def _ctx(bunit="UNCALIB", time_zone="Asia/Kolkata", reference_date_jd=None, time_system=None):
+def _ctx(bunit="UNCALIB", time_zone="Asia/Kolkata", day0_jd=None, time_system=None):
     return context_from_source_table(JD0, _sources(), GMRT, bunit=bunit, stokes_labels=["RR", "LL"],
-                                     time_zone=time_zone, reference_date_jd=reference_date_jd,
+                                     time_zone=time_zone, day0_jd=day0_jd,
                                      time_system=time_system)
 
 
@@ -144,7 +144,7 @@ def test_utc_without_a_reference_date_counts_days_from_the_first_integrations_da
 
 
 def test_recorded_time_is_the_default_counting_days_from_the_files_reference_date():
-    ctx = _ctx(reference_date_jd=REF_JD, time_system="IAT")
+    ctx = _ctx(day0_jd=REF_JD, time_system="IAT")
     np.testing.assert_allclose(_eval("time", ctx=ctx).ravel(), [40.8, 52.8])  # day 1 16:48, day 2 04:48
     assert quantity_label("time", ctx) == "Time (recorded, IAT; day 0 = 2021-07-24)"
     assert value_description("time", ctx) == "time as recorded (TIMSYS IAT), in hours since 2021-07-24 00:00"
@@ -241,9 +241,9 @@ def test_klambda_without_a_freq_axis_raises():
 
 
 def test_utc_based_quantities_subtract_the_recorded_minus_utc_offset():
-    ctx = _ctx(reference_date_jd=REF_JD)
+    ctx = _ctx(day0_jd=REF_JD)
     shifted = context_from_source_table(JD0, _sources(), GMRT, bunit="UNCALIB", stokes_labels=["RR", "LL"],
-                                        time_zone="Asia/Kolkata", reference_date_jd=REF_JD, recorded_minus_utc_s=35.0)
+                                        time_zone="Asia/Kolkata", day0_jd=REF_JD, recorded_minus_utc_s=35.0)
     block = _block(with_data=False)
     np.testing.assert_allclose(_eval("time", block, "UTC", shifted), _eval("time", block, "UTC", ctx) - 35 / 3600)
     np.testing.assert_allclose(_eval("time", block, "local", shifted), _eval("time", block, "local", ctx) - 35 / 3600)

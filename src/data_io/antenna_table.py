@@ -179,6 +179,7 @@ class TimeReference:
     time_system: str | None
     iat_minus_utc_s: float | None = None
     data_minus_utc_s: float | None = None
+    reference_date_keyword: str | None = None  # where `reference_date` came from: "RDATE" or "DATE-OBS"
 
     @property
     def recorded_minus_utc_s(self) -> float:
@@ -211,6 +212,7 @@ def read_time_reference(fits_path: Path | str) -> TimeReference:
     date = (rdate or date_obs)[:10]
     return TimeReference(
         reference_date=date or None,
+        reference_date_keyword=("RDATE" if rdate else "DATE-OBS") if date else None,
         time_system=time_system or None,
         iat_minus_utc_s=float(iatutc) if iatutc is not None else None,
         data_minus_utc_s=float(datutc) if datutc is not None else None,

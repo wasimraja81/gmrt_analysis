@@ -50,7 +50,7 @@ from visplot.iterations import Iteration, iteration_source, list_iterations, pag
 from visplot.plot_panel import panel_facts, selection_filters
 from visplot.plot_spec import PlotSpec, expand_stack
 from visplot.quantities import QUANTITIES, QuantityContext, context_from_source_table, convert, local_time_zone, \
-    utc_jd, utc_offset_text
+    utc_day_start_jd, utc_jd, utc_offset_text
 from visplot.range_cache import RangeCache
 from visplot.request import PlotRequest
 from visplot.request_args import (
@@ -278,8 +278,19 @@ class OpenedFile:
 
     @property
     def reference_date_jd(self) -> float | None:
+        """0h of the file's reference date (AN RDATE, else DATE-OBS), or None
+        when it has neither."""
         date = self.time_reference.reference_date
         return float(Time(date, scale="utc").jd) if date else None
+
+    @property
+    def day0_jd(self) -> float:
+        """0h of the file's day 0, from which clock times count days, in every
+        plot, listing and condition alike: the reference date (AN RDATE, else
+        DATE-OBS), else the date of the file's first integration (never a
+        selection's)."""
+        reference = self.reference_date_jd
+        return reference if reference is not None else utc_day_start_jd(float(np.min(self.index.jd)))
 
     @cached_property
     def timestamp_check(self):
@@ -462,7 +473,7 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     # names its units explicitly.
     header_ctx = QuantityContext(
         time_reference_jd=float(index.jd.min()), bunit=opened.bunit, time_zone=time_zone,
-        reference_date_jd=opened.reference_date_jd, time_system=opened.time_reference.time_system,
+        day0_jd=opened.day0_jd, time_system=opened.time_reference.time_system,
         recorded_minus_utc_s=recorded_minus_utc_s,
     )
     plots_by_name = {}
@@ -502,7 +513,7 @@ def prepare(request: PlotRequest, opened: OpenedFile | None = None, report: Repo
     ctx = context_from_source_table(
         time_reference_jd, opened.source_table, opened.array_location, opened.bunit, stokes_labels,
         antenna_names={a.station_number: a.name for a in opened.antennas}, time_zone=time_zone,
-        reference_date_jd=opened.reference_date_jd, time_system=opened.time_reference.time_system,
+        day0_jd=opened.day0_jd, time_system=opened.time_reference.time_system,
         recorded_minus_utc_s=recorded_minus_utc_s,
     )
     source = XYSource(request.fits_path, index, selection.row_indices, axis_selection, ctx,

@@ -20,7 +20,8 @@ only inside the parentheses, a coordinate only bare; every dimensional quantity
 and phase with its unit (no default); amplitude, real and imaginary parts in the
 file's BUNIT, writing it optional; `channel` a 0-based index, with no unit; time
 an instant with its scale (`recorded`: as the rows record it; `UTC`), counted in
-days from the file's day 0 as the plots' time axes count them, or an ISO date;
+days from the file's day 0 (AN RDATE, else DATE-OBS, else the date of its first
+integration) as the plots' time axes count them, or an ISO date;
 only <, <=, >, >=. Names are case-insensitive, units case-sensitive.
 
 Parsing (`parse_condition`) needs no file; `resolve_conditions` checks the
@@ -315,7 +316,7 @@ def facts_of(opened) -> FileFacts:
     except ValueError:
         offset_s = 0.0
     jd = index.jd
-    day0 = opened.reference_date_jd if opened.reference_date_jd is not None else math.floor(float(jd.min()) - 0.5) + 0.5
+    day0 = opened.day0_jd
     return FileFacts(tuple(index.stokes_labels or ()), opened.bunit, len(freqs) if freqs is not None else 0,
                      (float(min(freqs)), float(max(freqs))) if freqs is not None and len(freqs) else (math.nan, math.nan),
                      (float(jd.min()), float(jd.max())), day0, offset_s)

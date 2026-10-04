@@ -134,11 +134,13 @@ def test_read_time_reference_prefers_rdate_and_reads_timsys():
     path = _make_synthetic_an_table(scratch / "an.fits")
     assert read_time_reference(path) == TimeReference(reference_date=None, time_system=None)
     fits.setval(path, "DATE-OBS", value="2021-07-23")
-    assert read_time_reference(path).reference_date == "2021-07-23"
+    reference = read_time_reference(path)
+    assert (reference.reference_date, reference.reference_date_keyword) == ("2021-07-23", "DATE-OBS")
     fits.setval(path, "RDATE", value="2021-07-24", extname="AIPS AN")
     fits.setval(path, "TIMSYS", value="IAT", extname="AIPS AN")
     assert read_time_reference(path) == TimeReference(reference_date="2021-07-24", time_system="IAT",
-                                                      iat_minus_utc_s=None, data_minus_utc_s=None)
+                                                      iat_minus_utc_s=None, data_minus_utc_s=None,
+                                                      reference_date_keyword="RDATE")
 
 
 def test_recorded_minus_utc_follows_timsys_and_iatutc():

@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 604 tests passing; T26,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 605 tests passing; T26,
 T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1338,6 +1338,17 @@ Buildable now, ahead of Phase C.
   Noted for the user: day 0 of `d/hh:mm:ss` is the file's (RDATE, else its first
   integration's date), while a plot without RDATE counts days from its selection's
   first integration; both archival files carry RDATE, so the two agree on them.
+  Made one (the user: "you can make it consistent, right? Even if RDATE is absent in
+  FILE?"; 2026-10-04): `OpenedFile.day0_jd`, the reference date (AN RDATE, else
+  DATE-OBS) else 0h of the date of the file's first integration, never a selection's,
+  is what plots (the quantity context's
+  `day0_jd`, renamed from `reference_date_jd`), the listing, the file summary and
+  conditions all count days from. A context made without a file falls back to its time
+  reference's date. Found on the way: the reference date falls back to DATE-OBS, and
+  the listing called any reference date RDATE; `TimeReference.reference_date_keyword`
+  now records which keyword gave it, and the listing names it. Test: a file without
+  RDATE or DATE-OBS, a plot of a selection starting after the file, its day 0 the
+  file's.
   Noted too: the selection's range options (`--time-range`, `--uvdist-range`,
   `--ha-range`, `--az-range` ...) still take default units, unlike `--where`.
 

@@ -66,9 +66,10 @@ class QuantityContext:
     array_location: object | None = None  # astropy EarthLocation
     antenna_names: dict[int, str] | None = None  # station number -> name, for reporting baselines
     time_zone: str | None = None  # the observatory's IANA time zone, for local time
-    # The file's reference date (AN RDATE, else DATE-OBS) as the JD of its 0h: clock times
-    # count days from it; None: from the first selected integration's date.
-    reference_date_jd: float | None = None
+    # 0h of the file's day 0, from which clock times count days (`OpenedFile.day0_jd`: AN RDATE,
+    # else DATE-OBS, else the date of the file's first integration); None: a context made without
+    # a file, which counts from its time reference's date.
+    day0_jd: float | None = None
     time_system: str | None = None  # AN TIMSYS: the time scale the file declares for its dates
     # Recorded time - UTC, in s (`TimeReference.recorded_minus_utc_s`): subtracted wherever a
     # timestamp is read as UTC (UTC, local time, LST, hour angle, Az/El, parallactic angle).
@@ -81,7 +82,7 @@ def utc_jd(ctx: QuantityContext, jd):
 
 
 def context_from_source_table(time_reference_jd, source_table, array_location, bunit=None, stokes_labels=(),
-                              antenna_names=None, time_zone=None, reference_date_jd=None, time_system=None,
+                              antenna_names=None, time_zone=None, day0_jd=None, time_system=None,
                               recorded_minus_utc_s=0.0):
     """A `QuantityContext` with per-source coordinate lookup arrays built once
     from `read_source_table`'s dict (source id -> Source)."""
@@ -101,7 +102,7 @@ def context_from_source_table(time_reference_jd, source_table, array_location, b
         array_location=array_location,
         antenna_names=antenna_names,
         time_zone=time_zone,
-        reference_date_jd=reference_date_jd,
+        day0_jd=day0_jd,
         time_system=time_system,
         recorded_minus_utc_s=recorded_minus_utc_s,
     )
@@ -209,10 +210,11 @@ def utc_day_start_jd(jd: float) -> float:
 
 
 def day_origin_jd(ctx: QuantityContext) -> float:
-    """The JD of 0h on the date clock times count days from: the file's
-    reference date, else the first selected integration's date."""
-    if ctx.reference_date_jd is not None:
-        return ctx.reference_date_jd
+    """The JD of 0h on the date clock times count days from: the file's day 0
+    (`ctx.day0_jd`); for a context made without a file, its time reference's
+    date."""
+    if ctx.day0_jd is not None:
+        return ctx.day0_jd
     return utc_day_start_jd(ctx.time_reference_jd)
 
 

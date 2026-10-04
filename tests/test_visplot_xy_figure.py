@@ -159,7 +159,7 @@ def test_axes_are_labelled_in_their_units_and_clock_time_as_a_time_of_day():
 
 
 def test_the_time_format_writes_the_clock_axis_and_room_is_left_for_tilted_labels():
-    ctx = QuantityContext(time_reference_jd=2459421.2, bunit="UNCALIB", reference_date_jd=2459419.5)  # 2021-07-24
+    ctx = QuantityContext(time_reference_jd=2459421.2, bunit="UNCALIB", day0_jd=2459419.5)  # 2021-07-24
     iso = XYFigure(PlotSpec(y="amp", x="time"), ctx, time_format="iso")
     iso.set_view((40.0, 44.0), (0.0, 1.0))
     iso.fig.canvas.draw()

@@ -150,3 +150,19 @@ def test_the_facts_of_an_opened_file():
     assert facts.stokes_labels == ("RR", "LL") and facts.bunit == "UNCALIB" and facts.n_channels == 4
     assert facts.freq_hz == (400e6, 403e6) and facts.jd[0] == pytest.approx(JD0)
     assert math.isfinite(facts.day0_jd) and facts.day0_jd <= facts.jd[0] < facts.day0_jd + 1
+
+
+def test_one_day_0_per_file_for_plots_listings_and_conditions():
+    """Without RDATE or DATE-OBS, day 0 is the date of the file's first integration, never a selection's."""
+    from visplot.quantities import day_origin_jd, utc_day_start_jd
+    from visplot.request import PlotRequest
+    from visplot.run import prepare
+
+    path = _make_synthetic_file(make_scratch_dir("conditions_day0") / "obs.fits")
+    opened = open_file(path)
+    assert opened.reference_date_jd is None  # the synthetic file has neither RDATE nor DATE-OBS
+    assert opened.day0_jd == utc_day_start_jd(float(opened.index.jd.min()))
+    later = prepare(PlotRequest(str(path), "amp-vs-time", sources="3C48"), opened)  # starts after the file does
+    assert later.ctx.time_reference_jd > float(opened.index.jd.min())
+    assert day_origin_jd(later.ctx) == opened.day0_jd == facts_of(opened).day0_jd
+

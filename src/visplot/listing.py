@@ -112,9 +112,7 @@ class _Listing:
         index = self.opened.index
         self.integrations = integrations_of(index, self.selection.row_indices)
         self.scans = derive_scans(self.integrations, self.options.gap_integrations, self.options.longest_s)
-        origin = self.opened.reference_date_jd
-        stamps = np.asarray(index.jd)
-        self.origin_jd = origin if origin is not None else float(np.floor(stamps.min() - 0.5) + 0.5)
+        self.origin_jd = self.opened.day0_jd
         self.day0 = datetime.date.fromisoformat(Time(self.origin_jd, format="jd", scale="utc").iso[:10])
         try:
             self.recorded_minus_utc_s = self.opened.time_reference.recorded_minus_utc_s
@@ -201,7 +199,7 @@ class _Listing:
                      f"{default_row_index_path(opened.fits_path).name})"),
             ("Telescope", f"{header.telescope or 'not given'}" + (f" ({described})" if described else "")),
             ("Dates", f"DATE-OBS {header.date_obs or 'not given'}; day 0 {self.day0.isoformat()} "
-                      f"({'the reference date, RDATE' if reference.reference_date else 'from the first integration'})"),
+                      f"({'the reference date, ' + reference.reference_date_keyword if reference.reference_date else 'the date of the first integration'})"),
             ("Time system", reference.describe()),
             ("", check),
         ]

@@ -61,9 +61,7 @@ def summarize(opened) -> FileSummary:
     jd = np.asarray(index.jd)
     stamps = np.unique(jd)
     spacing = np.diff(stamps) * 86400.0
-    origin = opened.reference_date_jd
-    if origin is None:
-        origin = np.floor(stamps[0] - 0.5) + 0.5
+    origin = opened.day0_jd
     cross = np.asarray(index.ant1) != np.asarray(index.ant2)
     # one integer per (ant1, ant2): np.unique over the rows of a 2-D array took 6.2 s on the GWB
     # file's 4.0M rows, this 0.2 s
