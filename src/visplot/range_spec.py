@@ -27,6 +27,8 @@ import re
 import astropy.units as u
 
 _TRAILING_UNIT_RE = re.compile(r"[A-Za-zµ]+$")
+# A decimal number, signed, with an optional exponent: 5, -170, 0.005, 1e3.
+NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 
 
 def _parse_one_term(term: str) -> tuple[float, float]:

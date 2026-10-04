@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 605 tests passing; T26,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 613 tests passing; T26,
 T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1350,7 +1350,27 @@ Buildable now, ahead of Phase C.
   RDATE or DATE-OBS, a plot of a selection starting after the file, its day 0 the
   file's.
   Noted too: the selection's range options (`--time-range`, `--uvdist-range`,
-  `--ha-range`, `--az-range` ...) still take default units, unlike `--where`.
+  `--ha-range`, `--az-range` ...) still take default units, unlike `--where`. The
+  user: "we will want user to be explicit on units. All we want to do is help them
+  provide units correctly from our options"; approved (2026-10-04): every selection
+  range 'LO:HI UNIT', the unit required from the quantity's units, both ends included,
+  values outside the physical domain refused; `--time-range` two instants and a scale
+  as in `--where`; `--uvdist-range` and `--uu/vv/ww-range` in m, km, lambda, klambda,
+  Mlambda, the four `-klambda` options folded into them; in the GUI each range a text
+  box beside a menu of the units, none chosen until the user chooses. Built in three
+  steps. The angles first, the same day: `request_args.UNIT_RANGES` (--ha-range,
+  --az-range, --el-range, --pa-range: the quantity, the unit `select_rows` takes, and
+  for hour angle, azimuth and parallactic angle an example of LO above HI wrapping
+  through the boundary, as `select_rows` already allows) and `resolve_range_arg`,
+  replacing the two resolvers that defaulted to hours and degrees; the help made from
+  the table; the physical domains moved into `quantities` (`PHYSICAL_DOMAINS`,
+  `domain_in`), shared with the conditions, and one number pattern
+  (`range_spec.NUMBER`); the GUI's `unit_range_field` ("unit…" until chosen, the box
+  marked meanwhile; `Field.checked_box` names the box within such a row). The GSB
+  file's elevation with `--el-range "0:30"` is refused naming deg and rad; with
+  "0:30 deg" it draws the 429,030 rows below 30 deg. Tests: units required, converted,
+  case-sensitive, domains, wrapping and its refusal for elevation; the GUI field's
+  menu, its marking, the request it writes and loads. 613 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

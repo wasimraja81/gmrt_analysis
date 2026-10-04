@@ -5,15 +5,14 @@ from visplot.request_args import (
     parse_quantity_pair,
     resolve_antennas_arg,
     resolve_channels_arg,
-    resolve_deg_range_arg,
     resolve_dpi_arg,
     resolve_figure_size_arg,
-    resolve_ha_range_arg,
     resolve_klambda_range_arg,
     resolve_stokes_products,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
     resolve_plain_range_arg,
+    resolve_range_arg,
     validate_colorize_by,
 )
 from data_io.antenna_table import Antenna
@@ -88,18 +87,28 @@ def test_resolve_klambda_range_arg_is_a_plain_number_range():
     assert resolve_klambda_range_arg("0:5") == (0.0, 5.0)
 
 
-def test_resolve_ha_range_arg_defaults_to_hours():
-    assert resolve_ha_range_arg("-6:6") == (-6.0, 6.0)
+def test_a_selection_range_takes_its_unit_explicitly_and_converts_to_select_rows_units():
+    assert resolve_range_arg("--ha-range", "-6:6 h") == (-6.0, 6.0)
+    assert resolve_range_arg("--ha-range", "-90:90deg") == pytest.approx((-6.0, 6.0))  # a space is optional
+    assert resolve_range_arg("--el-range", "0:0.5 rad") == pytest.approx((0.0, 28.6478897565))
+    assert resolve_range_arg("--az-range", "350:10 deg") == (350.0, 10.0)  # wraps through north
+    assert resolve_range_arg("--el-range", None) is None
 
 
-def test_resolve_ha_range_arg_converts_degrees():
-    lo, hi = resolve_ha_range_arg("-90:90deg")
-    assert lo == pytest.approx(-6.0)
-    assert hi == pytest.approx(6.0)
-
-
-def test_resolve_deg_range_arg_defaults_to_degrees():
-    assert resolve_deg_range_arg("0:90") == (0.0, 90.0)
+@pytest.mark.parametrize("option, spec, message", [
+    ("--ha-range", "-6:6", r"give the unit, one of: h, deg, rad"),
+    ("--el-range", "0:30", r"give the unit, one of: deg, rad"),
+    ("--el-range", "0:30 h", r"unit 'h' does not apply; one of: deg, rad"),
+    ("--el-range", "0:30 DEG", r"unit 'DEG' does not apply"),  # units are case-sensitive
+    ("--el-range", "0:95 deg", r"el lies in -90\.\.90 deg; 95 is outside it"),
+    ("--ha-range", "-13:0 h", r"ha lies in -12\.\.12 h"),
+    ("--az-range", "0:400 deg", r"az lies in 0\.\.360 deg"),
+    ("--el-range", "30:10 deg", r"the lower end 30 is above the upper end 10"),  # elevation does not wrap
+    ("--el-range", "0-30 deg", r"write 'LO:HI UNIT'"),
+])
+def test_a_selection_range_without_its_unit_or_outside_its_domain_is_refused(option, spec, message):
+    with pytest.raises(ValueError, match=message):
+        resolve_range_arg(option, spec)
 
 
 def test_resolve_stokes_products_returns_none_when_not_given():

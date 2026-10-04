@@ -395,6 +395,30 @@ def units_of(name: str, ctx: QuantityContext | None = None) -> tuple[Unit, ...]:
     return q.units
 
 
+# Each quantity's physical domain, in the unit named (None: the file's BUNIT), its lowest and highest
+# values (None: unbounded): a condition (`--where`) or a selection range outside it is refused.
+PHYSICAL_DOMAINS = {
+    "amp": (None, 0.0, None), "uvdist": ("m", 0.0, None),
+    "phase": ("deg", -180.0, 180.0), "pa": ("deg", -180.0, 180.0),
+    "el": ("deg", -90.0, 90.0), "az": ("deg", 0.0, 360.0), "ha": ("h", -12.0, 12.0),
+}
+
+
+def domain_in(name: str, unit: str | None) -> tuple[float | None, float | None] | None:
+    """Quantity `name`'s physical domain in `unit` (None: it has none). A
+    bound of zero holds in any unit, also one of another base (uv distance
+    in wavelengths and in metres)."""
+    if name not in PHYSICAL_DOMAINS:
+        return None
+    domain_unit, lowest, highest = PHYSICAL_DOMAINS[name]
+
+    def into(value):
+        if value is None or domain_unit is None or unit is None or unit == domain_unit or value == 0:
+            return value
+        return convert(value, name, domain_unit, unit)
+    return into(lowest), into(highest)
+
+
 def resolve_unit(name: str, unit: str | None = None, ctx: QuantityContext | None = None) -> Unit:
     """Quantity `name`'s unit called `unit` (by name, e.g. "klambda", or
     label, e.g. "kλ"); its default if `unit` is None (the file's

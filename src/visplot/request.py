@@ -25,7 +25,8 @@ from visplot.iterations import ITERATION_KINDS
 from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIONS as LISTING_SECTIONS
 from visplot.plot_theme import DEFAULT_PLOT_THEME, MIN_CONTRAST, PLOT_THEMES
 from visplot.request_args import (CATEGORY_NAMES, DEFAULT_DPI, DEFAULT_FIGURE_SIZE, DEFAULT_LISTING_CORRELATION_TYPE,
-                                  DEFAULT_PAGE_FIGURE_SIZE, DEFAULT_PLOT_CORRELATION_TYPE, DPI_LIMITS, quantity_help)
+                                  DEFAULT_PAGE_FIGURE_SIZE, DEFAULT_PLOT_CORRELATION_TYPE, DPI_LIMITS, UNIT_RANGES,
+                                  quantity_help, unit_range_help)
 from visplot.xy_session import DEFAULT_STREAM_THREADS
 
 PROG = "bin/visplot.sh"
@@ -199,10 +200,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sel.add_argument("--vv-range-klambda", help=klambda_help)
     sel.add_argument("--ww-range-klambda", help=klambda_help)
     sel.add_argument("--uvdist-range-klambda", help=klambda_help)
-    sel.add_argument("--ha-range", help="'lo:hi' hour angle, hours by default, or with a 'deg' suffix")
-    sel.add_argument("--az-range", help="'lo:hi' azimuth, degrees by default, or with a 'rad' suffix")
-    sel.add_argument("--el-range", help="'lo:hi' elevation, degrees by default, or with a 'rad' suffix")
-    sel.add_argument("--pa-range", help="'lo:hi' parallactic angle, degrees by default, or with a 'rad' suffix")
+    for option in UNIT_RANGES:  # --ha-range, --az-range, --el-range, --pa-range
+        sel.add_argument(option, metavar="'LO:HI UNIT'", help=unit_range_help(option))
     sel.add_argument(
         "--every-nth", type=int, metavar="N",
         help="keep every Nth row of those matching all other filters. Rows are in baseline order within "

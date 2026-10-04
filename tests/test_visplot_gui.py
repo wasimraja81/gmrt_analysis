@@ -68,7 +68,7 @@ def test_the_form_shows_a_request_and_gives_it_back_unchanged():
     app, window, path = _window("gui_round_trip")
     request = PlotRequest(
         str(path), "phase-vs-freq", sources="3C48", correlation_type="both", stokes="LL", channels="0:2",
-        antennas="1:2", time_range="0:1", uvdist_range="0:5km", ha_range="-3:3", every_nth=2, colorize_by="stokes",
+        antennas="1:2", time_range="0:1", uvdist_range="0:5km", ha_range="-3:3 h", every_nth=2, colorize_by="stokes",
         show_flagged=True, mirror=False, x_unit="GHz", y_unit="rad", x_range="0.3:0.5", y_range_mode="percentile",
         range_percentiles="1:99", y_scale="symlog", aspect="free", scale_linear_width=0.5, point_size=2.5,
         color="k", time_zone="Asia/Kolkata", cache_dir=str(path.parent / "cache"), threads=2,
@@ -620,5 +620,23 @@ def test_the_stokes_list_offers_what_the_file_can_derive_unticked():
     assert form.stokes.checked() == ["I", "V"] and form.request().stokes == "I,V"
     form.load(PlotRequest(str(path), "amp-vs-freq"))
     assert form.stokes.checked() == ["RR", "LL"]  # not given: the file's own again, the derived unticked
+    _settle(app, window, lambda: True)
+    window.close()
+
+
+def test_a_range_field_wants_its_unit_chosen_from_the_quantitys_units():
+    app, window, path = _window("gui_unit_range")
+    form = window.form
+    field = form.fields["el_range"]
+    box, menu = field.checked_box, field.widget.findChild(QtWidgets.QComboBox)
+    assert [menu.itemText(i) for i in range(menu.count())] == ["unit…", "deg", "rad"] and menu.currentData() is None
+    box.setText("0:30")
+    assert form.request().el_range == "0:30" and "el_range" in form.invalid_fields()  # no unit yet: marked
+    menu.setCurrentIndex(1)
+    assert form.request().el_range == "0:30 deg" and "el_range" not in form.invalid_fields()
+    form.load(PlotRequest(str(path), "amp-vs-time", el_range="0:0.5 rad"))
+    assert (box.text(), menu.currentData()) == ("0:0.5", "rad") and form.request().el_range == "0:0.5 rad"
+    form.load(PlotRequest(str(path), "amp-vs-time"))
+    assert (box.text(), menu.currentData()) == ("", None)
     _settle(app, window, lambda: True)
     window.close()

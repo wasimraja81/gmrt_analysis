@@ -39,21 +39,14 @@ from dataclasses import dataclass, replace
 from astropy.time import Time
 
 from data_io.stokes_products import CIRCULAR, DERIVED, LINEAR, plan_products
-from visplot.quantities import QuantityContext, convert, resolve_unit, units_of
+from visplot.quantities import QuantityContext, convert, domain_in, resolve_unit, units_of
+from visplot.range_spec import NUMBER
 
 FUNCTIONS = ("amp", "phase", "real", "imag")
 COORDINATES = ("uvdist", "uu", "vv", "ww", "el", "az", "ha", "pa", "freq", "channel", "time")
 PRODUCTS = CIRCULAR + LINEAR + DERIVED
 OPERATORS = ("<", "<=", ">", ">=")
 TIME_SCALES = ("recorded", "UTC")
-
-# Each quantity's physical domain, in the unit named: a value outside it is refused.
-# (quantity, unit, lowest, highest); None: unbounded on that side.
-DOMAINS = {
-    "amp": (None, 0.0, None), "uvdist": ("m", 0.0, None),
-    "phase": ("deg", -180.0, 180.0), "pa": ("deg", -180.0, 180.0),
-    "el": ("deg", -90.0, 90.0), "az": ("deg", 0.0, 360.0), "ha": ("h", -12.0, 12.0),
-}
 
 # The examples, one source for --help, the GUI's hover text and the user guide (each tested).
 CONDITION_EXAMPLES = (
@@ -71,7 +64,6 @@ CONDITION_EXAMPLES = (
     ("time < 2021-07-25T18:00:00 recorded", "before 18:00:00 on 2021-07-25 as the rows record time (their TIMSYS)"),
 )
 
-_NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 _DAY_CLOCK = re.compile(r"^(\d+)/(\d{1,2}):(\d{2}):(\d{2}(?:\.\d+)?)$")
 _ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$")
 _OPERATOR = re.compile(r"<=|>=|<|>")
@@ -195,7 +187,7 @@ def _value(token: str, operand: Operand, text: str, range_end: bool = False) -> 
             raise _refuse(text, f"{parts[0]!r} is not an instant: write d/hh:mm:ss (days from the file's day 0) "
                                 "or an ISO date, e.g. 2021-07-25T17:42:09")
         return parts[0], parts[1]
-    match = re.match(rf"^({_NUMBER})\s*(\S*)$", token)
+    match = re.match(rf"^({NUMBER})\s*(\S*)$", token)
     if not match:
         raise _refuse(text, f"{token!r} is not a number with a unit, e.g. 20 deg")
     number, unit = float(match.group(1)), match.group(2) or None
@@ -218,23 +210,8 @@ def _value(token: str, operand: Operand, text: str, range_end: bool = False) -> 
     return number, unit
 
 
-def _domain_in(name: str, unit: str | None) -> tuple[float | None, float | None] | None:
-    """Quantity `name`'s physical domain in `unit` (None: no domain). A
-    bound of zero holds in any unit, also one of another base (uv distance
-    in wavelengths and in metres)."""
-    if name not in DOMAINS:
-        return None
-    domain_unit, lowest, highest = DOMAINS[name]
-
-    def into(value):
-        if value is None or domain_unit is None or unit is None or unit == domain_unit or value == 0:
-            return value
-        return convert(value, name, domain_unit, unit)
-    return into(lowest), into(highest)
-
-
 def _check_domain(operand: Operand, value: float, unit: str | None, text: str) -> None:
-    domain = _domain_in(operand.name, unit)
+    domain = domain_in(operand.name, unit)
     if domain is None:
         return
     lowest, highest = domain
@@ -414,7 +391,7 @@ def _domain_of(operand: Operand, facts: FileFacts, unit: str | None) -> tuple[fl
     span = _file_span(operand, facts)
     if span is not None:
         return span
-    return _domain_in(operand.name, unit)
+    return domain_in(operand.name, unit)
 
 
 def _covers(interval: Interval, whole: tuple[float | None, float | None]) -> bool:

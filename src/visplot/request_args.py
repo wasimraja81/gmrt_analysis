@@ -9,6 +9,7 @@ same text.
 from __future__ import annotations
 
 import math
+import re
 import textwrap
 
 import astropy.units as u
@@ -18,8 +19,8 @@ from data_io.stokes_products import ProductPlan, plan_products
 from instruments.gmrt.antenna_selection import resolve_antenna_selection
 from visplot.channel_selection import resolve_channel_selection
 from visplot.plot_spec import PRESETS
-from visplot.quantities import QUANTITIES
-from visplot.range_spec import parse_single_quantity_range, parse_single_range
+from visplot.quantities import QUANTITIES, convert, domain_in, resolve_unit, units_of
+from visplot.range_spec import NUMBER, parse_single_quantity_range, parse_single_range
 from visplot.time_range import resolve_time_range_jd
 
 TABLE_PLOTS = {"antenna-layout", "source-listing"}  # drawn from the file's tables
@@ -192,16 +193,53 @@ def resolve_klambda_range_arg(spec: str | None) -> tuple[float, float] | None:
     return parse_single_range(spec) if spec else None
 
 
-def resolve_ha_range_arg(spec: str | None) -> tuple[float, float] | None:
-    """Hours by default (matching `select_rows`'s `ha_range_hours`), or an
-    explicit "deg" suffix."""
-    return parse_single_quantity_range(spec, u.hourangle) if spec else None
+_UNIT_RANGE = re.compile(rf"^\s*({NUMBER})\s*:\s*({NUMBER})\s*(\S*)\s*$")
+# The selection's ranges of a quantity: option -> (quantity, the unit select_rows takes, an example of
+# LO above HI wrapping through the quantity's boundary, or None: the quantity does not wrap).
+UNIT_RANGES = {
+    "--ha-range": ("ha", "h", "10:-10 h, through lower culmination"),
+    "--az-range": ("az", "deg", "350:10 deg, through north"),
+    "--el-range": ("el", "deg", None),
+    "--pa-range": ("pa", "deg", "170:-170 deg, through 180 deg"),
+}
 
 
-def resolve_deg_range_arg(spec: str | None) -> tuple[float, float] | None:
-    """Degrees by default (Az/El/parallactic angle), or an explicit "rad"
-    suffix."""
-    return parse_single_quantity_range(spec, u.deg) if spec else None
+def unit_range_help(option: str) -> str:
+    """The help of a selection range option, from `UNIT_RANGES`."""
+    quantity, _, wrap = UNIT_RANGES[option]
+    units = ", ".join(unit.name for unit in units_of(quantity))
+    wraps = f"; LO above HI wraps ({wrap})" if wrap else ""
+    return (f"'LO:HI UNIT' {QUANTITIES[quantity].display_name.lower()}, both ends included, the unit required: "
+            f"{units}{wraps}")
+
+
+def resolve_range_arg(option: str, spec: str | None) -> tuple[float, float] | None:
+    """A selection range (`UNIT_RANGES`), 'LO:HI UNIT': both ends included;
+    the unit required, one of the quantity's (as --where takes them); values
+    outside its physical domain refused; for a cyclic quantity LO above HI
+    wraps through its boundary. Returned in the unit `select_rows` takes."""
+    if spec is None:
+        return None
+    quantity, to_unit, wrap = UNIT_RANGES[option]
+    units = ", ".join(unit.name for unit in units_of(quantity))
+    match = _UNIT_RANGE.match(spec)
+    if not match:
+        raise ValueError(f"{option} {spec!r}: write 'LO:HI UNIT', the unit one of: {units}")
+    lo, hi, unit = float(match.group(1)), float(match.group(2)), match.group(3)
+    if not unit:
+        raise ValueError(f"{option} {spec!r}: give the unit, one of: {units}")
+    try:
+        unit = resolve_unit(quantity, unit).name
+    except ValueError:
+        raise ValueError(f"{option} {spec!r}: unit {unit!r} does not apply; one of: {units}") from None
+    lowest, highest = domain_in(quantity, unit) or (None, None)
+    for value in (lo, hi):
+        if (lowest is not None and value < lowest) or (highest is not None and value > highest):
+            raise ValueError(f"{option} {spec!r}: {quantity} lies in {lowest:g}..{highest:g} {unit}; {value:g} is "
+                             "outside it")
+    if lo > hi and not wrap:
+        raise ValueError(f"{option} {spec!r}: the lower end {lo:g} is above the upper end {hi:g}")
+    return convert(lo, quantity, unit, to_unit), convert(hi, quantity, unit, to_unit)
 
 
 def resolve_stokes_products(spec: str | None, stokes_labels: list[str] | None) -> ProductPlan | None:

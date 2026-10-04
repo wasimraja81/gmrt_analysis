@@ -35,14 +35,14 @@ from visplot.request_args import (
     DEFAULT_PLOT_CORRELATION_TYPE,
     MAX_PAGE_GRID,
     TABLE_PLOTS,
+    UNIT_RANGES,
     resolve_antennas_arg,
     resolve_channels_arg,
-    resolve_deg_range_arg,
-    resolve_ha_range_arg,
     resolve_klambda_range_arg,
     resolve_page_grid_arg,
     resolve_percentiles_arg,
     resolve_plain_range_arg,
+    resolve_range_arg,
     resolve_time_range_arg,
     resolve_uvdist_range_arg,
 )
@@ -121,14 +121,19 @@ def _check_with(resolver: Callable) -> Callable[[str], str | None]:
 
 class Field:
     """One request option in the form: `get()` gives the value the command
-    line would parse, `set(value)` shows one; `changed` fires on edits."""
+    line would parse, `set(value)` shows one; `changed` fires on edits.
+    `checked_box`: the checked text box within `widget`, when the widget is
+    not itself one (a range's text box beside its unit menu)."""
 
-    def __init__(self, dest: str, widget: QtWidgets.QWidget, get: Callable, set: Callable, changed):
+    def __init__(self, dest: str, widget: QtWidgets.QWidget, get: Callable, set: Callable, changed,
+                 checked_box: CheckedLineEdit | None = None):
         self.dest = dest
         self.widget = widget
         self.get = get
         self.set = set
         self.changed = changed
+        self.checked_box = checked_box if checked_box is not None else (
+            widget if isinstance(widget, CheckedLineEdit) else None)
 
 
 def text_field(dest: str, edit: QtWidgets.QLineEdit, default=None) -> Field:
@@ -138,6 +143,35 @@ def text_field(dest: str, edit: QtWidgets.QLineEdit, default=None) -> Field:
         edit.setPlaceholderText(str(default))
     return Field(dest, edit, lambda: edit.text().strip() or default,
                  lambda v: edit.setText("" if v is None or v == default else str(v)), edit.textChanged)
+
+
+def unit_range_field(dest: str, option: str) -> Field:
+    """A selection range, 'LO:HI UNIT' (`request_args.UNIT_RANGES`): a text
+    box for LO:HI beside a menu of the quantity's units, none chosen at first
+    -- the unit is the user's to give (2026-10-04) -- the field marked until
+    it is."""
+    quantity = UNIT_RANGES[option][0]
+    edit = CheckedLineEdit("lo:hi")
+    menu = QtWidgets.QComboBox()
+    menu.addItem("unit…", None)
+    for unit in units_of(quantity):
+        menu.addItem(unit.name, unit.name)
+
+    def value():
+        text, unit = edit.text().strip(), menu.currentData()
+        return None if not text else f"{text} {unit}" if unit else text
+
+    def show(spec):
+        lo_hi, _, unit = (spec or "").strip().rpartition(" ")
+        edit.setText(lo_hi if lo_hi else (spec or ""))
+        select_data(menu, unit if lo_hi else None)
+
+    def check(_text: str) -> str | None:
+        resolve_range_arg(option, value())
+        return None
+    edit.set_check(check)
+    menu.currentIndexChanged.connect(lambda _: edit.textChanged.emit(edit.text()))  # re-check, and a change
+    return Field(dest, row(edit, menu, stretches=(1, 0)), value, show, edit.textChanged, checked_box=edit)
 
 
 def number_field(dest: str, edit: QtWidgets.QLineEdit, kind: type, default=None) -> Field:
@@ -314,8 +348,9 @@ class RequestForm(QtWidgets.QWidget):
             tip = self.help.get(f.dest)
             if tip and not f.widget.toolTip():
                 f.widget.setToolTip(tip)
-                if isinstance(f.widget, CheckedLineEdit):
-                    f.widget.set_help(tip)
+                box = getattr(f, "checked_box", None)  # a Field's; the check lists have none
+                if box is not None:
+                    box.set_help(tip)
         self.x.fill_units()
         self.y.fill_units()
         self.y2.fill_units()
@@ -466,12 +501,12 @@ class RequestForm(QtWidgets.QWidget):
             ("vv_range_klambda", "v (kλ)", "lo:hi", resolve_klambda_range_arg),
             ("ww_range_klambda", "w (kλ)", "lo:hi", resolve_klambda_range_arg),
             ("uvdist_range_klambda", "UV dist. (kλ)", "lo:hi", resolve_klambda_range_arg),
-            ("ha_range", "Hour angle", "lo:hi h, or with deg", resolve_ha_range_arg),
-            ("az_range", "Azimuth", "lo:hi deg, or with rad", resolve_deg_range_arg),
-            ("el_range", "Elevation", "lo:hi deg, or with rad", resolve_deg_range_arg),
-            ("pa_range", "Parallactic angle", "lo:hi deg, or with rad", resolve_deg_range_arg),
         ):
             more_form.addRow(label, self._add(text_field(dest, CheckedLineEdit(placeholder, _check_with(resolver)))))
+        for dest, label, option in (("ha_range", "Hour angle", "--ha-range"), ("az_range", "Azimuth", "--az-range"),
+                                    ("el_range", "Elevation", "--el-range"),
+                                    ("pa_range", "Parallactic angle", "--pa-range")):
+            more_form.addRow(label, self._add(unit_range_field(dest, option)))
         for dest, label, placeholder in (("every_nth_integration", "Every Nth integration", "all integrations"),
                                          ("every_nth", "Every Nth row", "all rows (can skip baselines)"),
                                          ("random_subset_n", "Random rows", "all rows"),
@@ -804,7 +839,7 @@ class RequestForm(QtWidgets.QWidget):
     def invalid_fields(self) -> list[str]:
         """Options whose text fails its check (red-framed)."""
         return [dest for dest, f in self.fields.items()
-                if isinstance(f.widget, CheckedLineEdit) and not f.widget.valid]
+                if getattr(f, "checked_box", None) is not None and not f.checked_box.valid]
 
     def request(self, **actions) -> PlotRequest:
         """The form as a request; `actions` sets the ACTION_OPTIONS (e.g. a
