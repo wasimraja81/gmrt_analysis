@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from data_io.stokes_products import derivable, recipe_text
 from instruments.observatory_time_zones import observatory_time_zone
 from visplot.fonts import PANEL_FONTS
 from visplot.gui.widgets import (CheckedLineEdit, CollapsibleSection, NoteBox, form_layout, grouped_combo, hint, row,
@@ -162,8 +163,9 @@ def flag_field(dest: str, box: QtWidgets.QCheckBox) -> Field:
 
 
 class ChecklistField:
-    """Sources or Stokes as check boxes: None when all are checked (the
-    option not given), else the checked names joined by commas."""
+    """Sources or Stokes as check boxes: None when exactly the items checked
+    by default are (the option not given), else the checked names joined by
+    commas."""
 
     def __init__(self, dest: str):
         self.dest = dest
@@ -171,17 +173,22 @@ class ChecklistField:
         self.widget.setMaximumHeight(130)
         self.changed = self.widget.itemChanged
         self._names: list[str] = []
+        self._default: list[str] = []  # the names checked when the option is not given
 
-    def fill(self, items: list[tuple[str, str]]) -> None:
-        """(name, text) per item, all checked."""
+    def fill(self, items: list[tuple[str, str]], off=(), tips: dict | None = None) -> None:
+        """(name, text) per item, checked unless named in `off` (e.g. the
+        Stokes products a file can derive); `tips`: hover text by name."""
         self.widget.blockSignals(True)
         self.widget.clear()
         self._names = [name for name, _ in items]
+        self._default = [name for name in self._names if name not in off]
         for name, text in items:
             item = QtWidgets.QListWidgetItem(text)
             item.setData(QtCore.Qt.UserRole, name)
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.Checked)
+            item.setCheckState(QtCore.Qt.Unchecked if name in off else QtCore.Qt.Checked)
+            if tips and name in tips:
+                item.setToolTip(tips[name])
             self.widget.addItem(item)
         self.widget.blockSignals(False)
         self.changed.emit(None)
@@ -196,13 +203,14 @@ class ChecklistField:
 
     def get(self):
         checked = self.checked()
-        return None if not self._names or len(checked) == len(self._names) else ",".join(checked)
+        return None if not self._names or checked == self._default else ",".join(checked)
 
     def set(self, value) -> None:
         wanted = None if value is None else {v.strip().upper() for v in str(value).split(",")}
         for i in range(self.widget.count()):
             item = self.widget.item(i)
-            on = wanted is None or str(item.data(QtCore.Qt.UserRole)).upper() in wanted
+            name = item.data(QtCore.Qt.UserRole)
+            on = name in self._default if wanted is None else str(name).upper() in wanted
             item.setCheckState(QtCore.Qt.Checked if on else QtCore.Qt.Unchecked)
 
 
@@ -756,7 +764,10 @@ class RequestForm(QtWidgets.QWidget):
         self.summary.setText("<table>" + "".join(f"<tr><td><b>{k}</b>&nbsp;&nbsp;</td><td>{v}</td></tr>"
                                                  for k, v in summary.lines()) + "</table>")
         self.sources.fill([(name, f"{name}  ({rows:,} rows)") for _, name, rows in summary.sources])
-        self.stokes.fill([(label, label) for label in summary.stokes_labels])
+        held = list(summary.stokes_labels)  # then the I, Q, U, V the file can derive, unchecked (IAU, no 1/2)
+        derived = list(derivable(held))
+        self.stokes.fill([(label, label) for label in held + derived], off=derived,
+                         tips={label: recipe_text(label, held) for label in held + derived})
         zone = observatory_time_zone(opened.telescope)
         self.zone.setPlaceholderText(f"{zone} (from TELESCOP {opened.telescope})" if zone
                                      else f"none known for TELESCOP {opened.telescope!r}: give one for local time")

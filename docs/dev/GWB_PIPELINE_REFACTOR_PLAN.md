@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 560 tests passing; T26,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 562 tests passing; T26,
 T32 in progress; T40, T42, T45, T46, T50-T52, T55 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1183,7 +1183,18 @@ Buildable now, ahead of Phase C.
   the command line saving a V plot; the cache key. The GSB file's 3C286, amplitude
   against time for I and V coloured by product: 11,612,160 samples (22,680 rows x 256
   channels x 2), I up to about 17,500, V mostly below 3,000 (the data uncalibrated,
-  V holds the two hands' gain difference too). Next: the GUI's Stokes choices.
+  V holds the two hands' gain difference too). The GUI's Stokes choices (step 1c, the
+  same day): the form's Stokes list holds the file's own products, checked, then the
+  I, Q, U, V it can derive (`stokes_products.derivable`: RR and LL alone give I and V),
+  unchecked, each item's hover text its recipe (`recipe_text`, from the recipe itself:
+  "U = -i(RL - LR)"); `--stokes` is left out exactly when the file's own are checked
+  and no derived one (`ChecklistField`'s default ticks). Found on the way: with every
+  box unticked the form sends `--stokes ""`, which the new resolver took as an empty
+  plan (the one it replaced refused it); an empty request is refused now, naming the
+  file's products. The GWB file's list: RR, LL, RL, LR checked, I, Q, U, V unchecked,
+  on one line of the form. Tests: what each feed basis derives and its texts; the
+  empty request; the form's list, its ticks, the requests it writes and loads. 562
+  tests.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

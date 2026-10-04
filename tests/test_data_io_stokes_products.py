@@ -4,7 +4,7 @@ for circular and linear feeds (no factor of 1/2)."""
 import numpy as np
 import pytest
 
-from data_io.stokes_products import apply_products, feed_basis, plan_products
+from data_io.stokes_products import DERIVED, apply_products, derivable, feed_basis, plan_products, recipe_text
 from data_io.visibility_data import VisibilityBlock
 
 
@@ -77,3 +77,17 @@ def test_what_cannot_be_derived_is_refused_naming_what_is_missing():
         plan_products(["ZZ"], ["RR", "LL"])
     with pytest.raises(ValueError, match=r"neither linear .* nor circular"):
         plan_products(["V"], ["I"])
+    with pytest.raises(ValueError, match=r"no Stokes product named \(this file holds RR, LL\)"):
+        plan_products(["", " "], ["RR", "LL"])  # e.g. every box of a form unticked
+
+
+def test_what_a_file_can_derive_and_how_it_is_written():
+    assert derivable(["RR", "LL"]) == ("I", "V") and derivable(["XX", "YY"]) == ("I", "Q")
+    assert derivable(["RR", "LL", "RL", "LR"]) == DERIVED and derivable(["I", "Q"]) == ()
+    assert [recipe_text(label, ["RR", "LL", "RL", "LR"]) for label in DERIVED] == [
+        "I = RR + LL", "Q = RL + LR", "U = -i(RL - LR)", "V = RR - LL"]
+    assert [recipe_text(label, ["XX", "YY", "XY", "YX"]) for label in DERIVED] == [
+        "I = XX + YY", "Q = XX - YY", "U = XY + YX", "V = -i(XY - YX)"]
+    assert recipe_text("RR", ["RR", "LL"]) == "RR: as the file holds it" and recipe_text("v", ["rr", "ll"]) == "V = RR - LL"
+    with pytest.raises(ValueError, match="neither held nor derivable"):
+        recipe_text("RR", ["XX", "YY"])

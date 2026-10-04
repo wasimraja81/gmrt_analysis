@@ -67,12 +67,41 @@ def feed_basis(file_labels) -> str | None:
     return None
 
 
+def derivable(file_labels) -> tuple[str, ...]:
+    """The I, Q, U, V a file holding `file_labels` can give that it does not
+    hold itself (circular RR and LL alone: I and V)."""
+    labels = [str(label).upper() for label in file_labels]
+    basis = feed_basis(labels)
+    if basis is None:
+        return ()
+    return tuple(label for label in DERIVED if label not in labels
+                 and all(product in labels for product, _ in RECIPES[basis][label]))
+
+
+def recipe_text(label: str, file_labels) -> str:
+    """How `label` comes from a file holding `file_labels`: "I = RR + LL"
+    (the IAU definition, no factor of 1/2), or "as the file holds it"."""
+    labels = [str(held).upper() for held in file_labels]
+    label = str(label).upper()
+    if label in labels:
+        return f"{label}: as the file holds it"
+    if label not in derivable(labels):
+        raise ValueError(f"Stokes {label}: neither held nor derivable from {', '.join(labels)}")
+    pairs = RECIPES[feed_basis(labels)][label]
+    factor = pairs[0][1] if complex(pairs[0][1]).imag else 1  # -i(RL - LR): the first coefficient's i outside
+    inner = " ".join(("+ " if (coefficient / factor).real > 0 else "- ") + product for product, coefficient in pairs)
+    inner = inner[2:] if inner.startswith("+ ") else inner
+    return f"{label} = {inner}" if factor == 1 else f"{label} = {'-i' if factor == -1j else 'i'}({inner})"
+
+
 def plan_products(wanted, file_labels) -> ProductPlan:
     """The plan for the products `wanted` (labels, any case), from a file
     holding `file_labels`: the file's own first, in its order, then derived
     ones in I, Q, U, V order. Raises ValueError naming what is missing."""
     file_labels = [str(label).upper() for label in file_labels]
     wanted = {str(label).strip().upper() for label in wanted if str(label).strip()}
+    if not wanted:
+        raise ValueError(f"no Stokes product named (this file holds {', '.join(file_labels)})")
     known = set(file_labels) | set(DERIVED)
     unknown = sorted(wanted - known)
     if unknown:

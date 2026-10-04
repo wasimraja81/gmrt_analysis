@@ -599,3 +599,26 @@ def test_clear_cancels_a_plot_being_prepared():
     record = json.loads(next(Path(window.form.request().provenance_dir).rglob(f"{run_id}.json")).read_text())
     assert "cleared before its tab opened" in json.dumps(record)
     window.close()
+
+
+def test_the_stokes_list_offers_what_the_file_can_derive_unticked():
+    """The synthetic file holds RR and LL: I and V offered unticked (Q and U need RL and LR); the
+    option given only when the ticks differ from the file's own products."""
+    app, window, path = _window("gui_stokes_products")
+    form = window.form
+    items = [form.stokes.widget.item(i) for i in range(form.stokes.widget.count())]
+    assert [item.text() for item in items] == ["RR", "LL", "I", "V"]
+    assert form.stokes.checked() == ["RR", "LL"] and form.request().stokes is None
+    assert items[3].toolTip() == "V = RR - LL" and items[0].toolTip() == "RR: as the file holds it"
+    items[3].setCheckState(QtCore.Qt.Checked)
+    assert form.request().stokes == "RR,LL,V"
+    for item in items[:2]:
+        item.setCheckState(QtCore.Qt.Unchecked)
+    assert form.request().stokes == "V"
+    request = PlotRequest(str(path), "amp-vs-freq", stokes="I,V")
+    form.load(request)
+    assert form.stokes.checked() == ["I", "V"] and form.request().stokes == "I,V"
+    form.load(PlotRequest(str(path), "amp-vs-freq"))
+    assert form.stokes.checked() == ["RR", "LL"]  # not given: the file's own again, the derived unticked
+    _settle(app, window, lambda: True)
+    window.close()
