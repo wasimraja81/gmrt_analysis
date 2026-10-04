@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 559 tests passing; T26,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 604 tests passing; T26,
 T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1312,6 +1312,34 @@ Buildable now, ahead of Phase C.
   that the old names are unknown. Command lines and records using them are refused;
   range-cache files keyed by them are recomputed. 559 tests pass (562, less the four,
   plus the one).
+  Step 2a built 2026-10-04: `visplot/conditions.py`, the conditions parsed and checked
+  with no data read. `parse_condition` (no file): the grammar; the refusals, each saying
+  how to write it (a bare `amp`; a bare `V`, naming amp(V) and the coordinate vv; `u`,
+  `v`, `w`; an unknown function, product or coordinate; a missing or wrong unit; a unit
+  on `channel`; equality; no comparison or more than two; a range running both ways or
+  empty; two units in one range; time without its scale, or elapsed time, whose origin
+  depends on the selection); values outside a quantity's physical domain (el, az, ha,
+  pa, phase, amp >= 0, uvdist >= 0, a zero bound holding in any unit). A range's unit
+  may be written once, on either end ("100 < uvdist < 2000 lambda"), found in writing
+  the examples; both ends of a time range carry their scale. `resolve_conditions`
+  (against a file's `FileFacts`: products, BUNIT, channels, band, time span, day 0,
+  recorded - UTC): a product the file neither holds nor can derive, a unit BUNIT does
+  not take, a channel, frequency or instant outside the file, refused; amplitudes put
+  in BUNIT, frequencies in Hz, instants in recorded JD (an instant in UTC moved by the
+  file's recorded - UTC); the conditions on each operand intersected in one unit, an
+  empty intersection refused naming both conditions; a condition holding for every
+  cell warned of. `CONDITION_EXAMPLES`: ten examples with their meanings, the one
+  source for --help, the GUI's hover text and the user guide. On the archival files:
+  every example resolves on the GWB file; on the GSB file (RR and LL, 256 channels,
+  306-339 MHz) the RL examples and those outside its band or channels are refused,
+  naming its products and ranges. Tests: 45 (every example; intervals and their ends;
+  case; each refusal; the domains; the file checks; instants and the offset; conflicts;
+  every-cell warnings; the facts of an opened file). 604 tests pass.
+  Noted for the user: day 0 of `d/hh:mm:ss` is the file's (RDATE, else its first
+  integration's date), while a plot without RDATE counts days from its selection's
+  first integration; both archival files carry RDATE, so the two agree on them.
+  Noted too: the selection's range options (`--time-range`, `--uvdist-range`,
+  `--ha-range`, `--az-range` ...) still take default units, unlike `--where`.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
