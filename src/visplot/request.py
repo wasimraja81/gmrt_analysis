@@ -46,7 +46,7 @@ plot names (--plots, comma-separated):
   quantities, each shown in its default unit or the one --x-unit/--y-unit
   names:
 {quantities}
-  e.g. amp-vs-uvdist, phase-vs-time, v-vs-u. Every generic plot names two
+  e.g. amp-vs-uvdist, phase-vs-time, vv-vs-uu. Every generic plot names two
   quantities; a single name such as uvdist is rejected.
   Two streamed plots joined by "+" stack in one figure, the second under the
   first, sharing their x axis (the same quantity and unit), as AIPS VPLOT
@@ -98,12 +98,13 @@ examples:
   bin/visplot.sh OBS.FITS --plots ha-range,az-el-range,parallactic-angle-range \\
       --sources 3C286,3C48
 
-  # amplitude vs frequency, RR only, first 30 minutes of the file, 400-450 MHz
+  # amplitude vs frequency, RR only, 17:00 to 17:30 UTC on day 1 (days from the
+  # file's day 0, as the time axes count them), 400-450 MHz
   bin/visplot.sh OBS.FITS --plots amp-vs-freq --sources 3C286 \\
-      --stokes RR --time-range 0:0.5 --channels 400:450MHz
+      --stokes RR --time-range '1/17:00:00 .. 1/17:30:00 UTC' --channels 400:450MHz
 
   # UV coverage in kilo-wavelengths, with the conjugate points, saved to disk
-  bin/visplot.sh OBS.FITS --plots v-vs-u --mirror \\
+  bin/visplot.sh OBS.FITS --plots vv-vs-uu --mirror \\
       --sources 3C286 --output-dir plots/
 
   # phase against local observatory time (IST for GMRT)
@@ -186,10 +187,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--exclude-antennas", help="drop every baseline with at least one of these antennas (same syntax as --antennas)",
     )
     sel.add_argument(
-        "--time-range",
-        help="'lo:hi' in hours from the first integration in the file ('h' suffix optional), "
-        "or absolute JD (UTC) with a 'jd' suffix, or 'start/end' as ISO-8601 UTC timestamps; absolute times "
-        "become the file's recorded time by its TIMSYS/IATUTC (see 'time' under 'plot names')",
+        "--time-range", metavar="'LO .. HI SCALE'",
+        help="from LO to HI, both ends included, e.g. '1/17:00:00 .. 1/18:00:00 UTC'; each end d/hh:mm:ss, days "
+        "from the file's day 0 as the time axes count them, or an ISO date (2021-07-25T17:00:00); the scale "
+        "required: recorded (as the rows record time, their TIMSYS) or UTC (converted by the file's "
+        "TIMSYS/IATUTC; see 'time' under 'plot names')",
     )
     for option in UNIT_RANGES:  # --uvdist-range, --uu/vv/ww-range, --ha-range, --az-range, --el-range, --pa-range
         sel.add_argument(option, metavar="'LO:HI UNIT'", help=unit_range_help(option))

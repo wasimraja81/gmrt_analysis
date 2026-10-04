@@ -64,11 +64,11 @@ def test_resolve_channels_arg_resolves_a_plain_index_range():
 
 
 def test_resolve_time_range_arg_returns_none_when_not_given():
-    assert resolve_time_range_arg(None, 2460123.5) is None
+    assert resolve_time_range_arg(None, 2460123.5, 0.0) is None
 
 
-def test_resolve_time_range_arg_resolves_relative_hours():
-    lo, hi = resolve_time_range_arg("0:1", 2460123.5)
+def test_resolve_time_range_arg_counts_days_from_day_0():
+    lo, hi = resolve_time_range_arg("0/00:00:00 .. 0/01:00:00 recorded", 2460123.5, 35.0)
     assert lo == pytest.approx(2460123.5)
     assert hi == pytest.approx(2460123.5 + 1.0 / 24.0)
 

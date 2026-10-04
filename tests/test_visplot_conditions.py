@@ -75,6 +75,7 @@ def test_names_are_case_insensitive_units_case_sensitive():
     ("amp(V) < 5x y", r"is not a number with a unit"),
     ("time > 1/17:42:09", r"time is an instant and its scale"),
     ("time > 17:42 UTC", r"'17:42' is not an instant"),
+    ("time > 1/24:00:00 UTC", r"hours below 24, minutes and seconds below 60"),  # as --time-range checks it
     ("time > 2 h", r"time is an instant and its scale"),  # elapsed time: its origin depends on the selection
 ])
 def test_what_leaves_a_reading_open_is_refused_saying_how_to_write_it(text, message):

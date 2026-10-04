@@ -3,7 +3,7 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 615 tests passing; T26,
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 625 tests passing; T26,
 T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1393,6 +1393,29 @@ Buildable now, ahead of Phase C.
   draws 309,377 rows; "0:2 klambda" with `--uu-range "-1:1 km"` draws 263,795 rows, u
   within ±1.13 kλ (1 km at 339 MHz) and v up to 2.2 kλ (a row within 2 kλ at 306 MHz
   is 2.2 kλ at 339 MHz, and every channel of a row kept is drawn). 615 tests pass.
+  The time range third, 2026-10-05: `--time-range 'LO .. HI SCALE'`, each end an
+  instant as `--where` writes it, d/hh:mm:ss (days from the file's day 0, as the time
+  axes count them) or an ISO date, the scale required (recorded or UTC), both ends
+  included. Removed: hours from the first integration ("0:0.5"), the 'jd' suffix and
+  the ISO "start/end" in UTC. One module for instants, `visplot.instants` (the forms,
+  `check_instant`, `instant_jd`, `parse_time_range`, `resolve_time_range_jd`),
+  replacing `time_range.py`; the conditions take theirs from it. Both forms of an
+  instant now check the clock (hours below 24, minutes and seconds below 60), and an
+  ISO date its calendar (astropy refuses 2021-02-30 and accepts 23:59:60 with a
+  warning only). Ends of one form are ordered without a file; an ISO end against a day
+  count is ordered once the file's day 0 is known. `check_request` now checks the
+  time range and the unit ranges before a file is opened. Found on the way: a listing
+  whose file declares IAT without IATUTC took recorded - UTC as 0 s for its
+  selection, so a UTC time range or a geometry filter there selected the wrong rows;
+  such a listing is now refused for those filters (`_filters_read_utc`), as plots
+  are. The help's examples: `v-vs-u` (unknown since step 1d) is `vv-vs-uu`, and the
+  time-range example takes the new form. The GUI: the time range is a text box beside
+  a scale menu ("scale…" until chosen), the unit field generalised to
+  `last_word_field`. GSB (TIMSYS IAT, IATUTC 34 s): "0:0.5" and a range without its
+  scale are refused; "1/18:00:00 .. 2021-07-25T17:00:00 UTC" is refused once day 0
+  (2021-07-24) is known; "1/17:00:00 .. 1/18:00:00 UTC" draws integrations from
+  17:01:59 to 17:59:58 UTC, and the same in recorded time from 17:01:59 to 17:59:18
+  UTC (the hour ending at 17:59:26 UTC). 625 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

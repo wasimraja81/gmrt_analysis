@@ -47,6 +47,7 @@ from visplot.flag_summary import FlagCounter
 from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIONS as LISTING_SECTIONS, \
     ListingOptions, ListingSelection, list_observation
 from visplot.locate_csv import LocateCsvWriter
+from visplot.instants import parse_time_range, split_time_range_scale
 from visplot.iterations import Iteration, iteration_source, list_iterations, page_layout
 from visplot.plot_panel import panel_facts, selection_filters
 from visplot.plot_spec import PlotSpec, expand_stack
@@ -183,6 +184,10 @@ def check_request(request: PlotRequest) -> CheckedRequest:
             raise ValueError("--locate needs --locate-csv FILE")
         if request.scale_linear_width <= 0:
             raise ValueError("--scale-linear-width must be positive")
+        if request.time_range:
+            parse_time_range(request.time_range)  # the form; an ISO end against a day count waits for the file
+        for option in UNIT_RANGES:
+            resolve_range_arg(option, getattr(request, _dest(option)))
         y2_range = resolve_plain_range_arg(request.y2_range)
         for axis, scale, fixed in (("x", request.x_scale, x_range), ("y", request.y_scale, y_range),
                                    ("y2", request.y2_scale, y2_range)):
@@ -601,7 +606,7 @@ def select(request: PlotRequest, opened: OpenedFile, recorded_minus_utc_s: float
             antennas=resolve_antennas_arg(request.antennas, opened.antennas),
             baselines_with=resolve_antennas_arg(request.baselines_with, opened.antennas),
             exclude_antennas=resolve_antennas_arg(request.exclude_antennas, opened.antennas),
-            jd_range=resolve_time_range_arg(request.time_range, float(index.jd.min()), recorded_minus_utc_s),
+            jd_range=resolve_time_range_arg(request.time_range, opened.day0_jd, recorded_minus_utc_s),
             every_nth=request.every_nth,
             every_nth_integration=request.every_nth_integration,
             random_subset_n=request.random_subset_n,
@@ -711,14 +716,19 @@ def _uses_unit_base(plot, ctx, *bases: str) -> bool:
 
 def _reads_utc(plots, ctx, request: PlotRequest) -> bool:
     """Whether this run reads timestamps as UTC: a geometry quantity, a UTC,
-    local or LST axis, a geometry filter, or an absolute --time-range."""
+    local or LST axis, or a row filter reading UTC."""
     for p in plots:
         if GEOMETRY_QUANTITIES.intersection(p.quantities) or _uses_unit_base(p, ctx, "utc", "local", "lst"):
             return True
+    return _filters_read_utc(request)
+
+
+def _filters_read_utc(request: PlotRequest) -> bool:
+    """Whether the request's row filters read timestamps as UTC: a geometry
+    filter, or a --time-range in UTC."""
     if any(v is not None for v in (request.ha_range, request.az_range, request.el_range, request.pa_range)):
         return True
-    spec = (request.time_range or "").strip().lower()
-    return "/" in spec or spec.endswith("jd")
+    return bool(request.time_range) and split_time_range_scale(request.time_range)[1] == "UTC"
 
 
 def _check_time_zone(time_zone, telescope, jd) -> None:
@@ -862,8 +872,10 @@ def listing_text(request: PlotRequest, opened: OpenedFile, sections: tuple[str, 
     sections = sections or parse_listing_sections(request.listobs or ",".join(DEFAULT_LISTING_SECTIONS))
     try:
         recorded_minus_utc_s = opened.time_reference.recorded_minus_utc_s
-    except ValueError:
-        recorded_minus_utc_s = 0.0
+    except ValueError as err:
+        if _filters_read_utc(request):
+            raise RequestError(str(err)) from err
+        recorded_minus_utc_s = 0.0  # the selection reads no UTC
     selected = select(request, opened, recorded_minus_utc_s, listing=True)
     report("info", f"listing {correlations_used(request, listing=True)}")
     index = opened.index

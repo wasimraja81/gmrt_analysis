@@ -17,10 +17,10 @@ from data_io.antenna_table import Antenna
 from data_io.stokes_products import ProductPlan, plan_products
 from instruments.gmrt.antenna_selection import resolve_antenna_selection
 from visplot.channel_selection import resolve_channel_selection
+from visplot.instants import resolve_time_range_jd
 from visplot.plot_spec import PRESETS
 from visplot.quantities import QUANTITIES, convert, domain_in, domain_text, resolve_unit, units_of
 from visplot.range_spec import NUMBER, parse_single_range
-from visplot.time_range import resolve_time_range_jd
 
 TABLE_PLOTS = {"antenna-layout", "source-listing"}  # drawn from the file's tables
 NAMED_PLOTS = TABLE_PLOTS | set(PRESETS)
@@ -173,9 +173,9 @@ def resolve_channels_arg(spec: str | None, chan_freqs_hz) -> list[int] | None:
     return resolve_channel_selection(spec, chan_freqs_hz) if spec else None
 
 
-def resolve_time_range_arg(spec: str | None, reference_jd: float,
-                           recorded_minus_utc_s: float = 0.0) -> tuple[float, float] | None:
-    return resolve_time_range_jd(spec, reference_jd, recorded_minus_utc_s) if spec else None
+def resolve_time_range_arg(spec: str | None, day0_jd: float, recorded_minus_utc_s: float) -> tuple[float, float] | None:
+    """`--time-range` 'LO .. HI SCALE' as recorded JDs (`instants.resolve_time_range_jd`)."""
+    return resolve_time_range_jd(spec, day0_jd, recorded_minus_utc_s) if spec else None
 
 
 _UNIT_RANGE = re.compile(rf"^\s*({NUMBER})\s*:\s*({NUMBER})\s*(\S*)\s*$")

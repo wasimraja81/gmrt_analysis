@@ -19,10 +19,10 @@ The rules that leave no reading open: a data value names its product; a product
 only inside the parentheses, a coordinate only bare; every dimensional quantity
 and phase with its unit (no default); amplitude, real and imaginary parts in the
 file's BUNIT, writing it optional; `channel` a 0-based index, with no unit; time
-an instant with its scale (`recorded`: as the rows record it; `UTC`), counted in
-days from the file's day 0 (AN RDATE, else DATE-OBS, else the date of its first
-integration) as the plots' time axes count them, or an ISO date;
-only <, <=, >, >=. Names are case-insensitive, units case-sensitive.
+an instant with its scale (`visplot.instants`; `recorded`: as the rows record
+it; `UTC`), counted in days from the file's day 0 (AN RDATE, else DATE-OBS, else
+the date of its first integration) as the plots' time axes count them, or an ISO
+date; only <, <=, >, >=. Names are case-insensitive, units case-sensitive.
 
 Parsing (`parse_condition`) needs no file; `resolve_conditions` checks the
 conditions against a file: its products, BUNIT, channels, band and time span,
@@ -39,6 +39,7 @@ from dataclasses import dataclass, replace
 from astropy.time import Time
 
 from data_io.stokes_products import CIRCULAR, DERIVED, LINEAR, plan_products
+from visplot.instants import TIME_SCALES, check_instant, instant_jd
 from visplot.quantities import QuantityContext, convert, domain_in, domain_text, resolve_unit, units_of
 from visplot.range_spec import NUMBER
 
@@ -46,7 +47,6 @@ FUNCTIONS = ("amp", "phase", "real", "imag")
 COORDINATES = ("uvdist", "uu", "vv", "ww", "el", "az", "ha", "pa", "freq", "channel", "time")
 PRODUCTS = CIRCULAR + LINEAR + DERIVED
 OPERATORS = ("<", "<=", ">", ">=")
-TIME_SCALES = ("recorded", "UTC")
 
 # The examples, one source for --help, the GUI's hover text and the user guide (each tested).
 CONDITION_EXAMPLES = (
@@ -64,8 +64,6 @@ CONDITION_EXAMPLES = (
     ("time < 2021-07-25T18:00:00 recorded", "before 18:00:00 on 2021-07-25 as the rows record time (their TIMSYS)"),
 )
 
-_DAY_CLOCK = re.compile(r"^(\d+)/(\d{1,2}):(\d{2}):(\d{2}(?:\.\d+)?)$")
-_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$")
 _OPERATOR = re.compile(r"<=|>=|<|>")
 _FUNCTION = re.compile(r"^([A-Za-z]+)\s*\(\s*([A-Za-z]+)\s*\)$")
 
@@ -183,9 +181,10 @@ def _value(token: str, operand: Operand, text: str, range_end: bool = False) -> 
         if len(parts) != 2 or parts[1] not in TIME_SCALES:
             raise _refuse(text, "time is an instant and its scale: d/hh:mm:ss or an ISO date, then recorded or "
                                 "UTC, e.g. 1/17:42:09 UTC")
-        if not (_DAY_CLOCK.match(parts[0]) or _ISO.match(parts[0])):
-            raise _refuse(text, f"{parts[0]!r} is not an instant: write d/hh:mm:ss (days from the file's day 0) "
-                                "or an ISO date, e.g. 2021-07-25T17:42:09")
+        try:
+            check_instant(parts[0])
+        except ValueError as err:
+            raise _refuse(text, str(err)) from None
         return parts[0], parts[1]
     match = re.match(rf"^({NUMBER})\s*(\S*)$", token)
     if not match:
@@ -267,13 +266,7 @@ def parse_condition(text: str) -> Condition:
 
 def _instant_jd(instant: str, scale: str, facts: FileFacts) -> float:
     """An instant as a recorded JD (the rows' own time)."""
-    match = _DAY_CLOCK.match(instant)
-    if match:
-        day, hh, mm, ss = int(match.group(1)), int(match.group(2)), int(match.group(3)), float(match.group(4))
-        jd = facts.day0_jd + day + (hh * 3600 + mm * 60 + ss) / 86400.0
-    else:
-        jd = Time(instant, format="isot", scale="tai").jd  # the calendar instant's JD number, in its own scale
-    return jd + facts.recorded_minus_utc_s / 86400.0 if scale == "UTC" else jd
+    return instant_jd(instant, scale, facts.day0_jd, facts.recorded_minus_utc_s)
 
 
 @dataclass(frozen=True)

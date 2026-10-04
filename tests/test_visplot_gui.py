@@ -68,8 +68,9 @@ def test_the_form_shows_a_request_and_gives_it_back_unchanged():
     app, window, path = _window("gui_round_trip")
     request = PlotRequest(
         str(path), "phase-vs-freq", sources="3C48", correlation_type="both", stokes="LL", channels="0:2",
-        antennas="1:2", time_range="0:1", uvdist_range="0:5 km", ha_range="-3:3 h", every_nth=2, colorize_by="stokes",
-        show_flagged=True, mirror=False, x_unit="GHz", y_unit="rad", x_range="0.3:0.5", y_range_mode="percentile",
+        antennas="1:2", time_range="0/00:00:00 .. 0/01:00:00 recorded", uvdist_range="0:5 km", ha_range="-3:3 h",
+        every_nth=2, colorize_by="stokes", show_flagged=True, mirror=False, x_unit="GHz", y_unit="rad", x_range="0.3:0.5",
+        y_range_mode="percentile",
         range_percentiles="1:99", y_scale="symlog", aspect="free", scale_linear_width=0.5, point_size=2.5,
         color="k", time_zone="Asia/Kolkata", cache_dir=str(path.parent / "cache"), threads=2,
     )
@@ -647,5 +648,25 @@ def test_a_range_field_wants_its_unit_chosen_from_the_quantitys_units():
     assert [uu.widget.findChild(QtWidgets.QComboBox).itemText(i) for i in range(6)] == [
         "unit…", "lambda", "klambda", "Mlambda", "m", "km"]
     assert not {"uu_range", "uvdist_range"} & set(form.invalid_fields())
+    _settle(app, window, lambda: True)
+    window.close()
+
+
+def test_the_time_range_field_wants_its_scale_chosen():
+    app, window, path = _window("gui_time_range")
+    form = window.form
+    field = form.fields["time_range"]
+    box, menu = field.checked_box, field.widget.findChild(QtWidgets.QComboBox)
+    assert [menu.itemText(i) for i in range(menu.count())] == ["scale…", "recorded", "UTC"]
+    box.setText("1/17:00:00 .. 1/18:00:00")
+    assert "time_range" in form.invalid_fields()  # no scale yet: marked
+    menu.setCurrentIndex(2)
+    assert form.request().time_range == "1/17:00:00 .. 1/18:00:00 UTC" and "time_range" not in form.invalid_fields()
+    box.setText("1/18:00:00 .. 1/17:00:00")
+    assert "time_range" in form.invalid_fields()  # the ends out of order
+    form.load(PlotRequest(str(path), "amp-vs-time", time_range="2021-07-25T17:00:00 .. 2021-07-25T18:00:00 recorded"))
+    assert (box.text(), menu.currentData()) == ("2021-07-25T17:00:00 .. 2021-07-25T18:00:00", "recorded")
+    form.load(PlotRequest(str(path), "amp-vs-time"))
+    assert (box.text(), menu.currentData()) == ("", None) and "time_range" not in form.invalid_fields()
     _settle(app, window, lambda: True)
     window.close()

@@ -26,6 +26,7 @@ from instruments.observatory_time_zones import observatory_time_zone
 from visplot.fonts import PANEL_FONTS
 from visplot.gui.widgets import (CheckedLineEdit, CollapsibleSection, NoteBox, form_layout, grouped_combo, hint, row,
                                  select_data)
+from visplot.instants import TIME_SCALES, parse_time_range, split_time_range_scale
 from visplot.plot_spec import PRESETS
 from visplot.quantities import QUANTITIES, QuantityContext, resolve_unit, units_of
 from visplot.request import PlotRequest, build_arg_parser
@@ -42,7 +43,6 @@ from visplot.request_args import (
     resolve_percentiles_arg,
     resolve_plain_range_arg,
     resolve_range_arg,
-    resolve_time_range_arg,
     split_range_unit,
 )
 
@@ -144,37 +144,55 @@ def text_field(dest: str, edit: QtWidgets.QLineEdit, default=None) -> Field:
                  lambda v: edit.setText("" if v is None or v == default else str(v)), edit.textChanged)
 
 
-def unit_range_field(dest: str, option: str) -> Field:
-    """A selection range, 'LO:HI UNIT' (`request_args.UNIT_RANGES`): a text
-    box for LO:HI beside a menu of the quantity's units, none chosen at first
-    -- the unit is the user's to give (2026-10-04) -- the field marked until
-    it is."""
-    quantity = UNIT_RANGES[option].quantity
-    edit = CheckedLineEdit("lo:hi")
+def last_word_field(dest: str, placeholder: str, prompt: str, words: list[str],
+                    split: Callable[[str], tuple[str, str | None]], check: Callable[[str | None], object]) -> Field:
+    """A value written as text and a last word (a unit, a time scale): a text
+    box beside a menu of the words, none chosen at first -- the word is the
+    user's to give (2026-10-04) -- the field marked until it is. `split(spec)`:
+    a value's text and word (None: none of `words`), to show it; `check(value)`
+    raises for a value that does not resolve."""
+    edit = CheckedLineEdit(placeholder)
     menu = QtWidgets.QComboBox()
-    menu.addItem("unit…", None)
-    for unit in units_of(quantity):
-        menu.addItem(unit.name, unit.name)
+    menu.addItem(prompt, None)
+    for word in words:
+        menu.addItem(word, word)
 
     def value():
-        text, unit = edit.text().strip(), menu.currentData()
-        return None if not text else f"{text} {unit}" if unit else text
+        text, word = edit.text().strip(), menu.currentData()
+        return None if not text else f"{text} {word}" if word else text
 
     def show(spec):
-        lo_hi, unit = split_range_unit(spec or "")
-        try:
-            unit = resolve_unit(quantity, unit).name if unit else None  # by its name or label: "kλ" is klambda
-        except ValueError:
-            lo_hi, unit = (spec or "").strip(), None  # a unit not the quantity's: the text as given, marked
-        edit.setText(lo_hi)
-        menu.setCurrentIndex(menu.findData(unit) if unit else 0)
+        text, word = split(spec or "")
+        edit.setText(text)
+        menu.setCurrentIndex(menu.findData(word) if word else 0)
 
-    def check(_text: str) -> str | None:
-        resolve_range_arg(option, value())
+    def checked(_text: str) -> str | None:
+        check(value())
         return None
-    edit.set_check(check)
+    edit.set_check(checked)
     menu.currentIndexChanged.connect(lambda _: edit.textChanged.emit(edit.text()))  # re-check, and a change
     return Field(dest, row(edit, menu, stretches=(1, 0)), value, show, edit.textChanged, checked_box=edit)
+
+
+def unit_range_field(dest: str, option: str) -> Field:
+    """A selection range, 'LO:HI UNIT' (`request_args.UNIT_RANGES`), its unit
+    from a menu of the quantity's units."""
+    quantity = UNIT_RANGES[option].quantity
+
+    def split(spec: str) -> tuple[str, str | None]:
+        lo_hi, unit = split_range_unit(spec)
+        try:
+            return lo_hi, resolve_unit(quantity, unit).name if unit else None  # by name or label: "kλ" is klambda
+        except ValueError:
+            return spec.strip(), None  # a unit not the quantity's: the text as given, marked
+    return last_word_field(dest, "lo:hi", "unit…", [unit.name for unit in units_of(quantity)], split,
+                           lambda value: resolve_range_arg(option, value))
+
+
+def time_range_field(dest: str) -> Field:
+    """--time-range, 'LO .. HI SCALE' (`instants`), its scale from a menu."""
+    return last_word_field(dest, "lo .. hi, e.g. 1/17:00:00 .. 1/18:00:00", "scale…", list(TIME_SCALES),
+                           split_time_range_scale, lambda value: value is None or parse_time_range(value))
 
 
 def number_field(dest: str, edit: QtWidgets.QLineEdit, kind: type, default=None) -> Field:
@@ -493,8 +511,7 @@ class RequestForm(QtWidgets.QWidget):
             lambda _: self.baselines_with.setEnabled(correlation.currentData() != "auto"))
         self.exclude = CheckedLineEdit("none", self._check_antennas)
         form.addRow("Exclude", self._add(text_field("exclude_antennas", self.exclude)))
-        self.time_range = CheckedLineEdit("all; e.g. 0:0.5 (h from start)", self._check_time_range)
-        form.addRow("Time range", self._add(text_field("time_range", self.time_range)))
+        form.addRow("Time range", self._add(time_range_field("time_range")))
 
         more = CollapsibleSection("More filters", expanded=False)
         more_form = form_layout(more.body)
@@ -806,7 +823,7 @@ class RequestForm(QtWidgets.QWidget):
         self.x.fill_units()
         self.y.fill_units()
         self.y2.fill_units()
-        for edit in (self.channels, self.antennas, self.baselines_with, self.exclude, self.time_range):
+        for edit in (self.channels, self.antennas, self.baselines_with, self.exclude):
             edit.set_check(edit._check)
 
     def _check_channels(self, text: str) -> str | None:
@@ -817,10 +834,6 @@ class RequestForm(QtWidgets.QWidget):
     def _check_antennas(self, text: str) -> str | None:
         if self._antennas is not None:
             resolve_antennas_arg(text, self._antennas)
-        return None
-
-    def _check_time_range(self, text: str) -> str | None:
-        resolve_time_range_arg(text, self._first_jd or 0.0)
         return None
 
     @staticmethod
