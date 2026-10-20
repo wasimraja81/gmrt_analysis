@@ -235,6 +235,26 @@ def test_select_rows_geometry_filter_raises_if_source_table_missing_a_present_so
         )
 
 
+def test_select_rows_computes_geometry_only_for_the_rows_earlier_filters_keep(monkeypatch):
+    # T58: sources, antennas, time_range and the rest narrow the mask before the geometry
+    # block runs; it must compute hour_angle_hours (and so altaz_deg/parallactic_angle_deg,
+    # built on it) over only the rows still kept, instead of the whole index.
+    index, source_table, array_location = _make_geometry_index()
+    import data_io.row_selection as row_selection
+
+    seen_lengths = []
+    real = row_selection.hour_angle_hours
+
+    def counting(jd, ra_deg, location):
+        seen_lengths.append(len(jd))
+        return real(jd, ra_deg, location)
+    monkeypatch.setattr(row_selection, "hour_angle_hours", counting)
+
+    select_rows(index, sources="source-1", correlation_type="both", ha_range_hours=(-12.0, 12.0),
+               source_table=source_table, array_location=array_location)
+    assert seen_lengths == [1]  # source-1 alone: 1 of the index's 2 rows
+
+
 def test_select_rows_by_ha_range_hours():
     index, source_table, array_location = _make_geometry_index()
     sel = select_rows(

@@ -187,7 +187,10 @@ def select_rows(
     the cycle's own boundary instead of matching nothing. They read each
     row's timestamp as UTC after subtracting `recorded_minus_utc_s` (the
     file's recorded time - UTC, `TimeReference.recorded_minus_utc_s`);
-    `jd_range` is in recorded time, as the index holds it.
+    `jd_range` is in recorded time, as the index holds it. Computed (T58)
+    only for the rows the filters above this one already keep, and once per
+    distinct timestamp among them (`local_sidereal_time_hours`), a fraction
+    of the whole file's.
 
     No silent downsampling: `every_nth`, `every_nth_integration` and
     `random_subset_n` are the only ways to reduce the result below what the
@@ -303,23 +306,29 @@ def select_rows(
         if missing_ids:
             raise ValueError(f"source_table is missing source id(s) {missing_ids} present in this index")
 
-        unique_ids, inverse = np.unique(index.source_id, return_inverse=True)
+        # Geometry (T58) only for the rows the filters above still keep -- sources, antennas,
+        # time_range and the rest narrow first, so a selection of a few sources computes this
+        # for its own rows instead of the whole file's.
+        kept = np.where(mask)[0]
+        unique_ids, inverse = np.unique(index.source_id[kept], return_inverse=True)
         ra_deg = np.array([source_table[int(sid)].ra_apparent_deg for sid in unique_ids])[inverse]
         dec_deg = np.array([source_table[int(sid)].dec_apparent_deg for sid in unique_ids])[inverse]
-        utc_jd = index.jd - recorded_minus_utc_s / 86400.0
+        utc_jd = index.jd[kept] - recorded_minus_utc_s / 86400.0
 
+        keep = np.ones(len(kept), dtype=bool)
         if ha_range_hours is not None:
-            mask &= _cyclic_range_mask(hour_angle_hours(utc_jd, ra_deg, array_location), ha_range_hours)
+            keep &= _cyclic_range_mask(hour_angle_hours(utc_jd, ra_deg, array_location), ha_range_hours)
         if az_range_deg is not None or el_range_deg is not None:
             az_deg, el_deg = altaz_deg(utc_jd, ra_deg, dec_deg, array_location)
             if az_range_deg is not None:
-                mask &= _cyclic_range_mask(az_deg, az_range_deg)
+                keep &= _cyclic_range_mask(az_deg, az_range_deg)
             if el_range_deg is not None:
                 lo, hi = el_range_deg
-                mask &= (el_deg >= lo) & (el_deg <= hi)
+                keep &= (el_deg >= lo) & (el_deg <= hi)
         if parallactic_angle_range_deg is not None:
             pa_deg = parallactic_angle_deg(utc_jd, ra_deg, dec_deg, array_location)
-            mask &= _cyclic_range_mask(pa_deg, parallactic_angle_range_deg)
+            keep &= _cyclic_range_mask(pa_deg, parallactic_angle_range_deg)
+        mask[kept] = keep
 
     row_indices = np.where(mask)[0]
 

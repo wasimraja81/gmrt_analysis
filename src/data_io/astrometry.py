@@ -86,14 +86,22 @@ DEFAULT_UT1 = Ut1Provider()
 def local_sidereal_time_hours(jd, location: EarthLocation, ut1: Ut1Provider | None = None) -> np.ndarray:
     """Apparent local sidereal time, in hours, at the given Julian Date(s).
     UT1 - UTC comes from `ut1` (default: the shared `DEFAULT_UT1`), so no
-    table lookup or download happens inside astropy."""
+    table lookup or download happens inside astropy.
+
+    Computed once per distinct `jd` (T58): many rows share one timestamp (one
+    per integration -- the GWB file's 3,959,928 rows hold 10,476 of them),
+    and nutation (ERFA's series) is the cost; every caller of this, directly
+    or through `hour_angle_hours`/`altaz_deg`/`parallactic_angle_deg`, shares
+    the saving without computing it itself."""
     jd = np.asarray(jd, dtype=float)
-    time = Time(jd, format="jd", scale="utc")
-    time.delta_ut1_utc = (ut1 or DEFAULT_UT1).ut1_minus_utc_s(jd).reshape(jd.shape)
+    unique_jd, inverse = np.unique(jd, return_inverse=True)
+    time = Time(unique_jd, format="jd", scale="utc")
+    time.delta_ut1_utc = (ut1 or DEFAULT_UT1).ut1_minus_utc_s(unique_jd).reshape(unique_jd.shape)
     # Greenwich apparent sidereal time relative to the TIO (no polar-motion
     # lookup), plus the site's longitude.
     gast_hours = time.sidereal_time("apparent", longitude="tio").hour
-    return np.mod(gast_hours + location.lon.to_value("hourangle"), 24.0)
+    lst = np.mod(gast_hours + location.lon.to_value("hourangle"), 24.0)
+    return lst[inverse]
 
 
 def hour_angle_hours(jd, ra_deg, location: EarthLocation) -> np.ndarray:

@@ -35,6 +35,34 @@ def test_local_sidereal_time_hours_matches_astropy():
     assert difference_s < 1e-3  # measured 1e-6 s
 
 
+def test_local_sidereal_time_hours_computes_once_per_distinct_jd(monkeypatch):
+    # T58: many rows share one timestamp (one per integration); a repeated jd must give
+    # exactly the same value as computing it alone, and the expensive part (astropy's
+    # Time.sidereal_time, ERFA's nutation series) must run once per distinct value, not
+    # once per row.
+    import data_io.astrometry as astrometry
+
+    calls = []
+    real_time = astrometry.Time
+
+    def counting_time(jd, *args, **kwargs):
+        calls.append(np.shape(jd))
+        return real_time(jd, *args, **kwargs)
+    monkeypatch.setattr(astrometry, "Time", counting_time)
+
+    jd = np.array([JD, JD + 1.0, JD, JD, JD + 1.0])  # 2 distinct values, 5 rows
+    lst = local_sidereal_time_hours(jd, GMRT_LOCATION)
+    assert calls and all(shape == (2,) for shape in calls)  # every Time call over the 2 distinct values, never 5
+    assert lst[0] == lst[2] == lst[3] and lst[1] == lst[4] and lst[0] != lst[1]
+    assert lst[0] == pytest.approx(local_sidereal_time_hours(JD, GMRT_LOCATION))
+    assert lst[1] == pytest.approx(local_sidereal_time_hours(JD + 1.0, GMRT_LOCATION))
+
+
+def test_local_sidereal_time_hours_keeps_a_scalar_jd_scalar():
+    lst = local_sidereal_time_hours(JD, GMRT_LOCATION)
+    assert np.shape(lst) == () and float(lst) == pytest.approx(_lst_hours_directly(JD, GMRT_LOCATION))
+
+
 def test_hour_angle_hours_is_zero_at_transit():
     ra_deg = local_sidereal_time_hours(JD, GMRT_LOCATION) * 15.0
     assert hour_angle_hours(JD, ra_deg, GMRT_LOCATION) == pytest.approx(0.0, abs=1e-9)

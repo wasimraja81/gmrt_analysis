@@ -3,8 +3,9 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 658 tests passing; T26,
-T32 in progress; T40, T42, T45, T46, T50-T52, T55-T58 open (order in Phase B); T35 (Moon
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, T58 2026-10-21,
+661 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
+T59 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -2366,16 +2367,56 @@ Buildable now, ahead of Phase C.
   whole row. Open until the user decides; its likely home is step 5's regions on plots,
   which take conditions inside them (the user, 2026-10-03).
 
-- **T58 — sidereal time once per timestamp — OPEN (found 2026-10-20, step 2b-1).**
-  `data_io.astrometry.local_sidereal_time_hours` computes the apparent sidereal time
-  (ERFA's nutation series) for every row it is given: 113 us a row, 7.4 min for the
-  GWB file's 3,959,928 rows, which share 10,476 timestamps (1.2 s, once each).
-  `select_rows`' geometry filters compute it for every row of the file before the
-  other filters apply: `--el-range "40:90 deg"` with `--sources 3C286` on the GWB file
-  took over 10 min, and its empty-selection message reruns the filters. Plots of hour
-  angle, azimuth, elevation and parallactic angle, and Locate's narrowing, compute it
-  per row of the selection. Fix: once per distinct timestamp, the results the same;
-  `select_rows` computing geometry for the rows its other filters keep.
+- **T58 — sidereal time once per timestamp — DONE (found and fixed 2026-10-20/21,
+  step 2b-1).** `data_io.astrometry.local_sidereal_time_hours` computed the apparent
+  sidereal time (ERFA's nutation series) for every row it was given: 113 us a row,
+  7.4 min for the GWB file's 3,959,928 rows, which share 10,476 timestamps (1.2 s,
+  once each). `select_rows`' geometry filters computed it for every row of the file
+  before the other filters applied: `--el-range "40:90 deg"` with `--sources 3C286` on
+  the GWB file took over 10 min, and its empty-selection message reruns the filters.
+  Plots of hour angle, azimuth, elevation and parallactic angle, and Locate's
+  narrowing, computed it per row of the selection. The user asked whether the GSB and
+  GWB files' different integration times (8.053 s, 2.683 s) were taken into account:
+  yes, each file's own timestamps and boundaries are used (T59, below, measures this
+  directly).
+  Fixed: `local_sidereal_time_hours` deduplicates its `jd` argument internally
+  (`np.unique`, `return_inverse`), so a repeated timestamp costs nothing past the
+  first; `hour_angle_hours`/`altaz_deg`/`parallactic_angle_deg` and every caller of
+  them (plots, `select_rows`'s geometry filters, Locate's narrowing, the listing's
+  elevation column) share the saving without their own change. `select_rows`' geometry
+  block also now computes only for the rows the filters before it in the function
+  already keep (sources, antennas, time range and the rest), instead of the whole
+  file -- checked identical to the un-narrowed result on the archival GWB file
+  (`--sources 3C286
+  --el-range "20:90 deg"`: 69,174 rows either way, the same set). On the GWB file,
+  `--el-range "40:90 deg"` with `--sources 3C286` (none of it reaches 40 deg) is now
+  0.63 s (was over 10 min); without `--sources`, 2.37 s for 2,243,430 rows. Locate's
+  `--where "el > 20 deg"` alongside a data condition on the same file: narrowing no
+  longer measurable against the 12 s pass it runs inside. Tests: a repeated `jd` gives
+  the same value as the one it repeats, and the astropy `Time` call never sees more
+  than the distinct count (a counting monkeypatch); a geometry filter sees only the
+  rows an earlier filter already kept. 661 tests pass.
+
+- **T59 — 0.922 s between declared and u,v,w-implied recorded - UTC, both files —
+  OPEN, parked pending GMRT (found 2026-10-20, deepening T34).** T34 measured the
+  GSB file's u,v,w implying recorded - UTC = 33.078 s against its declared 34 s (GWB:
+  34.078 s against 35 s), both 0.922 s short, and left the gap unexplained. The user
+  asked whether this confuses the three Moon scans' wrong u,v,w (T35) with the
+  declared-time check, and whether the two files' different integration times (GSB
+  8.053 s, GWB 2.683 s) were accounted for. Neither: fitting one direction correction
+  from 3C286, 3C345, 3C303, 3C468.1, 3C48 alone (no Moon scan, no Cas-A, no pulsar),
+  each file's own timestamps and integration boundaries, gives the same 0.922 s in
+  both files (GWB: a 13.87 arcsec rotation fits every source's stored w to 5.8 mm rms,
+  down from 209 mm before it fitting). Ruled out: UT1-UTC (-0.146 s at this epoch,
+  matching the IERS-B table used, too small regardless); the AN table's array
+  longitude (1-2 arcsec from GMRT's published longitude, ~0.1 s, also too small). One
+  lead, unconfirmed: the gvfits conversion logs (`gvfits_gsb.log`, `gvfits_2.6s_gwb.log`)
+  show a timestamp-centering offset of +4.0265 s for the GSB file (exactly half its
+  own 8.053 s integration, correct) and -4.0265 s for the GWB file (not half of its own
+  2.683 s integration, which is 1.3415 s) -- one constant carried over from the GSB
+  conversion into the GWB one, instead of each backend's own half-integration; it leaves the
+  shared 0.922 s unexplained, since it is wrong only for GWB's conversion. Parked: the
+  user is asking GMRT's correlator/online-system scientists directly.
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
