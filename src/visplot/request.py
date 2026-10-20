@@ -19,6 +19,7 @@ from pathlib import Path
 
 from visplot.axis_scale import SCALE_NAMES
 from visplot.clock_axis import DEFAULT_TIME_FORMAT, TIME_FORMATS
+from visplot.conditions import CONDITION_EXAMPLES
 from visplot.fonts import DEFAULT_PANEL_FONT, PANEL_FONTS
 from data_io.observation_summary import DEFAULT_GAP_INTEGRATIONS, DEFAULT_LONGEST_SCAN_S
 from visplot.iterations import ITERATION_KINDS
@@ -32,6 +33,8 @@ from visplot.xy_session import DEFAULT_STREAM_THREADS
 PROG = "bin/visplot.sh"
 # Where each run's provenance record goes (relative: from the directory visplot starts in).
 DEFAULT_PROVENANCE_DIR = "visplot_runs"
+# --locate with no value: Locate by the --where conditions (a box is 'XLO:XHI,YLO:YHI').
+LOCATE_BY_CONDITIONS = ""
 
 _EPILOG = """\
 plot names (--plots, comma-separated):
@@ -411,11 +414,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     locate = parser.add_argument_group("locate (without a window)")
     locate.add_argument(
-        "--locate", metavar="XLO:XHI,YLO:YHI",
-        help="list every sample of the plot inside this box (in the axes' units) into --locate-csv; "
-        "needs exactly one streamed plot; runs without a window",
+        "--locate", nargs="?", const=LOCATE_BY_CONDITIONS, metavar="XLO:XHI,YLO:YHI",
+        help="with no value: find every visibility (row, channel, product) meeting the --where conditions, "
+        "written to a run of the session (--session); with a box: list every sample of the plot inside it (in "
+        "the axes' units) into --locate-csv, which needs exactly one streamed plot; both run without a window",
     )
-    locate.add_argument("--locate-csv", metavar="FILE", help="CSV file for --locate")
+    locate.add_argument("--locate-csv", metavar="FILE", help="CSV file for --locate with a box")
+    locate.add_argument(
+        "--where", action="append", metavar="CONDITION",
+        help="a condition of --locate (no box), repeated for more, all of which must hold (an OR is another "
+        "run in the same session): 'OPERAND CMP VALUE [UNIT]' or a range 'A < OPERAND < B'; a data value "
+        "names its product, function(product), functions amp, phase, real, imag, products as the file holds "
+        "them (RR LL RL LR XX YY XY YX) or I Q U V as the IAU defines them; coordinates (el az ha pa time freq "
+        "channel uu vv ww uvdist) narrow where Locate looks, and a run needs a data value; units required; "
+        "quote each condition. Examples: " + "; ".join(f"'{text}': {meaning}" for text, meaning in CONDITION_EXAMPLES),
+    )
+    locate.add_argument(
+        "--session", dest="locate_session", metavar="NAME",
+        help="the Locate session this run is added to, a name of letters, digits, '.', '_', '-' (default: the FITS "
+        "file's name without its extension); its runs are kept under --provenance-dir in found/NAME/, and "
+        "together are what flag generation reads",
+    )
+    locate.add_argument(
+        "--include-flagged", action="store_true",
+        help="with --locate and --where: test the visibilities the file flags (weight <= 0) too, recording them "
+        "as flagged; by default they are skipped (a derived product is flagged where any product it uses is)",
+    )
 
     cache = parser.add_argument_group("cache (files only where you name a directory)")
     cache.add_argument(
@@ -486,6 +510,9 @@ class PlotRequest:
         for name in PATH_OPTIONS:
             if values.get(name):
                 values[name] = str(Path(values[name]).expanduser().resolve())
+        for action in actions:  # a repeated option's values, held as a tuple
+            if isinstance(action, argparse._AppendAction) and values[action.dest] is not None:
+                values[action.dest] = tuple(values[action.dest])
         object.__setattr__(self, "_values", values)
 
     @classmethod
@@ -511,6 +538,11 @@ class PlotRequest:
             if isinstance(action, argparse._StoreTrueAction):
                 if value:
                     argv.append(option)
+            elif action.nargs == "?" and value == "" and action.const == "":
+                argv.append(option)  # given with no value (--locate)
+            elif isinstance(action, argparse._AppendAction):
+                for item in value or ():
+                    argv += [f"{option}={item}"] if str(item).startswith("-") else [option, str(item)]
             elif value is not None:
                 text = repr(value) if isinstance(value, float) else str(value)
                 # a value starting with '-' (e.g. an hour-angle range '-2:2') would read as an option

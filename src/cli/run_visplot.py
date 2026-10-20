@@ -33,8 +33,9 @@ from data_io.astrometry import AstrometryWarning  # noqa: E402
 from visplot.range_cache import clear_cache  # noqa: E402
 from visplot.records import PlotRecord, WindowProvenance, recorded_run  # noqa: E402
 from visplot.request import PlotRequest, build_arg_parser  # noqa: E402,F401  (build_arg_parser: for callers)
-from visplot.run import (MissingIndexError, RequestError, check_request, listing_text, open_file, prepare,  # noqa: E402
-                         run_locate, save_outputs, write_listing)
+from visplot.locate_where import locates_by_conditions  # noqa: E402
+from visplot.run import (MissingIndexError, RequestError, check_request, listing_text,  # noqa: E402
+                         locate_by_conditions, open_file, prepare, run_locate, save_outputs, write_listing)
 
 
 def _print_report(level: str, text: str) -> None:
@@ -81,7 +82,7 @@ def main(argv: list[str]) -> int:
     request = PlotRequest.from_namespace(parser.parse_args(argv[1:]))
     warnings.simplefilter("ignore", AstrometryWarning)  # reported once, through the run's report
 
-    action = ", ".join(name for name, on in (("listobs", request.listobs), ("locate", request.locate),
+    action = ", ".join(name for name, on in (("listobs", request.listobs), ("locate", request.locate is not None),
                                              ("save", request.output_dir and request.plots)) if on)
     try:
         with recorded_run(request, action or "window") as record:
@@ -107,8 +108,14 @@ def _run(request: PlotRequest, record: PlotRecord, parser: argparse.ArgumentPars
             report("info", f"saved {path}")
         else:
             print(text, end="", flush=True)
-        if not request.plots:
+        if not request.plots and not locates_by_conditions(request):
             return 0
+    if locates_by_conditions(request):  # a run of its own: its found visibilities, written to its session
+        if opened is None:
+            check_request(request)
+            opened = open_file(request.fits_path)
+        record.add_output(locate_by_conditions(request, opened, report, _terminal_progress, record=record.describe()))
+        return 0
     run = prepare(request, opened, report=report)
     run.set_record(record.run_id)
     if run.locate_box is not None:

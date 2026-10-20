@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import math
 import shlex
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
+from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
 from typing import Callable, Iterator
@@ -30,6 +31,7 @@ from astropy.io import fits
 from astropy.time import Time
 
 from data_io.antenna_table import read_antenna_table, read_array_earth_location, read_time_reference
+from data_io.found_file import FileIdentity, LocateSession, NoSpace, SessionError, size_text
 from data_io.frequency_table import read_frequency_setups
 from data_io.astrometry import DEFAULT_UT1, fallback_message
 from data_io.row_index import default_row_index_path, load_row_index
@@ -42,11 +44,14 @@ from instruments.elevation_limits import elevation_limits_deg, known_elevation_l
 from instruments.observatory_time_zones import OBSERVATORY_TIME_ZONES, observatory_time_zone
 from instruments.structural_duds import without_structural_duds
 from visplot.antenna_layout import antenna_layout
+from visplot.conditions import facts_of, resolve_conditions
 from visplot.fonts import font_file
 from visplot.flag_summary import FlagCounter
 from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIONS as LISTING_SECTIONS, \
     ListingOptions, ListingSelection, list_observation
 from visplot.locate_csv import LocateCsvWriter
+from visplot.locate_where import (CHANNEL_COORDINATES, NarrowRowsReducer, WhereReducer, check_cell_axes,
+                                  check_locate_request, found_fields, holds, locate_session_name, plan_locate)
 from visplot.instants import parse_time_range, split_time_range_scale
 from visplot.iterations import Iteration, iteration_source, list_iterations, page_layout
 from visplot.plot_panel import panel_facts, selection_filters
@@ -130,6 +135,7 @@ class CheckedRequest:
     page_figure_size: tuple[float, float] = (16.0, 11.0)  # inches, of a page of several plots (T26)
     page_grid: tuple[int, int] | None = None  # --page-grid as given; None: the default (`page_layout`)
     listing_sections: tuple[str, ...] = ()  # --listobs's (T20)
+    conditions: tuple = ()  # --where's, parsed (`conditions.Condition`), of a Locate by conditions
 
 
 def check_request(request: PlotRequest) -> CheckedRequest:
@@ -168,8 +174,9 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         for name in given:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
-        if not request.plots and not request.listobs:
-            raise ValueError("give --plots, --listobs, or both")
+        conditions = check_locate_request(request)
+        if not request.plots and not request.listobs and not conditions:
+            raise ValueError("give --plots, --listobs, --locate with --where, or several of them")
         plot_names = parse_plot_names(request.plots) if request.plots else []
         listing_sections = parse_listing_sections(request.listobs) if request.listobs else ()
         if request.scan_gap <= 0 or request.scan_longest <= 0:
@@ -239,7 +246,7 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         if n_streamed != 1:
             raise RequestError(f"--locate needs exactly one streamed plot; --plots gives {n_streamed}")
     return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size, page_figure_size, page_grid,
-                          listing_sections)
+                          listing_sections, conditions)
 
 
 def with_elevation_limits(plot: PlotSpec, telescope: str | None) -> PlotSpec:
@@ -582,12 +589,13 @@ class Selected:
 CORRELATION_TEXT = {"cross": "cross-correlations", "auto": "autocorrelations", "both": "cross- and autocorrelations"}
 
 
-def correlations_used(request: PlotRequest, listing: bool = False) -> str:
+def correlations_used(request: PlotRequest, listing: bool = False, default_of: str | None = None) -> str:
     """The correlation type a plot (or a listing) of `request` selects, and
-    whether given or its default, for its report and record."""
+    whether given or its default, for its report and record; `default_of`
+    names whose default (a Locate run takes a plot's)."""
     text = CORRELATION_TEXT[resolve_correlation_type(request.correlation_type, listing)]
     if request.correlation_type is None:
-        text += f" (--correlation-type not given: a {'listing' if listing else 'plot'}'s default)"
+        text += f" (--correlation-type not given: {default_of or ('a listing' if listing else 'a plot')}'s default)"
     return text
 
 
@@ -652,7 +660,7 @@ _ROW_FILTERS = (
 _FILTER_CONTEXT = ("freq_range_hz", "source_table", "array_location", "recorded_minus_utc_s")
 
 
-def empty_selection_message(request: PlotRequest, index, kwargs: dict) -> str:
+def empty_selection_message(request: PlotRequest, index, kwargs: dict, default_of: str = "a plot") -> str:
     """Why `kwargs` (a request's `select_rows` arguments) select no rows: the
     request's row filters applied one at a time, in the command line's
     order, from every row of the file; the first after which none are left
@@ -671,7 +679,7 @@ def empty_selection_message(request: PlotRequest, index, kwargs: dict) -> str:
         option = f"--{dest.replace('_', '-')} {shlex.quote(str(getattr(request, dest)))}"
         if dest == "correlation_type":
             option = f"--correlation-type {kwargs['correlation_type']}" + (
-                "" if request.correlation_type is not None else ", not given: a plot's default")
+                "" if request.correlation_type is not None else f", not given: {default_of}'s default")
         if dest == "antennas" and request.baselines_with:
             option += f" --baselines-with {request.baselines_with}"
         if dest == "correlation_type" and not select_rows(index, correlation_type=kwargs["correlation_type"]).n_rows:
@@ -909,6 +917,144 @@ def _count_flags(request: PlotRequest, opened: OpenedFile, selected: Selected, r
     if not source.stream([counter], read_data=True, on_chunk=progress(pass_progress(source, "counting flags", True))):
         raise Stopped("stopped while counting the flags; nothing listed")
     return counter.counts
+
+
+GEOMETRY_CONDITIONS = ("el", "az", "ha", "pa")
+
+
+def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Report = _silent,
+                         progress: ProgressFactory = _no_progress, record: str | None = None) -> Path:
+    """A Locate by the request's --where conditions (`visplot.locate_where`):
+    the selection narrowed by the conditions on coordinates, one pass over
+    its visibilities, and what it finds written as the next run of the
+    request's Locate session (`data_io.found_file`), whose header names the
+    command and `record`. Returns the run's file. Raises RequestError, or
+    Stopped with nothing kept."""
+    checked = check_request(request)
+    index = opened.index
+    reads_utc = _filters_read_utc(request) or any(
+        c.operand.name in GEOMETRY_CONDITIONS or (c.operand.name == "time" and c.unit == "UTC")
+        for c in checked.conditions)
+    try:
+        recorded_minus_utc_s = opened.time_reference.recorded_minus_utc_s
+    except ValueError as err:
+        if reads_utc:
+            raise RequestError(str(err)) from err
+        recorded_minus_utc_s = 0.0  # nothing here reads UTC
+    selected = select(request, opened, recorded_minus_utc_s)
+    if not selected.selection.n_rows:
+        raise RequestError(empty_selection_message(request, index, selected.kwargs, default_of="a Locate run"))
+    try:
+        check_cell_axes(index.data_axis_types, index.data_axis_lengths)
+        resolved = resolve_conditions(list(checked.conditions), facts_of(opened))
+        plan = plan_locate(resolved, index.stokes_labels)
+    except ValueError as err:
+        raise RequestError(str(err)) from err
+    for warning in resolved.warnings:
+        report("warning", warning)
+
+    channels = (selected.axis_selection or {}).get("FREQ")
+    channels = np.arange(len(index.chan_freqs_hz)) if channels is None else np.asarray(channels)
+    for condition in plan.coordinate_conditions:
+        if condition.operand.name in CHANNEL_COORDINATES:
+            on = channels if condition.operand.name == "channel" else np.asarray(index.chan_freqs_hz)[channels]
+            channels = channels[holds(on, condition)]
+    selection_rows = selected.selection.row_indices
+    ctx = context_from_source_table(
+        float(index.jd[selection_rows].min()), opened.source_table, opened.array_location, opened.bunit,
+        list(plan.recorded), antenna_names={a.station_number: a.name for a in opened.antennas},
+        day0_jd=opened.day0_jd, time_system=opened.time_reference.time_system,
+        recorded_minus_utc_s=recorded_minus_utc_s,
+    )
+    row_conditions = tuple(c for c in plan.coordinate_conditions if c.operand.name not in CHANNEL_COORDINATES)
+    rows = selection_rows if len(channels) else selection_rows[:0]
+    if row_conditions and len(rows):
+        freqs = np.asarray(index.chan_freqs_hz)[channels]
+        edges = np.unique(channels[[int(np.argmin(freqs)), int(np.argmax(freqs))]])
+        narrow = NarrowRowsReducer(row_conditions, ctx)
+        metadata = XYSource(request.fits_path, index, rows, {"FREQ": edges}, ctx, stream_chunk_bytes(),
+                            threads=max(1, request.threads))
+        if not metadata.stream([narrow], read_data=False, on_chunk=progress(pass_progress(metadata, "narrowing",
+                                                                                           False))):
+            raise Stopped("stopped while narrowing the rows; nothing kept")
+        rows = np.concatenate(narrow.kept) if narrow.kept else rows[:0]
+
+    name, given = locate_session_name(request)
+    try:
+        session = LocateSession.open(Path(request.provenance_dir) / "found", name,
+                                     FileIdentity.of(request.fits_path, index.gcount))
+    except SessionError as err:
+        raise RequestError(str(err)) from err
+    so_far = "new" if session.created else f"{len(session.runs())} run(s) so far"
+    report("info", f"Locate session {name}, {so_far}: {session.directory}"
+                   + ("" if given else " (--session not given: the file's default)"))
+    for path in session.removed_partials:
+        report("info", f"removed {path.name}, left by a run that stopped before its end")
+    for number in session.logged_late:
+        report("warning", f"run {number} was in place without its log line (its process stopped between the two); "
+                          "logged now from its header, the line saying so")
+    for path, problem in session.set_aside:
+        report("warning", f"{path.name}: a run file in place without its log line, and not whole ({problem}); "
+                          "set aside, kept, never logged")
+
+    source = XYSource(request.fits_path, index, rows, {"FREQ": channels, "STOKES": np.array(plan.products.read)},
+                      ctx, stream_chunk_bytes(), threads=max(1, request.threads))
+    report("info", f"Locate where {' and '.join(c.text for c in resolved.conditions)}: reads "
+                   f"{', '.join(plan.recorded)} and records them at each visibility found"
+                   + ("" if request.include_flagged else "; visibilities the file flags skipped"))
+    report("info", f"searching {len(rows):,} of the selection's {len(selection_rows):,} rows "
+                   f"({correlations_used(request, default_of='a Locate run')}), {len(channels):,} channel(s): "
+                   f"{len(rows) * source.row_bytes / 1e9:.1f} GB to read")
+    fields = found_fields(plan, int(index.gcount), len(index.chan_freqs_hz),
+                          int(max(index.ant1.max(), index.ant2.max())), int(index.source_id.max()))
+    writer = session.new_run(fields)
+    reducer = WhereReducer(plan, ctx, request.include_flagged, writer.append)
+    inner = progress(pass_progress(source, "locating", True))
+
+    def on_chunk(rows_done: int) -> bool:
+        writer.check_space(rows_done / max(1, source.n_rows))
+        return inner(rows_done)
+
+    try:
+        if len(rows) and not source.stream([reducer], read_data=True, on_chunk=on_chunk):
+            raise Stopped("stopped while locating; nothing kept")
+        searched = np.zeros(int(index.gcount), dtype=bool)
+        searched[selection_rows] = True
+        summary = {"written_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "record": record,
+                   "command": request.command_line(), "conditions": list(request.where),
+                   "include_flagged": bool(request.include_flagged), "products": list(plan.recorded),
+                   "cells_found": reducer.n_cells_found, "rows_whole": reducer.n_rows_whole,
+                   "records": dict(writer.counts)}
+        header = {"summary": summary, "file": asdict(session.identity), "bunit": opened.bunit,
+                  "time": {"day0_jd": opened.day0_jd, "time_system": opened.time_reference.time_system,
+                           "recorded_minus_utc_s": recorded_minus_utc_s},
+                  "conditions": [_condition_record(c, plan) for c in resolved.conditions],
+                  "products": {label: code for label, code in zip(plan.recorded, plan.codes)},
+                  "searched": {"selection_rows": len(selection_rows), "rows": len(rows),
+                               "channels": channels.tolist(), "correlation_type": selected.kwargs["correlation_type"]},
+                  "columns": {**{f"cond{i}": c.text for i, c in enumerate(plan.data_conditions)}}}
+        number, path = writer.commit(header, searched)
+    except NoSpace as err:
+        writer.abort()
+        raise RequestError(str(err)) from err
+    except BaseException:
+        writer.abort()
+        raise
+    report("info", f"found {reducer.n_cells_found:,} visibilities (row, channel) meeting every condition, "
+                   f"{reducer.n_rows_whole:,} rows whole; run {number} of session {name}: "
+                   f"{writer.counts['cells']:,} records of single visibilities, {writer.counts['rows']:,} of whole "
+                   f"rows ({size_text(path.stat().st_size)}): {path}")
+    return path
+
+
+def _condition_record(condition, plan) -> dict:
+    """A resolved condition, as a run's header keeps it."""
+    def bound(b):
+        return None if b is None else {"value": b.value, "inclusive": b.inclusive}
+    role = "data" if condition.operand.product is not None else "coordinate"
+    column = f"cond{plan.data_conditions.index(condition)}" if role == "data" else None
+    return {"text": condition.text, "operand": str(condition.operand), "role": role, "column": column,
+            "unit": condition.unit, "lower": bound(condition.lower), "upper": bound(condition.upper)}
 
 
 def write_listing(request: PlotRequest, text: str, record: str | None = None) -> Path:

@@ -38,7 +38,8 @@ from data_io.uvfits_group_params import (
     resolve_param_column,
 )
 
-_STOKES_MAP = {
+# AIPS Stokes codes (the STOKES axis CRVAL + i CDELT) and their labels.
+STOKES_LABELS_BY_CODE = {
     1: "I", 2: "Q", 3: "U", 4: "V",
     -1: "RR", -2: "LL", -3: "RL", -4: "LR",
     -5: "XX", -6: "YY", -7: "XY", -8: "YX",
@@ -192,7 +193,8 @@ def build_row_index(
         crpix_f = float(header.get(f"CRPIX{axis_num}", 1.0))
 
     chan_freqs_hz = crval_f + (np.arange(1, nchan + 1, dtype=np.float64) - crpix_f) * cdelt_f
-    stokes_labels = [_STOKES_MAP.get(crval_s + i * cdelt_s, f"S{crval_s + i * cdelt_s}") for i in range(nstokes)]
+    stokes_labels = [STOKES_LABELS_BY_CODE.get(crval_s + i * cdelt_s, f"S{crval_s + i * cdelt_s}")
+                     for i in range(nstokes)]
 
     return RowIndex(
         path=str(fits_path),

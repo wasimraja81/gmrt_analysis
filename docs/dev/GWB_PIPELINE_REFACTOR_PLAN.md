@@ -3,8 +3,8 @@
 **Status line:** T0-T4, T5a, T5b, T5c done, Phase A complete (2026-09-24). Phase B: T19
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
-T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 625 tests passing; T26,
-T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56 open (order in Phase B); T35 (Moon
+T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, 658 tests passing; T26,
+T32 in progress; T40, T42, T45, T46, T50-T52, T55-T58 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
@@ -1416,6 +1416,65 @@ Buildable now, ahead of Phase C.
   (2021-07-24) is known; "1/17:00:00 .. 1/18:00:00 UTC" draws integrations from
   17:01:59 to 17:59:58 UTC, and the same in recorded time from 17:01:59 to 17:59:18
   UTC (the hour ending at 17:59:26 UTC). 625 tests pass.
+  Step 2b planned 2026-10-15, Locate by condition; the user's answers to six points:
+  - storage: one directory per session, replacing the one growing `.npz`. Python's
+    zipfile appends by writing over the archive's central directory and rewriting it
+    at the end, so a run killed mid-append would leave every earlier run of the session
+    unreadable. `<provenance-dir>/found/<session>/` holds `session.jsonl` (append-only,
+    one line per run or operation), `run-NNN.npz` (one run, written as a partial file
+    and renamed into place) and a lock; a session belongs to one FITS file;
+  - conditions naming no product (el, az, ha, pa, time, freq, channel, uu, vv, ww,
+    uvdist) narrow where Locate looks; a run needs a condition on a data value, and a
+    run with coordinate conditions alone is refused, pointing to the selection options;
+  - `--stokes` refused with a condition Locate: the conditions name the products read
+    and recorded (`amp(V) > 0.01` reads RR and LL, and records both at each match).
+    Whether a V outlier also flags RL and LR is the flag generator's rule (step 4);
+  - whole-row records: a row whose every searched cell matched (or is skipped, flagged
+    by the file) is one record per product, with each condition's minimum and maximum
+    over the row and the count of cells matched. The user's dead-antenna example on the
+    GWB file (282,852 rows per antenna, 2,048 channels, RR and LL) gives 565,704
+    records (about 30 MB) in place of 1.16e9 (about 58 GB). The flag generator turns
+    such a record into the flag table's per-row bit. With them a disk guard: a run
+    projects its final size as it reads, and stops, keeping nothing, before it would
+    fill the disk;
+  - the session: `--session NAME` (letters, digits, `.`, `_`, `-`), by default the FITS
+    file's name without its extension (the user asked for a default; a fixed name such
+    as `default` would mix unrelated files' runs and be refused on a second file). The
+    report and the record name the session used. Two files of one name under one
+    provenance directory: the second is refused, asking for `--session`. In the code
+    `locate_session`, apart from the GUI's provenance session (`SessionRecord`);
+  - the box: unchanged. The command line's `--locate XLO:XHI,YLO:YHI --locate-csv` and
+    the GUI's Locate tool stay as they are (the user: "OK if you are taking no feature
+    away"); a box with `--where`, and a box writing to a session, are T57.
+  The record, one per visibility of a file product, as designed (50 bytes with one
+  condition), its integer widths chosen from the file. Cells the file flags are
+  skipped, `--include-flagged` keeping them. Built in three parts: 2b-1 the pass and
+  one run's file (`--where`, `--locate` without a value, `--session`,
+  `--include-flagged`; `data_io/found_file.py`, `visplot/locate_where.py`); 2b-2 the
+  session read as the union of its active runs, listed, and its run operations; 2b-3
+  the GUI's Locate tab.
+  Step 2b-1 built 2026-10-20: `--where` (repeated), `--locate` with no value,
+  `--session`, `--include-flagged`; `visplot/locate_where.py` (the checks without a
+  file; the products read and recorded; the narrowing, channels by the `channel` and
+  `freq` conditions and rows by the other coordinates over the band's two edge
+  channels, from row metadata; `WhereReducer`, the test per cell and its records),
+  `data_io/found_file.py` (the session's directory, log and lock, the run writer, the
+  disk guard), `run.locate_by_conditions`, and the command line's action. The GUI's
+  options for it are pending, for 2b-3. A run's records depend on the data, the
+  selection and the conditions alone, the same for any chunk size and thread count
+  (tested). The user asked (2026-10-20) whether logging a run killed between its rename
+  and its log line fakes a bookkeeping step: a file is renamed into place only once
+  whole and on disk, and its log line is a copy of the summary in its header; such a
+  run is logged from its header once every field is checked against the header
+  (`check_run_file`), the line saying it was written late; a file failing the check is
+  renamed `unlogged-run-NNN.npz`, kept and never logged, its number never reused.
+  Checked against an independent count (numpy over the same rows, read with
+  `iter_visibility_chunks`): GSB 3C286 (22,680 rows; |V| median 13, 99.9th percentile
+  680, UNCALIB), `amp(V) > 1000`: 3,905 visibilities both ways, 7,810 records, in 2 s;
+  GWB 3C286 (69,174 rows, 6.8 GB): 86,342 visibilities both ways, 172,684 records
+  (9.2 MB); every record's condition value equal to |RR - LL| at its cell. `el > 40
+  deg` on GWB 3C286 finds no row, as `--el-range "40:90 deg"` selects none (3C286 near
+  39 deg and setting as the observation starts). Found on the way: T58. 658 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
@@ -2296,6 +2355,27 @@ Buildable now, ahead of Phase C.
   units and time, the listing, Locate and `--where` (its examples from their one source
   in the code), flagging. Written for researchers, every statement checked against the
   code, with no links into `docs/dev/` (as the gh-pages rule has it).
+
+- **T57 — a Locate box with `--where`, and into a session — OPEN (2026-10-15).** The
+  design of 2026-10-03 had the box (`--locate XLO:XHI,YLO:YHI`) act as two conditions
+  on the plot's axes, in one pass with `--where`. Step 2b leaves the box as it is (the
+  command line's CSV, the GUI's Locate tool): a box does not reduce to one set of
+  conditions that must all hold. On amp-vs-time with RR and LL each cell is two points,
+  and a box over amplitudes holds "amp(RR) inside or amp(LL) inside", an OR; on
+  vv-vs-uu a point is a row and channel with its products combined; on el-vs-time, a
+  whole row. Open until the user decides; its likely home is step 5's regions on plots,
+  which take conditions inside them (the user, 2026-10-03).
+
+- **T58 — sidereal time once per timestamp — OPEN (found 2026-10-20, step 2b-1).**
+  `data_io.astrometry.local_sidereal_time_hours` computes the apparent sidereal time
+  (ERFA's nutation series) for every row it is given: 113 us a row, 7.4 min for the
+  GWB file's 3,959,928 rows, which share 10,476 timestamps (1.2 s, once each).
+  `select_rows`' geometry filters compute it for every row of the file before the
+  other filters apply: `--el-range "40:90 deg"` with `--sources 3C286` on the GWB file
+  took over 10 min, and its empty-selection message reruns the filters. Plots of hour
+  angle, azimuth, elevation and parallactic angle, and Locate's narrowing, compute it
+  per row of the selection. Fix: once per distinct timestamp, the results the same;
+  `select_rows` computing geometry for the rows its other filters keep.
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
