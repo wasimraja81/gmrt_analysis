@@ -6,8 +6,15 @@ A condition on a data value (amp, phase, real, imag of a product) finds; the
 conditions on coordinates (el, az, ha, pa, time, freq, channel, uu, vv, ww,
 uvdist) narrow where it looks, so a run needs at least one on a data value.
 The products read and recorded are those the data conditions use: `amp(V)`
-reads RR and LL and records both at each match. Cells the file flags are
-skipped unless `--include-flagged`.
+reads RR and LL and records both at each match. `--flagged` sets which
+visibilities the file already flags are candidates: `exclude` (default,
+searches only unflagged ones), `only` (searches only the already-flagged
+ones -- a diagnosis of what is already flagged and why), or `include` (both).
+A row is found whole only when every visibility in that run's own domain --
+its searched channels, narrowed to whichever of `--flagged`'s candidates --
+is found; this is what makes a whole-row record unambiguous: nothing about
+why some other visibility was left out needs to be guessed or stored, since
+there is no "left out but counted anyway" case any more.
 """
 
 from __future__ import annotations
@@ -37,10 +44,10 @@ def lists_session(request) -> bool:
     """Whether `request` is `--session NAME` alone: lists that session's runs
     (`data_io.found_file.LocateSession.runs`/`run_status`) instead of running
     anything. --session combined with --locate/--where/--plots/--listobs/
-    --include-flagged is always some other action (a Locate run, or refused
-    by `check_locate_request`)."""
+    a --flagged other than its default is always some other action (a Locate
+    run, or refused by `check_locate_request`)."""
     return (request.locate_session is not None and request.locate is None and not request.plots
-            and not request.listobs and not request.include_flagged)
+            and not request.listobs and request.flagged == "exclude")
 
 
 def check_locate_request(request) -> tuple[Condition, ...]:
@@ -55,8 +62,8 @@ def check_locate_request(request) -> tuple[Condition, ...]:
                 raise ValueError("--where goes with --locate given no box; a box with --where is not available yet")
             raise ValueError("--where gives the conditions of --locate: add --locate, with no value")
         if not lists_session(request):
-            for option, given in (("--session", request.locate_session),
-                                  ("--include-flagged", request.include_flagged)):
+            for option, given in (("--session", request.locate_session is not None),
+                                  ("--flagged", request.flagged != "exclude")):
                 if given:
                     raise ValueError(f"{option} goes with --locate (no box) and --where, or --session alone to "
                                      "list its runs")
@@ -267,18 +274,23 @@ def found_fields(plan: LocatePlan, gcount: int, n_channels: int, max_station: in
 
 class WhereReducer:
     """A Locate by conditions over the visibilities of each chunk (its
-    STOKES axis the plan's `recorded` products): a cell is found where every
-    condition holds and the file flags none of the products its data
-    conditions use (unless `include_flagged`). A row of more than one
-    searched channel whose cells are all found, or skipped as flagged, is
-    found whole: one record per product (`rows`); every other cell found,
-    one record per product (`cells`). Records go to `sink(table, columns)`
-    in row order; counts kept."""
+    STOKES axis the plan's `recorded` products): a cell is a candidate under
+    `flagged_mode` ("exclude": unflagged only, the default; "only": flagged
+    only; "include": both), and found among the candidates where every
+    condition holds. A row of more than one searched channel whose every
+    candidate cell is found is found whole: one record per product
+    (`rows`); every other found cell, one record per product (`cells`).
+    Because "whole" means every candidate was found -- never "found, or
+    left out for some other reason" -- a whole-row record never hides which
+    visibilities it covers: under `flagged_mode`, they are exactly the run's
+    searched channels (recorded in its header) restricted to the
+    candidates. Records go to `sink(table, columns)` in row order; counts
+    kept."""
 
-    def __init__(self, plan: LocatePlan, ctx, include_flagged: bool, sink):
+    def __init__(self, plan: LocatePlan, ctx, flagged_mode: str, sink):
         self.plan = plan
         self.ctx = ctx
-        self.include_flagged = include_flagged
+        self.flagged_mode = flagged_mode
         self.sink = sink
         self.n_cells_found = 0
         self.n_rows_whole = 0
@@ -290,7 +302,12 @@ class WhereReducer:
         flagged = np.zeros((n, n_channels), dtype=bool)
         for k in set(plan.label_of):
             flagged |= _cells(derived.weight, derived, k) <= 0
-        found = np.ones((n, n_channels), dtype=bool) if self.include_flagged else ~flagged
+        if self.flagged_mode == "only":
+            found = flagged.copy()
+        elif self.flagged_mode == "include":
+            found = np.ones((n, n_channels), dtype=bool)
+        else:
+            found = ~flagged
         values_of = []
         for condition, k in zip(plan.data_conditions, plan.label_of):
             cells = _cells(evaluate(condition.operand.name, derived, self.ctx, condition.unit), derived, k)
@@ -298,8 +315,7 @@ class WhereReducer:
             found &= holds(cells, condition)
         for condition in plan.coordinate_conditions:
             found &= holds(coordinate_values(condition, block, self.ctx), condition)
-        skipped = flagged & (not self.include_flagged)
-        whole = (found.any(axis=1) & (found | skipped).all(axis=1)) if n_channels > 1 else np.zeros(n, dtype=bool)
+        whole = found.all(axis=1) if n_channels > 1 else np.zeros(n, dtype=bool)
         return self._cells(block, found & ~whole[:, None], values_of), self._rows(block, found, whole, values_of), \
             int(found.sum()), int(whole.sum())
 

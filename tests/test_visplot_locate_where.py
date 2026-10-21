@@ -31,7 +31,7 @@ def test_a_locate_by_conditions_is_a_run_of_its_own():
     (("--locate", "--where", "amp(V) > 5", "--locate-csv", "x.csv"), r"--locate-csv: that is the box's CSV"),
     (("--locate", "--where", "amp(V) > 5", "--session", "my run"), r"--session 'my run': a name of letters"),
     (("--listobs", "--session", "s1"), r"--session goes with --locate \(no box\) and --where"),
-    (("--listobs", "--include-flagged"), r"--include-flagged goes with --locate"),
+    (("--listobs", "--flagged", "only"), r"--flagged goes with --locate"),
     (("--locate", "--where", "amp(V) > 5 Jy deg"), r"is not a number with a unit"),
 ])
 def test_what_does_not_make_a_locate_by_conditions_is_refused_before_the_file_is_opened(argv, message):
@@ -98,17 +98,49 @@ def test_a_v_outlier_is_recorded_at_both_products_it_is_made_from():
     assert any("found 5 visibilities (row, channel) meeting every condition, 1 rows whole" in r for r in reports)
 
 
-def test_include_flagged_tests_the_files_flagged_visibilities_too_recording_them_flagged():
-    run, _, _ = _locate("flagged", "--where", "amp(V) > 10", "--include-flagged")
+def test_flagged_include_tests_the_files_flagged_visibilities_too_recording_them_flagged():
+    run, _, _ = _locate("flagged_include", "--where", "amp(V) > 10", "--flagged", "include")
     cells = run.cells
     assert list(zip(cells["row"], cells["channel"], cells["product"], cells["flagged"])) == [
         (0, 0, -1, 1), (0, 0, -2, 0), (5, 2, -1, 0), (5, 2, -2, 0)]
 
 
-def test_a_dead_antenna_like_row_is_one_record_per_product_its_flagged_cell_skipped():
-    run, _, _ = _locate("dead", "--where", "amp(I) < 3", edit=None)  # row 0: |RR + LL| below 3; channel 0 flagged
-    assert run.cells["row"].size == 0
-    assert list(zip(run.rows["row"], run.rows["product"], run.rows["n_cells"])) == [(0, -1, 3), (0, -2, 3)]
+def test_flagged_only_tests_only_the_files_already_flagged_visibilities():
+    # row 0 channel 0's RR is the synthetic file's one pre-existing flag (LL there is not), also planted to
+    # match; row 5 channel 2 matches too but neither of its products is flagged, so --flagged only (a cell is
+    # a candidate if either product V is made from is flagged) must leave it out.
+    run, _, _ = _locate("flagged_only", "--where", "amp(V) > 10", "--flagged", "only")
+    cells = run.cells
+    assert list(zip(cells["row"], cells["channel"], cells["product"], cells["flagged"])) == [
+        (0, 0, -1, 1), (0, 0, -2, 0)]
+
+
+def test_a_row_whole_except_for_an_already_flagged_channel_is_not_compacted():
+    # T26 2b-2, the user's fix (2026-10-21): a row is found whole only when every candidate channel (here,
+    # every unflagged one) is found -- never "found, or skipped as already flagged". Row 20: channel 1's RR
+    # already flagged by the file; channels 0, 2, 3 all bumped to match. Under the old rule this row would
+    # have compacted to one ambiguous "whole" record (n_cells=3, without naming which three); now it must fall
+    # through to explicit cells naming exactly 0, 2 and 3 -- never 1, and never one row record.
+    def edit(image_data):
+        image_data[20, 0, 1, 0, 2] = -1.0  # channel 1's RR: flagged
+        image_data[20, 0, [0, 2, 3], 0, 0] += 100.0  # channels 0, 2, 3: bumped to match amp(V) > 10
+
+    run, _, _ = _locate("mixed_whole", "--where", "amp(V) > 10", edit=edit)
+    assert run.rows["row"].size == 0  # not compacted at all
+    found = sorted(zip(run.cells["row"].tolist(), run.cells["channel"].tolist(), run.cells["product"].tolist()))
+    assert found == sorted([(20, 0, -1), (20, 0, -2), (20, 2, -1), (20, 2, -2), (20, 3, -1), (20, 3, -2)])
+    assert {c for r, c, p in found} == {0, 2, 3}  # channel 1 never appears: it was out of this run's domain
+
+
+def test_a_dead_antenna_like_row_with_one_flagged_channel_is_not_whole():
+    # row 0: |RR + LL| below 3 at every channel; channel 0's RR already flagged, so excluded from this run's
+    # domain. Channels 1, 2, 3 match and are this run's entire domain for the row -- but since channel 0 was
+    # never a candidate at all, the row is not "every candidate found" over the full channel axis (T26 2b-2,
+    # 2026-10-21): it falls through to explicit cells, naming exactly 1, 2 and 3, never channel 0.
+    run, _, _ = _locate("dead", "--where", "amp(I) < 3", edit=None)
+    assert run.rows["row"].size == 0
+    found = sorted(zip(run.cells["row"].tolist(), run.cells["channel"].tolist(), run.cells["product"].tolist()))
+    assert found == sorted([(0, c, p) for c in (1, 2, 3) for p in (-1, -2)])
 
 
 def test_coordinate_conditions_narrow_where_it_looks():
@@ -200,7 +232,7 @@ def test_lists_session_is_session_alone():
     assert not lists_session(_request("--session", "s1", "--locate", "--where", "amp(V) > 5"))
     assert not lists_session(_request("--session", "s1", "--listobs"))
     assert not lists_session(_request("--session", "s1", "--plots", "amp-vs-time"))
-    assert not lists_session(_request("--session", "s1", "--include-flagged"))
+    assert not lists_session(_request("--session", "s1", "--flagged", "only"))
 
 
 def test_session_alone_is_a_request_of_its_own():

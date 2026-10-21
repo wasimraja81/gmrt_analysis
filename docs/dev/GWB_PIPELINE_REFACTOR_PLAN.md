@@ -4,7 +4,7 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, T58 2026-10-21,
-672 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
+674 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
 T59 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1495,6 +1495,35 @@ Buildable now, ahead of Phase C.
   Checked on the GSB file: two `--locate` runs into one session (`amp(V) > 1000`,
   `amp(V) > 500`), then `--session s2b2check` alone listing both as active, the found
   set "runs 1, 2". 672 tests pass.
+  Found on the way, chased with the user through the numbers and a design session
+  (2026-10-21): "whole" (step 2b-1's compaction) was ambiguous for a row whose candidates
+  were a mix of "matched the condition" and "skipped because the file already flags it"
+  -- the record kept a count (`n_cells`) but not which channels were which, since the
+  rule was `(found | skipped).all()`. The user traced this to its root: a run's
+  candidates should be one explicit, single-purpose domain (its channel range, already
+  recorded, and now which flagged-state cells are candidates), never a silent mix of
+  two different reasons folded into one count. Two changes, both small: `--flagged
+  {exclude,only,include}` replaces `--include-flagged` -- `exclude` (default, the old
+  default): unflagged visibilities only; `only` (new, the user's own proposal,
+  confirmed as the fix): only the file's already-flagged visibilities, a direct
+  diagnosis of what is already flagged and why; `include` (the old
+  `--include-flagged`): both. And `whole` is `found.all(axis=1)` -- every candidate
+  found, nothing else -- dropping the `skipped` allowance. A row with any excluded
+  candidate can now never compact; it falls through to the already-correct explicit
+  `cells` path, exact down to the channel, costing only for however many cells
+  matched. The headline dead-antenna case is unaffected (it never had a mixed row to
+  begin with, so the result is unchanged, still 24.33 MB); a row mixing a match and a
+  pre-existing flag no longer compacts, which a rewritten test demonstrates directly on
+  the synthetic file (a planted mixed row: one flagged channel excluded, three others
+  found -- the record names exactly which three, never the flagged one, and is never
+  written as a `rows` record). Checked this changes nothing on the GSB file, which
+  carries close to no native flags: `--flagged exclude` and `--flagged include` still
+  agree (3,905 matches), `--flagged only` finds none (nothing to find). The run
+  operations (undo, restore, replace, intersect, difference) remain unbuilt and
+  untouched by this -- undo/restore/replace never read a run's own records at the cell
+  level, replace being a fresh Locate run plus marking the old one aside, and only
+  intersect/difference would have needed this fix, which is why it was worth getting
+  right before building them. 674 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

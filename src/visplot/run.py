@@ -1019,16 +1019,18 @@ def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Repor
 
     source = XYSource(request.fits_path, index, rows, {"FREQ": channels, "STOKES": np.array(plan.products.read)},
                       ctx, stream_chunk_bytes(), threads=max(1, request.threads))
+    flagged_note = {"exclude": "; visibilities the file flags skipped", "only": "; only visibilities the file "
+                    "flags are candidates", "include": "; visibilities the file flags are candidates too"}
     report("info", f"Locate where {' and '.join(c.text for c in resolved.conditions)}: reads "
                    f"{', '.join(plan.recorded)} and records them at each visibility found"
-                   + ("" if request.include_flagged else "; visibilities the file flags skipped"))
+                   + flagged_note[request.flagged])
     report("info", f"searching {len(rows):,} of the selection's {len(selection_rows):,} rows "
                    f"({correlations_used(request, default_of='a Locate run')}), {len(channels):,} channel(s): "
                    f"{len(rows) * source.row_bytes / 1e9:.1f} GB to read")
     fields = found_fields(plan, int(index.gcount), len(index.chan_freqs_hz),
                           int(max(index.ant1.max(), index.ant2.max())), int(index.source_id.max()))
     writer = session.new_run(fields)
-    reducer = WhereReducer(plan, ctx, request.include_flagged, writer.append)
+    reducer = WhereReducer(plan, ctx, request.flagged, writer.append)
     inner = progress(pass_progress(source, "locating", True))
 
     def on_chunk(rows_done: int) -> bool:
@@ -1042,7 +1044,7 @@ def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Repor
         searched[selection_rows] = True
         summary = {"written_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "record": record,
                    "command": request.command_line(), "conditions": list(request.where),
-                   "include_flagged": bool(request.include_flagged), "products": list(plan.recorded),
+                   "flagged": request.flagged, "products": list(plan.recorded),
                    "cells_found": reducer.n_cells_found, "rows_whole": reducer.n_rows_whole,
                    "records": dict(writer.counts)}
         header = {"summary": summary, "file": asdict(session.identity), "bunit": opened.bunit,

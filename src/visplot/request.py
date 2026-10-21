@@ -436,9 +436,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "together are what flag generation reads",
     )
     locate.add_argument(
-        "--include-flagged", action="store_true",
-        help="with --locate and --where: test the visibilities the file flags (weight <= 0) too, recording them "
-        "as flagged; by default they are skipped (a derived product is flagged where any product it uses is)",
+        "--flagged", choices=("exclude", "only", "include"), default="exclude",
+        help="with --locate and --where: which visibilities the file already flags (weight <= 0; a derived "
+        "product counts as flagged where any product it uses is) are candidates: exclude them (default -- a "
+        "run then searches only unflagged visibilities), consider only them (a diagnosis of what is already "
+        "flagged and why), or include them alongside unflagged ones",
     )
 
     cache = parser.add_argument_group("cache (files only where you name a directory)")
