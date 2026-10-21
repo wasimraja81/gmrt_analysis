@@ -12,7 +12,8 @@ import pytest
 
 from conftest import make_scratch_dir
 from data_io import found_file
-from data_io.found_file import FileIdentity, LocateSession, NoSpace, SessionError, read_log, read_run
+from data_io.found_file import FileIdentity, LocateSession, NoSpace, SessionError, read_active, read_log, read_run, \
+    run_status
 
 FIELDS = {"cells": {"row": "<u4", "channel": "<u2", "value": "<c8"}, "rows": {"row": "<u4", "n_cells": "<u4"}}
 
@@ -131,3 +132,54 @@ def test_a_run_stops_before_it_would_fill_its_disk(monkeypatch):
         writer.check_space(0.5)
     writer.abort()
     shutil.rmtree(found)
+
+
+# --- run_status, active_runs, read_active (T26 step 2b-2: a session as the union of its active runs) ---
+
+def test_run_status_folds_operation_entries_over_run_entries_in_order():
+    entries = [
+        {"entry": "session"},
+        {"entry": "run", "run": 1},
+        {"entry": "run", "run": 2},
+        {"entry": "operation", "op": "undo", "target": 1},
+        {"entry": "run", "run": 3},
+        {"entry": "operation", "op": "intersect", "a": 2, "b": 3, "run": 4},
+        {"entry": "run", "run": 4},
+        {"entry": "operation", "op": "restore", "target": 1},
+    ]
+    assert run_status(entries) == {1: "active", 2: "aside", 3: "aside", 4: "active"}
+
+
+def test_run_status_leaves_out_a_run_never_logged():
+    assert run_status([{"entry": "session"}, {"entry": "operation", "op": "undo", "target": 5}]) == {5: "aside"}
+
+
+def test_a_sessions_active_runs_are_those_never_set_aside():
+    found = make_scratch_dir("found_active")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)  # run 1
+    _write_run(session)  # run 2
+    assert session.status() == {1: "active", 2: "active"} and session.active_runs() == [1, 2]
+    with open(session.directory / "session.jsonl", "a") as f:
+        f.write(json.dumps({"entry": "operation", "op": "undo", "target": 1}) + "\n")
+    reopened = LocateSession.open(found, "s1", _identity())
+    assert reopened.status() == {1: "aside", 2: "active"} and reopened.active_runs() == [2]
+
+
+def test_read_active_reads_every_active_runs_file_and_none_set_aside():
+    found = make_scratch_dir("found_read_active")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session, summary={"conditions": ["amp(V) > 5"]})  # run 1
+    _write_run(session, summary={"conditions": ["amp(RR) > 100"]})  # run 2
+    with open(session.directory / "session.jsonl", "a") as f:
+        f.write(json.dumps({"entry": "operation", "op": "undo", "target": 1}) + "\n")
+    reopened = LocateSession.open(found, "s1", _identity())
+    active = read_active(reopened)
+    assert [run.header["summary"]["conditions"] for run in active] == [["amp(RR) > 100"]]
+
+
+def test_a_sessions_run_path_names_a_run_whatever_its_status():
+    found = make_scratch_dir("found_run_path")
+    session = LocateSession.open(found, "s1", _identity())
+    _, path = _write_run(session)
+    assert session.run_path(1) == path

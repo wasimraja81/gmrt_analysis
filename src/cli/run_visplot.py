@@ -26,16 +26,17 @@ import matplotlib
 # The backend must be chosen before any submodule imports pyplot: Agg
 # (headless, file-only) when only saving is requested, since no display
 # may be available at all in that case; otherwise Qt, for the inspection window.
-_HEADLESS_OPTIONS = ("--output-dir", "--clear-cache", "--locate")
+_HEADLESS_OPTIONS = ("--output-dir", "--clear-cache", "--locate", "--session")
 matplotlib.use("Agg" if any(a.split("=")[0] in _HEADLESS_OPTIONS for a in sys.argv[1:]) else "QtAgg")
 
 from data_io.astrometry import AstrometryWarning  # noqa: E402
 from visplot.range_cache import clear_cache  # noqa: E402
 from visplot.records import PlotRecord, WindowProvenance, recorded_run  # noqa: E402
 from visplot.request import PlotRequest, build_arg_parser  # noqa: E402,F401  (build_arg_parser: for callers)
-from visplot.locate_where import locates_by_conditions  # noqa: E402
-from visplot.run import (MissingIndexError, RequestError, check_request, listing_text,  # noqa: E402
-                         locate_by_conditions, open_file, prepare, run_locate, save_outputs, write_listing)
+from visplot.locate_where import lists_session, locates_by_conditions  # noqa: E402
+from visplot.run import (MissingIndexError, RequestError, check_request, list_locate_session,  # noqa: E402
+                         listing_text, locate_by_conditions, open_file, prepare, run_locate, save_outputs,
+                         write_listing)
 
 
 def _print_report(level: str, text: str) -> None:
@@ -83,6 +84,7 @@ def main(argv: list[str]) -> int:
     warnings.simplefilter("ignore", AstrometryWarning)  # reported once, through the run's report
 
     action = ", ".join(name for name, on in (("listobs", request.listobs), ("locate", request.locate is not None),
+                                             ("list-session", lists_session(request)),
                                              ("save", request.output_dir and request.plots)) if on)
     try:
         with recorded_run(request, action or "window") as record:
@@ -108,12 +110,16 @@ def _run(request: PlotRequest, record: PlotRecord, parser: argparse.ArgumentPars
             report("info", f"saved {path}")
         else:
             print(text, end="", flush=True)
-        if not request.plots and not locates_by_conditions(request):
+        if not request.plots and not locates_by_conditions(request) and not lists_session(request):
             return 0
-    if locates_by_conditions(request):  # a run of its own: its found visibilities, written to its session
+    if locates_by_conditions(request) or lists_session(request):
         if opened is None:
             check_request(request)
             opened = open_file(request.fits_path)
+        if lists_session(request):  # --session alone: its runs, nothing written or read beyond the log
+            print(list_locate_session(request, opened), end="", flush=True)
+            return 0
+        # a run of its own: its found visibilities, written to its session
         record.add_output(locate_by_conditions(request, opened, report, _terminal_progress, record=record.describe()))
         return 0
     run = prepare(request, opened, report=report)

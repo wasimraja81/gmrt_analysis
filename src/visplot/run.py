@@ -51,7 +51,8 @@ from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIO
     ListingOptions, ListingSelection, list_observation
 from visplot.locate_csv import LocateCsvWriter
 from visplot.locate_where import (CHANNEL_COORDINATES, NarrowRowsReducer, WhereReducer, check_cell_axes,
-                                  check_locate_request, found_fields, holds, locate_session_name, plan_locate)
+                                  check_locate_request, found_fields, holds, lists_session, locate_session_name,
+                                  plan_locate, session_listing_text)
 from visplot.instants import parse_time_range, split_time_range_scale
 from visplot.iterations import Iteration, iteration_source, list_iterations, page_layout
 from visplot.plot_panel import panel_facts, selection_filters
@@ -136,6 +137,7 @@ class CheckedRequest:
     page_grid: tuple[int, int] | None = None  # --page-grid as given; None: the default (`page_layout`)
     listing_sections: tuple[str, ...] = ()  # --listobs's (T20)
     conditions: tuple = ()  # --where's, parsed (`conditions.Condition`), of a Locate by conditions
+    lists_session: bool = False  # --session alone: lists its runs, nothing else to check or run
 
 
 def check_request(request: PlotRequest) -> CheckedRequest:
@@ -175,8 +177,9 @@ def check_request(request: PlotRequest) -> CheckedRequest:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
         conditions = check_locate_request(request)
-        if not request.plots and not request.listobs and not conditions:
-            raise ValueError("give --plots, --listobs, --locate with --where, or several of them")
+        if not request.plots and not request.listobs and not conditions and not lists_session(request):
+            raise ValueError("give --plots, --listobs, --locate with --where, --session alone to list its runs, "
+                             "or several of them")
         plot_names = parse_plot_names(request.plots) if request.plots else []
         listing_sections = parse_listing_sections(request.listobs) if request.listobs else ()
         if request.scan_gap <= 0 or request.scan_longest <= 0:
@@ -246,7 +249,7 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         if n_streamed != 1:
             raise RequestError(f"--locate needs exactly one streamed plot; --plots gives {n_streamed}")
     return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size, page_figure_size, page_grid,
-                          listing_sections, conditions)
+                          listing_sections, conditions, lists_session(request))
 
 
 def with_elevation_limits(plot: PlotSpec, telescope: str | None) -> PlotSpec:
@@ -922,6 +925,28 @@ def _count_flags(request: PlotRequest, opened: OpenedFile, selected: Selected, r
 GEOMETRY_CONDITIONS = ("el", "az", "ha", "pa")
 
 
+def open_locate_session(request: PlotRequest, opened: OpenedFile) -> tuple[LocateSession, str, bool]:
+    """The request's Locate session (`locate_session_name`), opened under
+    --provenance-dir/found/ -- created on first use, for a Locate run or a
+    listing alike. Returns the session, its name, and whether --session gave
+    it. Raises RequestError if it belongs to another file."""
+    name, given = locate_session_name(request)
+    try:
+        session = LocateSession.open(Path(request.provenance_dir) / "found", name,
+                                     FileIdentity.of(request.fits_path, opened.index.gcount))
+    except SessionError as err:
+        raise RequestError(str(err)) from err
+    return session, name, given
+
+
+def list_locate_session(request: PlotRequest, opened: OpenedFile) -> str:
+    """`--session NAME` alone: that session's runs, as text
+    (`visplot.locate_where.session_listing_text`). Raises RequestError if the
+    session belongs to another file."""
+    session, _, _ = open_locate_session(request, opened)
+    return session_listing_text(session)
+
+
 def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Report = _silent,
                          progress: ProgressFactory = _no_progress, record: str | None = None) -> Path:
     """A Locate by the request's --where conditions (`visplot.locate_where`):
@@ -979,12 +1004,7 @@ def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Repor
             raise Stopped("stopped while narrowing the rows; nothing kept")
         rows = np.concatenate(narrow.kept) if narrow.kept else rows[:0]
 
-    name, given = locate_session_name(request)
-    try:
-        session = LocateSession.open(Path(request.provenance_dir) / "found", name,
-                                     FileIdentity.of(request.fits_path, index.gcount))
-    except SessionError as err:
-        raise RequestError(str(err)) from err
+    session, name, given = open_locate_session(request, opened)
     so_far = "new" if session.created else f"{len(session.runs())} run(s) so far"
     report("info", f"Locate session {name}, {so_far}: {session.directory}"
                    + ("" if given else " (--session not given: the file's default)"))

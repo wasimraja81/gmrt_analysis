@@ -187,3 +187,80 @@ def test_the_command_line_runs_a_locate_and_its_record_names_the_run(capsys):
     assert manifest["details"]["action"] == "locate" and manifest["outcome"]["status"] == "success"
     assert str(run_file) in manifest["outputs"]
     assert read_run(run_file).header["summary"]["record"].startswith(f"run {manifest['run_id']}")
+
+
+# --- listing a session (T26 step 2b-2): --session NAME alone, the union of its active runs ---
+
+from visplot.locate_where import lists_session, session_listing_text
+from visplot.run import list_locate_session
+
+
+def test_lists_session_is_session_alone():
+    assert lists_session(_request("--session", "s1")) and not lists_session(_request())
+    assert not lists_session(_request("--session", "s1", "--locate", "--where", "amp(V) > 5"))
+    assert not lists_session(_request("--session", "s1", "--listobs"))
+    assert not lists_session(_request("--session", "s1", "--plots", "amp-vs-time"))
+    assert not lists_session(_request("--session", "s1", "--include-flagged"))
+
+
+def test_session_alone_is_a_request_of_its_own():
+    checked = check_request(_request("--session", "s1"))
+    assert checked.lists_session and checked.conditions == () and checked.plot_names == []
+    assert not check_request(_request("--locate", "--where", "amp(V) > 5")).lists_session
+
+
+def test_a_session_with_no_runs_yet_says_so():
+    scratch = make_scratch_dir("locate_where_list_empty")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    text = list_locate_session(PlotRequest.from_argv([str(path), "--session", "s1",
+                                                      "--provenance-dir", str(scratch / "runs")]), open_file(path))
+    assert "Locate session s1: obs.fits, 40 rows" in text and "no runs yet" in text
+
+
+def test_listing_shows_every_run_its_status_and_the_active_found_set():
+    scratch = make_scratch_dir("locate_where_list")
+    path = _make_synthetic_file(scratch / "obs.fits", edit=_plant)
+    argv = ["--session", "s1", "--provenance-dir", str(scratch / "runs")]
+    opened = open_file(path)
+    locate_by_conditions(PlotRequest.from_argv([str(path), "--locate", "--where", "amp(V) > 10", *argv]), opened)
+    locate_by_conditions(PlotRequest.from_argv([str(path), "--locate", "--where", "amp(RR) > 1000", *argv]), opened)
+    text = list_locate_session(PlotRequest.from_argv([str(path), *argv]), opened)
+    assert "run" in text and "status" in text and "conditions" in text  # the header row
+    lines = [line.split() for line in text.splitlines() if line.strip().startswith(("1", "2"))]
+    assert lines[0][:2] == ["1", "active"] and lines[1][:2] == ["2", "active"]
+    assert "found set: the union of runs 1, 2" in text
+
+    session_dir = scratch / "runs" / "found" / "s1"
+    with open(session_dir / "session.jsonl", "a") as f:
+        f.write(json.dumps({"entry": "operation", "op": "undo", "target": 1}) + "\n")
+    text = list_locate_session(PlotRequest.from_argv([str(path), *argv]), opened)
+    lines = [line.split() for line in text.splitlines() if line.strip().startswith(("1", "2"))]
+    assert lines[0][:2] == ["1", "aside"] and lines[1][:2] == ["2", "active"]
+    assert "found set: the union of run 2" in text
+
+
+def test_the_command_line_lists_a_session(capsys):
+    from cli.run_visplot import main
+
+    scratch = make_scratch_dir("locate_where_list_cli")
+    path = _make_synthetic_file(scratch / "obs.fits", edit=_plant)
+    argv = [str(path), "--locate", "--where", "amp(V) > 10", "--session", "s1", "--provenance-dir",
+           str(scratch / "runs")]
+    assert main(["visplot", *argv]) == 0
+    capsys.readouterr()
+    assert main(["visplot", str(path), "--session", "s1", "--provenance-dir", str(scratch / "runs")]) == 0
+    printed = capsys.readouterr().out
+    assert "Locate session s1: obs.fits, 40 rows" in printed and "amp(V) > 10" in printed
+    assert "provenance record: run " in printed  # a listing is still a recorded run
+    assert not (scratch / "runs" / "found" / "s1" / "run-002.npz").exists()  # nothing written by listing
+
+
+def test_a_session_of_another_file_cannot_be_listed():
+    scratch = make_scratch_dir("locate_where_list_other")
+    first = _make_synthetic_file(scratch / "a" / "obs.fits") if (scratch / "a").mkdir() is None else None
+    other = _make_synthetic_file(scratch / "b" / "obs.fits", n_rows=30) if (scratch / "b").mkdir() is None else None
+    argv = ["--session", "s1", "--provenance-dir", str(scratch / "runs")]
+    locate_by_conditions(PlotRequest.from_argv([str(first), "--locate", "--where", "amp(V) > 10", *argv]),
+                         open_file(first))
+    with pytest.raises(RequestError, match=r"session 's1' .* belongs to obs\.fits"):
+        list_locate_session(PlotRequest.from_argv([str(other), *argv]), open_file(other))

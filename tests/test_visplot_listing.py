@@ -65,7 +65,8 @@ def test_listobs_prints_saves_and_lists_a_selection(capsys):
 
 def test_listing_options_are_checked():
     check_request(PlotRequest("obs.fits", None, listobs="scans"))  # a listing alone
-    for options, message in ((dict(), "give --plots, --listobs, --locate with --where, or several of them"),
+    for options, message in ((dict(), "give --plots, --listobs, --locate with --where, --session alone to list "
+                                      "its runs, or several of them"),
                              (dict(listobs="scans,bogus"), "--listobs takes sections among"),
                              (dict(listobs="scans", scan_gap=0.0), "--scan-gap and --scan-longest take a positive")):
         with pytest.raises(RequestError, match=message):

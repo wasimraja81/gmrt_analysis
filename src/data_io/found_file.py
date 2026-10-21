@@ -5,7 +5,8 @@ A session is a directory, `<provenance dir>/found/<name>/`, belonging to one
 FITS file:
 
     session.jsonl    append-only, one JSON line per entry: the session's opening
-                     (the FITS file it belongs to), then each run in turn
+                     (the FITS file it belongs to), then a "run" or "operation"
+                     entry (`run_status`) for each run or run operation in turn
     run-001.npz      one Locate run: a JSON header, the rows it searched (packed
     run-002.npz      bits) and its records, one array per field
     .lock            held while an entry is added; runs read their data meanwhile
@@ -27,6 +28,11 @@ edited or removed.
 A run has two tables: `cells`, a record per visibility found (row, channel,
 product), and `rows`, a record per product of each row found whole (every
 searched cell of the row found, or skipped as flagged by the file).
+
+A run is never edited or erased; each is active or set aside (`run_status`,
+folding the log's operation entries over its run entries), and the session's
+found set, the flag generator's input, is the union of the active ones
+(`read_active`).
 """
 
 from __future__ import annotations
@@ -148,10 +154,47 @@ class LocateSession:
         """The log's run entries, in order."""
         return [entry for entry in read_log(self.directory) if entry["entry"] == "run"]
 
+    def status(self) -> dict[int, str]:
+        """Each run number's status, "active" or "aside" (`run_status`)."""
+        return run_status(read_log(self.directory))
+
+    def active_runs(self) -> list[int]:
+        """Run numbers whose status is "active", in run-number order: the
+        session's found set, the flag generator's input, is their union."""
+        return sorted(n for n, status in self.status().items() if status == "active")
+
+    def run_path(self, number: int) -> Path:
+        """Run `number`'s file -- active, aside, or (a derived run's own
+        inputs) set aside by the operation that made it."""
+        return self.directory / f"run-{number:03d}.npz"
+
     def new_run(self, fields: dict[str, dict[str, str]]) -> RunWriter:
         """A run being written: `fields` maps each table ("cells", "rows") to
         its fields and their dtypes, e.g. {"cells": {"row": "<u4", ...}}."""
         return RunWriter(self, fields)
+
+
+def run_status(entries: list[dict]) -> dict[int, str]:
+    """Each run number's status, "active" or "aside", folding the log's
+    operation entries over its run entries in order: a run starts active
+    when its own entry appears; "undo" and the inputs of "intersect"/
+    "difference" set a run aside (kept, never edited or removed); "restore"
+    makes one active again. A run never in the log (not yet committed, or
+    set aside by its own replace before this session was last read) is
+    absent, not "aside"."""
+    status: dict[int, str] = {}
+    for entry in entries:
+        if entry["entry"] == "run":
+            status[entry["run"]] = "active"
+        elif entry["entry"] == "operation":
+            op = entry["op"]
+            if op == "undo":
+                status[entry["target"]] = "aside"
+            elif op == "restore":
+                status[entry["target"]] = "active"
+            elif op in ("intersect", "difference"):
+                status[entry["a"]] = status[entry["b"]] = "aside"
+    return status
 
 
 def read_log(directory) -> list[dict]:
@@ -393,3 +436,12 @@ def read_run(path) -> FoundRun:
         tables = {table: {name: run[f"{table}_{name}"] for name in fields}
                   for table, fields in header["fields"].items()}
     return FoundRun(header, searched, tables.get("cells", {}), tables.get("rows", {}))
+
+
+def read_active(session: LocateSession) -> list[FoundRun]:
+    """The session's found set: its active runs, read whole (`read_run`; a
+    small-session reader -- the flag generator reads each active run's file
+    field by field instead of holding every one in memory at once). A cell
+    found by more than one active run appears once per run that found it;
+    merging them is the flag generator's own job."""
+    return [read_run(session.run_path(number)) for number in session.active_runs()]

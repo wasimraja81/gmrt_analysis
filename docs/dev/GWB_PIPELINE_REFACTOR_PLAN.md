@@ -4,7 +4,7 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, T58 2026-10-21,
-661 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
+672 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
 T59 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1476,6 +1476,25 @@ Buildable now, ahead of Phase C.
   (9.2 MB); every record's condition value equal to |RR - LL| at its cell. `el > 40
   deg` on GWB 3C286 finds no row, as `--el-range "40:90 deg"` selects none (3C286 near
   39 deg and setting as the observation starts). Found on the way: T58. 658 tests pass.
+  Step 2b-2 built 2026-10-21, a session as the union of its active runs, listed:
+  `data_io.found_file.run_status` folds the log's "operation" entries over its "run"
+  entries in order (a run active from its own entry; "undo" and the two inputs of
+  "intersect"/"difference" set a run aside; "restore" makes one active again -- the
+  operations themselves are 2b-2's own next piece, still to build, so `run_status` is
+  exercised with hand-written log lines meanwhile); `LocateSession.
+  status`/`active_runs`/`run_path`, `read_active` (every active run read whole, for a
+  small session -- the flag generator reads each one field by field instead, as
+  `read_run` already noted). `--session NAME` alone (no `--locate`, `--where`,
+  `--plots`, `--listobs`, `--include-flagged`) lists a session instead of running
+  anything (`visplot.locate_where.lists_session`, `CheckedRequest.lists_session`,
+  `run.list_locate_session`, `visplot.locate_where.session_listing_text`): the file
+  identity, each run's number, status, conditions and counts, and the found set's
+  current union, as a table; the message naming listing as a third way to use
+  `--session`, alongside its combinations the function still refuses.
+  `_HEADLESS_OPTIONS` gained `--session`, so listing never imports Qt.
+  Checked on the GSB file: two `--locate` runs into one session (`amp(V) > 1000`,
+  `amp(V) > 500`), then `--session s2b2check` alone listing both as active, the found
+  set "runs 1, 2". 672 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

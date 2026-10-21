@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
+from data_io.found_file import LocateSession
 from data_io.row_index import STOKES_LABELS_BY_CODE
 from data_io.stokes_products import ProductPlan, apply_products, plan_products
 from visplot.conditions import Condition, ResolvedConditions, parse_condition
@@ -32,19 +33,33 @@ def locates_by_conditions(request) -> bool:
     return request.locate == LOCATE_BY_CONDITIONS
 
 
+def lists_session(request) -> bool:
+    """Whether `request` is `--session NAME` alone: lists that session's runs
+    (`data_io.found_file.LocateSession.runs`/`run_status`) instead of running
+    anything. --session combined with --locate/--where/--plots/--listobs/
+    --include-flagged is always some other action (a Locate run, or refused
+    by `check_locate_request`)."""
+    return (request.locate_session is not None and request.locate is None and not request.plots
+            and not request.listobs and not request.include_flagged)
+
+
 def check_locate_request(request) -> tuple[Condition, ...]:
     """The --where conditions of a Locate by conditions, parsed and checked
     with the options around them, without the file; () for a request that
-    does not locate by conditions. Raises ValueError saying what to write."""
+    does not locate by conditions, including one that lists a session
+    (`lists_session`). Raises ValueError saying what to write."""
     where = request.where or ()
     if not locates_by_conditions(request):
         if where:
             if request.locate:
                 raise ValueError("--where goes with --locate given no box; a box with --where is not available yet")
             raise ValueError("--where gives the conditions of --locate: add --locate, with no value")
-        for option, given in (("--session", request.locate_session), ("--include-flagged", request.include_flagged)):
-            if given:
-                raise ValueError(f"{option} goes with --locate (no box) and --where")
+        if not lists_session(request):
+            for option, given in (("--session", request.locate_session),
+                                  ("--include-flagged", request.include_flagged)):
+                if given:
+                    raise ValueError(f"{option} goes with --locate (no box) and --where, or --session alone to "
+                                     "list its runs")
         return ()
     if not where:
         raise ValueError("--locate with no box finds the visibilities meeting --where conditions: give at least one "
@@ -74,6 +89,43 @@ def locate_session_name(request) -> tuple[str, bool]:
     if request.locate_session is not None:
         return request.locate_session, True
     return re.sub(r"[^A-Za-z0-9._-]", "_", Path(request.fits_path).stem) or "_", False
+
+
+def _table(headers: list[str], rows: list[list[str]], right: set[int]) -> list[str]:
+    """Fixed-width columns: those in `right` aligned right (`visplot.listing`'s own)."""
+    widths = [max(len(str(c)) for c in column) for column in zip(headers, *rows)]
+
+    def line(cells):
+        return "  ".join(str(c).rjust(w) if i in right else str(c).ljust(w)
+                         for i, (c, w) in enumerate(zip(cells, widths))).rstrip()
+    return [line(headers)] + [line(r) for r in rows]
+
+
+def session_listing_text(session: LocateSession) -> str:
+    """A session's runs, one line each: its number, status (active or
+    aside), conditions, what it found, and when it was written. Logged-late
+    and set-aside-unlogged runs are noted first; an empty session says so."""
+    lines = [f"Locate session {session.name}: {session.identity.name}, {session.identity.gcount:,} rows"]
+    for path in session.removed_partials:
+        lines.append(f"  removed {path.name}, left by a run that stopped before its end")
+    for number in session.logged_late:
+        lines.append(f"  run {number}: logged late (its process stopped between writing the run and logging it)")
+    for path, problem in session.set_aside:
+        lines.append(f"  {path.name}: not whole, set aside, never logged ({problem})")
+    runs = session.runs()
+    if not runs:
+        lines.append("  no runs yet")
+        return "\n".join(lines) + "\n"
+    status = session.status()
+    rows = [[str(entry["run"]), status.get(entry["run"], "active"), " and ".join(entry["conditions"]),
+            f"{entry['cells_found']:,}", f"{entry['rows_whole']:,}", entry["written_utc"]]
+           for entry in sorted(runs, key=lambda e: e["run"])]
+    headers = ["run", "status", "conditions", "cells found", "rows whole", "written (UTC)"]
+    lines += ["  " + line for line in _table(headers, rows, right={0, 3, 4})]
+    active = session.active_runs()
+    lines.append(f"  found set: the union of run{'' if len(active) == 1 else 's'} "
+                 f"{', '.join(str(n) for n in active) if active else 'none active'}")
+    return "\n".join(lines) + "\n"
 
 
 STOKES_CODES = {label: code for code, label in STOKES_LABELS_BY_CODE.items()}
