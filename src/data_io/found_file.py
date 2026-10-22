@@ -32,7 +32,8 @@ searched cell of the row found, or skipped as flagged by the file).
 A run is never edited or erased; each is active or set aside (`run_status`,
 folding the log's operation entries over its run entries), and the session's
 found set, the flag generator's input, is the union of the active ones
-(`read_active`).
+(`read_active`). `undo_run`/`restore_run` flip a run's status, each its own
+operation entry.
 """
 
 from __future__ import annotations
@@ -436,6 +437,37 @@ def read_run(path) -> FoundRun:
         tables = {table: {name: run[f"{table}_{name}"] for name in fields}
                   for table, fields in header["fields"].items()}
     return FoundRun(header, searched, tables.get("cells", {}), tables.get("rows", {}))
+
+
+def undo_run(session: LocateSession, target: int, reason: str | None = None) -> None:
+    """Sets run `target` of `session` aside: kept, restorable with
+    `restore_run` (`run_status`). `reason` (e.g. "replaced by run 3", used by
+    `replace`), kept with the entry. Raises ValueError if `target` was never
+    a run of this session, or is already aside."""
+    with _locked(session.directory):
+        status = run_status(read_log(session.directory))
+        if target not in status:
+            raise ValueError(f"run {target} is not a run of session {session.name!r}")
+        if status[target] == "aside":
+            raise ValueError(f"run {target} of session {session.name!r} is already aside")
+        entry = {"entry": "operation", "op": "undo", "target": target, "written_utc": _now()}
+        if reason is not None:
+            entry["reason"] = reason
+        _append_line(session.directory / LOG_NAME, entry)
+
+
+def restore_run(session: LocateSession, target: int) -> None:
+    """Makes run `target` of `session` active again (`run_status`). Raises
+    ValueError if `target` was never a run of this session, or is already
+    active."""
+    with _locked(session.directory):
+        status = run_status(read_log(session.directory))
+        if target not in status:
+            raise ValueError(f"run {target} is not a run of session {session.name!r}")
+        if status[target] == "active":
+            raise ValueError(f"run {target} of session {session.name!r} is already active")
+        entry = {"entry": "operation", "op": "restore", "target": target, "written_utc": _now()}
+        _append_line(session.directory / LOG_NAME, entry)
 
 
 def read_active(session: LocateSession) -> list[FoundRun]:

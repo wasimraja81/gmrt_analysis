@@ -442,6 +442,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "run then searches only unflagged visibilities), consider only them (a diagnosis of what is already "
         "flagged and why), or include them alongside unflagged ones",
     )
+    locate.add_argument(
+        "--undo", type=int, metavar="RUN",
+        help="set run RUN of --session aside: kept, restorable with --restore. Runs on the session alone, with "
+        "no --where",
+    )
+    locate.add_argument(
+        "--restore", type=int, metavar="RUN",
+        help="make run RUN of --session active again",
+    )
 
     cache = parser.add_argument_group("cache (files only where you name a directory)")
     cache.add_argument(

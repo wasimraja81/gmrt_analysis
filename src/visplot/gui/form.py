@@ -65,6 +65,8 @@ PENDING_GUI_OPTIONS: dict[str, str] = {
     "where": "T26 step 2b-3, the GUI's Locate tab (its condition lines)",
     "locate_session": "T26 step 2b-3, the GUI's Locate tab (its session field)",
     "flagged": "T26 step 2b-3, the GUI's Locate tab",
+    "undo": "T26 step 2b-3, the GUI's session panel (its run actions)",
+    "restore": "T26 step 2b-3, the GUI's session panel (its run actions)",
 }
 
 # Hover text of the Pages section (T26), in everyday words for a first-time reader.

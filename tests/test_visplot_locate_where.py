@@ -33,6 +33,13 @@ def test_a_locate_by_conditions_is_a_run_of_its_own():
     (("--listobs", "--session", "s1"), r"--session goes with --locate \(no box\) and --where"),
     (("--listobs", "--flagged", "only"), r"--flagged goes with --locate"),
     (("--locate", "--where", "amp(V) > 5 Jy deg"), r"is not a number with a unit"),
+    (("--undo", "2", "--restore", "3"), r"give one of --undo, --restore; got --undo, --restore"),
+    (("--undo", "2", "--locate", "--where", "amp(V) > 5"), r"--locate with no box runs by its --where conditions; "
+                                                           r"--undo 2: give it in a separate run"),
+    (("--undo", "2", "--plots", "amp-vs-time"), r"--undo 2 runs on a session by itself; --plots:"),
+    (("--restore", "2", "--listobs"), r"--restore 2 runs on a session by itself; --listobs:"),
+    (("--undo", "2", "--flagged", "only"), r"--flagged goes with --locate \(no box\) and --where; --undo takes no"),
+    (("--undo", "2", "--session", "no good"), r"--session 'no good': a name of letters"),
 ])
 def test_what_does_not_make_a_locate_by_conditions_is_refused_before_the_file_is_opened(argv, message):
     with pytest.raises(RequestError, match=message):
@@ -296,3 +303,65 @@ def test_a_session_of_another_file_cannot_be_listed():
                          open_file(first))
     with pytest.raises(RequestError, match=r"session 's1' .* belongs to obs\.fits"):
         list_locate_session(PlotRequest.from_argv([str(other), *argv]), open_file(other))
+
+
+# --- the run operations (T26 2b-2b): --undo, --restore ---
+
+from visplot.locate_where import run_operation
+from visplot.run import perform_run_operation
+
+
+def test_run_operation_and_lists_session_agree_on_what_each_is():
+    assert run_operation(_request("--undo", "2")) == "undo"
+    assert run_operation(_request("--restore", "2")) == "restore"
+    assert run_operation(_request()) is None
+    assert not lists_session(_request("--session", "s1", "--undo", "2"))
+    assert not lists_session(_request("--session", "s1", "--restore", "2"))
+    assert lists_session(_request("--session", "s1"))
+
+
+def test_undo_then_restore_on_a_real_session(capsys):
+    from cli.run_visplot import main
+
+    scratch = make_scratch_dir("locate_where_undo")
+    path = _make_synthetic_file(scratch / "obs.fits", edit=_plant)
+    argv = [str(path), "--provenance-dir", str(scratch / "runs"), "--session", "s1"]
+    assert main(["visplot", *argv, "--locate", "--where", "amp(V) > 10"]) == 0
+    capsys.readouterr()
+
+    assert main(["visplot", *argv, "--undo", "1"]) == 0
+    printed = capsys.readouterr().out
+    assert "provenance record: run " in printed  # an operation is still a recorded run
+    lines = [line.split() for line in printed.splitlines() if line.strip().startswith("1")]
+    assert lines[0][:2] == ["1", "aside"]
+    assert "found set: empty, no run active" in printed
+    session_dir = scratch / "runs" / "found" / "s1"
+    assert json.loads(session_dir.joinpath("session.jsonl").read_text().splitlines()[-1]) == {
+        "entry": "operation", "op": "undo", "target": 1,
+        "written_utc": json.loads(session_dir.joinpath("session.jsonl").read_text().splitlines()[-1])["written_utc"]}
+
+    assert main(["visplot", *argv, "--restore", "1"]) == 0
+    printed = capsys.readouterr().out
+    lines = [line.split() for line in printed.splitlines() if line.strip().startswith("1")]
+    assert lines[0][:2] == ["1", "active"]
+
+
+def test_perform_run_operation_refuses_an_unknown_run():
+    scratch = make_scratch_dir("locate_where_undo_refuse")
+    path = _make_synthetic_file(scratch / "obs.fits", edit=_plant)
+    request = PlotRequest.from_argv([str(path), "--undo", "9", "--provenance-dir", str(scratch / "runs"),
+                                     "--session", "s1"])
+    with pytest.raises(RequestError, match=r"run 9 is not a run of session 's1'"):
+        perform_run_operation(request, open_file(path))
+
+
+def test_a_run_operation_on_a_session_of_another_file_is_refused():
+    scratch = make_scratch_dir("locate_where_undo_other")
+    first = _make_synthetic_file(scratch / "a" / "obs.fits") if (scratch / "a").mkdir() is None else None
+    other = _make_synthetic_file(scratch / "b" / "obs.fits", n_rows=30) if (scratch / "b").mkdir() is None else None
+    argv = ["--session", "s1", "--provenance-dir", str(scratch / "runs")]
+    locate_by_conditions(PlotRequest.from_argv([str(first), "--locate", "--where", "amp(V) > 10", *argv]),
+                         open_file(first))
+    request = PlotRequest.from_argv([str(other), "--undo", "1", *argv])
+    with pytest.raises(RequestError, match=r"session 's1' .* belongs to obs\.fits"):
+        perform_run_operation(request, open_file(other))

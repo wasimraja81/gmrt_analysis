@@ -31,7 +31,8 @@ from astropy.io import fits
 from astropy.time import Time
 
 from data_io.antenna_table import read_antenna_table, read_array_earth_location, read_time_reference
-from data_io.found_file import FileIdentity, LocateSession, NoSpace, SessionError, size_text
+from data_io.found_file import (FileIdentity, LocateSession, NoSpace, SessionError, restore_run, size_text,
+                                undo_run)
 from data_io.frequency_table import read_frequency_setups
 from data_io.astrometry import DEFAULT_UT1, fallback_message
 from data_io.row_index import default_row_index_path, load_row_index
@@ -52,7 +53,7 @@ from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIO
 from visplot.locate_csv import LocateCsvWriter
 from visplot.locate_where import (CHANNEL_COORDINATES, NarrowRowsReducer, WhereReducer, check_cell_axes,
                                   check_locate_request, found_fields, holds, lists_session, locate_session_name,
-                                  plan_locate, session_listing_text)
+                                  plan_locate, run_operation, session_listing_text)
 from visplot.instants import parse_time_range, split_time_range_scale
 from visplot.iterations import Iteration, iteration_source, list_iterations, page_layout
 from visplot.plot_panel import panel_facts, selection_filters
@@ -177,9 +178,10 @@ def check_request(request: PlotRequest) -> CheckedRequest:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
         conditions = check_locate_request(request)
-        if not request.plots and not request.listobs and not conditions and not lists_session(request):
+        if (not request.plots and not request.listobs and not conditions and not lists_session(request)
+                and run_operation(request) is None):
             raise ValueError("give --plots, --listobs, --locate with --where, --session alone to list its runs, "
-                             "or several of them")
+                             "a run operation (--undo, --restore), or several of them")
         plot_names = parse_plot_names(request.plots) if request.plots else []
         listing_sections = parse_listing_sections(request.listobs) if request.listobs else ()
         if request.scan_gap <= 0 or request.scan_longest <= 0:
@@ -944,6 +946,24 @@ def list_locate_session(request: PlotRequest, opened: OpenedFile) -> str:
     (`visplot.locate_where.session_listing_text`). Raises RequestError if the
     session belongs to another file."""
     session, _, _ = open_locate_session(request, opened)
+    return session_listing_text(session)
+
+
+def perform_run_operation(request: PlotRequest, opened: OpenedFile) -> str:
+    """`--undo RUN`/`--restore RUN` (`visplot.locate_where.run_operation`):
+    performs that operation on the request's session, returning its listing
+    text afterward. Raises RequestError if the session belongs to another
+    file, or the operation itself is refused (the run does not exist, or is
+    already in the state asked for)."""
+    session, _, _ = open_locate_session(request, opened)
+    operation = run_operation(request)
+    try:
+        if operation == "undo":
+            undo_run(session, request.undo)
+        elif operation == "restore":
+            restore_run(session, request.restore)
+    except ValueError as err:
+        raise RequestError(str(err)) from err
     return session_listing_text(session)
 
 

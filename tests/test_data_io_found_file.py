@@ -13,7 +13,7 @@ import pytest
 from conftest import make_scratch_dir
 from data_io import found_file
 from data_io.found_file import FileIdentity, LocateSession, NoSpace, SessionError, read_active, read_log, read_run, \
-    run_status
+    restore_run, run_status, undo_run
 
 FIELDS = {"cells": {"row": "<u4", "channel": "<u2", "value": "<c8"}, "rows": {"row": "<u4", "n_cells": "<u4"}}
 
@@ -183,3 +183,55 @@ def test_a_sessions_run_path_names_a_run_whatever_its_status():
     session = LocateSession.open(found, "s1", _identity())
     _, path = _write_run(session)
     assert session.run_path(1) == path
+
+
+# --- undo_run, restore_run (T26 2b-2b: the run operations) ---
+
+def test_undo_run_sets_a_run_aside_and_logs_the_entry():
+    found = make_scratch_dir("found_undo")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)  # run 1
+    undo_run(session, 1)
+    assert session.status() == {1: "aside"} and session.active_runs() == []
+    entries = read_log(session.directory)
+    assert entries[-1] == {"entry": "operation", "op": "undo", "target": 1, "written_utc": entries[-1]["written_utc"]}
+
+
+def test_undo_run_keeps_its_reason():
+    found = make_scratch_dir("found_undo_reason")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)
+    undo_run(session, 1, reason="replaced by run 2")
+    assert read_log(session.directory)[-1]["reason"] == "replaced by run 2"
+
+
+def test_undo_run_refuses_an_unknown_or_already_aside_run():
+    found = make_scratch_dir("found_undo_refuse")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)
+    with pytest.raises(ValueError, match=r"run 9 is not a run of session 's1'"):
+        undo_run(session, 9)
+    undo_run(session, 1)
+    with pytest.raises(ValueError, match=r"run 1 of session 's1' is already aside"):
+        undo_run(session, 1)
+
+
+def test_restore_run_makes_a_run_active_again_and_logs_the_entry():
+    found = make_scratch_dir("found_restore")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)
+    undo_run(session, 1)
+    restore_run(session, 1)
+    assert session.status() == {1: "active"} and session.active_runs() == [1]
+    assert read_log(session.directory)[-1] == {"entry": "operation", "op": "restore", "target": 1,
+                                                "written_utc": read_log(session.directory)[-1]["written_utc"]}
+
+
+def test_restore_run_refuses_an_unknown_or_already_active_run():
+    found = make_scratch_dir("found_restore_refuse")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)
+    with pytest.raises(ValueError, match=r"run 9 is not a run of session 's1'"):
+        restore_run(session, 9)
+    with pytest.raises(ValueError, match=r"run 1 of session 's1' is already active"):
+        restore_run(session, 1)

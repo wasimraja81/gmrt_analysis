@@ -4,7 +4,7 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, T58 2026-10-21,
-674 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
+689 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
 T59 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1524,6 +1524,30 @@ Buildable now, ahead of Phase C.
   level, replace being a fresh Locate run plus marking the old one aside, and only
   intersect/difference would have needed this fix, which is why it was worth getting
   right before building them. 674 tests pass.
+  Step 2b-2b built 2026-10-22, the run operations: undo and restore first (the user,
+  2026-10-21: "begin work"), as the smallest, lowest-risk slice -- each a log append,
+  no run's records ever read at the cell level, exactly as laid out when the design was
+  confirmed. `data_io/found_file.py`'s `undo_run`/`restore_run`: read the log fresh
+  under the session's lock, refuse a run number never logged or already in the state
+  asked for, append one `{"entry": "operation", "op": "undo"/"restore", "target": N}`
+  line (the shape `run_status` already expected and tested, from 2b-2a); `undo_run`
+  takes an optional `reason`, for `replace` (next) to say "replaced by run M".
+  `--undo RUN`/`--restore RUN`, each needing `--session` alone (no `--where`, `--plots`,
+  `--listobs`, a `--flagged` other than its default, or each other): `visplot/
+  locate_where.py`'s `RUN_OPERATIONS` (option -> request field, extended as each
+  operation is built), `run_operation` (which one `request` gives, never raising, so
+  it is safe to call before the file is checked) and `_given_run_operations` (for
+  `check_locate_request`'s "give one of" refusal, the `--every-nth`/
+  `--every-nth-integration`/`--random-subset-n` group's own pattern); `run.
+  perform_run_operation` opens the session, performs the operation, and returns its
+  listing afterward, so the session's new state is seen at once. Found and fixed on the
+  way: `--session 'bad name!'` alone (listing) skipped the session-name format check,
+  validated only on the `--locate --where` path; moved to run once, ahead of every
+  other check, covering every session-named action alike. `session_listing_text`'s
+  empty-found-set line read "the union of runs none active"; now "empty, no run
+  active". Checked on the GSB file: a run undone (status aside, found set empty), then
+  restored (active again, back in the found set), the session listing after each
+  matching exactly. 689 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

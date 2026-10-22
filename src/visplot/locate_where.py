@@ -40,53 +40,91 @@ def locates_by_conditions(request) -> bool:
     return request.locate == LOCATE_BY_CONDITIONS
 
 
+# Options naming a run operation on a session (each a run number, or None: not given), option -> request.dest.
+# More are added here as they are built (next: "--replace"; then "--intersect", "--difference").
+RUN_OPERATIONS = {"--undo": "undo", "--restore": "restore"}
+
+
+def _given_run_operations(request) -> list[str]:
+    """Options among `RUN_OPERATIONS` that `request` gives, in their keys' order."""
+    return [option for option, dest in RUN_OPERATIONS.items() if getattr(request, dest) is not None]
+
+
+def run_operation(request) -> str | None:
+    """Which run operation `request` performs on a session ("undo",
+    "restore", ...); the first found if more than one was (mistakenly)
+    given, None if none was. Never raises -- safe to call before the file is
+    checked; `check_locate_request` refuses more than one."""
+    given = _given_run_operations(request)
+    return RUN_OPERATIONS[given[0]] if given else None
+
+
 def lists_session(request) -> bool:
     """Whether `request` is `--session NAME` alone: lists that session's runs
     (`data_io.found_file.LocateSession.runs`/`run_status`) instead of running
-    anything. --session combined with --locate/--where/--plots/--listobs/
-    a --flagged other than its default is always some other action (a Locate
-    run, or refused by `check_locate_request`)."""
+    anything. --session combined with --locate/--where/--plots/--listobs/a
+    --flagged other than its default/a run operation (`run_operation`) is
+    always some other action (a Locate run, a run operation, or refused by
+    `check_locate_request`)."""
     return (request.locate_session is not None and request.locate is None and not request.plots
-            and not request.listobs and request.flagged == "exclude")
+            and not request.listobs and request.flagged == "exclude" and run_operation(request) is None)
 
 
 def check_locate_request(request) -> tuple[Condition, ...]:
     """The --where conditions of a Locate by conditions, parsed and checked
     with the options around them, without the file; () for a request that
     does not locate by conditions, including one that lists a session
-    (`lists_session`). Raises ValueError saying what to write."""
-    where = request.where or ()
-    if not locates_by_conditions(request):
-        if where:
-            if request.locate:
-                raise ValueError("--where goes with --locate given no box; a box with --where is not available yet")
-            raise ValueError("--where gives the conditions of --locate: add --locate, with no value")
-        if not lists_session(request):
-            for option, given in (("--session", request.locate_session is not None),
-                                  ("--flagged", request.flagged != "exclude")):
-                if given:
-                    raise ValueError(f"{option} goes with --locate (no box) and --where, or --session alone to "
-                                     "list its runs")
-        return ()
-    if not where:
-        raise ValueError("--locate with no box finds the visibilities meeting --where conditions: give at least one "
-                         "--where")
-    for option, given, why in (
-        ("--plots", request.plots, "give the plots in a separate run"),
-        ("--locate-csv", request.locate_csv, "that is the box's CSV; this run is written to its session (--session)"),
-        ("--stokes", request.stokes, "the --where conditions name the products read and recorded (amp(V) reads RR "
-                                     "and LL)"),
-    ):
-        if given:
-            raise ValueError(f"--locate with no box runs by its --where conditions; {option}: {why}")
+    (`lists_session`) or performs a run operation (`run_operation`). Raises
+    ValueError saying what to write."""
     if request.locate_session is not None and not SESSION_NAME.match(request.locate_session):
         raise ValueError(f"--session {request.locate_session!r}: a name of letters, digits, '.', '_' and '-'")
-    conditions = tuple(parse_condition(text) for text in where)
-    if not any(condition.operand.product is not None for condition in conditions):
-        raise ValueError("--where: a Locate run needs a condition on a data value, e.g. 'amp(V) > 5'; conditions on "
-                         "coordinates only narrow where it looks; for those alone, the selection options "
-                         "(--el-range, --time-range, --channels, ...)")
-    return conditions
+    given_operations = _given_run_operations(request)
+    if len(given_operations) > 1:
+        raise ValueError(f"give one of {', '.join(RUN_OPERATIONS)}; got {', '.join(given_operations)}")
+    operation = run_operation(request)
+    where = request.where or ()
+    if locates_by_conditions(request):
+        if operation is not None:
+            raise ValueError(f"--locate with no box runs by its --where conditions; {given_operations[0]} "
+                             f"{getattr(request, operation)}: give it in a separate run")
+        if not where:
+            raise ValueError("--locate with no box finds the visibilities meeting --where conditions: give at "
+                             "least one --where")
+        for option, given, why in (
+            ("--plots", request.plots, "give the plots in a separate run"),
+            ("--locate-csv", request.locate_csv, "that is the box's CSV; this run is written to its session "
+                                                 "(--session)"),
+            ("--stokes", request.stokes, "the --where conditions name the products read and recorded (amp(V) "
+                                         "reads RR and LL)"),
+        ):
+            if given:
+                raise ValueError(f"--locate with no box runs by its --where conditions; {option}: {why}")
+        conditions = tuple(parse_condition(text) for text in where)
+        if not any(condition.operand.product is not None for condition in conditions):
+            raise ValueError("--where: a Locate run needs a condition on a data value, e.g. 'amp(V) > 5'; "
+                             "conditions on coordinates only narrow where it looks; for those alone, the "
+                             "selection options (--el-range, --time-range, --channels, ...)")
+        return conditions
+    if where:
+        if request.locate:
+            raise ValueError("--where goes with --locate given no box; a box with --where is not available yet")
+        raise ValueError("--where gives the conditions of --locate: add --locate, with no value")
+    if operation is not None:
+        for option, given in (("--plots", request.plots), ("--listobs", request.listobs)):
+            if given:
+                raise ValueError(f"{given_operations[0]} {getattr(request, operation)} runs on a session by "
+                                 f"itself; {option}: give it in a separate run")
+        if request.flagged != "exclude":
+            raise ValueError(f"--flagged goes with --locate (no box) and --where; {given_operations[0]} takes no "
+                             "conditions to narrow")
+        return ()
+    if not lists_session(request):
+        for option, given in (("--session", request.locate_session is not None),
+                              ("--flagged", request.flagged != "exclude")):
+            if given:
+                raise ValueError(f"{option} goes with --locate (no box) and --where, or --session alone to "
+                                 "list its runs")
+    return ()
 
 
 def locate_session_name(request) -> tuple[str, bool]:
@@ -130,8 +168,11 @@ def session_listing_text(session: LocateSession) -> str:
     headers = ["run", "status", "conditions", "cells found", "rows whole", "written (UTC)"]
     lines += ["  " + line for line in _table(headers, rows, right={0, 3, 4})]
     active = session.active_runs()
-    lines.append(f"  found set: the union of run{'' if len(active) == 1 else 's'} "
-                 f"{', '.join(str(n) for n in active) if active else 'none active'}")
+    if active:
+        lines.append(f"  found set: the union of run{'' if len(active) == 1 else 's'} "
+                     f"{', '.join(str(n) for n in active)}")
+    else:
+        lines.append("  found set: empty, no run active")
     return "\n".join(lines) + "\n"
 
 
