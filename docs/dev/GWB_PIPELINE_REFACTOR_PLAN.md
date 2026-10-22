@@ -1548,6 +1548,18 @@ Buildable now, ahead of Phase C.
   active". Checked on the GSB file: a run undone (status aside, found set empty), then
   restored (active again, back in the found set), the session listing after each
   matching exactly. 689 tests pass.
+  The user, 2026-10-22, alongside "begin work": "write the behaviour in user doc
+  clearly." `docs/user/VISPLOT_USER_GUIDE.md` (new file -- T56's own design, 2026-10-04:
+  a separate guide from `GWB_USER_GUIDE.md`, which covers the pipeline's stages and
+  never visplot): Locate by conditions and its condition syntax (the examples drawn from
+  `visplot.conditions.CONDITION_EXAMPLES`, their one source in the code), sessions
+  (naming, where they live on disk, and the cross-day/cross-process persistence
+  explicitly confirmed with the user -- a session is files on disk, reopened the same
+  way regardless of how much time or how many separate invocations passed in between),
+  `--flagged`, listing a session, and undo/restore, each example a transcript captured
+  by running Locate against a synthetic file during this session. T56 stays open
+  for what the guide does not cover yet (the GUI, plots and pages, the listing,
+  flagging downstream of a session's found set).
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS
