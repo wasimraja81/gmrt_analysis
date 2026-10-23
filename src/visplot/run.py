@@ -1036,6 +1036,14 @@ def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Repor
     for path, problem in session.set_aside:
         report("warning", f"{path.name}: a run file in place without its log line, and not whole ({problem}); "
                           "set aside, kept, never logged")
+    if request.replace_run is not None:
+        pre_status = session.status()
+        if request.replace_run not in pre_status:
+            raise RequestError(f"--replace {request.replace_run}: run {request.replace_run} is not a run of session "
+                               f"{name!r}")
+        if pre_status[request.replace_run] == "aside":
+            raise RequestError(f"--replace {request.replace_run}: run {request.replace_run} of session {name!r} is "
+                               "already aside")
 
     source = XYSource(request.fits_path, index, rows, {"FREQ": channels, "STOKES": np.array(plan.products.read)},
                       ctx, stream_chunk_bytes(), threads=max(1, request.threads))
@@ -1066,7 +1074,7 @@ def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Repor
                    "command": request.command_line(), "conditions": list(request.where),
                    "flagged": request.flagged, "products": list(plan.recorded),
                    "cells_found": reducer.n_cells_found, "rows_whole": reducer.n_rows_whole,
-                   "records": dict(writer.counts)}
+                   "records": dict(writer.counts), "replaces": request.replace_run}
         header = {"summary": summary, "file": asdict(session.identity), "bunit": opened.bunit,
                   "time": {"day0_jd": opened.day0_jd, "time_system": opened.time_reference.time_system,
                            "recorded_minus_utc_s": recorded_minus_utc_s},
@@ -1082,10 +1090,16 @@ def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Repor
     except BaseException:
         writer.abort()
         raise
+    if request.replace_run is not None:
+        try:
+            undo_run(session, request.replace_run, reason=f"replaced by run {number}")
+        except ValueError as err:
+            raise RequestError(str(err)) from err
     report("info", f"found {reducer.n_cells_found:,} visibilities (row, channel) meeting every condition, "
                    f"{reducer.n_rows_whole:,} rows whole; run {number} of session {name}: "
                    f"{writer.counts['cells']:,} records of single visibilities, {writer.counts['rows']:,} of whole "
-                   f"rows ({size_text(path.stat().st_size)}): {path}")
+                   f"rows ({size_text(path.stat().st_size)}): {path}"
+                   + (f"; replacing run {request.replace_run} (now aside)" if request.replace_run is not None else ""))
     return path
 
 

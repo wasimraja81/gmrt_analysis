@@ -40,8 +40,10 @@ def locates_by_conditions(request) -> bool:
     return request.locate == LOCATE_BY_CONDITIONS
 
 
-# Options naming a run operation on a session (each a run number, or None: not given), option -> request.dest.
-# More are added here as they are built (next: "--replace"; then "--intersect", "--difference").
+# Options naming a run operation on a session alone, with no --where (each a run number, or None: not given),
+# option -> request.dest. More are added here as they are built (next: "--intersect", "--difference"). --replace
+# is not here: it rides with --locate (no box) and --where instead of running on a session by itself, so
+# `check_locate_request` and `lists_session` check it separately -- but still exclusively with these.
 RUN_OPERATIONS = {"--undo": "undo", "--restore": "restore"}
 
 
@@ -63,24 +65,27 @@ def lists_session(request) -> bool:
     """Whether `request` is `--session NAME` alone: lists that session's runs
     (`data_io.found_file.LocateSession.runs`/`run_status`) instead of running
     anything. --session combined with --locate/--where/--plots/--listobs/a
-    --flagged other than its default/a run operation (`run_operation`) is
-    always some other action (a Locate run, a run operation, or refused by
-    `check_locate_request`)."""
+    --flagged other than its default/a run operation (`run_operation`)/
+    --replace is always some other action (a Locate run, a run operation, or
+    refused by `check_locate_request`)."""
     return (request.locate_session is not None and request.locate is None and not request.plots
-            and not request.listobs and request.flagged == "exclude" and run_operation(request) is None)
+            and not request.listobs and request.flagged == "exclude" and run_operation(request) is None
+            and request.replace_run is None)
 
 
 def check_locate_request(request) -> tuple[Condition, ...]:
     """The --where conditions of a Locate by conditions, parsed and checked
     with the options around them, without the file; () for a request that
     does not locate by conditions, including one that lists a session
-    (`lists_session`) or performs a run operation (`run_operation`). Raises
-    ValueError saying what to write."""
+    (`lists_session`) or performs a run operation (`run_operation`, or
+    --replace, which rides with --locate and --where instead of running on a
+    session alone). Raises ValueError saying what to write."""
     if request.locate_session is not None and not SESSION_NAME.match(request.locate_session):
         raise ValueError(f"--session {request.locate_session!r}: a name of letters, digits, '.', '_' and '-'")
     given_operations = _given_run_operations(request)
-    if len(given_operations) > 1:
-        raise ValueError(f"give one of {', '.join(RUN_OPERATIONS)}; got {', '.join(given_operations)}")
+    given_all = given_operations + (["--replace"] if request.replace_run is not None else [])
+    if len(given_all) > 1:
+        raise ValueError(f"give one of --undo, --restore, --replace; got {', '.join(given_all)}")
     operation = run_operation(request)
     where = request.where or ()
     if locates_by_conditions(request):
@@ -120,7 +125,8 @@ def check_locate_request(request) -> tuple[Condition, ...]:
         return ()
     if not lists_session(request):
         for option, given in (("--session", request.locate_session is not None),
-                              ("--flagged", request.flagged != "exclude")):
+                              ("--flagged", request.flagged != "exclude"),
+                              ("--replace", request.replace_run is not None)):
             if given:
                 raise ValueError(f"{option} goes with --locate (no box) and --where, or --session alone to "
                                  "list its runs")

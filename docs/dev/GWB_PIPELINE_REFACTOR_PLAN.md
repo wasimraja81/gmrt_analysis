@@ -4,7 +4,7 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, T58 2026-10-21,
-689 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
+697 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
 T59 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1560,6 +1560,32 @@ Buildable now, ahead of Phase C.
   by running Locate against a synthetic file during this session. T56 stays open
   for what the guide does not cover yet (the GUI, plots and pages, the listing,
   flagging downstream of a session's found set).
+  Step 2b-2b's run operations continued 2026-10-23 (the user: "go ahead") with
+  `--replace`, the second slice: `--locate` (no box) and `--where` run as any Locate
+  run, writing a new run; once committed, the run named by `--replace` is set aside
+  (`undo_run`, its reason `"replaced by run N"`) -- never a cell-level comparison,
+  matching the design session of 2026-10-21. Unlike `--undo`/`--restore`, `--replace`
+  rides with `--locate` and `--where` instead of running on a session alone, so it sits
+  outside `RUN_OPERATIONS`; `check_locate_request` and `lists_session` check it on its
+  own terms, kept exclusive with `--undo`/`--restore` by one top-level check covering
+  all three pairwise. A preflight (`session.status()`, right after the session opens)
+  refuses an unknown or already-aside target before the data pass runs; the new run's
+  own header gains `"replaces"`, the run number it replaced, alongside `"record"` and
+  the other summary fields already kept.
+  Found and fixed on the way: `request.replace` evaluated truthy whether or not
+  `--replace` was given, because `PlotRequest` already defines a `replace()` method (an
+  immutable copy-with-changes, `dataclasses.replace`'s equivalent) that Python's
+  attribute lookup finds ahead of `PlotRequest.__getattr__`, which is where an option's
+  value would normally come from. The collision passed every test written for this
+  slice (each checks `request.replace_run`, the renamed dest, directly), but broke 69
+  tests across `test_cli_visplot_output.py`, `test_visplot_gui.py` and
+  `test_visplot_listing.py` -- any `PlotRequest` reaching `check_locate_request` was
+  refused with "--replace goes with --locate...", whether or not it gave `--replace` at
+  all. A first full-suite run also crossed a 20-day-old orphaned `bin/visplot.sh` GUI
+  process holding Qt/X state, closed by the user; running the touched test files alone
+  isolated the attribute collision as the one remaining cause. Fixed by giving the CLI
+  option its own dest, `--replace` writing to `request.replace_run`; `PlotRequest.
+  replace` (the copy method) untouched. 697 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

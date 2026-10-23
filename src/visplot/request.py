@@ -451,6 +451,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--restore", type=int, metavar="RUN",
         help="make run RUN of --session active again",
     )
+    locate.add_argument(
+        "--replace", dest="replace_run", type=int, metavar="RUN",
+        help="with --locate (no box) and --where: once that run is written, set run RUN of --session aside "
+        "(--undo), noting which run replaced it",
+    )
 
     cache = parser.add_argument_group("cache (files only where you name a directory)")
     cache.add_argument(

@@ -26,7 +26,7 @@ import matplotlib
 # The backend must be chosen before any submodule imports pyplot: Agg
 # (headless, file-only) when only saving is requested, since no display
 # may be available at all in that case; otherwise Qt, for the inspection window.
-_HEADLESS_OPTIONS = ("--output-dir", "--clear-cache", "--locate", "--session", "--undo", "--restore")
+_HEADLESS_OPTIONS = ("--output-dir", "--clear-cache", "--locate", "--session", "--undo", "--restore", "--replace")
 matplotlib.use("Agg" if any(a.split("=")[0] in _HEADLESS_OPTIONS for a in sys.argv[1:]) else "QtAgg")
 
 from data_io.astrometry import AstrometryWarning  # noqa: E402

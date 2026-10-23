@@ -33,13 +33,20 @@ def test_a_locate_by_conditions_is_a_run_of_its_own():
     (("--listobs", "--session", "s1"), r"--session goes with --locate \(no box\) and --where"),
     (("--listobs", "--flagged", "only"), r"--flagged goes with --locate"),
     (("--locate", "--where", "amp(V) > 5 Jy deg"), r"is not a number with a unit"),
-    (("--undo", "2", "--restore", "3"), r"give one of --undo, --restore; got --undo, --restore"),
+    (("--undo", "2", "--restore", "3"), r"give one of --undo, --restore, --replace; got --undo, --restore"),
     (("--undo", "2", "--locate", "--where", "amp(V) > 5"), r"--locate with no box runs by its --where conditions; "
                                                            r"--undo 2: give it in a separate run"),
     (("--undo", "2", "--plots", "amp-vs-time"), r"--undo 2 runs on a session by itself; --plots:"),
     (("--restore", "2", "--listobs"), r"--restore 2 runs on a session by itself; --listobs:"),
     (("--undo", "2", "--flagged", "only"), r"--flagged goes with --locate \(no box\) and --where; --undo takes no"),
     (("--undo", "2", "--session", "no good"), r"--session 'no good': a name of letters"),
+    (("--undo", "2", "--replace", "3"), r"give one of --undo, --restore, --replace; got --undo, --replace"),
+    (("--restore", "2", "--replace", "3"), r"give one of --undo, --restore, --replace; got --restore, --replace"),
+    (("--replace", "2",), r"--replace goes with --locate \(no box\) and --where, or --session alone to list"),
+    (("--replace", "2", "--session", "s1"), r"--session goes with --locate \(no box\) and --where, or --session "
+                                            r"alone to list"),  # --session is given too, and named first
+    (("--replace", "2", "--locate", "0:1,0:5", "--locate-csv", "x.csv"),
+     r"--replace goes with --locate \(no box\) and --where, or --session alone to list"),
 ])
 def test_what_does_not_make_a_locate_by_conditions_is_refused_before_the_file_is_opened(argv, message):
     with pytest.raises(RequestError, match=message):
@@ -365,3 +372,51 @@ def test_a_run_operation_on_a_session_of_another_file_is_refused():
     request = PlotRequest.from_argv([str(other), "--undo", "1", *argv])
     with pytest.raises(RequestError, match=r"session 's1' .* belongs to obs\.fits"):
         perform_run_operation(request, open_file(other))
+
+
+# --- the run operations (T26 2b-2b, slice 2): --replace ---
+
+def test_replace_rides_with_locate_and_is_excluded_from_the_run_operations_alone():
+    assert run_operation(_request("--replace", "2")) is None  # it is not a "session alone" operation
+    assert not lists_session(_request("--session", "s1", "--replace", "2"))
+
+
+def test_replace_writes_a_new_run_and_sets_the_old_one_aside(capsys):
+    from cli.run_visplot import main
+
+    scratch = make_scratch_dir("locate_where_replace")
+    path = _make_synthetic_file(scratch / "obs.fits", edit=_plant)
+    argv = [str(path), "--provenance-dir", str(scratch / "runs"), "--session", "s1"]
+    assert main(["visplot", *argv, "--locate", "--where", "amp(V) > 10"]) == 0  # run 1
+    capsys.readouterr()
+
+    assert main(["visplot", *argv, "--locate", "--where", "amp(V) > 5", "--replace", "1"]) == 0  # run 2
+    printed = capsys.readouterr().out
+    assert "run 2 of session s1" in printed and "replacing run 1 (now aside)" in printed
+    session_dir = scratch / "runs" / "found" / "s1"
+    lines = [json.loads(line) for line in session_dir.joinpath("session.jsonl").read_text().splitlines()]
+    operation = lines[-1]
+    assert operation["entry"] == "operation" and operation["op"] == "undo" and operation["target"] == 1
+    assert operation["reason"] == "replaced by run 2"
+    run = read_run(session_dir / "run-002.npz")
+    assert run.header["summary"]["replaces"] == 1
+
+    listed = main(["visplot", str(path), "--session", "s1", "--provenance-dir", str(scratch / "runs")])
+    assert listed == 0
+    printed = capsys.readouterr().out
+    assert "found set: the union of run 2" in printed
+
+
+def test_replace_refuses_an_unknown_or_already_aside_run():
+    scratch = make_scratch_dir("locate_where_replace_refuse")
+    path = _make_synthetic_file(scratch / "obs.fits", edit=_plant)
+    argv = [str(path), "--provenance-dir", str(scratch / "runs"), "--session", "s1"]
+    locate_by_conditions(PlotRequest.from_argv([*argv, "--locate", "--where", "amp(V) > 10"]), open_file(path))
+    with pytest.raises(RequestError, match=r"run 9 is not a run of session 's1'"):
+        locate_by_conditions(PlotRequest.from_argv([*argv, "--locate", "--where", "amp(V) > 5", "--replace", "9"]),
+                             open_file(path))
+    locate_by_conditions(PlotRequest.from_argv([*argv, "--locate", "--where", "amp(V) > 5", "--replace", "1"]),
+                         open_file(path))  # run 1 now aside
+    with pytest.raises(RequestError, match=r"run 1 of session 's1' is already aside"):
+        locate_by_conditions(PlotRequest.from_argv([*argv, "--locate", "--where", "amp(V) > 5", "--replace", "1"]),
+                             open_file(path))
