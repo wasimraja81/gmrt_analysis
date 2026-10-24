@@ -26,7 +26,8 @@ import matplotlib
 # The backend must be chosen before any submodule imports pyplot: Agg
 # (headless, file-only) when only saving is requested, since no display
 # may be available at all in that case; otherwise Qt, for the inspection window.
-_HEADLESS_OPTIONS = ("--output-dir", "--clear-cache", "--locate", "--session", "--undo", "--restore", "--replace")
+_HEADLESS_OPTIONS = ("--output-dir", "--clear-cache", "--locate", "--session", "--undo", "--restore", "--replace",
+                     "--intersect", "--difference")
 matplotlib.use("Agg" if any(a.split("=")[0] in _HEADLESS_OPTIONS for a in sys.argv[1:]) else "QtAgg")
 
 from data_io.astrometry import AstrometryWarning  # noqa: E402
@@ -34,9 +35,9 @@ from visplot.range_cache import clear_cache  # noqa: E402
 from visplot.records import PlotRecord, WindowProvenance, recorded_run  # noqa: E402
 from visplot.request import PlotRequest, build_arg_parser  # noqa: E402,F401  (build_arg_parser: for callers)
 from visplot.locate_where import lists_session, locates_by_conditions, run_operation  # noqa: E402
-from visplot.run import (MissingIndexError, RequestError, check_request, list_locate_session,  # noqa: E402
-                         listing_text, locate_by_conditions, open_file, perform_run_operation, prepare, run_locate,
-                         save_outputs, write_listing)
+from visplot.run import (MissingIndexError, RequestError, check_request, combine_runs,  # noqa: E402
+                         list_locate_session, listing_text, locate_by_conditions, open_file, perform_run_operation,
+                         prepare, run_locate, save_outputs, write_listing)
 
 
 def _print_report(level: str, text: str) -> None:
@@ -122,8 +123,12 @@ def _run(request: PlotRequest, record: PlotRecord, parser: argparse.ArgumentPars
         if lists_session(request):  # --session alone: its runs, nothing written or read beyond the log
             print(list_locate_session(request, opened), end="", flush=True)
             return 0
-        if run_operation(request) is not None:  # --undo/--restore: a status flip, nothing written or read beyond
-            print(perform_run_operation(request, opened), end="", flush=True)  # the log and its listing after
+        operation = run_operation(request)
+        if operation in ("undo", "restore"):  # a status flip, nothing written or read beyond the log
+            print(perform_run_operation(request, opened), end="", flush=True)
+            return 0
+        if operation in ("intersect", "difference"):  # the two named runs combined, written as a new run
+            record.add_output(combine_runs(request, opened, report))
             return 0
         # a run of its own: its found visibilities, written to its session
         record.add_output(locate_by_conditions(request, opened, report, _terminal_progress, record=record.describe()))

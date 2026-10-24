@@ -31,11 +31,11 @@ from astropy.io import fits
 from astropy.time import Time
 
 from data_io.antenna_table import read_antenna_table, read_array_earth_location, read_time_reference
-from data_io.found_file import (FileIdentity, LocateSession, NoSpace, SessionError, restore_run, size_text,
-                                undo_run)
+from data_io.found_file import (FileIdentity, LocateSession, NoSpace, SessionError, log_combination, read_run,
+                                restore_run, size_text, undo_run)
 from data_io.frequency_table import read_frequency_setups
 from data_io.astrometry import DEFAULT_UT1, fallback_message
-from data_io.row_index import default_row_index_path, load_row_index
+from data_io.row_index import STOKES_LABELS_BY_CODE, default_row_index_path, load_row_index
 from data_io.row_selection import select_rows
 from data_io.source_table import read_source_table
 from data_io.stokes_products import ProductPlan
@@ -52,8 +52,9 @@ from visplot.listing import DEFAULT_SECTIONS as DEFAULT_LISTING_SECTIONS, SECTIO
     ListingOptions, ListingSelection, list_observation
 from visplot.locate_csv import LocateCsvWriter
 from visplot.locate_where import (CHANNEL_COORDINATES, NarrowRowsReducer, WhereReducer, check_cell_axes,
-                                  check_locate_request, found_fields, holds, lists_session, locate_session_name,
-                                  plan_locate, run_operation, session_listing_text)
+                                  check_locate_request, combine_found, combined_fields, found_fields, holds,
+                                  lists_session, locate_session_name, plan_locate, resolve_run_pair_arg,
+                                  run_operation, session_listing_text)
 from visplot.instants import parse_time_range, split_time_range_scale
 from visplot.iterations import Iteration, iteration_source, list_iterations, page_layout
 from visplot.plot_panel import panel_facts, selection_filters
@@ -139,6 +140,7 @@ class CheckedRequest:
     listing_sections: tuple[str, ...] = ()  # --listobs's (T20)
     conditions: tuple = ()  # --where's, parsed (`conditions.Condition`), of a Locate by conditions
     lists_session: bool = False  # --session alone: lists its runs, nothing else to check or run
+    run_pair: tuple[int, int] | None = None  # --intersect's/--difference's "A,B", parsed (`resolve_run_pair_arg`)
 
 
 def check_request(request: PlotRequest) -> CheckedRequest:
@@ -178,10 +180,13 @@ def check_request(request: PlotRequest) -> CheckedRequest:
             if samplers[name] < 1:
                 raise ValueError(f"{name} needs 1 or more, got {samplers[name]}")
         conditions = check_locate_request(request)
+        operation = run_operation(request)
+        run_pair = (resolve_run_pair_arg(getattr(request, operation), f"--{operation}")
+                   if operation in ("intersect", "difference") else None)
         if (not request.plots and not request.listobs and not conditions and not lists_session(request)
-                and run_operation(request) is None):
+                and operation is None):
             raise ValueError("give --plots, --listobs, --locate with --where, --session alone to list its runs, "
-                             "a run operation (--undo, --restore), or several of them")
+                             "a run operation (--undo, --restore, --intersect, --difference), or several of them")
         plot_names = parse_plot_names(request.plots) if request.plots else []
         listing_sections = parse_listing_sections(request.listobs) if request.listobs else ()
         if request.scan_gap <= 0 or request.scan_longest <= 0:
@@ -251,7 +256,7 @@ def check_request(request: PlotRequest) -> CheckedRequest:
         if n_streamed != 1:
             raise RequestError(f"--locate needs exactly one streamed plot; --plots gives {n_streamed}")
     return CheckedRequest(plot_names, plots_by_name, locate_box, figure_size, page_figure_size, page_grid,
-                          listing_sections, conditions, lists_session(request))
+                          listing_sections, conditions, lists_session(request), run_pair)
 
 
 def with_elevation_limits(plot: PlotSpec, telescope: str | None) -> PlotSpec:
@@ -965,6 +970,61 @@ def perform_run_operation(request: PlotRequest, opened: OpenedFile) -> str:
     except ValueError as err:
         raise RequestError(str(err)) from err
     return session_listing_text(session)
+
+
+def combine_runs(request: PlotRequest, opened: OpenedFile, report: Report = _silent) -> Path:
+    """`--intersect`/`--difference` (`visplot.locate_where.combine_found`):
+    the two named runs of the request's Locate session, combined by row,
+    channel and product alone -- never their values, which stay with
+    whichever of the two recorded them, both still on disk -- written as
+    the next run; the two inputs set aside
+    (`data_io.found_file.log_combination`). Raises RequestError if the
+    session belongs to another file, or either run does not exist, is
+    already aside, or they are the same run."""
+    checked = check_request(request)
+    session, name, _ = open_locate_session(request, opened)
+    op = run_operation(request)
+    a, b = checked.run_pair
+    status = session.status()
+    for target in (a, b):
+        if target not in status:
+            raise RequestError(f"run {target} is not a run of session {name!r}")
+        if status[target] == "aside":
+            raise RequestError(f"run {target} of session {name!r} is already aside")
+    run_a, run_b = read_run(session.run_path(a)), read_run(session.run_path(b))
+    cells, rows, own_channels, own_products = combine_found(run_a, run_b, op)
+    index = opened.index
+    fields = combined_fields(int(index.gcount), len(index.chan_freqs_hz),
+                             int(max(index.ant1.max(), index.ant2.max())), int(index.source_id.max()))
+    writer = session.new_run(fields)
+    writer.append("cells", cells)
+    writer.append("rows", rows)
+    searched_rows = run_a.searched_rows & run_b.searched_rows if op == "intersect" else run_a.searched_rows
+    n_cells_found, n_rows_whole = len(cells["row"]) + int(sum(rows["n_cells"])), len(rows["row"])
+    try:
+        writer.check_space(1.0)
+        summary = {"written_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "op": op, "a": a,
+                   "b": b, "conditions": [f"{op} of runs {a} and {b}"], "cells_found": n_cells_found,
+                   "rows_whole": n_rows_whole, "records": dict(writer.counts)}
+        header = {"summary": summary, "file": asdict(session.identity), "bunit": run_a.header.get("bunit"),
+                  "time": run_a.header.get("time"), "searched": {"channels": list(own_channels)},
+                  "products": {STOKES_LABELS_BY_CODE.get(code, f"S{code}"): code for code in own_products}}
+        number, path = writer.commit(header, searched_rows)
+    except NoSpace as err:
+        writer.abort()
+        raise RequestError(str(err)) from err
+    except BaseException:
+        writer.abort()
+        raise
+    try:
+        log_combination(session, op, a, b, number)
+    except ValueError as err:
+        raise RequestError(str(err)) from err
+    report("info", f"{op} of runs {a} and {b}: {n_cells_found:,} visibilities (row, channel, product) found, "
+                   f"{n_rows_whole:,} rows whole; run {number} of session {name}: {writer.counts['cells']:,} "
+                   f"records of single visibilities, {writer.counts['rows']:,} of whole rows "
+                   f"({size_text(path.stat().st_size)}): {path}; runs {a} and {b} set aside")
+    return path
 
 
 def locate_by_conditions(request: PlotRequest, opened: OpenedFile, report: Report = _silent,

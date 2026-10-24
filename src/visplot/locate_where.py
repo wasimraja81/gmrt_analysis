@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from data_io.found_file import LocateSession
+from data_io.found_file import FoundRun, LocateSession
 from data_io.row_index import STOKES_LABELS_BY_CODE
 from data_io.stokes_products import ProductPlan, apply_products, plan_products
 from visplot.conditions import Condition, ResolvedConditions, parse_condition
@@ -40,11 +40,11 @@ def locates_by_conditions(request) -> bool:
     return request.locate == LOCATE_BY_CONDITIONS
 
 
-# Options naming a run operation on a session alone, with no --where (each a run number, or None: not given),
-# option -> request.dest. More are added here as they are built (next: "--intersect", "--difference"). --replace
-# is not here: it rides with --locate (no box) and --where instead of running on a session by itself, so
-# `check_locate_request` and `lists_session` check it separately -- but still exclusively with these.
-RUN_OPERATIONS = {"--undo": "undo", "--restore": "restore"}
+# Options naming a run operation on a session alone, with no --where (each a run number for undo/restore, or an
+# "A,B" pair for intersect/difference, or None: not given), option -> request.dest. --replace is not here: it
+# rides with --locate (no box) and --where instead of running on a session by itself, so `check_locate_request`
+# and `lists_session` check it separately -- but still exclusively with these.
+RUN_OPERATIONS = {"--undo": "undo", "--restore": "restore", "--intersect": "intersect", "--difference": "difference"}
 
 
 def _given_run_operations(request) -> list[str]:
@@ -85,7 +85,7 @@ def check_locate_request(request) -> tuple[Condition, ...]:
     given_operations = _given_run_operations(request)
     given_all = given_operations + (["--replace"] if request.replace_run is not None else [])
     if len(given_all) > 1:
-        raise ValueError(f"give one of --undo, --restore, --replace; got {', '.join(given_all)}")
+        raise ValueError(f"give one of {', '.join((*RUN_OPERATIONS, '--replace'))}; got {', '.join(given_all)}")
     operation = run_operation(request)
     where = request.where or ()
     if locates_by_conditions(request):
@@ -140,6 +140,24 @@ def locate_session_name(request) -> tuple[str, bool]:
     if request.locate_session is not None:
         return request.locate_session, True
     return re.sub(r"[^A-Za-z0-9._-]", "_", Path(request.fits_path).stem) or "_", False
+
+
+def resolve_run_pair_arg(spec: str | None, option: str) -> tuple[int, int] | None:
+    """`option` ('--intersect'/'--difference') 'A,B': two different run
+    numbers; None when not given. Raises ValueError saying what to write;
+    whether A and B are runs of the session waits for it (`combine_runs`)."""
+    if spec is None:
+        return None
+    parts = spec.split(",")
+    try:
+        a, b = (int(p) for p in parts) if len(parts) == 2 else (0, 0)
+    except ValueError:
+        a = b = 0
+    if a < 1 or b < 1:
+        raise ValueError(f"{option} takes 'A,B', two run numbers, got {spec!r}")
+    if a == b:
+        raise ValueError(f"{option} {spec}: give two different runs")
+    return a, b
 
 
 def _table(headers: list[str], rows: list[list[str]], right: set[int]) -> list[str]:
@@ -302,21 +320,120 @@ class NarrowRowsReducer:
         self.apply(self.compute(values))
 
 
-def found_fields(plan: LocatePlan, gcount: int, n_channels: int, max_station: int, max_source: int) -> dict:
-    """The fields of a run's two tables (`data_io.found_file`), integer widths
-    from the file: a record per visibility found ("cells"), and per product
-    of each row found whole ("rows")."""
+def _where_fields(gcount: int, n_channels: int, max_station: int, max_source: int) -> tuple[dict, str]:
+    """Integer dtypes from the file for a record's location (row, product,
+    time, antennas, source, u, v, w -- `WHERE_FIELDS` and "row"/"product"),
+    common to `found_fields` and `combined_fields`, and `channel`'s dtype."""
     row = "<u4" if gcount < 2**32 else "<u8"
     channel = "<u2" if n_channels <= 2**16 else "<u4"
     station = "<u2" if max_station < 2**16 else "<u4"
     source = "<u2" if max_source < 2**16 else "<u4"
     where = {"row": row, "product": "<i1", "jd": "<f8", "ant1": station, "ant2": station, "source": source,
              "uu": "<f4", "vv": "<f4", "ww": "<f4"}
+    return where, channel
+
+
+def found_fields(plan: LocatePlan, gcount: int, n_channels: int, max_station: int, max_source: int) -> dict:
+    """The fields of a run's two tables (`data_io.found_file`), integer widths
+    from the file: a record per visibility found ("cells"), and per product
+    of each row found whole ("rows")."""
+    where, channel = _where_fields(gcount, n_channels, max_station, max_source)
     cells = {**where, "channel": channel, "value": "<c8", "weight": "<f4", "flagged": "<u1",
              **{f"cond{i}": "<f4" for i in range(len(plan.data_conditions))}}
     rows = {**where, "n_cells": "<u4",
             **{f"cond{i}_{end}": "<f4" for i in range(len(plan.data_conditions)) for end in ("min", "max")}}
     return {"cells": cells, "rows": rows}
+
+
+def combined_fields(gcount: int, n_channels: int, max_station: int, max_source: int) -> dict:
+    """The fields of an intersect's or difference's two tables
+    (`combine_found`): location alone -- no value, weight or condition,
+    which stay with whichever of the two combined runs recorded them, both
+    still on disk, never edited or erased."""
+    where, channel = _where_fields(gcount, n_channels, max_station, max_source)
+    return {"cells": {**where, "channel": channel}, "rows": {**where, "n_cells": "<u4"}}
+
+
+# A record's location fields besides "row"/"product" (`_where_fields`'s "where", less those two): the same for
+# every channel of a row, so one lookup per (row, product) is enough (`_metadata_by_row_product`).
+WHERE_FIELDS = ("jd", "ant1", "ant2", "source", "uu", "vv", "ww")
+
+
+def _found_by_row_product(run: FoundRun) -> dict[tuple[int, int], set[int]]:
+    """Every (row, product) `run` found anything for, and its channels: a
+    whole row's (`run.rows`) own full searched-channel range -- every
+    candidate found, by "whole"'s own definition, so none needs expanding
+    out to check -- or any other found cell's (`run.cells`) explicit
+    channels."""
+    found: dict[tuple[int, int], set[int]] = {}
+    rows = run.rows.get("row", ())
+    if len(rows):
+        own = {int(c) for c in run.header["searched"]["channels"]}
+        for row, product in zip(rows.tolist(), run.rows["product"].tolist()):
+            found[(row, product)] = own
+    cells = run.cells.get("row", ())
+    if len(cells):
+        for row, product, channel in zip(cells.tolist(), run.cells["product"].tolist(),
+                                          run.cells["channel"].tolist()):
+            found.setdefault((row, product), set()).add(channel)
+    return found
+
+
+def _metadata_by_row_product(run: FoundRun) -> dict[tuple[int, int], dict]:
+    """(row, product) -> its location (`WHERE_FIELDS`), from whichever of
+    `run`'s tables holds it."""
+    meta: dict[tuple[int, int], dict] = {}
+    for table in (run.cells, run.rows):
+        rows = table.get("row", ())
+        if not len(rows):
+            continue
+        for i, (row, product) in enumerate(zip(rows.tolist(), table["product"].tolist())):
+            meta.setdefault((row, product), {field: table[field][i] for field in WHERE_FIELDS})
+    return meta
+
+
+def combine_found(a: FoundRun, b: FoundRun, op: str) -> tuple[dict, dict, tuple[int, ...], tuple[int, ...]]:
+    """`a` and `b`'s found sets combined by row, channel and product alone
+    -- "intersect": found by both; "difference": found by `a` alone --
+    never their values, which stay with whichever run recorded them (a
+    run is never edited or erased, so they are still there to look up; the
+    caller logs which two, `data_io.found_file.log_combination`). The
+    result's own domain -- "intersect": the channels and products common to
+    `a` and `b`; "difference": `a`'s own -- so a result whole over every
+    one of them is one record (`rows`), as compact and for the same reason
+    as any other whole row; every other found cell, one record (`cells`),
+    of location alone (`combined_fields`). Returns the two tables' columns
+    and the result's own channels and products, for the new run's header."""
+    a_found, b_found = _found_by_row_product(a), _found_by_row_product(b)
+    if op == "intersect":
+        own_channels = tuple(sorted(set(a.header["searched"]["channels"]) & set(b.header["searched"]["channels"])))
+        own_products = tuple(sorted(set(a.header["products"].values()) & set(b.header["products"].values())))
+        combined = {key: channels & b_found[key] for key, channels in a_found.items() if key in b_found}
+    else:
+        own_channels = tuple(sorted(a.header["searched"]["channels"]))
+        own_products = tuple(sorted(a.header["products"].values()))
+        combined = {key: channels - b_found.get(key, set()) for key, channels in a_found.items()}
+    whole_domain = set(own_channels)
+    meta = {**_metadata_by_row_product(b), **_metadata_by_row_product(a)}
+    cells = {name: [] for name in ("row", "product", "channel", *WHERE_FIELDS)}
+    rows = {name: [] for name in ("row", "product", "n_cells", *WHERE_FIELDS)}
+    for row, product in sorted(key for key, channels in combined.items() if channels):
+        channels = combined[(row, product)]
+        info = meta[(row, product)]
+        if channels == whole_domain:
+            rows["row"].append(row)
+            rows["product"].append(product)
+            rows["n_cells"].append(len(channels))
+            for field in WHERE_FIELDS:
+                rows[field].append(info[field])
+        else:
+            for channel in sorted(channels):
+                cells["row"].append(row)
+                cells["product"].append(product)
+                cells["channel"].append(channel)
+                for field in WHERE_FIELDS:
+                    cells[field].append(info[field])
+    return cells, rows, own_channels, own_products
 
 
 class WhereReducer:

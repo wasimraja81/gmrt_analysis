@@ -456,6 +456,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="with --locate (no box) and --where: once that run is written, set run RUN of --session aside "
         "(--undo), noting which run replaced it",
     )
+    locate.add_argument(
+        "--intersect", metavar="A,B",
+        help="runs A and B of --session, combined where both found a visibility (by row, channel and product "
+        "alone; their values stay with A and B, still on disk, never edited or erased): written as a new run; "
+        "A and B set aside",
+    )
+    locate.add_argument(
+        "--difference", metavar="A,B",
+        help="run A of --session, less every visibility run B also found (by row, channel and product alone): "
+        "written as a new run; A and B set aside",
+    )
 
     cache = parser.add_argument_group("cache (files only where you name a directory)")
     cache.add_argument(

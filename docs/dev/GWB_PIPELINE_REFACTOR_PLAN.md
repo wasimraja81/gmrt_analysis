@@ -4,7 +4,7 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, T58 2026-10-21,
-697 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
+712 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
 T59 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1586,6 +1586,53 @@ Buildable now, ahead of Phase C.
   isolated the attribute collision as the one remaining cause. Fixed by giving the CLI
   option its own dest, `--replace` writing to `request.replace_run`; `PlotRequest.
   replace` (the copy method) untouched. 697 tests pass.
+  Step 2b-2b's run operations continued 2026-10-24 (the user: "Go ahead") with
+  `--intersect`/`--difference`, the third and last slice. The design session of
+  2026-10-15 had said a derived run keeps "both runs' values" -- revisited here against
+  the schema, and simplified by the user's own reasoning: a whole row (`rows`) stores no
+  per-channel value at all, only a row-wide min/max, so there is no value to carry
+  forward for a result sourced from one; and since a run is never edited or erased
+  (every input stays on disk, with its own BUNIT,
+  confirmed read straight from `run.py`'s header), the derived run does not need to
+  carry any value -- `--intersect`/`--difference`'s own "operation" entry (`a`/`b`,
+  already built in 2b-2a) already points back to exactly where to look it up. So a
+  derived run is location alone: row, channel, product, time, antennas, source, u, v, w
+  -- never a value, weight or condition, which the user put precisely: "we can look at
+  the outputs of the locate RUNs" for those. Membership stays exact regardless, as it is
+  set operations on recorded channels, rows and products -- values the compaction never
+  kept play no part in it.
+  `visplot/locate_where.py`: `_where_fields` factored out of `found_fields` (its row/
+  product/time/antennas/source/u/v/w dtypes, shared); `combined_fields`, the same
+  location fields alone, for a derived run's two tables; `WHERE_FIELDS`,
+  `_found_by_row_product` (a run's own (row, product) -> channels found, a whole row's
+  own declared range or a cell row's explicit list -- never expanded further, so a wide
+  whole row costs nothing extra to compare), `_metadata_by_row_product`, and
+  `combine_found` (`a`/`b`'s found sets combined by row, channel and product alone: a
+  dict intersection/difference on these keys, which turns out to need no special case
+  for mismatched channel ranges, products or `--flagged` modes -- a pair that was never
+  candidates together is just never a shared key, the same principle found and
+  confirmed earlier for `--flagged`); `RUN_OPERATIONS` gained `--intersect`/
+  `--difference` (both run on a session alone, like undo/restore, unlike `--replace`);
+  the "give one of" message is now built from `RUN_OPERATIONS` plus `--replace`, so it
+  stays correct as more operations are added instead of needing its own edit each time;
+  `resolve_run_pair_arg` ("A,B": two different run numbers, refusing a malformed spec or
+  the same run twice, same timing as `--page-grid`'s own resolver -- format checked
+  without the file, which runs exist waits for the session). `data_io/found_file.py`:
+  `log_combination` (sets `a` and `b` aside, logs the "run": N entry `run_status`
+  already expected from 2b-2a). `run.combine_runs`: opens the session, a preflight on
+  `session.status()` for both inputs (unknown or already aside, caught before any read,
+  same timing as `--replace`'s own preflight), `read_run` on both (already-small files,
+  the same scope already accepted for `read_active`), `combine_found`, written as the
+  next run via `RunWriter`, then `log_combination`; `--intersect`/`--difference` route
+  through their own branch in `cli/run_visplot.py` (not `perform_run_operation`, which
+  stays undo/restore only, since combining needs the opened file's index for the new
+  run's field widths, undo/restore do not). Found and fixed on the way: the derived
+  run's header translated a product's AIPS code back to its label with a bare
+  `STOKES_LABELS_BY_CODE[code]`, which a test (a product code chosen for the test alone)
+  turned into a `KeyError`. Fixed to the `.get(code, f"S{code}")` fallback
+  `data_io/row_index.py` already uses for an unrecognized code: the derived-run header
+  now takes any code a run holds, standard product or otherwise.
+  712 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

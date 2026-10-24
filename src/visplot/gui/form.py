@@ -68,6 +68,8 @@ PENDING_GUI_OPTIONS: dict[str, str] = {
     "undo": "T26 step 2b-3, the GUI's session panel (its run actions)",
     "restore": "T26 step 2b-3, the GUI's session panel (its run actions)",
     "replace_run": "T26 step 2b-3, the GUI's session panel (its run actions)",
+    "intersect": "T26 step 2b-3, the GUI's session panel (its run actions)",
+    "difference": "T26 step 2b-3, the GUI's session panel (its run actions)",
 }
 
 # Hover text of the Pages section (T26), in everyday words for a first-time reader.

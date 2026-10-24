@@ -33,15 +33,15 @@ def test_a_locate_by_conditions_is_a_run_of_its_own():
     (("--listobs", "--session", "s1"), r"--session goes with --locate \(no box\) and --where"),
     (("--listobs", "--flagged", "only"), r"--flagged goes with --locate"),
     (("--locate", "--where", "amp(V) > 5 Jy deg"), r"is not a number with a unit"),
-    (("--undo", "2", "--restore", "3"), r"give one of --undo, --restore, --replace; got --undo, --restore"),
+    (("--undo", "2", "--restore", "3"), r"give one of .*; got --undo, --restore"),
     (("--undo", "2", "--locate", "--where", "amp(V) > 5"), r"--locate with no box runs by its --where conditions; "
                                                            r"--undo 2: give it in a separate run"),
     (("--undo", "2", "--plots", "amp-vs-time"), r"--undo 2 runs on a session by itself; --plots:"),
     (("--restore", "2", "--listobs"), r"--restore 2 runs on a session by itself; --listobs:"),
     (("--undo", "2", "--flagged", "only"), r"--flagged goes with --locate \(no box\) and --where; --undo takes no"),
     (("--undo", "2", "--session", "no good"), r"--session 'no good': a name of letters"),
-    (("--undo", "2", "--replace", "3"), r"give one of --undo, --restore, --replace; got --undo, --replace"),
-    (("--restore", "2", "--replace", "3"), r"give one of --undo, --restore, --replace; got --restore, --replace"),
+    (("--undo", "2", "--replace", "3"), r"give one of .*; got --undo, --replace"),
+    (("--restore", "2", "--replace", "3"), r"give one of .*; got --restore, --replace"),
     (("--replace", "2",), r"--replace goes with --locate \(no box\) and --where, or --session alone to list"),
     (("--replace", "2", "--session", "s1"), r"--session goes with --locate \(no box\) and --where, or --session "
                                             r"alone to list"),  # --session is given too, and named first
@@ -141,7 +141,7 @@ def test_a_row_whole_except_for_an_already_flagged_channel_is_not_compacted():
 
     run, _, _ = _locate("mixed_whole", "--where", "amp(V) > 10", edit=edit)
     assert run.rows["row"].size == 0  # not compacted at all
-    found = sorted(zip(run.cells["row"].tolist(), run.cells["channel"].tolist(), run.cells["product"].tolist()))
+    found = sorted(zip(run.cells["row"], run.cells["channel"], run.cells["product"].tolist()))
     assert found == sorted([(20, 0, -1), (20, 0, -2), (20, 2, -1), (20, 2, -2), (20, 3, -1), (20, 3, -2)])
     assert {c for r, c, p in found} == {0, 2, 3}  # channel 1 never appears: it was out of this run's domain
 
@@ -153,7 +153,7 @@ def test_a_dead_antenna_like_row_with_one_flagged_channel_is_not_whole():
     # 2026-10-21): it falls through to explicit cells, naming exactly 1, 2 and 3, never channel 0.
     run, _, _ = _locate("dead", "--where", "amp(I) < 3", edit=None)
     assert run.rows["row"].size == 0
-    found = sorted(zip(run.cells["row"].tolist(), run.cells["channel"].tolist(), run.cells["product"].tolist()))
+    found = sorted(zip(run.cells["row"], run.cells["channel"], run.cells["product"].tolist()))
     assert found == sorted([(0, c, p) for c in (1, 2, 3) for p in (-1, -2)])
 
 
@@ -420,3 +420,188 @@ def test_replace_refuses_an_unknown_or_already_aside_run():
     with pytest.raises(RequestError, match=r"run 1 of session 's1' is already aside"):
         locate_by_conditions(PlotRequest.from_argv([*argv, "--locate", "--where", "amp(V) > 5", "--replace", "1"]),
                              open_file(path))
+
+
+# --- the run operations (T26 2b-2b, slice 3): --intersect, --difference ---
+
+from data_io.found_file import FoundRun
+from visplot.locate_where import WHERE_FIELDS, combine_found, resolve_run_pair_arg
+
+
+def _columns(records, names):
+    """`records` (each a tuple matching `names`) as a RunWriter/FoundRun
+    table: every location field besides `names` 0."""
+    cols = {name: [] for name in (*names, *WHERE_FIELDS)}
+    for record in records:
+        for name, value in zip(names, record):
+            cols[name].append(value)
+        for field in WHERE_FIELDS:
+            cols[field].append(0)
+    return {name: np.array(values) for name, values in cols.items()}
+
+
+def _found_run(channels, products, cells=(), rows=()):
+    """A minimal `FoundRun` for `combine_found` tests: `channels`/`products`
+    its own declared domain; `cells` an iterable of (row, product, channel),
+    `rows` of (row, product)."""
+    header = {"searched": {"channels": list(channels)}, "products": {str(p): p for p in products}}
+    return FoundRun(header, np.array([], dtype=bool), _columns(cells, ("row", "product", "channel")),
+                    _columns(rows, ("row", "product")))
+
+
+def test_combine_found_intersects_two_explicit_cells_by_channel():
+    a = _found_run([1, 2, 3], [5], cells=[(1, 5, 1), (1, 5, 2)])
+    b = _found_run([1, 2, 3], [5], cells=[(1, 5, 2), (1, 5, 3)])
+    cells, rows, channels, products = combine_found(a, b, "intersect")
+    assert cells["row"] == [1] and cells["channel"] == [2] and not len(rows["row"])
+    assert channels == (1, 2, 3) and products == (5,)
+
+
+def test_combine_found_intersects_a_whole_row_with_an_explicit_one():
+    a = _found_run([1, 2, 3], [5], rows=[(1, 5)])  # whole: every channel of its own range found
+    b = _found_run([1, 2, 3], [5], cells=[(1, 5, 2)])
+    cells, rows, channels, products = combine_found(a, b, "intersect")
+    assert cells["row"] == [1] and cells["channel"] == [2] and not len(rows["row"])
+    assert channels == (1, 2, 3)
+
+
+def test_combine_found_intersects_two_whole_rows_into_a_whole_result():
+    a = _found_run([1, 2, 3], [5], rows=[(1, 5)])
+    b = _found_run([1, 2, 3], [5], rows=[(1, 5)])
+    cells, rows, channels, products = combine_found(a, b, "intersect")
+    assert not len(cells["row"]) and rows["row"] == [1] and rows["n_cells"] == [3]
+
+
+def test_combine_found_intersect_narrows_to_the_two_runs_shared_channel_range():
+    a = _found_run([1, 2, 3, 4], [5], rows=[(1, 5)])
+    b = _found_run([3, 4, 5, 6], [5], rows=[(1, 5)])
+    cells, rows, channels, products = combine_found(a, b, "intersect")
+    assert channels == (3, 4) and rows["n_cells"] == [2] and not len(cells["row"])
+
+
+def test_combine_found_intersect_of_different_products_is_empty_with_no_special_casing():
+    a = _found_run([1, 2, 3], [5], cells=[(1, 5, 1)])
+    b = _found_run([1, 2, 3], [6], cells=[(1, 6, 1)])
+    cells, rows, channels, products = combine_found(a, b, "intersect")
+    assert not len(cells["row"]) and not len(rows["row"]) and products == ()
+
+
+def test_combine_found_difference_keeps_what_the_other_run_never_searched():
+    a = _found_run([1, 2, 3], [5], cells=[(2, 5, 4)])  # row 2: outside b's own domain
+    b = _found_run([1, 2, 3], [5], cells=[(1, 5, 1)])
+    cells, rows, channels, products = combine_found(a, b, "difference")
+    assert cells["row"] == [2] and cells["channel"] == [4]
+    assert channels == (1, 2, 3)  # difference's own domain is a's, unconditionally
+
+
+def test_combine_found_difference_removes_what_the_other_run_also_found():
+    a = _found_run([1, 2, 3], [5], cells=[(3, 5, 8)])
+    b = _found_run([1, 2, 3], [5], cells=[(3, 5, 8)])
+    cells, rows, channels, products = combine_found(a, b, "difference")
+    assert not len(cells["row"]) and not len(rows["row"])
+
+
+def test_combine_found_difference_of_a_whole_row_against_a_partial_one():
+    a = _found_run([1, 2, 3], [5], rows=[(1, 5)])  # whole: found 1, 2 and 3
+    b = _found_run([1, 2, 3], [5], cells=[(1, 5, 2)])  # found only 2
+    cells, rows, channels, products = combine_found(a, b, "difference")
+    assert not len(rows["row"]) and sorted(cells["channel"]) == [1, 3]
+
+
+def test_resolve_run_pair_arg_parses_and_refuses():
+    assert resolve_run_pair_arg(None, "--intersect") is None
+    assert resolve_run_pair_arg("2,3", "--intersect") == (2, 3)
+    for spec, message in (("2", r"--intersect takes 'A,B'"), ("2,3,4", r"--intersect takes 'A,B'"),
+                          ("x,y", r"--intersect takes 'A,B'"), ("2,2", r"--intersect 2,2: give two different runs")):
+        with pytest.raises(ValueError, match=message):
+            resolve_run_pair_arg(spec, "--intersect")
+
+
+from data_io.found_file import FileIdentity, LocateSession
+from visplot.locate_where import combined_fields
+
+
+def _write_located_run(session, gcount, channels, products, cells=(), rows=(), conditions=("test",)):
+    """A run of `session`, written directly with known content (bypassing
+    the FITS pass): for --intersect/--difference end-to-end tests. `cells`
+    an iterable of (row, product, channel), `rows` of (row, product,
+    n_cells)."""
+    writer = session.new_run(combined_fields(gcount, max(channels, default=0) + 1, 4, 4))
+    writer.append("cells", _columns(cells, ("row", "product", "channel")))
+    writer.append("rows", _columns(rows, ("row", "product", "n_cells")))
+    summary = {"written_utc": "2026-01-01T00:00:00+00:00", "conditions": list(conditions),
+              "cells_found": len(cells) + len(rows), "rows_whole": len(rows), "records": dict(writer.counts)}
+    header = {"summary": summary, "searched": {"channels": list(channels)},
+             "products": {str(p): p for p in products}}
+    return writer.commit(header, np.zeros(gcount, dtype=bool))
+
+
+def _combine_session(name):
+    scratch = make_scratch_dir(f"locate_where_{name}")
+    path = _make_synthetic_file(scratch / "obs.fits")
+    opened = open_file(path)
+    gcount = int(opened.index.gcount)
+    session = LocateSession.open(scratch / "runs" / "found", "s1", FileIdentity.of(str(path), gcount))
+    return scratch, path, session, gcount
+
+
+def test_combine_runs_intersect_end_to_end(capsys):
+    from cli.run_visplot import main
+
+    scratch, path, session, gcount = _combine_session("intersect")
+    _write_located_run(session, gcount, [0, 1, 2], [5], cells=[(1, 5, 0), (1, 5, 1)], conditions=["run a"])  # 1
+    _write_located_run(session, gcount, [0, 1, 2], [5], cells=[(1, 5, 1), (1, 5, 2)], conditions=["run b"])  # 2
+
+    argv = [str(path), "--provenance-dir", str(scratch / "runs"), "--session", "s1"]
+    assert main(["visplot", *argv, "--intersect", "1,2"]) == 0
+    printed = capsys.readouterr().out
+    assert "intersect of runs 1 and 2" in printed and "runs 1 and 2 set aside" in printed
+    run = read_run(session.run_path(3))
+    assert run.cells["row"].tolist() == [1] and run.cells["channel"].tolist() == [1]
+    summary = run.header["summary"]
+    assert (summary["op"], summary["a"], summary["b"]) == ("intersect", 1, 2)
+    entries = read_log(session.directory)
+    assert entries[-1] == {"entry": "operation", "op": "intersect", "a": 1, "b": 2, "run": 3,
+                           "written_utc": entries[-1]["written_utc"]}
+
+    listed = main(["visplot", str(path), "--session", "s1", "--provenance-dir", str(scratch / "runs")])
+    assert listed == 0
+    printed = capsys.readouterr().out
+    assert "found set: the union of run 3" in printed
+
+
+def test_combine_runs_difference_end_to_end(capsys):
+    from cli.run_visplot import main
+
+    scratch, path, session, gcount = _combine_session("difference")
+    _write_located_run(session, gcount, [0, 1, 2], [5], cells=[(1, 5, 0), (1, 5, 1)])  # 1
+    _write_located_run(session, gcount, [0, 1, 2], [5], cells=[(1, 5, 1)])  # 2
+
+    argv = [str(path), "--provenance-dir", str(scratch / "runs"), "--session", "s1"]
+    assert main(["visplot", *argv, "--difference", "1,2"]) == 0
+    printed = capsys.readouterr().out
+    assert "difference of runs 1 and 2" in printed
+    run = read_run(session.run_path(3))
+    assert run.cells["row"].tolist() == [1] and run.cells["channel"].tolist() == [0]
+
+
+def test_combine_runs_refuses_an_unknown_already_aside_or_repeated_run(capsys):
+    from cli.run_visplot import main
+
+    scratch, path, session, gcount = _combine_session("refuse")
+    _write_located_run(session, gcount, [0, 1, 2], [5], cells=[(1, 5, 0)])  # 1
+    _write_located_run(session, gcount, [0, 1, 2], [5], cells=[(1, 5, 1)])  # 2
+    argv = [str(path), "--provenance-dir", str(scratch / "runs"), "--session", "s1"]
+
+    with pytest.raises(SystemExit):
+        main(["visplot", *argv, "--intersect", "1,9"])
+    assert "run 9 is not a run of session 's1'" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        main(["visplot", *argv, "--intersect", "1,1"])
+    assert "give two different runs" in capsys.readouterr().err
+
+    assert main(["visplot", *argv, "--intersect", "1,2"]) == 0  # run 3; 1 and 2 now aside
+    capsys.readouterr()
+    with pytest.raises(SystemExit):
+        main(["visplot", *argv, "--difference", "1,3"])
+    assert "run 1 of session 's1' is already aside" in capsys.readouterr().err

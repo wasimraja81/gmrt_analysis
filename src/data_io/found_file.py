@@ -33,7 +33,10 @@ A run is never edited or erased; each is active or set aside (`run_status`,
 folding the log's operation entries over its run entries), and the session's
 found set, the flag generator's input, is the union of the active ones
 (`read_active`). `undo_run`/`restore_run` flip a run's status, each its own
-operation entry.
+operation entry. `log_combination` logs an intersect or difference of two
+runs (`visplot.locate_where.combine_found` computes it; the values stay
+with whichever of the two runs recorded them, never copied into the new
+one): one operation entry, setting both aside.
 """
 
 from __future__ import annotations
@@ -467,6 +470,25 @@ def restore_run(session: LocateSession, target: int) -> None:
         if status[target] == "active":
             raise ValueError(f"run {target} of session {session.name!r} is already active")
         entry = {"entry": "operation", "op": "restore", "target": target, "written_utc": _now()}
+        _append_line(session.directory / LOG_NAME, entry)
+
+
+def log_combination(session: LocateSession, op: str, a: int, b: int, run: int) -> None:
+    """Logs `op` ("intersect"/"difference") of runs `a` and `b` of `session`,
+    producing run `run`: sets `a` and `b` aside (`run_status`), kept,
+    restorable with `restore_run`. Raises ValueError if `a` and `b` are the
+    same run, or either was never a run of this session or is already
+    aside."""
+    with _locked(session.directory):
+        status = run_status(read_log(session.directory))
+        if a == b:
+            raise ValueError(f"{op} needs two different runs, got {a} and {b} both")
+        for target in (a, b):
+            if target not in status:
+                raise ValueError(f"run {target} is not a run of session {session.name!r}")
+            if status[target] == "aside":
+                raise ValueError(f"run {target} of session {session.name!r} is already aside")
+        entry = {"entry": "operation", "op": op, "a": a, "b": b, "run": run, "written_utc": _now()}
         _append_line(session.directory / LOG_NAME, entry)
 
 

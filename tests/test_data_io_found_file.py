@@ -12,8 +12,8 @@ import pytest
 
 from conftest import make_scratch_dir
 from data_io import found_file
-from data_io.found_file import FileIdentity, LocateSession, NoSpace, SessionError, read_active, read_log, read_run, \
-    restore_run, run_status, undo_run
+from data_io.found_file import FileIdentity, LocateSession, NoSpace, SessionError, log_combination, read_active, \
+    read_log, read_run, restore_run, run_status, undo_run
 
 FIELDS = {"cells": {"row": "<u4", "channel": "<u2", "value": "<c8"}, "rows": {"row": "<u4", "n_cells": "<u4"}}
 
@@ -235,3 +235,38 @@ def test_restore_run_refuses_an_unknown_or_already_active_run():
         restore_run(session, 9)
     with pytest.raises(ValueError, match=r"run 1 of session 's1' is already active"):
         restore_run(session, 1)
+
+
+# --- log_combination (T26 2b-2b, slice 3: the run operations, intersect and difference) ---
+
+def test_log_combination_sets_both_runs_aside_and_logs_the_entry():
+    found = make_scratch_dir("found_combine")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)  # run 1
+    _write_run(session)  # run 2
+    log_combination(session, "intersect", 1, 2, 3)
+    assert session.status() == {1: "aside", 2: "aside"} and session.active_runs() == []
+    entries = read_log(session.directory)
+    assert entries[-1] == {"entry": "operation", "op": "intersect", "a": 1, "b": 2, "run": 3,
+                           "written_utc": entries[-1]["written_utc"]}
+
+
+def test_log_combination_refuses_the_same_run_twice():
+    found = make_scratch_dir("found_combine_same")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)
+    with pytest.raises(ValueError, match=r"intersect needs two different runs, got 1 and 1 both"):
+        log_combination(session, "intersect", 1, 1, 2)
+
+
+def test_log_combination_refuses_an_unknown_or_already_aside_run():
+    found = make_scratch_dir("found_combine_refuse")
+    session = LocateSession.open(found, "s1", _identity())
+    _write_run(session)  # run 1
+    _write_run(session)  # run 2
+    with pytest.raises(ValueError, match=r"run 9 is not a run of session 's1'"):
+        log_combination(session, "difference", 1, 9, 3)
+    log_combination(session, "difference", 1, 2, 3)  # 1 and 2 now aside
+    _write_run(session)  # run 4, active
+    with pytest.raises(ValueError, match=r"run 1 of session 's1' is already aside"):
+        log_combination(session, "difference", 1, 4, 5)
