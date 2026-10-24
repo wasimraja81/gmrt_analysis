@@ -2,9 +2,20 @@
 and one style sheet for section headers, the primary button, hints, the
 command line and fields that fail their check. The theme is a window
 preference: it does not change a plot's output (T33 brings themed plots, as
-a request option)."""
+a request option).
+
+Fusion only on Linux and Windows: on macOS (found 2026-10-25, a user's own
+machine) every QToolButton in the window -- this app's own (the pages bar)
+and matplotlib's (zoom, pan, home) alike -- took clicks without acting on
+them, while a QComboBox (a different widget, a different event path for its
+popup) kept working; forcing a non-native style is a known source of this
+kind of trouble under macOS's native event delivery. macOS keeps its own
+native style instead, with the same palette and style sheet over it.
+"""
 
 from __future__ import annotations
+
+import sys
 
 from PySide6 import QtGui, QtWidgets
 
@@ -62,6 +73,7 @@ def style_sheet(theme: str) -> str:
 
 
 def apply_theme(app: QtWidgets.QApplication, theme: str) -> None:
-    app.setStyle("Fusion")
+    if sys.platform != "darwin":
+        app.setStyle("Fusion")
     app.setPalette(palette(theme))
     app.setStyleSheet(style_sheet(theme))
