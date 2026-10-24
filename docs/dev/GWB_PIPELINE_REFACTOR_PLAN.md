@@ -4,7 +4,7 @@
 and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09-28, T31
 2026-09-29, T36, T37, T39 and T41 2026-09-29, T33, T43 and T44 2026-09-30, T38 and
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, T58 2026-10-21,
-712 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
+718 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
 T59 open (order in Phase B); T35 (Moon
 scans' u, v, w) open, parked until the Moon is imaged.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
@@ -1633,6 +1633,48 @@ Buildable now, ahead of Phase C.
   `data_io/row_index.py` already uses for an unrecognized code: the derived-run header
   now takes any code a run holds, standard product or otherwise.
   712 tests pass.
+  Step 2b-3 built 2026-10-24/25 (the user: "lets do it"), completing step 2b: the GUI's
+  Locate tab. Checked against the plan doc before building, at the user's own
+  insistence ("Are you sure this was not scoped in existing docs? Check that
+  diligently") -- the design session of 2026-10-15 already said "a session panel
+  listing the runs (conditions, counts, status), these as its actions", naming undo,
+  replace, intersect and difference together as one group; this corrected a wrong
+  first instinct to split Replace out next to Locate. The only choice the plan doc left
+  open -- how a user picks which run(s) an action takes -- the user settled directly:
+  "remembering run-number is painful", so the session panel is a table (run, status,
+  conditions, cells found, rows whole, written), action buttons reading its selected
+  row(s) -- 1 for undo/restore/replace, 2 for intersect/difference, each enabled only
+  when the selection's own status allows it -- never a number to type.
+  `visplot/gui/locate_tab.py` (new): condition lines (one `CheckedLineEdit` per
+  `--where`, "+ Add condition"/"x" to add or remove one, checked as typed with
+  `parse_condition`), a session field and a `--flagged` menu, Locate; the session table
+  and its five action buttons, Refresh. `visplot/gui/main_window.py`: a third tab,
+  "Locate", beside Start and Listing; `_list_locate_session` (synchronous, nothing
+  written or read beyond the log, as `--session` alone is) refreshes the table on
+  opening a file, on the session field's `editingFinished`, and after every action;
+  `_locate`/`_replace` run in the background (`locate_by_conditions`, over the form's
+  own selection, exactly as a plot would read it); `_undo`/`_restore`/`_intersect`/
+  `_difference` run synchronously (`perform_run_operation`/`combine_runs`), matching
+  how little each one touches. `visplot/gui/form.py`: the eight options T26
+  step 2b-1/2b-2b/2b-2c left pending moved from `PENDING_GUI_OPTIONS` to
+  `ACTION_OPTIONS`, naming which Locate tab control sets each -- the same test that
+  would fail on an option the GUI forgets confirms none were.
+  Found and fixed on the way, while writing the GUI's own tests (an intersect of two
+  runs each finding one row/channel, asserted as "1" cell found, came back "2"):
+  `combine_runs`'s "cells found"/"rows whole" counted (row, channel, product) records,
+  while a Locate run's (`WhereReducer`) counts (row, channel) alone -- the same
+  visibility, found on two products a condition is made from (amp(V)'s own RR and LL),
+  counted once by one and twice by the other; the same field, in the same table,
+  carrying a different meaning depending which kind of run it is. `combine_found` now
+  returns the count by row and channel alone, and `run.combine_runs` uses that count
+  directly.
+  A second bug, caught before it reached a commit: the new GUI tests never gave their
+  own `--provenance-dir`, so every one of them (same default file name "obs.fits", same
+  shape, so the same `FileIdentity`) shared one physical session, each accumulating
+  runs left by the others and timing out waiting for counts that could never be exactly
+  right. Fixed by giving each test its own scratch `--provenance-dir`, as the CLI-level
+  tests already do.
+  718 tests pass.
 
 - **T27 — Astrometry without network access — DONE (2026-09-28).** From the review (point
   G). `local_sidereal_time_hours` asked astropy for UT1, which tried to download IERS

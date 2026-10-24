@@ -46,9 +46,10 @@ from visplot.request_args import (
     split_range_unit,
 )
 
-# Options the GUI sets through an action (a tool or a menu item), and the action that sets each.
+# Options the GUI sets through an action (a tool, a menu item, or a tab other than this form), and the action
+# that sets each.
 ACTION_OPTIONS = {
-    "locate": "the Locate tool on a plot (its box)",
+    "locate": "the Locate tool on a plot (its box), or the Locate tab's Locate/Replace (no box)",
     "locate_csv": "the Locate tool's 'Save all as CSV'",
     "output_dir": "File > Save plots as files",
     "output_prefix": "File > Save plots as files",
@@ -58,19 +59,18 @@ ACTION_OPTIONS = {
     "listobs": "the Listing tab's section boxes and List",
     "scan_gap": "the Listing tab's scan gap",
     "scan_longest": "the Listing tab's longest scan",
+    "where": "the Locate tab's condition lines",
+    "locate_session": "the Locate tab's session field",
+    "flagged": "the Locate tab's Flagged menu",
+    "undo": "the Locate tab's session panel (Undo, the table's selected run)",
+    "restore": "the Locate tab's session panel (Restore, the table's selected run)",
+    "replace_run": "the Locate tab's Replace (the table's selected run)",
+    "intersect": "the Locate tab's session panel (Intersect, the table's two selected runs)",
+    "difference": "the Locate tab's session panel (Difference, the table's two selected runs)",
 }
 
 # Options whose GUI controls are still to be built, and the plan step building each (none now).
-PENDING_GUI_OPTIONS: dict[str, str] = {
-    "where": "T26 step 2b-3, the GUI's Locate tab (its condition lines)",
-    "locate_session": "T26 step 2b-3, the GUI's Locate tab (its session field)",
-    "flagged": "T26 step 2b-3, the GUI's Locate tab",
-    "undo": "T26 step 2b-3, the GUI's session panel (its run actions)",
-    "restore": "T26 step 2b-3, the GUI's session panel (its run actions)",
-    "replace_run": "T26 step 2b-3, the GUI's session panel (its run actions)",
-    "intersect": "T26 step 2b-3, the GUI's session panel (its run actions)",
-    "difference": "T26 step 2b-3, the GUI's session panel (its run actions)",
-}
+PENDING_GUI_OPTIONS: dict[str, str] = {}
 
 # Hover text of the Pages section (T26), in everyday words for a first-time reader.
 PAGES_HELP = {

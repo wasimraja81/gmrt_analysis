@@ -392,7 +392,7 @@ def _metadata_by_row_product(run: FoundRun) -> dict[tuple[int, int], dict]:
     return meta
 
 
-def combine_found(a: FoundRun, b: FoundRun, op: str) -> tuple[dict, dict, tuple[int, ...], tuple[int, ...]]:
+def combine_found(a: FoundRun, b: FoundRun, op: str) -> tuple[dict, dict, tuple[int, ...], tuple[int, ...], int, int]:
     """`a` and `b`'s found sets combined by row, channel and product alone
     -- "intersect": found by both; "difference": found by `a` alone --
     never their values, which stay with whichever run recorded them (a
@@ -402,8 +402,11 @@ def combine_found(a: FoundRun, b: FoundRun, op: str) -> tuple[dict, dict, tuple[
     `a` and `b`; "difference": `a`'s own -- so a result whole over every
     one of them is one record (`rows`), as compact and for the same reason
     as any other whole row; every other found cell, one record (`cells`),
-    of location alone (`combined_fields`). Returns the two tables' columns
-    and the result's own channels and products, for the new run's header."""
+    of location alone (`combined_fields`). Returns the two tables' columns,
+    the result's own channels and products (for the new run's header), and
+    its cells-found/rows-whole counts -- each by row and channel alone,
+    matching `WhereReducer`'s own counts regardless of how many of a row's
+    products carry a record."""
     a_found, b_found = _found_by_row_product(a), _found_by_row_product(b)
     if op == "intersect":
         own_channels = tuple(sorted(set(a.header["searched"]["channels"]) & set(b.header["searched"]["channels"])))
@@ -417,10 +420,13 @@ def combine_found(a: FoundRun, b: FoundRun, op: str) -> tuple[dict, dict, tuple[
     meta = {**_metadata_by_row_product(b), **_metadata_by_row_product(a)}
     cells = {name: [] for name in ("row", "product", "channel", *WHERE_FIELDS)}
     rows = {name: [] for name in ("row", "product", "n_cells", *WHERE_FIELDS)}
+    found_row_channels, whole_rows = set(), set()
     for row, product in sorted(key for key, channels in combined.items() if channels):
         channels = combined[(row, product)]
         info = meta[(row, product)]
+        found_row_channels.update((row, channel) for channel in channels)
         if channels == whole_domain:
+            whole_rows.add(row)
             rows["row"].append(row)
             rows["product"].append(product)
             rows["n_cells"].append(len(channels))
@@ -433,7 +439,7 @@ def combine_found(a: FoundRun, b: FoundRun, op: str) -> tuple[dict, dict, tuple[
                 cells["channel"].append(channel)
                 for field in WHERE_FIELDS:
                     cells[field].append(info[field])
-    return cells, rows, own_channels, own_products
+    return cells, rows, own_channels, own_products, len(found_row_channels), len(whole_rows)
 
 
 class WhereReducer:

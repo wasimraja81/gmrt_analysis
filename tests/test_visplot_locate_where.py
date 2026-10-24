@@ -452,60 +452,77 @@ def _found_run(channels, products, cells=(), rows=()):
 def test_combine_found_intersects_two_explicit_cells_by_channel():
     a = _found_run([1, 2, 3], [5], cells=[(1, 5, 1), (1, 5, 2)])
     b = _found_run([1, 2, 3], [5], cells=[(1, 5, 2), (1, 5, 3)])
-    cells, rows, channels, products = combine_found(a, b, "intersect")
+    cells, rows, channels, products, n_cells_found, n_rows_whole = combine_found(a, b, "intersect")
     assert cells["row"] == [1] and cells["channel"] == [2] and not len(rows["row"])
-    assert channels == (1, 2, 3) and products == (5,)
+    assert channels == (1, 2, 3) and products == (5,) and (n_cells_found, n_rows_whole) == (1, 0)
 
 
 def test_combine_found_intersects_a_whole_row_with_an_explicit_one():
     a = _found_run([1, 2, 3], [5], rows=[(1, 5)])  # whole: every channel of its own range found
     b = _found_run([1, 2, 3], [5], cells=[(1, 5, 2)])
-    cells, rows, channels, products = combine_found(a, b, "intersect")
+    cells, rows, channels, products, n_cells_found, n_rows_whole = combine_found(a, b, "intersect")
     assert cells["row"] == [1] and cells["channel"] == [2] and not len(rows["row"])
-    assert channels == (1, 2, 3)
+    assert channels == (1, 2, 3) and (n_cells_found, n_rows_whole) == (1, 0)
 
 
 def test_combine_found_intersects_two_whole_rows_into_a_whole_result():
     a = _found_run([1, 2, 3], [5], rows=[(1, 5)])
     b = _found_run([1, 2, 3], [5], rows=[(1, 5)])
-    cells, rows, channels, products = combine_found(a, b, "intersect")
+    cells, rows, channels, products, n_cells_found, n_rows_whole = combine_found(a, b, "intersect")
     assert not len(cells["row"]) and rows["row"] == [1] and rows["n_cells"] == [3]
+    assert (n_cells_found, n_rows_whole) == (3, 1)
 
 
 def test_combine_found_intersect_narrows_to_the_two_runs_shared_channel_range():
     a = _found_run([1, 2, 3, 4], [5], rows=[(1, 5)])
     b = _found_run([3, 4, 5, 6], [5], rows=[(1, 5)])
-    cells, rows, channels, products = combine_found(a, b, "intersect")
+    cells, rows, channels, products, n_cells_found, n_rows_whole = combine_found(a, b, "intersect")
     assert channels == (3, 4) and rows["n_cells"] == [2] and not len(cells["row"])
+    assert (n_cells_found, n_rows_whole) == (2, 1)
 
 
 def test_combine_found_intersect_of_different_products_is_empty_with_no_special_casing():
     a = _found_run([1, 2, 3], [5], cells=[(1, 5, 1)])
     b = _found_run([1, 2, 3], [6], cells=[(1, 6, 1)])
-    cells, rows, channels, products = combine_found(a, b, "intersect")
+    cells, rows, channels, products, n_cells_found, n_rows_whole = combine_found(a, b, "intersect")
     assert not len(cells["row"]) and not len(rows["row"]) and products == ()
+    assert (n_cells_found, n_rows_whole) == (0, 0)
 
 
 def test_combine_found_difference_keeps_what_the_other_run_never_searched():
     a = _found_run([1, 2, 3], [5], cells=[(2, 5, 4)])  # row 2: outside b's own domain
     b = _found_run([1, 2, 3], [5], cells=[(1, 5, 1)])
-    cells, rows, channels, products = combine_found(a, b, "difference")
+    cells, rows, channels, products, n_cells_found, n_rows_whole = combine_found(a, b, "difference")
     assert cells["row"] == [2] and cells["channel"] == [4]
-    assert channels == (1, 2, 3)  # difference's own domain is a's, unconditionally
+    assert channels == (1, 2, 3) and (n_cells_found, n_rows_whole) == (1, 0)  # a's domain, unconditionally
 
 
 def test_combine_found_difference_removes_what_the_other_run_also_found():
     a = _found_run([1, 2, 3], [5], cells=[(3, 5, 8)])
     b = _found_run([1, 2, 3], [5], cells=[(3, 5, 8)])
-    cells, rows, channels, products = combine_found(a, b, "difference")
-    assert not len(cells["row"]) and not len(rows["row"])
+    cells, rows, channels, products, n_cells_found, n_rows_whole = combine_found(a, b, "difference")
+    assert not len(cells["row"]) and not len(rows["row"]) and (n_cells_found, n_rows_whole) == (0, 0)
 
 
 def test_combine_found_difference_of_a_whole_row_against_a_partial_one():
     a = _found_run([1, 2, 3], [5], rows=[(1, 5)])  # whole: found 1, 2 and 3
     b = _found_run([1, 2, 3], [5], cells=[(1, 5, 2)])  # found only 2
-    cells, rows, channels, products = combine_found(a, b, "difference")
-    assert not len(rows["row"]) and sorted(cells["channel"]) == [1, 3]
+    cells, rows, channels, products, n_cells_found, n_rows_whole = combine_found(a, b, "difference")
+    assert not len(rows["row"]) and sorted(cells["channel"]) == [1, 3] and (n_cells_found, n_rows_whole) == (2, 0)
+
+
+def test_combine_found_counts_by_row_and_channel_not_by_how_many_products_carry_a_record():
+    """Two products (5, 6) sharing one row -- amp(V)'s own RR and LL, for
+    example -- count as one cell found and, if whole, one row whole: never
+    doubled by how many products the combined result happens to repeat for."""
+    a = _found_run([1, 2, 3], [5, 6], cells=[(1, 5, 2), (1, 6, 2)])
+    b = _found_run([1, 2, 3], [5, 6], cells=[(1, 5, 2), (1, 6, 2)])
+    _, _, _, _, n_cells_found, _ = combine_found(a, b, "intersect")
+    assert n_cells_found == 1
+    a_whole = _found_run([1, 2, 3], [5, 6], rows=[(1, 5), (1, 6)])
+    b_whole = _found_run([1, 2, 3], [5, 6], rows=[(1, 5), (1, 6)])
+    _, _, _, _, n_cells_found_whole, n_rows_whole = combine_found(a_whole, b_whole, "intersect")
+    assert (n_cells_found_whole, n_rows_whole) == (3, 1)
 
 
 def test_resolve_run_pair_arg_parses_and_refuses():

@@ -33,9 +33,9 @@ def _app():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
-def _window(name):
+def _window(name, edit=None):
     app = _app()
-    path = _make_synthetic_file(make_scratch_dir(name) / "obs.fits")
+    path = _make_synthetic_file(make_scratch_dir(name) / "obs.fits", edit=edit)
     window = VisplotWindow(str(path))
     window.resize(1200, 800)
     window.show()
@@ -669,4 +669,116 @@ def test_the_time_range_field_wants_its_scale_chosen():
     form.load(PlotRequest(str(path), "amp-vs-time"))
     assert (box.text(), menu.currentData()) == ("", None) and "time_range" not in form.invalid_fields()
     _settle(app, window, lambda: True)
+    window.close()
+
+
+def _plant(image_data):
+    image_data[5, 0, 2, 0, 0] += 100.0  # one visibility, well above any ordinary amp(V) threshold
+
+
+def test_the_locate_tab_finds_visibilities_and_lists_the_session():
+    app, window, path = _window("gui_locate", edit=_plant)
+    window.form.fields["provenance_dir"].set(str(path.parent / "runs"))
+    tab = window.locate
+    assert window.tabs.tabText(2) == "Locate" and tab.panel_summary.text() == "session obs: no runs yet"
+    assert not tab.locate_button.isEnabled()  # no condition yet
+    _, edit = tab._condition_rows[0]
+    edit.setText("amp(V) > 10")
+    assert tab.locate_button.isEnabled()
+    window._locate()
+    _settle(app, window, lambda: "run written" in tab.build_status.text())
+    assert tab.table.rowCount() == 1
+    row = [tab.table.item(0, c).text() for c in range(tab.table.columnCount())]
+    assert row[:3] == ["1", "active", "amp(V) > 10"] and row[3] == "1"  # one cell found
+    assert tab.panel_summary.text() == "session obs: 1 run(s); found set: the union of run 1"
+    window.close()
+
+
+def test_the_locate_tabs_buttons_follow_the_tables_selection_and_status():
+    app, window, path = _window("gui_locate_buttons", edit=_plant)
+    window.form.fields["provenance_dir"].set(str(path.parent / "runs"))
+    tab = window.locate
+    _, edit = tab._condition_rows[0]
+    edit.setText("amp(V) > 10")
+    window._locate()
+    _settle(app, window, lambda: "run written" in tab.build_status.text())
+    window._locate()  # run 2, same conditions
+    _settle(app, window, lambda: tab.table.rowCount() == 2)
+
+    tab.table.selectRow(0)
+    assert (tab.undo_button.isEnabled(), tab.restore_button.isEnabled(), tab.replace_button.isEnabled()) == (
+        True, False, True)
+    assert not tab.intersect_button.isEnabled() and not tab.difference_button.isEnabled()
+    window._undo()
+    assert tab.panel_summary.text() == "session obs: 2 run(s); found set: the union of run 2"
+    tab.table.selectRow(0)
+    assert (tab.undo_button.isEnabled(), tab.restore_button.isEnabled()) == (False, True)
+    window._restore()
+    assert tab.panel_summary.text() == "session obs: 2 run(s); found set: the union of runs 1, 2"
+
+    edit.setText("")  # an empty condition disables Locate and Replace
+    tab.table.selectRow(1)
+    assert not tab.locate_button.isEnabled() and not tab.replace_button.isEnabled() and tab.undo_button.isEnabled()
+    edit.setText("amp(V) > 10")
+    edit.setText("not a condition")  # invalid: marked, and disables Locate/Replace
+    assert not edit.valid and not tab.locate_button.isEnabled() and not tab.replace_button.isEnabled()
+    edit.setText("amp(V) > 10")
+    tab.session_edit.setText("a bad name!")
+    assert not tab.session_edit.valid and not tab.locate_button.isEnabled()
+    tab.session_edit.setText("")
+    window.close()
+
+
+def test_intersect_and_difference_combine_the_tables_two_selected_runs():
+    app, window, path = _window("gui_locate_combine", edit=_plant)
+    window.form.fields["provenance_dir"].set(str(path.parent / "runs"))
+    tab = window.locate
+    _, edit = tab._condition_rows[0]
+    edit.setText("amp(V) > 10")
+    window._locate()
+    _settle(app, window, lambda: "run written" in tab.build_status.text())
+    window._locate()
+    _settle(app, window, lambda: tab.table.rowCount() == 2)
+    tab.table.selectRow(0)
+    tab.table.setRangeSelected(QtWidgets.QTableWidgetSelectionRange(0, 0, 1, tab.table.columnCount() - 1), True)
+    assert tab.selected_pair() == (1, 2)
+    assert tab.intersect_button.isEnabled() and tab.difference_button.isEnabled()
+    window._intersect()
+    assert "intersect of runs 1 and 2" in tab.panel_message.text()
+    assert tab.panel_summary.text() == "session obs: 3 run(s); found set: the union of run 3"
+    row = [tab.table.item(2, c).text() for c in range(tab.table.columnCount())]
+    assert row[:3] == ["3", "active", "intersect of runs 1 and 2"] and row[3] == "1"
+    window.close()
+
+
+def test_replace_runs_the_conditions_as_a_new_run_and_sets_the_selected_one_aside():
+    app, window, path = _window("gui_locate_replace", edit=_plant)
+    window.form.fields["provenance_dir"].set(str(path.parent / "runs"))
+    tab = window.locate
+    _, edit = tab._condition_rows[0]
+    edit.setText("amp(V) > 10")
+    window._locate()
+    _settle(app, window, lambda: "run written" in tab.build_status.text())
+    tab.table.selectRow(0)
+    assert tab.replace_button.isEnabled()
+    window._replace()
+    _settle(app, window, lambda: "Replace run 1" in tab.build_status.text() and "run written" in tab.build_status.text())
+    assert tab.panel_summary.text() == "session obs: 2 run(s); found set: the union of run 2"
+    assert [tab.table.item(0, c).text() for c in range(2)] == ["1", "aside"]
+    window.close()
+
+
+def test_the_locate_tabs_session_field_names_a_different_session():
+    app, window, path = _window("gui_locate_session", edit=_plant)
+    window.form.fields["provenance_dir"].set(str(path.parent / "runs"))
+    tab = window.locate
+    _, edit = tab._condition_rows[0]
+    edit.setText("amp(V) > 10")
+    tab.session_edit.setText("alt")
+    window._locate()
+    _settle(app, window, lambda: "run written" in tab.build_status.text())
+    assert tab.panel_summary.text().startswith("session alt:")
+    tab.session_edit.setText("")
+    tab.session_edit.editingFinished.emit()
+    assert tab.panel_summary.text() == "session obs: no runs yet"
     window.close()

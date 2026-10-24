@@ -992,7 +992,7 @@ def combine_runs(request: PlotRequest, opened: OpenedFile, report: Report = _sil
         if status[target] == "aside":
             raise RequestError(f"run {target} of session {name!r} is already aside")
     run_a, run_b = read_run(session.run_path(a)), read_run(session.run_path(b))
-    cells, rows, own_channels, own_products = combine_found(run_a, run_b, op)
+    cells, rows, own_channels, own_products, n_cells_found, n_rows_whole = combine_found(run_a, run_b, op)
     index = opened.index
     fields = combined_fields(int(index.gcount), len(index.chan_freqs_hz),
                              int(max(index.ant1.max(), index.ant2.max())), int(index.source_id.max()))
@@ -1000,7 +1000,6 @@ def combine_runs(request: PlotRequest, opened: OpenedFile, report: Report = _sil
     writer.append("cells", cells)
     writer.append("rows", rows)
     searched_rows = run_a.searched_rows & run_b.searched_rows if op == "intersect" else run_a.searched_rows
-    n_cells_found, n_rows_whole = len(cells["row"]) + int(sum(rows["n_cells"])), len(rows["row"])
     try:
         writer.check_space(1.0)
         summary = {"written_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "op": op, "a": a,

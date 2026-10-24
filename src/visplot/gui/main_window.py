@@ -42,8 +42,10 @@ from visplot.gui.widgets import CommandLine
 from visplot.gui.style import THEMES, apply_theme
 from visplot.records import PlotRecord, SessionRecord, WindowProvenance, recorded_run
 from visplot.gui.listing_tab import ListingTab
+from visplot.gui.locate_tab import LocateTab
 from visplot.request import PlotRequest, build_arg_parser, selection_option_names
-from visplot.run import (RequestError, Stopped, check_request, count_selection, listing_text, open_file, prepare,
+from visplot.run import (RequestError, Stopped, check_request, combine_runs, count_selection, listing_text,
+                         locate_by_conditions, open_file, open_locate_session, perform_run_operation, prepare,
                          save_outputs, write_listing_to)
 
 POLL_MS = 100
@@ -99,6 +101,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self._saving: _Task | None = None  # the save running, if any (one at a time)
         self._building: _Task | None = None  # the index build running, if any
         self._listing_task: _Task | None = None  # the listing running, if any (its flags pass shows progress)
+        self._locate_task: _Task | None = None  # the Locate/Replace running, if any
         self._preparing: list[_Task] = []  # plots being prepared, their tabs not yet open (Clear cancels them)
         self._index_note = ""  # what building the open file's missing index takes
         self.session = SessionRecord(provenance_dir or build_arg_parser().get_default("provenance_dir"))
@@ -203,6 +206,12 @@ class VisplotWindow(QtWidgets.QMainWindow):
         self.listing = ListingTab(self._list, self._save_listing, self._stop_listing)
         self.tabs.addTab(self.listing, "Listing")
         self.tabs.tabBar().setTabButton(1, QtWidgets.QTabBar.RightSide, None)
+        # finding visibilities by condition, and a session's runs (T26 step 2b-3): a tab of its own, kept open
+        self.locate = LocateTab(self._locate, self._replace, self._list_locate_session, self._undo, self._restore,
+                                self._intersect, self._difference)
+        self.locate.session_edit.editingFinished.connect(self._list_locate_session)
+        self.tabs.addTab(self.locate, "Locate")
+        self.tabs.tabBar().setTabButton(2, QtWidgets.QTabBar.RightSide, None)
         return self.tabs
 
     def _build_docks(self) -> None:
@@ -305,6 +314,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage("file open")
             self.report("info", f"opened {path}: {summary.n_rows:,} rows, {len(summary.sources)} sources")
             self._form_changed()
+            self._list_locate_session()
 
         def failed(message):
             self.form.show_progress(None)
@@ -380,6 +390,7 @@ class VisplotWindow(QtWidgets.QMainWindow):
         """Check the form (field checks, then the request as the command line
         checks it), show its command, and recount the selection shortly."""
         self.listing.set_file_open(self.opened is not None)
+        self.locate.set_file_open(self.opened is not None)
         problem, request = None, None
         invalid = self.form.invalid_fields()
         if invalid:
@@ -649,6 +660,139 @@ class VisplotWindow(QtWidgets.QMainWindow):
             record.add_output(written)
         self.report("info", f"listing saved to {written}; record {record.run_id}")
         self.statusBar().showMessage(f"listing saved to {written}", 8000)
+
+    # ---- the Locate tab: finding visibilities, and a session's runs (T26 step 2b-3) ------------------
+
+    def _list_locate_session(self) -> None:
+        """Refresh the Locate tab's session table: nothing written or read
+        beyond the log (synchronous, as the command line's --session alone
+        is)."""
+        if self.opened is None:
+            return
+        request = PlotRequest(self.form.fields["fits_path"].get() or "", None,
+                              locate_session=self.locate.session(),
+                              provenance_dir=self.form.fields["provenance_dir"].get())
+        try:
+            session, name, _ = open_locate_session(request, self.opened)
+        except RequestError as err:
+            self.locate.show_panel_message(str(err))
+            return
+        status = session.status()
+        runs = [{**entry, "status": status.get(entry["run"], "active")}
+               for entry in sorted(session.runs(), key=lambda e: e["run"])]
+        self.locate.show_session(name, runs)
+
+    def _locate(self) -> None:
+        """Locate: the Locate tab's conditions over the form's selection,
+        written to a run of its session."""
+        if self.opened is None or self._locate_task is not None:
+            return
+        self._run_locate(None, "Locate")
+
+    def _replace(self) -> None:
+        """Replace: the Locate tab's conditions, as a new run; the table's
+        selected run is set aside once it is written."""
+        run = self.locate.selected_run()
+        if self.opened is None or run is None or self._locate_task is not None:
+            return
+        self._run_locate(run, f"Replace run {run}")
+
+    def _run_locate(self, replace_run: int | None, label: str) -> None:
+        """A Locate (`replace_run` None) or a Replace, run in the
+        background, as the command line's own run; the session table
+        refreshed once it finishes."""
+        try:
+            form = self.form.request()
+            selected = {dest: getattr(form, dest) for dest in selection_option_names()}
+            request = PlotRequest(form.fits_path, None, locate="", where=self.locate.conditions(),
+                                  locate_session=self.locate.session(), flagged=self.locate.flagged(),
+                                  replace_run=replace_run, provenance_dir=form.provenance_dir, **selected)
+            check_request(request)
+        except (RequestError, ValueError) as err:
+            self.locate.show_build_status(f"{label}: {err}")
+            return
+        opened, session_id = self.opened, self.session.session_id
+        self.locate.show_build_status(f"{label} …")
+
+        def progress(pass_progress):
+            def on_chunk(rows_done: int) -> bool:
+                task.status = pass_progress.text(rows_done)
+                return True
+            return on_chunk
+
+        def work():
+            with recorded_run(request, "locate", session_id) as record:
+                self.report("info", f"{label} {record.run_id}: {record.command}")
+                path = locate_by_conditions(request, opened, report=record.reporting(self.report), progress=progress)
+                record.add_output(path)
+            return path, record
+
+        def done(result):
+            self._locate_task = None
+            path, record = result
+            self.locate.show_build_status(f"{label}: run written, record {record.run_id} ({path.name})")
+            self._add_history(request, record, "locate")
+            self._list_locate_session()
+
+        def failed(message):
+            self._locate_task = None
+            self.locate.show_build_status(f"{label} failed: {message.splitlines()[-1] if message else ''}")
+            self.report("warning", f"{label} failed: {message}")
+
+        task = _Task(work, done, failed)
+        self._locate_task = task
+        self._launch(task)
+
+    def _undo(self) -> None:
+        self._run_operation("undo", self.locate.selected_run())
+
+    def _restore(self) -> None:
+        self._run_operation("restore", self.locate.selected_run())
+
+    def _run_operation(self, op: str, run: int | None) -> None:
+        """Undo/restore the table's selected run: nothing written or read
+        beyond the log (synchronous, as the command line's own run is)."""
+        if self.opened is None or run is None:
+            return
+        try:
+            form = self.form.request()
+            request = PlotRequest(form.fits_path, None, locate_session=self.locate.session(),
+                                  provenance_dir=form.provenance_dir, **{op: run})
+            check_request(request)
+            with recorded_run(request, op, self.session.session_id) as record:
+                perform_run_operation(request, self.opened)
+            self.report("info", f"{op} {run}: {record.command}")
+            self.locate.show_panel_message(f"{op} {run}: done (record {record.run_id})")
+        except (RequestError, ValueError) as err:
+            self.locate.show_panel_message(str(err))
+            return
+        self._list_locate_session()
+
+    def _intersect(self) -> None:
+        self._run_combination("intersect", self.locate.selected_pair())
+
+    def _difference(self) -> None:
+        self._run_combination("difference", self.locate.selected_pair())
+
+    def _run_combination(self, op: str, pair: tuple[int, int] | None) -> None:
+        """Intersect/difference the table's two selected runs, written as a
+        new run (the two set aside): synchronous, as this reads only the two
+        (already small) run files, never the raw data."""
+        if self.opened is None or pair is None:
+            return
+        a, b = pair
+        try:
+            form = self.form.request()
+            request = PlotRequest(form.fits_path, None, locate_session=self.locate.session(),
+                                  provenance_dir=form.provenance_dir, **{op: f"{a},{b}"})
+            with recorded_run(request, op, self.session.session_id) as record:
+                path = combine_runs(request, self.opened, report=record.reporting(self.report))
+                record.add_output(path)
+            self.locate.show_panel_message(f"{op} of runs {a} and {b}: run written (record {record.run_id})")
+        except (RequestError, ValueError) as err:
+            self.locate.show_panel_message(str(err))
+            return
+        self._list_locate_session()
 
     def _close_tab(self, index: int) -> None:
         tab = self.tabs.widget(index)
