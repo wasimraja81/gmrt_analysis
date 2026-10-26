@@ -6,7 +6,8 @@ and T22 (visPlot, streaming) done 2026-09-27; T23-T25, T27-T30, T34 done 2026-09
 T47-T49, point D and T21 2026-10-01, T20, T53 and T54 2026-10-03, T58 2026-10-21,
 718 tests passing; T26, T32 in progress; T40, T42, T45, T46, T50-T52, T55, T56, T57,
 T59 open (order in Phase B); T35 (Moon
-scans' u, v, w) open, parked until the Moon is imaged.
+scans' u, v, w) open, parked until the Moon is imaged; T60 (visplot GUI portability)
+open, parked on the user's own instruction.
 `bin/run_gwb_pipeline.sh` + the `build_index` stage ran against the archival 389GB GWB file
 (2026-09-25), producing a validated row index — see Phase C (T5c) for details
 and the hardening that followed a run getting killed mid-scan. Two originally-scoped
@@ -2616,6 +2617,38 @@ Buildable now, ahead of Phase C.
   conversion into the GWB one, instead of each backend's own half-integration; it leaves the
   shared 0.922 s unexplained, since it is wrong only for GWB's conversion. Parked: the
   user is asking GMRT's correlator/online-system scientists directly.
+
+- **T60 — visplot GUI portability (fonts, macOS toolbar clicks) — OPEN, parked on the
+  user's own instruction (found 2026-10-25, testing a fresh venv on the user's own
+  Mac).** `DEFAULT_PANEL_FONT` is `"tex-gyre-heros"`, a font file `bin/build_venv.sh`
+  downloads from GUST over the network; `dejavu-sans` needs nothing beyond matplotlib
+  itself, already a required package. Choosing `--panel-font dejavu-sans` in the form
+  activated Plot on the user's Mac, confirming the font was the reason it had been
+  disabled; T60 proposed changing the default to `dejavu-sans` but this was not done.
+  A second bug, found the same way: the Listing tab stayed disabled even with
+  `dejavu-sans` chosen. Traced to `check_request` -- `font_file(request.panel_font)` is
+  its first check, run for every request, including a listing, a Locate run, and every
+  run operation (undo, restore, intersect, difference), none of which ever draw a
+  panel; and separately, `main_window._listing_request` (and the new Locate tab's own
+  request builders, T26 step 2b-3) never forward the form's chosen `panel_font` at all,
+  so those requests carry whichever font is the request's own default regardless of
+  what the user picked in the form. Neither was fixed.
+  A third, unrelated bug, found once fonts stopped blocking Plot: on the user's Mac,
+  every `QToolButton` in the plot window -- this app's own page-navigation arrows and
+  matplotlib's own `NavigationToolbar2QT` (zoom, pan, home) alike -- took clicks
+  without acting on them, while a `QComboBox` (a different widget, a different event
+  path for its popup) kept working. Confirmed absent on Linux: an existing test
+  (`test_a_tab_of_pages_steps_through_them_drawing_the_page_shown`) clicks the
+  next-page button and passes, and the user's own Linux use is unaffected. Tried:
+  `gui/style.py`'s `apply_theme` forces Qt's Fusion style unconditionally
+  (`app.setStyle("Fusion")`), a plausible source of this kind of trouble under macOS's
+  native event delivery; made it skip Fusion on macOS specifically (commit `7057ca0`).
+  The user's verdict: it made the Mac GUI look worse and did not fix the buttons;
+  reverted (commit `f612c7c`). The Fusion hypothesis is ruled out; what causes the
+  inert buttons remains open.
+  Parked here, the user: "Lets remain on Linux for now." -- recorded so a later pass
+  does not re-derive the font-default, the `check_request`/`_listing_request` gap, or
+  retry the Fusion hypothesis.
 
 - **T43 — visplot leaves the structural DUD entries in — DONE (found and fixed
   2026-09-30).** The
